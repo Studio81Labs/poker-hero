@@ -236,6 +236,7 @@ export default function App() {
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const canApprove = Boolean(job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street);
   const canRecommend = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
+  const stateControlsDisabled = busy;
   const screenshotUrl = useMemo(() => (job ? imageUrl(job.id) : null), [job]);
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -387,13 +388,21 @@ export default function App() {
 
           <div className="field-grid">
             <Field label="Hero cards" confidence={confidenceLabel(confidences.hero_cards)}>
-              <input value={form.hero_cards} onChange={(event) => updateForm("hero_cards", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                value={form.hero_cards}
+                onChange={(event) => updateForm("hero_cards", event.target.value)}
+              />
             </Field>
             <Field label="Board cards" confidence={confidenceLabel(confidences.board_cards)}>
-              <input value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                value={form.board_cards}
+                onChange={(event) => updateForm("board_cards", event.target.value)}
+              />
             </Field>
             <Field label="Street" confidence={confidenceLabel(confidences.street)}>
-              <select value={form.street} onChange={(event) => updateForm("street", event.target.value)}>
+              <select disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value)}>
                 <option value="">Select street</option>
                 <option value="preflop">Preflop</option>
                 <option value="flop">Flop</option>
@@ -402,22 +411,50 @@ export default function App() {
               </select>
             </Field>
             <Field label="Pot" confidence={confidenceLabel(confidences.pot_size)}>
-              <input inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                inputMode="decimal"
+                value={form.pot_size}
+                onChange={(event) => updateForm("pot_size", event.target.value)}
+              />
             </Field>
             <Field label="Current bet" confidence={confidenceLabel(confidences.current_bet)}>
-              <input inputMode="decimal" value={form.current_bet} onChange={(event) => updateForm("current_bet", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                inputMode="decimal"
+                value={form.current_bet}
+                onChange={(event) => updateForm("current_bet", event.target.value)}
+              />
             </Field>
             <Field label="Effective stack" confidence={confidenceLabel(confidences.effective_stack)}>
-              <input inputMode="decimal" value={form.effective_stack} onChange={(event) => updateForm("effective_stack", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                inputMode="decimal"
+                value={form.effective_stack}
+                onChange={(event) => updateForm("effective_stack", event.target.value)}
+              />
             </Field>
             <Field label="Players in hand" confidence={confidenceLabel(confidences.players_in_hand)}>
-              <input inputMode="numeric" value={form.players_in_hand} onChange={(event) => updateForm("players_in_hand", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                inputMode="numeric"
+                value={form.players_in_hand}
+                onChange={(event) => updateForm("players_in_hand", event.target.value)}
+              />
             </Field>
             <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)}>
-              <input value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
+              <input
+                disabled={stateControlsDisabled}
+                value={form.hero_position}
+                onChange={(event) => updateForm("hero_position", event.target.value)}
+              />
             </Field>
             <Field label="Action context" confidence="manual review">
-              <textarea value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
+              <textarea
+                disabled={stateControlsDisabled}
+                value={form.action_context}
+                onChange={(event) => updateForm("action_context", event.target.value)}
+              />
             </Field>
           </div>
 

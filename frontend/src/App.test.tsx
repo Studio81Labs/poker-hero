@@ -95,6 +95,15 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
 function fetchMock() {
   return vi.mocked(fetch);
 }
@@ -215,5 +224,33 @@ describe("App", () => {
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
     expect(payload.user_approved).toBe(true);
+  });
+
+  it("prevents field edits while approval is pending", async () => {
+    const pendingApproval = deferredResponse();
+    fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201)).mockReturnValueOnce(pendingApproval.promise);
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const heroCardsInput = await screen.findByLabelText(/Hero cards/);
+    const potInput = screen.getByLabelText(/Pot/);
+    const streetSelect = screen.getByLabelText(/Street/);
+    const actionContextInput = screen.getByLabelText(/Action context/);
+
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(potInput).toBeDisabled());
+    expect(heroCardsInput).toBeDisabled();
+    expect(streetSelect).toBeDisabled();
+    expect(actionContextInput).toBeDisabled();
+
+    await user.type(potInput, "18");
+    expect(potInput).toHaveValue("12.5");
+
+    pendingApproval.resolve(jsonResponse(approvedJob()));
+
+    await waitFor(() => expect(potInput).toBeEnabled());
+    expect(potInput).toHaveValue("12.5");
+    expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled();
   });
 });

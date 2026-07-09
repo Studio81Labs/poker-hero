@@ -185,6 +185,33 @@ function formToCanonical(form: StateForm): CanonicalState {
   };
 }
 
+function approvalKey(state: CanonicalState): string {
+  return JSON.stringify({
+    hero_cards: state.hero_cards.map(cardToCode),
+    board_cards: state.board_cards.map(cardToCode),
+    pot_size: state.pot_size,
+    current_bet: state.current_bet,
+    effective_stack: state.effective_stack,
+    players_in_hand: state.players_in_hand,
+    hero_position: state.hero_position,
+    street: state.street,
+    action_context: state.action_context,
+  });
+}
+
+function clearApprovedResult(job: JobRecord): JobRecord {
+  if (!job.approved_state && !job.recommendation) {
+    return job;
+  }
+
+  return {
+    ...job,
+    status: job.parser_result ? "parsed" : "created",
+    approved_state: null,
+    recommendation: null,
+  };
+}
+
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -193,6 +220,7 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [job, setJob] = useState<JobRecord | null>(null);
   const [form, setForm] = useState<StateForm>(() => stateToForm(EMPTY_STATE));
+  const [approvedStateKey, setApprovedStateKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,8 +233,9 @@ export default function App() {
   }, [form]);
   const confidences: Record<string, number> = job?.parser_result?.confidences ?? {};
   const warnings = job?.parser_result?.warnings ?? [];
+  const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const canApprove = Boolean(job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street);
-  const canRecommend = Boolean(job?.approved_state);
+  const canRecommend = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
   const screenshotUrl = useMemo(() => (job ? imageUrl(job.id) : null), [job]);
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -219,10 +248,15 @@ export default function App() {
     }
     setBusy(true);
     setError(null);
+    setJob(null);
+    setForm(stateToForm(EMPTY_STATE));
+    setApprovedStateKey(null);
     try {
       const created = await uploadScreenshot(file);
+      const nextState = stateFromJob(created);
       setJob(created);
-      setForm(stateToForm(stateFromJob(created)));
+      setForm(stateToForm(nextState));
+      setApprovedStateKey(created.approved_state ? approvalKey(created.approved_state) : null);
     } catch (uploadError) {
       setError(messageFromError(uploadError, "Upload failed"));
     } finally {
@@ -243,8 +277,10 @@ export default function App() {
     setError(null);
     try {
       const approved = await approveState(job.id, validation.state);
+      const approvedState = approved.approved_state ?? { ...validation.state, user_approved: true };
       setJob(approved);
-      setForm(stateToForm(approved.approved_state ?? validation.state));
+      setForm(stateToForm(approvedState));
+      setApprovedStateKey(approvalKey(approvedState));
     } catch (approveError) {
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
@@ -253,13 +289,17 @@ export default function App() {
   }
 
   async function onRecommend() {
-    if (!job) {
+    if (!job || !canRecommend) {
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      setJob(await requestRecommendation(job.id));
+      const recommended = await requestRecommendation(job.id);
+      setJob(recommended);
+      if (recommended.approved_state) {
+        setApprovedStateKey(approvalKey(recommended.approved_state));
+      }
     } catch (recommendError) {
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
@@ -269,12 +309,16 @@ export default function App() {
 
   function updateForm(field: keyof StateForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+    setApprovedStateKey(null);
+    setJob((current) => (current ? clearApprovedResult(current) : current));
   }
 
   function resetToParser() {
     if (job?.parser_result) {
       setForm(stateToForm(job.parser_result.state));
       setError(null);
+      setApprovedStateKey(null);
+      setJob((current) => (current ? clearApprovedResult(current) : current));
     }
   }
 
@@ -289,7 +333,7 @@ export default function App() {
           <label className="file-picker">
             <Upload size={18} aria-hidden="true" />
             <span>{file ? file.name : "Choose screenshot"}</span>
-            <input type="file" accept="image/*" onChange={onFileChange} />
+            <input className="file-input" type="file" accept="image/*" aria-label="Choose screenshot" onChange={onFileChange} />
           </label>
           <button type="button" onClick={onUpload} disabled={!file || busy}>
             <Upload size={18} aria-hidden="true" />
@@ -392,7 +436,7 @@ export default function App() {
             </button>
           </div>
 
-          {job?.recommendation ? (
+          {canRecommend && job?.recommendation ? (
             <section className="recommendation" aria-label="Recommendation">
               <div>
                 <span className="recommendation-action">{job.recommendation.action}</span>

@@ -6,3 +6,11 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .venv/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+frontend/.vitest/
+frontend/node_modules/.cache/

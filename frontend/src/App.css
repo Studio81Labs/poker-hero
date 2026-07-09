@@ -93,6 +93,7 @@ button:disabled {
   max-width: 280px;
   min-height: 40px;
   padding: 0 14px;
+  position: relative;
 }
 
 .file-picker span {
@@ -101,8 +102,23 @@ button:disabled {
   white-space: nowrap;
 }
 
-.file-picker input {
-  display: none;
+.file-picker:focus-within {
+  border-color: #1f6f5b;
+  outline: 2px solid #a7d5c3;
+  outline-offset: 2px;
+}
+
+.file-input {
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .notice {

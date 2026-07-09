@@ -1,9 +1,10 @@
+export type Rank = "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "T" | "J" | "Q" | "K" | "A";
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Street = "preflop" | "flop" | "turn" | "river";
 export type RecommendationAction = "fold" | "check" | "call" | "bet" | "raise";
 
 export interface Card {
-  rank: string;
+  rank: Rank;
   suit: Suit;
 }
 

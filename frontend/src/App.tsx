@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import "./App.css";
 import { approveState, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
-import type { CanonicalState, Card, DetectedState, JobRecord, Street, Suit } from "./types";
+import type { CanonicalState, Card, DetectedState, JobRecord, Rank, Street, Suit } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
   c: "clubs",
@@ -20,7 +20,8 @@ const CODE_BY_SUIT: Record<Suit, string> = {
   spades: "s",
 };
 
-const RANKS = new Set(["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]);
+const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+const RANKS = new Set<string>(RANK_VALUES);
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -53,6 +54,10 @@ function cardToCode(card: Card): string {
   return `${card.rank}${CODE_BY_SUIT[card.suit]}`;
 }
 
+function isRank(value: string): value is Rank {
+  return RANKS.has(value);
+}
+
 function parseCards(value: string, label: string): Card[] {
   const cards = value
     .split(/[,\s]+/)
@@ -62,7 +67,7 @@ function parseCards(value: string, label: string): Card[] {
       const rawRank = code.slice(0, -1).toUpperCase();
       const rank = rawRank === "10" ? "T" : rawRank;
       const suit = SUIT_BY_CODE[code.slice(-1).toLowerCase()];
-      if (!RANKS.has(rank) || !suit) {
+      if (!isRank(rank) || !suit) {
         throw new Error(`${label} contains an invalid card code: ${code}`);
       }
       return { rank, suit };

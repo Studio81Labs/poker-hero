@@ -1,5 +1,9 @@
 .worktrees/
 
+# Local config
+.env
+backend/.env
+
 # Python
 __pycache__/
 *.py[cod]

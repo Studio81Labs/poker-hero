@@ -1,10 +1,11 @@
 from pathlib import Path
+from typing import Any, get_type_hints
 
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.models import Card, CanonicalState, DetectedState, ParserResult
+from app.models import Card, CanonicalState, DetectedState, ParserResult, RecommendationResult
 
 
 def test_settings_defaults_use_mock_backends(tmp_path: Path) -> None:
@@ -18,6 +19,40 @@ def test_settings_defaults_use_mock_backends(tmp_path: Path) -> None:
     assert settings.cors_origins == ["http://localhost:5173"]
 
 
+def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POKER_PARSER_PROVIDER", "external")
+    monkeypatch.setenv("POKER_RECOMMENDATION_PROVIDER", "solver")
+
+    settings = Settings()
+
+    assert settings.parser_provider == "external"
+    assert settings.recommendation_provider == "solver"
+
+
+def test_settings_parses_thresholds_from_json_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "POKER_PARSER_AUTO_APPROVE_THRESHOLDS",
+        '{"hero_cards": 0.9, "board_cards": 0.85}',
+    )
+
+    settings = Settings()
+
+    assert settings.parser_auto_approve_thresholds == {
+        "hero_cards": 0.9,
+        "board_cards": 0.85,
+    }
+
+
+def test_settings_rejects_invalid_auto_approve_threshold() -> None:
+    with pytest.raises(ValidationError):
+        Settings(parser_auto_approve_thresholds={"hero_cards": 1.5})
+
+
+def test_settings_rejects_non_positive_solver_timeout() -> None:
+    with pytest.raises(ValidationError):
+        Settings(local_solver_timeout_seconds=0)
+
+
 def test_card_from_code_normalizes_rank_and_suit() -> None:
     card = Card.from_code("Ah")
 
@@ -29,6 +64,60 @@ def test_card_from_code_normalizes_rank_and_suit() -> None:
 def test_card_rejects_unknown_rank() -> None:
     with pytest.raises(ValidationError):
         Card(rank="1", suit="hearts")
+
+
+def test_card_schema_exposes_rank_and_suit_enums() -> None:
+    schema = Card.model_json_schema()
+
+    assert schema["properties"]["rank"]["enum"] == [
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "T",
+        "J",
+        "Q",
+        "K",
+        "A",
+    ]
+    assert schema["properties"]["suit"]["enum"] == ["clubs", "diamonds", "hearts", "spades"]
+
+
+def test_detected_state_rejects_too_many_hero_cards() -> None:
+    with pytest.raises(ValidationError):
+        DetectedState(
+            hero_cards=[
+                Card.from_code("Ah"),
+                Card.from_code("Kd"),
+                Card.from_code("Qs"),
+            ]
+        )
+
+
+def test_detected_state_rejects_too_many_board_cards() -> None:
+    with pytest.raises(ValidationError):
+        DetectedState(
+            board_cards=[
+                Card.from_code("Ah"),
+                Card.from_code("Kd"),
+                Card.from_code("Qs"),
+                Card.from_code("Jc"),
+                Card.from_code("2h"),
+                Card.from_code("3d"),
+            ]
+        )
+
+
+def test_canonical_state_rejects_duplicate_cards_across_state() -> None:
+    with pytest.raises(ValidationError):
+        CanonicalState(
+            hero_cards=[Card.from_code("Ah")],
+            board_cards=[Card.from_code("Ah")],
+        )
 
 
 def test_canonical_state_copies_detected_values() -> None:
@@ -56,3 +145,18 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.board_cards == detected.board_cards
     assert canonical.pot_size == 12.5
     assert canonical.user_approved is False
+
+
+def test_canonical_state_does_not_share_cards_with_detected_state() -> None:
+    detected = DetectedState(hero_cards=[Card.from_code("Ah")])
+    parser_result = ParserResult(state=detected)
+
+    canonical = CanonicalState.from_parser_result(parser_result)
+    detected.hero_cards[0].rank = "K"
+
+    assert canonical.hero_cards[0].code == "Ah"
+
+
+def test_raw_metadata_types_are_string_keyed_any_dicts() -> None:
+    assert get_type_hints(ParserResult)["raw"] == dict[str, Any]
+    assert get_type_hints(RecommendationResult)["raw"] == dict[str, Any]

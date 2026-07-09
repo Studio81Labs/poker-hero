@@ -1,8 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Threshold = Annotated[float, Field(ge=0, le=1)]
 
 
 class Settings(BaseSettings):
@@ -17,7 +20,7 @@ class Settings(BaseSettings):
     parser_provider: str = Field(default="mock")
     parser_layout_profile: str = Field(default="generic")
     parser_auto_approve_enabled: bool = Field(default=False)
-    parser_auto_approve_thresholds: dict[str, float] = Field(
+    parser_auto_approve_thresholds: dict[str, Threshold] = Field(
         default_factory=lambda: {
             "hero_cards": 0.98,
             "board_cards": 0.98,
@@ -30,7 +33,7 @@ class Settings(BaseSettings):
     external_provider_url: str | None = Field(default=None)
     llm_advice_url: str | None = Field(default=None)
     local_solver_command: str | None = Field(default=None)
-    local_solver_timeout_seconds: float = Field(default=30.0)
+    local_solver_timeout_seconds: float = Field(default=30.0, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

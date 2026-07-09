@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 Rank = Literal["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
@@ -20,13 +20,29 @@ SUIT_BY_CODE = {
 CODE_BY_SUIT = {value: key for key, value in SUIT_BY_CODE.items()}
 
 
-class Card(BaseModel):
-    rank: str
-    suit: str
+def _validate_card_count(field_name: str, cards: list["Card"], maximum: int) -> list["Card"]:
+    if len(cards) > maximum:
+        raise ValueError(f"{field_name} cannot contain more than {maximum} cards")
+    return cards
 
-    @field_validator("rank")
+
+def _validate_unique_cards(hero_cards: list["Card"], board_cards: list["Card"]) -> None:
+    seen: set[str] = set()
+    for card in [*hero_cards, *board_cards]:
+        if card.code in seen:
+            raise ValueError(f"Duplicate card in state: {card.code}")
+        seen.add(card.code)
+
+
+class Card(BaseModel):
+    rank: Rank
+    suit: Suit
+
+    @field_validator("rank", mode="before")
     @classmethod
     def validate_rank(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
         normalized = value.upper()
         if normalized == "10":
             normalized = "T"
@@ -34,9 +50,11 @@ class Card(BaseModel):
             raise ValueError(f"Unknown card rank: {value}")
         return normalized
 
-    @field_validator("suit")
+    @field_validator("suit", mode="before")
     @classmethod
     def validate_suit(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
         normalized = value.lower()
         if normalized in SUIT_BY_CODE:
             normalized = SUIT_BY_CODE[normalized]
@@ -69,12 +87,27 @@ class DetectedState(BaseModel):
     street: Street | None = Field(default=None)
     action_context: str | None = Field(default=None)
 
+    @field_validator("hero_cards")
+    @classmethod
+    def validate_hero_card_count(cls, value: list[Card]) -> list[Card]:
+        return _validate_card_count("hero_cards", value, 2)
+
+    @field_validator("board_cards")
+    @classmethod
+    def validate_board_card_count(cls, value: list[Card]) -> list[Card]:
+        return _validate_card_count("board_cards", value, 5)
+
+    @model_validator(mode="after")
+    def validate_unique_cards(self) -> Self:
+        _validate_unique_cards(self.hero_cards, self.board_cards)
+        return self
+
 
 class ParserResult(BaseModel):
     state: DetectedState
     confidences: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
-    raw: dict = Field(default_factory=dict)
+    raw: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("confidences")
     @classmethod
@@ -97,9 +130,24 @@ class CanonicalState(BaseModel):
     action_context: str | None = Field(default=None)
     user_approved: bool = Field(default=False)
 
+    @field_validator("hero_cards")
+    @classmethod
+    def validate_hero_card_count(cls, value: list[Card]) -> list[Card]:
+        return _validate_card_count("hero_cards", value, 2)
+
+    @field_validator("board_cards")
+    @classmethod
+    def validate_board_card_count(cls, value: list[Card]) -> list[Card]:
+        return _validate_card_count("board_cards", value, 5)
+
+    @model_validator(mode="after")
+    def validate_unique_cards(self) -> Self:
+        _validate_unique_cards(self.hero_cards, self.board_cards)
+        return self
+
     @classmethod
     def from_parser_result(cls, parser_result: ParserResult) -> "CanonicalState":
-        state = parser_result.state
+        state = parser_result.state.model_copy(deep=True)
         return cls(
             hero_cards=state.hero_cards,
             board_cards=state.board_cards,
@@ -123,7 +171,7 @@ class RecommendationResult(BaseModel):
     sizing: float | None = Field(default=None, ge=0)
     confidence: float = Field(ge=0, le=1)
     explanation: str
-    raw: dict = Field(default_factory=dict)
+    raw: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobRecord(BaseModel):

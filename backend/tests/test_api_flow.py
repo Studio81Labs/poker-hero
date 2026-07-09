@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 
 import pytest
@@ -11,12 +12,10 @@ from app.storage import FileJobStore, JobNotFoundError
 
 
 VALID_PNG = (
-    b"\x89PNG\r\n\x1a\n"
-    b"\x00\x00\x00\rIHDR"
-    b"\x00\x00\x00\x01\x00\x00\x00\x01"
-    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
-    b"\x00\x00\x00\nIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfeA\xdd\x10\xb1"
-    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+        "AAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
+    )
 )
 
 APPROVED_STATE = {
@@ -114,10 +113,18 @@ def test_job_image_endpoint_returns_upload(tmp_path: Path) -> None:
     assert image_response.content == VALID_PNG
 
 
-def test_upload_rejects_spoofed_image_content(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"this is text pretending to be a png",
+        b"\x89PNG\r\n\x1a\nnot actually a png",
+        b"\xff\xd8\xffnot actually a jpeg",
+    ],
+)
+def test_upload_rejects_spoofed_image_content(tmp_path: Path, content: bytes) -> None:
     client = make_client(tmp_path)
 
-    response = upload_job(client, content=b"this is text pretending to be a png")
+    response = upload_job(client, content=content)
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Upload must contain supported image data"
@@ -134,14 +141,22 @@ def test_upload_rejects_empty_image(tmp_path: Path) -> None:
     assert list((tmp_path / "jobs").iterdir()) == []
 
 
-def test_upload_rejects_non_image_content_type(tmp_path: Path) -> None:
+def test_upload_accepts_valid_image_with_generic_content_type(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
-    response = upload_job(client, content_type="text/plain")
+    response = upload_job(client, content_type="application/octet-stream")
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "Upload must be an image"
-    assert list((tmp_path / "jobs").iterdir()) == []
+    assert response.status_code == 201
+    assert response.json()["status"] == "parsed"
+
+
+def test_upload_accepts_valid_image_with_uppercase_content_type(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = upload_job(client, content_type="IMAGE/PNG")
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "parsed"
 
 
 def test_upload_rejects_oversized_image(tmp_path: Path) -> None:
@@ -314,3 +329,16 @@ def test_image_endpoint_rejects_tampered_image_filename(tmp_path: Path) -> None:
     assert response.status_code == 404
     with pytest.raises(JobNotFoundError):
         store.image_path(job)
+
+
+def test_image_endpoint_returns_not_found_when_image_file_is_missing(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    store = FileJobStore(tmp_path)
+    job = store.get(job_id)
+    store.image_path(job).unlink()
+
+    response = client.get(f"/api/jobs/{job_id}/image")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Job image not found"

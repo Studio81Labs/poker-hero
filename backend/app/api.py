@@ -1,6 +1,9 @@
+from io import BytesIO
+
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from PIL import Image, UnidentifiedImageError
 
 from app.config import Settings, get_settings
 from app.models import CanonicalState, JobRecord, RecommendationRequest
@@ -10,9 +13,7 @@ from app.providers.base import ProviderConfigurationError, ProviderError, missin
 from app.providers.registry import build_provider
 from app.storage import FileJobStore, JobNotFoundError
 
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-JPEG_SIGNATURE = b"\xff\xd8\xff"
-GIF_SIGNATURES = (b"GIF87a", b"GIF89a")
+SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -37,10 +38,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
     async def create_job(file: UploadFile = File(...)) -> JobRecord:
-        content_type = file.content_type or ""
-        if not content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Upload must be an image")
-
         image_bytes = await file.read(active_settings.max_upload_bytes + 1)
         if len(image_bytes) > active_settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
@@ -86,6 +83,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             image_path = store.image_path(job)
         except JobNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
+        if not image_path.is_file():
+            raise HTTPException(status_code=404, detail="Job image not found")
         return FileResponse(image_path)
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
@@ -146,17 +145,13 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
 def is_supported_image(image_bytes: bytes) -> bool:
     if not image_bytes:
         return False
-    if image_bytes.startswith(PNG_SIGNATURE):
-        return True
-    if image_bytes.startswith(JPEG_SIGNATURE):
-        return True
-    if image_bytes.startswith(GIF_SIGNATURES):
-        return True
-    return is_webp(image_bytes)
-
-
-def is_webp(image_bytes: bytes) -> bool:
-    return len(image_bytes) >= 12 and image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP"
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            image_format = image.format
+            image.verify()
+            return image_format in SUPPORTED_IMAGE_FORMATS
+    except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
+        return False
 
 
 def should_auto_approve(confidences: dict[str, float], settings: Settings) -> bool:

@@ -4,6 +4,10 @@
 .env
 backend/.env
 
+# Local runtime data
+/data/
+backend/data/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -15,7 +15,7 @@ This project is for study and post-hand review only. It is not live-play automat
 ## Prerequisites
 
 - Python 3.11+
-- Node `^20.19.0 || ^22.12.0 || >=24.0.0`
+- Node `^20.19.0 || ^22.13.0 || >=24.0.0`
 - npm
 
 ## Backend Setup
@@ -33,6 +33,8 @@ If `python3.13` is not available, use any Python 3.11+ executable. The backend l
 
 ## Frontend Setup
 
+In a second terminal:
+
 ```bash
 cd frontend
 npm ci
@@ -46,7 +48,7 @@ Open `http://localhost:5173`. The frontend defaults to `http://localhost:8000` f
 Backend settings use the `POKER_` environment prefix. Copy `.env.example` to `backend/.env` for local development.
 
 - `POKER_DATA_DIR`: local job/image storage directory. Use `data` in `backend/.env` when running from `backend/`; use `backend/data` only when running from the repo root.
-- `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, or `ocr_cv`.
+- `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, or `ocr_cv`. The `ocr_cv` option is currently a placeholder/unimplemented adapter and raises a configuration error.
 - `POKER_PARSER_LAYOUT_PROFILE`: parser layout profile, currently `generic`.
 - `POKER_PARSER_AUTO_APPROVE_ENABLED`: set `true` only when parsed field confidences should auto-approve.
 - `POKER_PARSER_AUTO_APPROVE_THRESHOLDS`: JSON object of per-field confidence thresholds.
@@ -54,7 +56,7 @@ Backend settings use the `POKER_` environment prefix. Copy `.env.example` to `ba
 - `POKER_EXTERNAL_PARSER_URL`: required by `llm_vision`.
 - `POKER_EXTERNAL_PROVIDER_URL`: required by `external_solver`.
 - `POKER_LLM_ADVICE_URL`: required by `llm_advice`.
-- `POKER_LOCAL_SOLVER_COMMAND`: shell command required by `local_solver`.
+- `POKER_LOCAL_SOLVER_COMMAND`: executable command line required by `local_solver`; it is parsed into argv and run without a shell, so pipes, redirection, and other shell syntax are not supported.
 - `POKER_LOCAL_SOLVER_TIMEOUT_SECONDS`: local solver timeout, default `30`.
 - `POKER_MAX_UPLOAD_BYTES`: maximum upload size, default `10485760`.
 - `POKER_CORS_ORIGINS`: JSON list of allowed origins, for example `["http://localhost:5173"]`.
@@ -64,8 +66,8 @@ Uploads are validated with Pillow-backed image verification. PNG, JPEG, GIF, and
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest
-cd frontend && npm test && npm run build && npm audit
+(cd backend && .venv/bin/python -m pytest)
+(cd frontend && npm test && npm run build && npm audit)
 ```
 
 The backend test suite currently passes at 67 tests with one existing Starlette/httpx deprecation warning. The frontend suite currently passes at 6 tests, and `npm audit` reports 0 vulnerabilities after dependency upgrades.

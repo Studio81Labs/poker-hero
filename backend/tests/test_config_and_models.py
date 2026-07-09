@@ -16,6 +16,7 @@ def test_settings_defaults_use_mock_backends(tmp_path: Path) -> None:
     assert settings.parser_layout_profile == "generic"
     assert settings.parser_auto_approve_enabled is False
     assert settings.recommendation_provider == "mock"
+    assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
 
 
@@ -51,6 +52,11 @@ def test_settings_rejects_invalid_auto_approve_threshold() -> None:
 def test_settings_rejects_non_positive_solver_timeout() -> None:
     with pytest.raises(ValidationError):
         Settings(local_solver_timeout_seconds=0)
+
+
+def test_settings_rejects_non_positive_max_upload_bytes() -> None:
+    with pytest.raises(ValidationError):
+        Settings(max_upload_bytes=0)
 
 
 def test_card_from_code_normalizes_rank_and_suit() -> None:

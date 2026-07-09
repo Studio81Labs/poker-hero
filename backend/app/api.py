@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -9,6 +9,10 @@ from app.parsers.registry import build_parser
 from app.providers.base import ProviderConfigurationError, ProviderError, missing_required_fields
 from app.providers.registry import build_provider
 from app.storage import FileJobStore, JobNotFoundError
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+JPEG_SIGNATURE = b"\xff\xd8\xff"
+GIF_SIGNATURES = (b"GIF87a", b"GIF89a")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -31,13 +35,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "recommendation_provider": active_settings.recommendation_provider,
         }
 
-    @app.post("/api/jobs", response_model=JobRecord)
+    @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
     async def create_job(file: UploadFile = File(...)) -> JobRecord:
         content_type = file.content_type or ""
         if not content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Upload must be an image")
 
-        image_bytes = await file.read()
+        image_bytes = await file.read(active_settings.max_upload_bytes + 1)
+        if len(image_bytes) > active_settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
+        if not is_supported_image(image_bytes):
+            raise HTTPException(status_code=400, detail="Upload must contain supported image data")
+
         job = store.create_job(
             original_filename=file.filename or "screenshot.png",
             image_bytes=image_bytes,
@@ -73,7 +82,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}/image")
     def get_job_image(job_id: str) -> FileResponse:
         job = load_job_or_404(store, job_id)
-        return FileResponse(store.image_path(job))
+        try:
+            image_path = store.image_path(job)
+        except JobNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        return FileResponse(image_path)
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
@@ -128,6 +141,22 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
         return store.get(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Job not found") from exc
+
+
+def is_supported_image(image_bytes: bytes) -> bool:
+    if not image_bytes:
+        return False
+    if image_bytes.startswith(PNG_SIGNATURE):
+        return True
+    if image_bytes.startswith(JPEG_SIGNATURE):
+        return True
+    if image_bytes.startswith(GIF_SIGNATURES):
+        return True
+    return is_webp(image_bytes)
+
+
+def is_webp(image_bytes: bytes) -> bool:
+    return len(image_bytes) >= 12 and image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP"
 
 
 def should_auto_approve(confidences: dict[str, float], settings: Settings) -> bool:

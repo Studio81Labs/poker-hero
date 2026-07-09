@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     llm_advice_url: str | None = Field(default=None)
     local_solver_command: str | None = Field(default=None)
     local_solver_timeout_seconds: float = Field(default=30.0, gt=0)
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

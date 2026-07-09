@@ -20,9 +20,18 @@ class RecommendationProvider(Protocol):
 
 
 def field_has_value(state: CanonicalState, field_name: str) -> bool:
-    value = getattr(state, field_name)
+    if field_name not in state.__class__.model_fields:
+        raise ProviderConfigurationError(f"Unknown required field: {field_name}")
+
+    try:
+        value = getattr(state, field_name)
+    except AttributeError as exc:
+        raise ProviderConfigurationError(f"Unknown required field: {field_name}") from exc
+
     if isinstance(value, list):
         return len(value) > 0
+    if isinstance(value, str):
+        return value.strip() != ""
     return value is not None
 
 

@@ -1,0 +1,168 @@
+name: Frontend Deploy
+
+# Deploys the Vite SPA in ./frontend to Cloudflare Pages.
+#
+# Deploy model:
+#   push to main       -> staging     (auto, path-filtered)
+#   push tag v*        -> production
+#   workflow_dispatch  -> choose staging or production
+#
+# Required repo secret:
+#   CLOUDFLARE_API_TOKEN
+#
+# Required repo vars:
+#   CLOUDFLARE_ACCOUNT_ID
+#   CLOUDFLARE_PAGES_PROJECT_NAME
+#
+# Required per-environment vars (staging / production):
+#   VITE_API_BASE_URL          Public backend API origin used at build time
+#
+# Optional per-environment vars:
+#   CLOUDFLARE_PAGES_BRANCH    Defaults to "staging" for staging and "main" for production
+#   FRONTEND_DEPLOY_URL        Custom URL used for the GitHub environment link and smoke test
+#
+# Optional per-environment secrets for smoke testing Cloudflare Access-protected URLs:
+#   CLOUDFLARE_ACCESS_CLIENT_ID
+#   CLOUDFLARE_ACCESS_CLIENT_SECRET
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-cloudflare-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-cloudflare-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & deploy frontend (Cloudflare Pages)
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Resolve environment
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          CONFIGURED_BRANCH: ${{ vars.CLOUDFLARE_PAGES_BRANCH }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+
+          if [ -n "$CONFIGURED_BRANCH" ]; then
+            PAGES_BRANCH="$CONFIGURED_BRANCH"
+          elif [ "$ENV_NAME" = "production" ]; then
+            PAGES_BRANCH="main"
+          else
+            PAGES_BRANCH="staging"
+          fi
+
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "pages_branch=${PAGES_BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$VITE_API_BASE_URL" || { echo "::error::VITE_API_BASE_URL var is required in environment ${{ steps.env.outputs.name }}"; exit 1; }
+          npm run build
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        working-directory: frontend
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          PAGES_BRANCH: ${{ steps.env.outputs.pages_branch }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
+          FRONTEND_DEPLOY_URL: ${{ vars.FRONTEND_DEPLOY_URL }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN repo secret is required"; exit 1; }
+          test -n "$CLOUDFLARE_PAGES_PROJECT_NAME" || { echo "::error::CLOUDFLARE_PAGES_PROJECT_NAME repo var is required"; exit 1; }
+          test -n "$PAGES_BRANCH" || { echo "::error::Resolved Cloudflare Pages branch is empty"; exit 1; }
+
+          npx wrangler@latest pages deploy dist \
+            --project-name "$CLOUDFLARE_PAGES_PROJECT_NAME" \
+            --branch "$PAGES_BRANCH" \
+            --commit-dirty=true
+
+          if [ -n "$FRONTEND_DEPLOY_URL" ]; then
+            DEPLOY_URL="$FRONTEND_DEPLOY_URL"
+          elif [ "$PAGES_BRANCH" = "main" ]; then
+            DEPLOY_URL="https://${CLOUDFLARE_PAGES_PROJECT_NAME}.pages.dev"
+          else
+            DEPLOY_URL="https://${PAGES_BRANCH}.${CLOUDFLARE_PAGES_PROJECT_NAME}.pages.dev"
+          fi
+
+          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Frontend deployed to ${DEPLOY_URL}"
+
+      - name: Smoke test
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+          ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          if { [ -n "$ACCESS_CLIENT_ID" ] && [ -z "$ACCESS_CLIENT_SECRET" ]; } || { [ -z "$ACCESS_CLIENT_ID" ] && [ -n "$ACCESS_CLIENT_SECRET" ]; }; then
+            echo "::error::Both CLOUDFLARE_ACCESS_CLIENT_ID and CLOUDFLARE_ACCESS_CLIENT_SECRET must be set for Access smoke testing"
+            exit 1
+          fi
+
+          CURL_ARGS=(-sL -o spa.html -w '%{http_code}')
+          if [ -n "$ACCESS_CLIENT_ID" ]; then
+            CURL_ARGS+=(-H "CF-Access-Client-Id: ${ACCESS_CLIENT_ID}")
+            CURL_ARGS+=(-H "CF-Access-Client-Secret: ${ACCESS_CLIENT_SECRET}")
+          fi
+
+          for attempt in 1 2 3 4 5; do
+            HTTP_CODE=$(curl "${CURL_ARGS[@]}" "$URL" || echo '000')
+            if [ "$HTTP_CODE" = "200" ] && grep -qi "Poker Training Analyzer" spa.html; then
+              echo "::notice::Frontend smoke OK (${URL})"
+              exit 0
+            fi
+            echo "Smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
+            sleep 5
+          done
+          echo "::error::Frontend smoke failed for ${URL}"
+          exit 1

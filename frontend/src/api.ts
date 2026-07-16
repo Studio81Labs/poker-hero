@@ -3,7 +3,9 @@ import type { CanonicalState, JobRecord } from "./types";
 const API_BASE_URL =
   typeof import.meta.env.VITE_API_BASE_URL === "string" && import.meta.env.VITE_API_BASE_URL.length > 0
     ? import.meta.env.VITE_API_BASE_URL
-    : "http://localhost:8000";
+    : import.meta.env.DEV
+      ? "http://localhost:8000"
+      : "";
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {

@@ -86,14 +86,14 @@ Recommended private-test setup:
 1. Deploy the frontend on Cloudflare Workers Static Assets.
    - The included GitHub Actions workflow builds `frontend` and deploys it as a testing Worker.
    - Default Worker URL shape: `https://poker.${APP_WORKERS_SUBDOMAIN}.workers.dev`.
-   - Environment variable: `VITE_API_BASE_URL=https://your-api-domain.example.com`
+   - The Worker proxies `/api/*` to `BACKEND_URL`, so browser uploads stay on the HTTPS frontend origin.
 2. Deploy the backend container on Coolify or a VPS.
    - Build context/base directory: repository root.
    - Dockerfile path: `Dockerfile` preferred, or `backend/Dockerfile` if Coolify requires a nested Dockerfile path.
    - Public port: `8000`
    - Persistent volume: `/app/data`
    - Environment variables: use `deploy/backend.env.example` as the starting point.
-   - Set `POKER_CORS_ORIGINS` to the exact Workers/custom frontend URL.
+   - Set `POKER_CORS_ORIGINS` to the exact Workers/custom frontend URL for direct browser fallbacks and local tests.
 3. Put Cloudflare Access in front of both the frontend and API hostnames.
    - Start with an email allowlist for the test users.
    - Protecting only the frontend is not enough; protect the API hostname too.
@@ -118,11 +118,17 @@ Required GitHub repository variables:
 
 Required GitHub repository or `testing` environment variables:
 
-- `VITE_API_BASE_URL`
+- `BACKEND_URL`: backend origin proxied by the Worker, for example `http://nb2xpjyjfb8slxcvm568fdhp.89.167.80.252.sslip.io`.
 
 Optional GitHub repository or `testing` environment variables:
 
 - `APP_WORKER_NAME`: defaults to `poker`.
+- `VITE_API_BASE_URL`: overrides the browser API base URL. Leave unset for the deployed Worker so the frontend calls same-origin `/api/*`.
+
+Optional GitHub repository or `testing` environment secrets for smoke testing through Cloudflare Access:
+
+- `CLOUDFLARE_ACCESS_CLIENT_ID`
+- `CLOUDFLARE_ACCESS_CLIENT_SECRET`
 
 The Cloudflare API token must be able to deploy Workers in the configured account.
 

@@ -15,10 +15,15 @@ name: Frontend Deploy
 #   APP_WORKERS_SUBDOMAIN      e.g. studio81 for *.studio81.workers.dev
 #
 # Required repo or "testing" environment vars:
-#   VITE_API_BASE_URL          Public backend API origin used at build time
+#   BACKEND_URL                Backend origin proxied by the Worker, e.g. http://coolify-app.example.com
 #
 # Optional repo or "testing" environment vars:
 #   APP_WORKER_NAME            Defaults to "poker"
+#   VITE_API_BASE_URL          Overrides the browser API base URL; defaults to same-origin in production
+#
+# Optional repo or "testing" environment secrets for smoke testing Cloudflare Access-protected URLs:
+#   CLOUDFLARE_ACCESS_CLIENT_ID
+#   CLOUDFLARE_ACCESS_CLIENT_SECRET
 
 on:
   push:
@@ -59,10 +64,7 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-        run: |
-          set -euo pipefail
-          test -n "$VITE_API_BASE_URL" || { echo "::error::VITE_API_BASE_URL repo or testing environment var is required"; exit 1; }
-          npm run build
+        run: npm run build
 
       - name: Deploy to Cloudflare Workers
         id: deploy
@@ -72,6 +74,7 @@ jobs:
           WORKERS_SUBDOMAIN: ${{ vars.APP_WORKERS_SUBDOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
         run: |
           set -euo pipefail
           WORKER_NAME="${CONFIGURED_WORKER_NAME:-poker}"
@@ -79,10 +82,12 @@ jobs:
           test -n "$WORKERS_SUBDOMAIN" || { echo "::error::APP_WORKERS_SUBDOMAIN repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN repo secret is required"; exit 1; }
+          test -n "$BACKEND_URL" || { echo "::error::BACKEND_URL repo or testing environment var is required"; exit 1; }
 
           npx wrangler@latest deploy \
             --config wrangler.jsonc \
-            --name "$WORKER_NAME"
+            --name "$WORKER_NAME" \
+            --var "BACKEND_URL:$BACKEND_URL"
 
           DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
@@ -91,16 +96,43 @@ jobs:
       - name: Smoke test
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
         run: |
           set -euo pipefail
+          if { [ -n "$ACCESS_CLIENT_ID" ] && [ -z "$ACCESS_CLIENT_SECRET" ]; } || { [ -z "$ACCESS_CLIENT_ID" ] && [ -n "$ACCESS_CLIENT_SECRET" ]; }; then
+            echo "::error::Both CLOUDFLARE_ACCESS_CLIENT_ID and CLOUDFLARE_ACCESS_CLIENT_SECRET must be set for Access smoke testing"
+            exit 1
+          fi
+
+          CURL_ARGS=(-sL)
+          if [ -n "$ACCESS_CLIENT_ID" ]; then
+            CURL_ARGS+=(-H "CF-Access-Client-Id: ${ACCESS_CLIENT_ID}")
+            CURL_ARGS+=(-H "CF-Access-Client-Secret: ${ACCESS_CLIENT_SECRET}")
+          fi
+
           for attempt in 1 2 3 4 5; do
-            HTTP_CODE=$(curl -sL -o spa.html -w '%{http_code}' "$URL" || echo '000')
+            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o spa.html -w '%{http_code}' "$URL" || echo '000')
             if [ "$HTTP_CODE" = "200" ] && grep -qi "Poker Training Analyzer" spa.html; then
               echo "::notice::Frontend smoke OK (${URL})"
-              exit 0
+              break
             fi
             echo "Smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
             sleep 5
+            if [ "$attempt" = "5" ]; then
+              echo "::error::Frontend smoke failed for ${URL}"
+              exit 1
+            fi
           done
-          echo "::error::Frontend smoke failed for ${URL}"
+
+          for attempt in 1 2 3 4 5; do
+            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-health.json -w '%{http_code}' "$URL/api/health" || echo '000')
+            if [ "$HTTP_CODE" = "200" ] && grep -q '"status"' api-health.json; then
+              echo "::notice::API proxy smoke OK (${URL}/api/health)"
+              exit 0
+            fi
+            echo "API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
+            sleep 5
+          done
+          echo "::error::API proxy smoke failed for ${URL}/api/health"
           exit 1

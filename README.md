@@ -47,7 +47,8 @@ Open `http://localhost:5173`. The frontend defaults to `http://localhost:8000` f
 
 The repository includes containers for both deployment shapes:
 
-- `backend/Dockerfile`: FastAPI API for Coolify, a VPS, or a container host.
+- `Dockerfile`: FastAPI API for Coolify, a VPS, or a container host using the repository root as build context.
+- `backend/Dockerfile`: same backend image, kept for hosts that let you select a Dockerfile path while still using the repository root as build context.
 - `frontend/Dockerfile`: optional static frontend image served by Nginx.
 - `compose.yaml`: local full-stack smoke test.
 
@@ -62,7 +63,7 @@ Then open `http://localhost:8080`. The backend is exposed on `http://localhost:8
 To build only the backend:
 
 ```bash
-docker build -t poker-training-api ./backend
+docker build -t poker-training-api .
 docker run --rm -p 8000:8000 \
   -v poker-training-data:/app/data \
   --env-file deploy/backend.env.example \
@@ -88,7 +89,8 @@ Recommended private-test setup:
    - Build output directory: `dist`
    - Environment variable: `VITE_API_BASE_URL=https://your-api-domain.example.com`
 2. Deploy the backend container on Coolify or a VPS.
-   - Dockerfile path: `backend/Dockerfile`
+   - Build context/base directory: repository root.
+   - Dockerfile path: `Dockerfile` preferred, or `backend/Dockerfile` if Coolify requires a nested Dockerfile path.
    - Public port: `8000`
    - Persistent volume: `/app/data`
    - Environment variables: use `deploy/backend.env.example` as the starting point.

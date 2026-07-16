@@ -83,19 +83,17 @@ docker run --rm -p 8080:80 poker-training-frontend
 
 Recommended private-test setup:
 
-1. Deploy the frontend on Cloudflare Pages.
-   - Root directory: `frontend`
-   - Build command: `npm ci && npm run build`
-   - Build output directory: `dist`
+1. Deploy the frontend on Cloudflare Workers Static Assets.
+   - The included GitHub Actions workflow builds `frontend` and deploys it as a testing Worker.
+   - Default Worker URL shape: `https://poker.${APP_WORKERS_SUBDOMAIN}.workers.dev`.
    - Environment variable: `VITE_API_BASE_URL=https://your-api-domain.example.com`
-   - Or use the included GitHub Actions workflow at `.github/workflows/frontend-cloudflare-deploy.yml`.
 2. Deploy the backend container on Coolify or a VPS.
    - Build context/base directory: repository root.
    - Dockerfile path: `Dockerfile` preferred, or `backend/Dockerfile` if Coolify requires a nested Dockerfile path.
    - Public port: `8000`
    - Persistent volume: `/app/data`
    - Environment variables: use `deploy/backend.env.example` as the starting point.
-   - Set `POKER_CORS_ORIGINS` to the exact Cloudflare Pages/custom frontend URL.
+   - Set `POKER_CORS_ORIGINS` to the exact Workers/custom frontend URL.
 3. Put Cloudflare Access in front of both the frontend and API hostnames.
    - Start with an email allowlist for the test users.
    - Protecting only the frontend is not enough; protect the API hostname too.
@@ -104,12 +102,10 @@ For MVP auth, prefer Cloudflare Access over an in-app password file. It gives us
 
 ### Cloudflare Frontend Workflow
 
-The frontend deploy workflow uses Cloudflare Pages through Wrangler:
+The frontend deploy workflow uses Cloudflare Workers Static Assets through Wrangler:
 
-- Push to `main`: deploys staging.
-- Push tag `v*`: deploys production.
-- Manual `workflow_dispatch`: choose staging or production.
-- If the Pages project does not exist yet, the workflow creates it before the first deploy.
+- Push to `main`: deploys the testing Worker.
+- Manual `workflow_dispatch`: deploys the testing Worker.
 
 Required GitHub repository secret:
 
@@ -118,26 +114,17 @@ Required GitHub repository secret:
 Required GitHub repository variables:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_PAGES_PROJECT_NAME`
+- `APP_WORKERS_SUBDOMAIN`: for example `studio81`, producing `https://poker.studio81.workers.dev` when using the default Worker name.
 
-Required GitHub environment variables for both `staging` and `production`:
+Required GitHub repository or `testing` environment variables:
 
 - `VITE_API_BASE_URL`
 
-Optional GitHub environment variables:
+Optional GitHub repository or `testing` environment variables:
 
-- `CLOUDFLARE_PAGES_BRANCH`: defaults to `staging` for staging and `main` for production.
-- `CLOUDFLARE_PAGES_PRODUCTION_BRANCH`: defaults to `main` when the workflow creates a missing Pages project.
-- `FRONTEND_DEPLOY_URL`: custom URL for the GitHub environment link and smoke test, useful when using a custom domain.
+- `APP_WORKER_NAME`: defaults to `poker`.
 
-The Cloudflare API token must be able to create/edit Pages projects in the configured account.
-
-Optional GitHub environment secrets for smoke testing through Cloudflare Access:
-
-- `CLOUDFLARE_ACCESS_CLIENT_ID`
-- `CLOUDFLARE_ACCESS_CLIENT_SECRET`
-
-When these are set, the workflow sends the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers during the smoke test.
+The Cloudflare API token must be able to deploy Workers in the configured account.
 
 ## Configuration
 

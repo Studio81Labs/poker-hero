@@ -109,6 +109,7 @@ The frontend deploy workflow uses Cloudflare Pages through Wrangler:
 - Push to `main`: deploys staging.
 - Push tag `v*`: deploys production.
 - Manual `workflow_dispatch`: choose staging or production.
+- If the Pages project does not exist yet, the workflow creates it before the first deploy.
 
 Required GitHub repository secret:
 
@@ -126,7 +127,10 @@ Required GitHub environment variables for both `staging` and `production`:
 Optional GitHub environment variables:
 
 - `CLOUDFLARE_PAGES_BRANCH`: defaults to `staging` for staging and `main` for production.
+- `CLOUDFLARE_PAGES_PRODUCTION_BRANCH`: defaults to `main` when the workflow creates a missing Pages project.
 - `FRONTEND_DEPLOY_URL`: custom URL for the GitHub environment link and smoke test, useful when using a custom domain.
+
+The Cloudflare API token must be able to create/edit Pages projects in the configured account.
 
 Optional GitHub environment secrets for smoke testing through Cloudflare Access:
 

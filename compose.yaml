@@ -1,7 +1,8 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: Dockerfile
     environment:
       POKER_DATA_DIR: /app/data
       POKER_PARSER_PROVIDER: ${POKER_PARSER_PROVIDER:-ocr_cv}

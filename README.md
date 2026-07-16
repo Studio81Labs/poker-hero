@@ -88,6 +88,7 @@ Recommended private-test setup:
    - Build command: `npm ci && npm run build`
    - Build output directory: `dist`
    - Environment variable: `VITE_API_BASE_URL=https://your-api-domain.example.com`
+   - Or use the included GitHub Actions workflow at `.github/workflows/frontend-cloudflare-deploy.yml`.
 2. Deploy the backend container on Coolify or a VPS.
    - Build context/base directory: repository root.
    - Dockerfile path: `Dockerfile` preferred, or `backend/Dockerfile` if Coolify requires a nested Dockerfile path.
@@ -100,6 +101,39 @@ Recommended private-test setup:
    - Protecting only the frontend is not enough; protect the API hostname too.
 
 For MVP auth, prefer Cloudflare Access over an in-app password file. It gives user allowlists, login, sessions, and auditability without adding database work. If the app later needs per-user saved history or roles, use a small SQLite database in `/app/data` rather than a plain auth file. A plain file can work for a tiny admin-managed allowlist, but it is not a great place for passwords once the app is on the internet.
+
+### Cloudflare Frontend Workflow
+
+The frontend deploy workflow uses Cloudflare Pages through Wrangler:
+
+- Push to `main`: deploys staging.
+- Push tag `v*`: deploys production.
+- Manual `workflow_dispatch`: choose staging or production.
+
+Required GitHub repository secret:
+
+- `CLOUDFLARE_API_TOKEN`
+
+Required GitHub repository variables:
+
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_PAGES_PROJECT_NAME`
+
+Required GitHub environment variables for both `staging` and `production`:
+
+- `VITE_API_BASE_URL`
+
+Optional GitHub environment variables:
+
+- `CLOUDFLARE_PAGES_BRANCH`: defaults to `staging` for staging and `main` for production.
+- `FRONTEND_DEPLOY_URL`: custom URL for the GitHub environment link and smoke test, useful when using a custom domain.
+
+Optional GitHub environment secrets for smoke testing through Cloudflare Access:
+
+- `CLOUDFLARE_ACCESS_CLIENT_ID`
+- `CLOUDFLARE_ACCESS_CLIENT_SECRET`
+
+When these are set, the workflow sends the `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers during the smoke test.
 
 ## Configuration
 

@@ -11,5 +11,5 @@ def build_parser(settings: Settings) -> ScreenshotParser:
     if settings.parser_provider == "llm_vision":
         return HttpVisionParser(settings)
     if settings.parser_provider == "ocr_cv":
-        return OcrCvParser()
+        return OcrCvParser(settings.parser_layout_profile)
     raise ParserConfigurationError(f"Unknown parser provider: {settings.parser_provider}")

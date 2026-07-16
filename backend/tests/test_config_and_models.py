@@ -8,14 +8,14 @@ from app.config import Settings
 from app.models import Card, CanonicalState, DetectedState, ParserResult, RecommendationResult
 
 
-def test_settings_defaults_use_mock_backends(tmp_path: Path) -> None:
+def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)
 
     assert settings.data_dir == tmp_path
     assert settings.parser_provider == "mock"
     assert settings.parser_layout_profile == "generic"
     assert settings.parser_auto_approve_enabled is False
-    assert settings.recommendation_provider == "mock"
+    assert settings.recommendation_provider == "rule_based"
     assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
 

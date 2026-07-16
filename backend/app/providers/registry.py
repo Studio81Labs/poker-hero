@@ -3,11 +3,14 @@ from app.providers.base import ProviderConfigurationError, RecommendationProvide
 from app.providers.http_provider import HttpRecommendationProvider
 from app.providers.local_solver import LocalSolverProvider
 from app.providers.mock import MockRecommendationProvider
+from app.providers.rule_based import RuleBasedTrainingProvider
 
 
 def build_provider(settings: Settings) -> RecommendationProvider:
     if settings.recommendation_provider == "mock":
         return MockRecommendationProvider()
+    if settings.recommendation_provider == "rule_based":
+        return RuleBasedTrainingProvider()
     if settings.recommendation_provider == "local_solver":
         return LocalSolverProvider(settings)
     if settings.recommendation_provider == "external_solver":

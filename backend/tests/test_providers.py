@@ -26,17 +26,121 @@ def approved_state() -> CanonicalState:
     )
 
 
-def test_mock_provider_returns_training_recommendation(tmp_path: Path) -> None:
+def test_mock_provider_uses_rule_based_training_recommendation(tmp_path: Path) -> None:
     provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="mock"))
     request = RecommendationRequest(state=approved_state(), provider=provider.name)
 
     result = provider.recommend(request)
 
-    assert result.action == "raise"
-    assert result.sizing == 7.5
-    assert result.confidence == 0.72
-    assert "training" in result.explanation.lower()
+    assert result.action == "call"
+    assert result.sizing is None
+    assert "rule-based training recommendation" in result.explanation.lower()
     assert result.raw["provider"] == "mock"
+    assert result.raw["engine"] == "rule_based_training_v2"
+    assert "equity" in result.raw
+
+
+def test_rule_based_provider_checks_missed_flop_with_no_bet(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="rule_based"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("9c")],
+        board_cards=[Card.from_code("Th"), Card.from_code("Kd"), Card.from_code("4c")],
+        pot_size=10,
+        current_bet=0,
+        effective_stack=16.1,
+        players_in_hand=4,
+        street="flop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "check"
+    assert result.sizing is None
+    assert result.raw["provider"] == "rule_based"
+    assert result.raw["hand_category"] == "high card"
+    assert result.raw["equity"]["iterations"] > 0
+
+
+def test_rule_based_provider_controls_weak_top_pair_multiway(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="rule_based"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("7d")],
+        board_cards=[Card.from_code("As"), Card.from_code("8s"), Card.from_code("Qh")],
+        pot_size=3,
+        current_bet=0,
+        effective_stack=96.5,
+        players_in_hand=3,
+        street="flop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "check"
+    assert result.sizing is None
+    assert result.raw["hand_category"] == "one pair"
+    assert result.raw["top_pair_kicker"] == 7
+    assert result.raw["wet_board"] is True
+
+
+def test_rule_based_provider_folds_weak_offsuit_preflop_call(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="rule_based"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Kc"), Card.from_code("7d")],
+        pot_size=4.5,
+        current_bet=2.5,
+        effective_stack=38.3,
+        players_in_hand=3,
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "fold"
+    assert result.sizing is None
+    assert result.raw["provider"] == "rule_based"
+    assert result.raw["realized_equity"] < result.raw["required_equity"]
+
+
+def test_rule_based_provider_defends_ace_high_heads_up_preflop(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="rule_based"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("7d"), Card.from_code("Ah")],
+        pot_size=3.5,
+        current_bet=1.5,
+        effective_stack=100.4,
+        players_in_hand=2,
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "call"
+    assert result.sizing is None
+    assert result.raw["realized_equity"] > result.raw["required_equity"]
+
+
+def test_rule_based_provider_bets_strong_made_hand(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="rule_based"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Kh"), Card.from_code("Ks")],
+        board_cards=[Card.from_code("Kd"), Card.from_code("7c"), Card.from_code("2h")],
+        pot_size=10,
+        current_bet=0,
+        effective_stack=80,
+        players_in_hand=2,
+        street="flop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "bet"
+    assert result.sizing == 7
+    assert "strong made hand" in result.explanation.lower()
 
 
 def test_required_field_validation_reports_missing_values() -> None:
@@ -65,15 +169,21 @@ def test_registry_rejects_unknown_provider(tmp_path: Path) -> None:
         build_provider(Settings(data_dir=tmp_path, recommendation_provider="missing"))
 
 
-def test_local_solver_requires_command(tmp_path: Path) -> None:
+def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path) -> None:
     provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="local_solver"))
     request = RecommendationRequest(state=approved_state(), provider=provider.name)
 
-    with pytest.raises(ProviderConfigurationError, match="POKER_LOCAL_SOLVER_COMMAND"):
-        provider.recommend(request)
+    result = provider.recommend(request)
+
+    assert result.action == "call"
+    assert result.raw["provider"] == "local_solver"
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["equity"]["method"] == "monte_carlo_range"
+    assert len(result.raw["candidates"]) >= 2
+    assert "local ev solver" in result.explanation.lower()
 
 
-def test_local_solver_rejects_whitespace_command(tmp_path: Path) -> None:
+def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) -> None:
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
@@ -82,8 +192,10 @@ def test_local_solver_rejects_whitespace_command(tmp_path: Path) -> None:
         )
     )
 
-    with pytest.raises(ProviderConfigurationError, match="POKER_LOCAL_SOLVER_COMMAND"):
-        provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+    result = provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+
+    assert result.raw["provider"] == "local_solver"
+    assert result.raw["engine"] == "local_ev_solver_v1"
 
 
 def test_local_solver_reads_json_response(tmp_path: Path) -> None:

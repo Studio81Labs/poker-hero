@@ -3,9 +3,21 @@ from typing import BinaryIO
 
 import httpx
 import pytest
+from PIL import Image
 
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
+from app.parsers.ocr_cv import (
+    OcrCvParser,
+    _big_blind_from_numeric_sequence,
+    _classify_suit,
+    _clean_number_text,
+    _hero_slots_have_visible_cards,
+    _match_rank,
+    _rank_template,
+    _street_from_board_count,
+    format_number,
+)
 from app.parsers.registry import build_parser
 
 
@@ -204,8 +216,80 @@ def test_http_vision_parser_invalid_payload_raises_parser_error(
         parser.parse(image_path)
 
 
-def test_ocr_cv_parser_returns_configuration_error(tmp_path: Path) -> None:
+def test_registry_builds_ocr_cv_parser(tmp_path: Path) -> None:
     parser = build_parser(Settings(data_dir=tmp_path, parser_provider="ocr_cv"))
 
-    with pytest.raises(ParserConfigurationError, match="OCR/CV parser requires"):
+    assert isinstance(parser, OcrCvParser)
+    assert parser.name == "ocr_cv"
+
+
+def test_ocr_cv_parser_missing_file_raises_parser_error(tmp_path: Path) -> None:
+    parser = build_parser(Settings(data_dir=tmp_path, parser_provider="ocr_cv"))
+
+    with pytest.raises(ParserError, match="Screenshot file does not exist"):
         parser.parse(tmp_path / "table.png")
+
+
+def test_ocr_cv_rank_templates_match_known_ranks() -> None:
+    for rank in ["2", "3", "4", "5", "7", "8", "9", "T", "J", "Q", "K", "A"]:
+        matched_rank, score = _match_rank(_rank_template(rank))
+
+        assert matched_rank == rank
+        assert score == 1.0
+
+
+def test_ocr_cv_classifies_card_body_suits() -> None:
+    examples = {
+        "clubs": (22, 110, 41),
+        "diamonds": (12, 116, 139),
+        "hearts": (149, 22, 31),
+        "spades": (88, 86, 90),
+    }
+
+    for expected_suit, rgb in examples.items():
+        suit, confidence = _classify_suit(Image.new("RGB", (66, 74), rgb))
+
+        assert suit == expected_suit
+        assert confidence > 0.7
+
+
+def test_ocr_cv_street_from_board_count() -> None:
+    assert _street_from_board_count(0) == "preflop"
+    assert _street_from_board_count(3) == "flop"
+    assert _street_from_board_count(4) == "turn"
+    assert _street_from_board_count(5) == "river"
+    assert _street_from_board_count(2) is None
+
+
+def test_ocr_cv_numeric_text_cleanup_limits_fractional_noise() -> None:
+    assert _clean_number_text("16.100") == "16.10"
+    assert _clean_number_text("4..50") == "4.50"
+    assert _clean_number_text("...") is None
+
+
+def test_ocr_cv_format_number_keeps_readable_bb_amounts() -> None:
+    assert format_number(10.0) == "10"
+    assert format_number(2.5) == "2.5"
+    assert format_number(97.1) == "97.1"
+
+
+def test_ocr_cv_reads_big_blind_from_noisy_header_sequence() -> None:
+    assert _big_blind_from_numeric_sequence("1100.05?00.101.25.9.1.20") == 0.1
+    assert _big_blind_from_numeric_sequence("0.10?0.20") == 0.2
+    assert _big_blind_from_numeric_sequence("25.9.1.20") is None
+
+
+def test_ocr_cv_distinguishes_empty_hero_slots_from_failed_hero_ocr() -> None:
+    assert not _hero_slots_have_visible_cards(
+        [
+            {"kind": "hero", "reason": "empty"},
+            {"kind": "hero", "reason": "empty"},
+            {"kind": "board", "reason": "empty"},
+        ]
+    )
+    assert _hero_slots_have_visible_cards(
+        [
+            {"kind": "hero", "reason": "rank_not_matched"},
+            {"kind": "hero", "reason": "empty"},
+        ]
+    )

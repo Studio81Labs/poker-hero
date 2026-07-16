@@ -28,7 +28,7 @@ class Settings(BaseSettings):
             "street": 0.99,
         }
     )
-    recommendation_provider: str = Field(default="mock")
+    recommendation_provider: str = Field(default="rule_based")
     external_parser_url: str | None = Field(default=None)
     external_provider_url: str | None = Field(default=None)
     llm_advice_url: str | None = Field(default=None)

@@ -87,8 +87,8 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert recommend.status_code == 200
     result = recommend.json()
     assert result["status"] == "recommended"
-    assert result["recommendation"]["action"] == "raise"
-    assert result["recommendation"]["sizing"] == 7.5
+    assert result["recommendation"]["action"] == "call"
+    assert result["recommendation"]["sizing"] is None
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:

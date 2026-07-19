@@ -498,6 +498,7 @@ export default function App() {
   const [shareMode, setShareMode] = useState<ShareMode>("window");
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [screenSourceLabel, setScreenSourceLabel] = useState<string | null>(null);
+  const [livePreviewVisible, setLivePreviewVisible] = useState(false);
   const [automationEnabled, setAutomationEnabled] = useState(true);
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [automationApprove, setAutomationApprove] = useState(true);
@@ -569,6 +570,7 @@ export default function App() {
     const onEnded = () => {
       setScreenStream((current) => (current === screenStream ? null : current));
       setScreenSourceLabel(null);
+      setLivePreviewVisible(false);
     };
     tracks.forEach((track) => track.addEventListener("ended", onEnded));
 
@@ -605,6 +607,7 @@ export default function App() {
     const nextState = stateFromJob(nextJob);
     setForm(stateToForm(nextState));
     setApprovedStateKey(nextJob.approved_state ? approvalKey(nextJob.approved_state) : null);
+    setLivePreviewVisible(false);
     setError(null);
   }
 
@@ -800,11 +803,13 @@ export default function App() {
         stopMediaStream(stream);
         setScreenSourceLabel(null);
         setScreenStream(null);
+        setLivePreviewVisible(false);
         setError(wrongShareModeMessage(displaySurface, mode));
         return;
       }
       setScreenSourceLabel(displaySurfaceLabel(displaySurface) ?? shareModeLabel(mode));
       setScreenStream(stream);
+      setLivePreviewVisible(true);
     } catch (shareError) {
       setError(messageFromError(shareError, "Screen sharing was cancelled"));
     }
@@ -813,6 +818,7 @@ export default function App() {
   function onStopScreenShare() {
     setScreenSourceLabel(null);
     setScreenStream(null);
+    setLivePreviewVisible(false);
   }
 
   async function captureSharedScreenFile(): Promise<File> {
@@ -1069,9 +1075,14 @@ export default function App() {
                     ))}
                   </div>
                   <div className="screen-capture-actions">
-                    <button type="button" className="secondary-button share-source-button" onClick={() => onStartScreenShare()} disabled={screenSharing || busy}>
+                    <button
+                      type="button"
+                      className="secondary-button share-source-button"
+                      onClick={() => (screenSharing ? setLivePreviewVisible(true) : onStartScreenShare())}
+                      disabled={busy || (screenSharing && livePreviewVisible)}
+                    >
                       <span className={screenSharing ? "source-indicator active" : "source-indicator"} aria-hidden="true" />
-                      Share {shareModeLabel(shareMode).toLowerCase()}
+                      {screenSharing ? `View live ${shareModeLabel(shareMode).toLowerCase()}` : `Share ${shareModeLabel(shareMode).toLowerCase()}`}
                     </button>
                     <button type="button" className="secondary-button icon-action" onClick={onCaptureScreen} disabled={!screenSharing || busy} title="Capture and parse" aria-label="Capture and parse">
                       <Camera size={15} aria-hidden="true" />
@@ -1188,9 +1199,9 @@ export default function App() {
             <strong>{frameStreet}</strong>
           </div>
           <div className="table-frame-body">
-            <video className={screenSharing ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
-            {screenshotUrl ? <img className={screenSharing ? "screenshot-preview hidden" : "screenshot-preview"} src={screenshotUrl} alt="Uploaded poker table screenshot" /> : null}
-            {!screenSharing && !screenshotUrl ? <div className="empty-screenshot">No screenshot uploaded</div> : null}
+            <video className={screenSharing && livePreviewVisible ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
+            {screenshotUrl ? <img className={screenSharing && livePreviewVisible ? "screenshot-preview hidden" : "screenshot-preview"} src={screenshotUrl} alt="Uploaded poker table screenshot" /> : null}
+            {(!screenSharing || !livePreviewVisible) && !screenshotUrl ? <div className="empty-screenshot">No screenshot uploaded</div> : null}
           </div>
           <div className="confidence-summary" aria-label="Parser confidence summary">
             <div>

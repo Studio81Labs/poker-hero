@@ -356,11 +356,15 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Tab" }));
     await user.click(screen.getByRole("button", { name: "Share tab" }));
     expect(await screen.findByText("Tab sharing active")).toBeInTheDocument();
+    expect(screen.getByLabelText("Shared screen preview")).toHaveClass("active");
     setSharedPreviewSize();
 
     await user.click(screen.getByRole("button", { name: "Capture and parse" }));
 
     expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
+    expect(screen.getByAltText("Uploaded poker table screenshot")).not.toHaveClass("hidden");
+    expect(screen.getByLabelText("Shared screen preview")).not.toHaveClass("active");
+    expect(screen.getByRole("button", { name: "View live tab" })).toBeEnabled();
     expect(screen.getByLabelText("Screenshots queue")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open screenshot 1: screen-capture.png" })).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(1);
@@ -373,6 +377,10 @@ describe("App", () => {
       video: { frameRate: 8, displaySurface: "browser" },
     });
     expect(addEventListener).toHaveBeenCalledWith("ended", expect.any(Function));
+
+    await user.click(screen.getByRole("button", { name: "View live tab" }));
+    expect(screen.getByLabelText("Shared screen preview")).toHaveClass("active");
+    expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveClass("hidden");
   });
 
   it("runs capture, approval, and recommendation through automation", async () => {

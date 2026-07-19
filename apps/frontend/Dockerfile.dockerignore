@@ -2,6 +2,7 @@
 .worktrees
 .env
 .env.local
+apps/frontend/.env*
 apps/backend
 apps/frontend/coverage
 apps/frontend/dist

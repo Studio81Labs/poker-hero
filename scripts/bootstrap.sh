@@ -8,11 +8,24 @@ command -v node >/dev/null 2>&1 || { echo "Node.js 24+ is required" >&2; exit 1;
 command -v pnpm >/dev/null 2>&1 || { echo "pnpm 10+ is required" >&2; exit 1; }
 
 PYTHON_BIN=""
-for candidate in python3.13 python3.12 python3.11; do
-  if command -v "$candidate" >/dev/null 2>&1; then
-    PYTHON_BIN="$candidate"
-    break
+check_python_candidate() {
+  candidate_name=$1
+  if command -v "$candidate_name" >/dev/null 2>&1 \
+    && "$candidate_name" -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' \
+      >/dev/null 2>&1; then
+    PYTHON_BIN=$(command -v "$candidate_name")
   fi
+}
+
+for candidate in python3 python; do
+  check_python_candidate "$candidate"
+  [ -n "$PYTHON_BIN" ] && break
+done
+
+python_minor=30
+while [ -z "$PYTHON_BIN" ] && [ "$python_minor" -ge 11 ]; do
+  check_python_candidate "python3.$python_minor"
+  python_minor=$((python_minor - 1))
 done
 
 if [ -z "$PYTHON_BIN" ]; then

@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    environment:
+      POKER_DATA_DIR: /app/data
+      POKER_PARSER_PROVIDER: ${POKER_PARSER_PROVIDER:-ocr_cv}
+      POKER_PARSER_LAYOUT_PROFILE: ${POKER_PARSER_LAYOUT_PROFILE:-fortuna_nations}
+      POKER_RECOMMENDATION_PROVIDER: ${POKER_RECOMMENDATION_PROVIDER:-local_solver}
+      POKER_LOCAL_SOLVER_COMMAND: ${POKER_LOCAL_SOLVER_COMMAND:-}
+      POKER_LOCAL_SOLVER_TIMEOUT_SECONDS: ${POKER_LOCAL_SOLVER_TIMEOUT_SECONDS:-30}
+      POKER_MAX_UPLOAD_BYTES: ${POKER_MAX_UPLOAD_BYTES:-10485760}
+      POKER_CORS_ORIGINS: '${POKER_CORS_ORIGINS:-["http://localhost:5173","http://localhost:8080"]}'
+    ports:
+      - "8000:8000"
+    volumes:
+      - poker-data:/app/data
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  poker-data:

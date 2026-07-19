@@ -1,0 +1,28 @@
+{
+  "name": "poker-hero",
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.33.0",
+  "private": true,
+  "description": "Post-hand Texas Hold'em screenshot training analyzer",
+  "author": {
+    "name": "Studio81 Labs s.r.o.",
+    "email": "dev@studio81.cz",
+    "url": "https://www.studio81.cz"
+  },
+  "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "backend:dev": "cd apps/backend && .venv/bin/python -m uvicorn app.main:app --reload --host localhost --port 8000",
+    "backend:start": "cd apps/backend && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "backend:test": "cd apps/backend && .venv/bin/python -m pytest",
+    "frontend:dev": "pnpm -C apps/frontend dev",
+    "frontend:build": "pnpm -C apps/frontend build",
+    "frontend:test": "pnpm -C apps/frontend test",
+    "frontend:test:watch": "pnpm -C apps/frontend test:watch",
+    "docker:up": "docker compose -f infra/docker/compose.yaml up --build",
+    "docker:down": "docker compose -f infra/docker/compose.yaml down"
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  }
+}

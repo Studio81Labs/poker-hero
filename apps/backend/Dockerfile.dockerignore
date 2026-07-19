@@ -1,0 +1,16 @@
+.git
+.worktrees
+.env
+apps/backend/.env
+apps/backend/.venv
+apps/backend/__pycache__
+apps/backend/.pytest_cache
+apps/backend/data
+apps/backend/tests
+apps/frontend
+docs
+infra
+node_modules
+*.pyc
+*.pyo
+*.pyd

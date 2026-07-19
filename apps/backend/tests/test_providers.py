@@ -180,7 +180,7 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.raw["engine"] == "local_ev_solver_v1"
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
-    assert "local ev solver" in result.explanation.lower()
+    assert "solver compared candidate actions" in result.explanation.lower()
 
 
 def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) -> None:

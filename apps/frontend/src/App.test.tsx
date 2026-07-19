@@ -194,6 +194,13 @@ describe("App", () => {
     expect(screen.getByLabelText("Screenshots queue")).toBeInTheDocument();
     expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "About this app" }));
+    expect(screen.getByRole("dialog", { name: "About Poker Training Analyzer" })).toBeInTheDocument();
+    expect(screen.getByText(/OCR and computer vision read the cards/)).toBeInTheDocument();
+    expect(screen.getByText(/solver compares candidate actions/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close app information" }));
+    expect(screen.queryByRole("dialog", { name: "About Poker Training Analyzer" })).not.toBeInTheDocument();
+
     await user.click(screen.getByRole("button", { name: "Configure automation" }));
     expect(screen.getByRole("dialog", { name: "Configure automation" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: /Auto-approve parsed state/ })).toHaveAttribute("aria-checked", "true");
@@ -209,13 +216,16 @@ describe("App", () => {
     fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201));
     render(<App />);
 
-    await uploadScreenshot();
+    const user = await uploadScreenshot();
 
     expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Qs Jc 2h")).toBeInTheDocument();
     expect(screen.getByDisplayValue("12.5")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "About this app" }));
+    expect(screen.getAllByText("Demo engine")).toHaveLength(2);
   });
 
   it("uploads multiple screenshots and switches between parsed jobs", async () => {

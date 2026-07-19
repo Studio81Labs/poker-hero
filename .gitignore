@@ -1,24 +1,40 @@
 .worktrees/
 
-# Local config
-.env
-backend/.env
+# Dependencies
+node_modules/
+.pnpm-store/
 
-# Local runtime data
+# Build and test output
+dist/
+coverage/
+.vite/
+.vitest/
+.pytest_cache/
+
+# Environment and local runtime data
+.env
+.env.local
+.env.*.local
+apps/backend/.env
+apps/backend/data/
 /data/
-backend/data/
+.dev.vars*
+.wrangler/
 
 # Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
 *.egg-info/
 .venv/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/coverage/
-frontend/.vite/
-frontend/.vitest/
-frontend/node_modules/.cache/
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

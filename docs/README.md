@@ -1,0 +1,9 @@
+# Poker Hero Documentation
+
+- `specs/`: current product specification and archived implementation plans
+- `reference/`: current architecture and system contracts
+- `process/`: development, deployment, and operational procedures
+- `decisions/`: architecture decision records when durable decisions are needed
+
+The canonical product source is
+[`specs/poker-hero-product-spec.md`](./specs/poker-hero-product-spec.md).

@@ -1,0 +1,12 @@
+.git
+.worktrees
+.env
+.env.local
+apps/backend
+apps/frontend/coverage
+apps/frontend/dist
+apps/frontend/node_modules
+docs
+infra
+node_modules
+*.log

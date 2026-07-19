@@ -525,8 +525,11 @@ export default function App() {
   const parserWarnings = job?.parser_result?.warnings ?? [];
   const warnings = job?.error ? [...parserWarnings, job.error] : parserWarnings;
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
-  const canApprove = Boolean(job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street);
-  const canRecommend = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
+  const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
+  const canApprove = Boolean(
+    job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street && !currentStateApproved,
+  );
+  const canRecommend = currentStateApproved && !job?.recommendation;
   const stateControlsDisabled = busy;
   const screenshotUrl = useMemo(() => (job && job.image_filename !== "" ? imageUrl(job.id) : null), [job]);
   const screenSharing = screenStream !== null;
@@ -1294,7 +1297,7 @@ export default function App() {
               </Field>
             </div>
 
-            {canRecommend && job?.recommendation ? (
+            {currentStateApproved && job?.recommendation ? (
               <section className="recommendation" aria-label="Recommendation">
                 <div className="recommendation-head">
                   <span>Recommended play</span>

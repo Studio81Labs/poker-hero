@@ -3,6 +3,8 @@
 .env
 .env.local
 apps/frontend/.env*
+apps/frontend/.dev.vars*
+apps/frontend/.wrangler/
 apps/backend
 apps/frontend/coverage
 apps/frontend/dist

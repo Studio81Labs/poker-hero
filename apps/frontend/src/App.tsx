@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Camera, Check, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -84,6 +84,16 @@ const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
+const PROVIDER_LABELS: Record<string, string> = {
+  external_solver: "External solver",
+  llm_advice: "LLM adviser",
+  llm_vision: "External vision model",
+  local_solver: "Local EV solver",
+  mock: "Demo engine",
+  ocr_cv: "OCR + computer vision",
+  rule_based: "Rule-based trainer",
+};
+
 const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
   { value: "browser", label: "Tab" },
   { value: "window", label: "Window" },
@@ -101,6 +111,10 @@ const CONFIDENCE_KEYS = [
   "hero_position",
   "action_context",
 ] as const;
+
+function providerLabel(provider: string): string {
+  return PROVIDER_LABELS[provider] ?? provider.replace(/_/g, " ");
+}
 
 function readHistory(): HistoryItem[] {
   if (typeof window === "undefined") {
@@ -501,6 +515,7 @@ export default function App() {
   const [livePreviewVisible, setLivePreviewVisible] = useState(false);
   const [automationEnabled, setAutomationEnabled] = useState(true);
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [automationApprove, setAutomationApprove] = useState(true);
   const [automationRecommend, setAutomationRecommend] = useState(true);
   const [automationAllowWarnings, setAutomationAllowWarnings] = useState(false);
@@ -537,7 +552,6 @@ export default function App() {
   const filmstripCount = jobs.length > 0 ? jobs.length : files.length;
   const frameLabel = job?.original_filename ?? (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
   const frameStreet = form.street === "" ? "No street" : form.street;
-  const reviewStatusLabel = job?.status === "error" ? "Needs attention" : job ? `${job.parser_provider} parser` : "Waiting for upload";
   const queueCount = jobs.length > 0 ? jobs.length : files.length;
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
@@ -1041,6 +1055,9 @@ export default function App() {
               <Settings size={17} aria-hidden="true" />
             </button>
           </div>
+          <button type="button" className="header-icon-button" onClick={() => setInfoDialogOpen(true)} title="About this app" aria-label="About this app">
+            <Info size={18} aria-hidden="true" />
+          </button>
         </div>
       </section>
 
@@ -1227,10 +1244,7 @@ export default function App() {
 
         <section className="review-column" aria-label="Hand review">
           <div className="panel-header">
-            <div>
-              <h2>Detected state</h2>
-              <span>{reviewStatusLabel}</span>
-            </div>
+            <h2>Detected state</h2>
             {job ? <StatusPill status={job.status} /> : null}
           </div>
 
@@ -1414,6 +1428,57 @@ export default function App() {
                 Master automation is <strong>{automationEnabled ? "On" : "Off"}</strong>
               </span>
               <button type="button" className="secondary-button" onClick={() => setAutomationDialogOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {infoDialogOpen ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-dialog-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="info-dialog-title">About Poker Training Analyzer</h2>
+                <p>Post-hand Texas Hold&apos;em review and training</p>
+              </div>
+              <button type="button" className="dialog-icon-button" onClick={() => setInfoDialogOpen(false)} aria-label="Close app information">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="info-dialog-body">
+              <section className="info-dialog-section">
+                <h3>Recognition</h3>
+                <p>OCR and computer vision read the cards, board, pot, bets, stacks, and table state from each screenshot. Confidence scores identify fields that need review.</p>
+              </section>
+              <section className="info-dialog-section">
+                <h3>Recommendations</h3>
+                <p>The solver compares candidate actions using estimated ranges, equity, pot odds, and expected value. Results are training guidance, not a full GTO tree solve.</p>
+              </section>
+              <section className="info-dialog-section">
+                <h3>Selected hand</h3>
+                {job ? (
+                  <div className="info-provider-grid">
+                    <div>
+                      <small>Recognition</small>
+                      <strong>{providerLabel(job.parser_provider)}</strong>
+                    </div>
+                    <div>
+                      <small>Recommendation</small>
+                      <strong>{providerLabel(job.recommendation_provider)}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <p>Analyze a screenshot to see the engines used for that hand.</p>
+                )}
+              </section>
+              <p className="training-notice">Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
+            </div>
+
+            <div className="automation-dialog-footer info-dialog-footer">
+              <button type="button" className="secondary-button" onClick={() => setInfoDialogOpen(false)}>
                 Done
               </button>
             </div>

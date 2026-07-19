@@ -537,7 +537,7 @@ def _explanation(
     size_text = f" {best.sizing:g} BB" if best.sizing is not None else ""
     hand_text = f" with {label}" if label else ""
     return (
-        f"Local EV solver compared candidate actions and chose {best.action}{size_text}{hand_text}. "
+        f"Solver compared candidate actions and chose {best.action}{size_text}{hand_text}. "
         f"{context} This is a local range/EV estimate, not a full GTO tree solve."
     )
 

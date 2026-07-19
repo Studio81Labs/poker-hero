@@ -91,6 +91,23 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert result["recommendation"]["sizing"] is None
 
 
+def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.post(f"/api/jobs/{job_id}/recommend")
+
+    corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
+    response = approve_job(client, job_id, corrected_state)
+
+    assert response.status_code == 200
+    job = response.json()
+    assert job["status"] == "approved"
+    assert job["approved_state"]["pot_size"] == 18.0
+    assert job["recommendation"] is None
+    assert FileJobStore(tmp_path).get(job_id).recommendation is None
+
+
 def test_recommend_requires_approval(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     upload = upload_job(client)

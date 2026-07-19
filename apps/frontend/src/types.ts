@@ -53,3 +53,9 @@ export interface JobRecord {
   created_at: string;
   updated_at: string;
 }
+
+export interface SystemInfo {
+  status: string;
+  parser_provider: string;
+  recommendation_provider: string;
+}

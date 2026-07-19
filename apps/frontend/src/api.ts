@@ -1,4 +1,4 @@
-import type { CanonicalState, JobRecord } from "./types";
+import type { CanonicalState, JobRecord, SystemInfo } from "./types";
 
 const API_BASE_URL =
   typeof import.meta.env.VITE_API_BASE_URL === "string" && import.meta.env.VITE_API_BASE_URL.length > 0
@@ -23,6 +23,13 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export function imageUrl(jobId: string): string {
   return `${API_BASE_URL}/api/jobs/${jobId}/image`;
+}
+
+export async function getSystemInfo(): Promise<SystemInfo> {
+  const response = await fetch(`${API_BASE_URL}/api/health`, {
+    credentials: "include",
+  });
+  return readJson<SystemInfo>(response);
 }
 
 export async function uploadScreenshot(file: File, signal?: AbortSignal): Promise<JobRecord> {

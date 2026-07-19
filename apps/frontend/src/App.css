@@ -1338,8 +1338,7 @@ button:disabled {
   margin: 0;
 }
 
-.info-dialog-section p,
-.training-notice {
+.info-dialog-section p {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
@@ -1378,10 +1377,6 @@ button:disabled {
 .info-provider-grid strong {
   font-size: 12px;
   margin-top: 4px;
-}
-
-.training-notice {
-  margin: 14px 0 16px;
 }
 
 .info-dialog-footer {

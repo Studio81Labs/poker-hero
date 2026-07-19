@@ -1,4 +1,4 @@
-import { AlertTriangle, Camera, Check, MonitorUp, Play, Radio, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -1035,166 +1035,192 @@ export default function App() {
         </div>
       </section>
 
-      <section className="batch-strip" aria-label="Screenshots queue">
-        <div className="batch-count">
-          <strong>{filmstripCount}</strong>
-          <span>screenshots</span>
-          <span className="batch-count-line">{filmstripCount} screenshots</span>
-          <button type="button" className="clear-reviewed-button" onClick={clearReviewedToHistory} disabled={busy || clearableJobs.length === 0}>
-            Clear reviewed
-          </button>
-        </div>
-        {jobs.length > 0 ? (
-          <div className="batch-list">
-            {jobs.map((candidate, index) => (
-              <button
-                key={candidate.id}
-                type="button"
-                className={candidate.id === job?.id ? "batch-item active" : "batch-item"}
-                onClick={() => activateJob(candidate)}
-                disabled={busy}
-                aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-              >
-                <span className="batch-number">{index + 1}</span>
-                <span className="batch-text">
-                  <span>{candidate.original_filename}</span>
-                  <small>{queueDetail(candidate)}</small>
-                </span>
-                <StatusPill status={candidate.status} />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="pending-files">{files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}</div>
-        )}
-      </section>
-
-      <section className="workspace">
-        <section className="left-column" aria-label="Capture and table preview">
-          <div className="capture-card input-source-card">
-            <div className="capture-row">
-              <div>
-                <h2>Input source</h2>
-                <p>{inputMode === "live" ? "Read a shared tab, window or screen in real time" : "Upload one or more screenshots into the review queue"}</p>
-              </div>
+      <section className="app-workspace">
+        <aside className="control-rail" aria-label="Capture, queue and history">
+          <section className="input-panel">
+            <div className="input-panel-heading">
+              <h2>Input</h2>
               <div className="input-mode-switch" role="group" aria-label="Input mode">
                 <button type="button" className={inputMode === "live" ? "active" : ""} onClick={() => setInputMode("live")} disabled={busy} aria-pressed={inputMode === "live"}>
-                  <Radio size={14} aria-hidden="true" />
-                  Live capture
+                  Live
                 </button>
-                <button
-                  type="button"
-                  className={inputMode === "upload" ? "active" : ""}
-                  onClick={() => setInputMode("upload")}
-                  disabled={busy}
-                  aria-pressed={inputMode === "upload"}
-                >
-                  <Upload size={14} aria-hidden="true" />
+                <button type="button" className={inputMode === "upload" ? "active" : ""} onClick={() => setInputMode("upload")} disabled={busy} aria-pressed={inputMode === "upload"}>
                   Upload
                 </button>
               </div>
             </div>
 
-            <div className="capture-divider" />
-
             <div className="input-source-body">
               {inputMode === "live" ? (
                 <>
-                  <div className="source-row">
-                    <span>Source</span>
-                    <div className="share-mode" role="group" aria-label="Share source type">
-                      {SHARE_MODES.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={shareMode === option.value ? "active" : ""}
-                          onClick={() => setShareMode(option.value)}
-                          disabled={screenSharing || busy}
-                          aria-pressed={shareMode === option.value}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="screen-capture-actions">
-                      <button type="button" className="secondary-button" onClick={() => onStartScreenShare()} disabled={screenSharing || busy}>
-                        <MonitorUp size={15} aria-hidden="true" />
-                        Share {shareModeLabel(shareMode).toLowerCase()}
+                  <span className="input-label">Capture source</span>
+                  <div className="share-mode" role="group" aria-label="Share source type">
+                    {SHARE_MODES.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={shareMode === option.value ? "active" : ""}
+                        onClick={() => setShareMode(option.value)}
+                        disabled={screenSharing || busy}
+                        aria-pressed={shareMode === option.value}
+                      >
+                        {option.label}
                       </button>
-                      <button type="button" className="secondary-button" onClick={onCaptureScreen} disabled={!screenSharing || busy}>
-                        <Camera size={15} aria-hidden="true" />
-                        Capture and parse
-                      </button>
-                      <button type="button" className="secondary-button" onClick={onStopScreenShare} disabled={!screenSharing || busy}>
-                        <Square size={13} aria-hidden="true" />
-                        Stop
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                  <div className="source-hint">{screenSharing ? `${screenSourceLabel ?? "Source"} sharing active` : "Not sharing yet. Pick a source and share to start reading frames."}</div>
+                  <div className="screen-capture-actions">
+                    <button type="button" className="secondary-button share-source-button" onClick={() => onStartScreenShare()} disabled={screenSharing || busy}>
+                      <span className={screenSharing ? "source-indicator active" : "source-indicator"} aria-hidden="true" />
+                      Share {shareModeLabel(shareMode).toLowerCase()}
+                    </button>
+                    <button type="button" className="secondary-button icon-action" onClick={onCaptureScreen} disabled={!screenSharing || busy} title="Capture and parse" aria-label="Capture and parse">
+                      <Camera size={15} aria-hidden="true" />
+                    </button>
+                    <button type="button" className="secondary-button icon-action" onClick={onStopScreenShare} disabled={!screenSharing || busy} title="Stop sharing" aria-label="Stop sharing">
+                      <Square size={13} aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="source-hint">{screenSharing ? `${screenSourceLabel ?? "Source"} sharing active` : "Pick a source and share to read frames."}</div>
                 </>
               ) : (
-                <div className="upload-source-row">
-                  <label className="file-picker">
-                    <Upload size={15} aria-hidden="true" />
-                    <span>{selectedFilesLabel(files)}</span>
-                    <input className="file-input" type="file" accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
-                  </label>
-                  <button type="button" className="secondary-button" onClick={onUpload} disabled={files.length === 0 || busy}>
-                    <Upload size={15} aria-hidden="true" />
-                    Upload and parse
-                  </button>
-                  <span>{files.length > 0 ? `${files.length} selected for upload` : "Choose screenshots to add them to the queue."}</span>
-                </div>
+                <>
+                  <span className="input-label">Screenshot files</span>
+                  <div className="upload-source-row">
+                    <label className="file-picker">
+                      <Upload size={15} aria-hidden="true" />
+                      <span>{selectedFilesLabel(files)}</span>
+                      <input className="file-input" type="file" accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
+                    </label>
+                    <button type="button" className="secondary-button icon-action" onClick={onUpload} disabled={files.length === 0 || busy} title="Upload and parse" aria-label="Upload and parse">
+                      <Upload size={15} aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="source-hint">{files.length > 0 ? `${files.length} selected for upload` : "Choose screenshots to add them to the queue."}</div>
+                </>
               )}
             </div>
-          </div>
+          </section>
 
-          <div className="table-frame">
-            <div className="table-frame-bar">
-              <span className="live-dot" aria-hidden="true" />
-              <span>{frameLabel}</span>
-              <strong>{frameStreet}</strong>
+          <section className="queue-panel" aria-label="Screenshots queue">
+            <div className="rail-section-heading">
+              <span>Queued frames</span>
+              <span className="sr-only">{filmstripCount} screenshots</span>
+              <span className="queue-heading-actions">
+                <strong>{filmstripCount}</strong>
+                <button
+                  type="button"
+                  className="clear-reviewed-button"
+                  onClick={clearReviewedToHistory}
+                  disabled={busy || clearableJobs.length === 0}
+                  title="Clear reviewed to history"
+                  aria-label="Clear reviewed"
+                >
+                  <Archive size={13} aria-hidden="true" />
+                </button>
+              </span>
             </div>
-            <div className="table-frame-body">
-              <video className={screenSharing ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
-              {screenshotUrl ? (
-                <img src={screenshotUrl} alt="Uploaded poker table screenshot" />
-              ) : (
-                <div className="empty-screenshot">No screenshot uploaded</div>
-              )}
+            {jobs.length > 0 ? (
+              <div className="batch-list">
+                {jobs.map((candidate, index) => (
+                  <button
+                    key={candidate.id}
+                    type="button"
+                    className={candidate.id === job?.id ? "batch-item active" : "batch-item"}
+                    onClick={() => activateJob(candidate)}
+                    disabled={busy}
+                    aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
+                  >
+                    <span className="batch-number">{index + 1}</span>
+                    <span className="batch-text">
+                      <span>{candidate.original_filename}</span>
+                      <small>{queueDetail(candidate)}</small>
+                    </span>
+                    <StatusPill status={candidate.status} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="pending-files">{files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}</div>
+            )}
+          </section>
+
+          <section className="history-panel" aria-label="Session history">
+            <div className="rail-section-heading history-heading">
+              <span>History · reopen</span>
+              <span className="autosaved-pill">Auto-saved</span>
+            </div>
+            {history.length > 0 ? (
+              <div className="history-list">
+                {history.map((item, index) => {
+                  const cards = historyCards(item.job);
+                  return (
+                    <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
+                      <span className="history-cards">
+                        {cards.length > 0 ? (
+                          cards.map((card) => (
+                            <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
+                              {cardToDisplay(card)}
+                            </span>
+                          ))
+                        ) : (
+                          <small>No cards</small>
+                        )}
+                      </span>
+                      <span className="history-meta">
+                        <small>{relativeTimeLabel(item.savedAt)}</small>
+                        <strong>{historyAction(item.job)}</strong>
+                      </span>
+                      <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="history-empty">Cleared reviewed hands will appear here.</div>
+            )}
+          </section>
+        </aside>
+
+        <section className="table-column" aria-label="Poker table preview">
+          <div className="table-frame-bar">
+            <span className={screenSharing ? "live-dot active" : "live-dot"} aria-hidden="true" />
+            <span>{frameLabel}</span>
+            <strong>{frameStreet}</strong>
+          </div>
+          <div className="table-frame-body">
+            <video className={screenSharing ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
+            {screenshotUrl ? <img className={screenSharing ? "screenshot-preview hidden" : "screenshot-preview"} src={screenshotUrl} alt="Uploaded poker table screenshot" /> : null}
+            {!screenSharing && !screenshotUrl ? <div className="empty-screenshot">No screenshot uploaded</div> : null}
+          </div>
+          <div className="confidence-summary" aria-label="Parser confidence summary">
+            <div>
+              <strong>
+                {confidenceSummary.detectedCount}
+                <span>/{confidenceSummary.fieldTotal}</span>
+              </strong>
+              <small>fields read</small>
+            </div>
+            <div>
+              <strong>{confidenceSummary.averageConfidence}%</strong>
+              <small>avg confidence</small>
+            </div>
+            <div>
+              <strong className={confidenceSummary.reviewCount > 0 ? "needs-review" : ""}>{confidenceSummary.reviewCount}</strong>
+              <small>need review</small>
             </div>
           </div>
         </section>
 
         <section className="review-column" aria-label="Hand review">
-          <div className="review-pane">
-            <div className="panel-header">
-              <div>
-                <h2>Detected state</h2>
-                <span>{reviewStatusLabel}</span>
-              </div>
-              {job ? <StatusPill status={job.status} /> : null}
+          <div className="panel-header">
+            <div>
+              <h2>Detected state</h2>
+              <span>{reviewStatusLabel}</span>
             </div>
+            {job ? <StatusPill status={job.status} /> : null}
+          </div>
 
-            <div className="confidence-summary" aria-label="Parser confidence summary">
-              <div>
-                <strong>
-                  {confidenceSummary.detectedCount}
-                  <span>/{confidenceSummary.fieldTotal}</span>
-                </strong>
-                <small>fields read</small>
-              </div>
-              <div>
-                <strong>{confidenceSummary.averageConfidence}%</strong>
-                <small>avg confidence</small>
-              </div>
-              <div>
-                <strong className={confidenceSummary.reviewCount > 0 ? "needs-review" : ""}>{confidenceSummary.reviewCount}</strong>
-                <small>need review</small>
-              </div>
-            </div>
-
+          <div className="review-scroll">
             {warnings.length > 0 ? (
               <div className="parser-warnings">
                 <AlertTriangle size={16} aria-hidden="true" />
@@ -1257,76 +1283,35 @@ export default function App() {
               </Field>
             </div>
 
-            <div className="review-actions">
-              <button type="button" onClick={onApprove} disabled={!canApprove || busy}>
-                <Check size={15} aria-hidden="true" />
-                Approve state
-              </button>
-              <button type="button" className="secondary-button" onClick={onRecommend} disabled={!canRecommend || busy}>
-                <Play size={14} aria-hidden="true" />
-                Request recommendation
-              </button>
-              <button type="button" className="ghost-button" onClick={resetToParser} disabled={!job?.parser_result || busy}>
-                <RefreshCcw size={14} aria-hidden="true" />
-                Reset to parser
-              </button>
-            </div>
+            {canRecommend && job?.recommendation ? (
+              <section className="recommendation" aria-label="Recommendation">
+                <div className="recommendation-head">
+                  <span>Recommended play</span>
+                  <strong>{Math.round(job.recommendation.confidence * 100)}% confidence</strong>
+                </div>
+                <div className="recommendation-main">
+                  <span className="recommendation-action">{job.recommendation.action}</span>
+                  {job.recommendation.sizing !== null ? <span className="recommendation-sizing">{job.recommendation.sizing}</span> : null}
+                </div>
+                <p>{job.recommendation.explanation}</p>
+              </section>
+            ) : null}
           </div>
 
-          {canRecommend && job?.recommendation ? (
-            <section className="recommendation" aria-label="Recommendation">
-              <div className="recommendation-head">
-                <span>Recommended play</span>
-                <strong>{Math.round(job.recommendation.confidence * 100)}% confidence</strong>
-              </div>
-              <div className="recommendation-main">
-                <span className="recommendation-action">{job.recommendation.action}</span>
-                {job.recommendation.sizing !== null ? <span className="recommendation-sizing">{job.recommendation.sizing}</span> : null}
-              </div>
-              <p>{job.recommendation.explanation}</p>
-            </section>
-          ) : null}
+          <div className="review-actions">
+            <button type="button" onClick={onApprove} disabled={!canApprove || busy} aria-label="Approve state">
+              <Check size={15} aria-hidden="true" />
+              Approve
+            </button>
+            <button type="button" className="secondary-button" onClick={onRecommend} disabled={!canRecommend || busy} aria-label="Request recommendation">
+              <Play size={14} aria-hidden="true" />
+              Recommend
+            </button>
+            <button type="button" className="ghost-button icon-action" onClick={resetToParser} disabled={!job?.parser_result || busy} title="Reset to parser" aria-label="Reset to parser">
+              <RefreshCcw size={14} aria-hidden="true" />
+            </button>
+          </div>
         </section>
-      </section>
-
-      <section className="history-panel" aria-label="Session history">
-        <div className="history-summary">
-          <strong>{history.length}</strong>
-          <span>history</span>
-          <small>Cleared hands</small>
-        </div>
-        {history.length > 0 ? (
-          <div className="history-list">
-            {history.map((item, index) => {
-              const cards = historyCards(item.job);
-              return (
-                <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
-                  <div className="history-item-top">
-                    <span>{relativeTimeLabel(item.savedAt)}</span>
-                    <strong>{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status}</strong>
-                  </div>
-                  <div className="history-cards">
-                    {cards.length > 0 ? (
-                      cards.map((card) => (
-                        <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
-                          {cardToDisplay(card)}
-                        </span>
-                      ))
-                    ) : (
-                      <small>No hero cards</small>
-                    )}
-                  </div>
-                  <div className="history-action">
-                    <strong>{historyAction(item.job)}</strong>
-                    <span>{item.job.approved_state?.street ?? item.job.parser_result?.state.street ?? "No street"}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="history-empty">Cleared reviewed hands will appear here.</div>
-        )}
       </section>
 
       {queueProgress ? (

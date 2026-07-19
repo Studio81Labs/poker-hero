@@ -400,6 +400,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Capture and parse" }));
 
     expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Open screenshot 1: screen-capture.png" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reopen history item 1" })).not.toBeInTheDocument();
 
@@ -509,6 +511,8 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
     expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
 
     const potInput = screen.getByLabelText(/Pot/);
     await user.clear(potInput);
@@ -527,6 +531,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Reset to parser" }));
     expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
   });
 

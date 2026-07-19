@@ -92,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job = load_job_or_404(store, job_id)
         state.user_approved = True
         job.approved_state = state
+        job.recommendation = None
         job.status = "approved"
         job.error = None
         return store.save(job)

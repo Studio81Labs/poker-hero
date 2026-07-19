@@ -28,5 +28,20 @@ async function proxyApiRequest(request, backendUrl) {
   targetUrl.pathname = `${basePath}${proxiedPath}`;
   targetUrl.search = incomingUrl.search;
 
-  return fetch(new Request(targetUrl, request));
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  headers.delete("content-length");
+
+  const init = {
+    method: request.method,
+    headers,
+    redirect: request.redirect,
+    signal: request.signal,
+  };
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    init.body = await request.arrayBuffer();
+  }
+
+  return fetch(new Request(targetUrl, init));
 }

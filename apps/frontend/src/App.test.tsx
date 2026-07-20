@@ -669,7 +669,15 @@ describe("App", () => {
           accuracy: 0.9,
           warnings: [],
           error: null,
-          comparisons: [],
+          comparisons: [
+            {
+              field: "pot_size",
+              expected: 12.5,
+              detected: 10,
+              matched: false,
+              confidence: 0.73,
+            },
+          ],
         },
       ],
     };
@@ -715,7 +723,7 @@ describe("App", () => {
     expect(await within(dialog).findByLabelText("Latest benchmark summary")).toHaveTextContent("90%");
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled());
     expect(within(dialog).getByText("hero cards")).toBeInTheDocument();
-    expect(within(dialog).getByText("9/10 fields")).toBeInTheDocument();
+    expect(within(dialog).getByText("1 mismatch")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Reset to parser" }));
@@ -736,6 +744,78 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks/run",
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs/job-123/benchmark",
+    ]);
+  });
+
+  it("shows benchmark mismatches and opens the stored hand for correction", async () => {
+    const reviewedState = canonicalState({ pot_size: 12.5 });
+    const reviewedJob = {
+      ...approvedJob(reviewedState),
+      id: "benchmark-job",
+      original_filename: "mismatch.png",
+      image_filename: "benchmark-job.png",
+      benchmark_included: true,
+    };
+    const benchmarkReport = {
+      id: "benchmark-review",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-20T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 9,
+      evaluated_fields: 10,
+      accuracy: 0.9,
+      field_metrics: [{ field: "pot_size", correct: 0, total: 1, accuracy: 0 }],
+      cases: [
+        {
+          job_id: "benchmark-job",
+          original_filename: "mismatch.png",
+          status: "completed",
+          correct_fields: 9,
+          evaluated_fields: 10,
+          accuracy: 0.9,
+          warnings: [],
+          error: null,
+          comparisons: [
+            {
+              field: "pot_size",
+              expected: 12.5,
+              detected: 10,
+              matched: false,
+              confidence: 0.73,
+            },
+          ],
+        },
+      ],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
+      .mockResolvedValueOnce(jsonResponse(reviewedJob));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", { name: "Toggle mismatch.png benchmark details" }));
+
+    const details = within(dialog).getByText("Expected").closest(".benchmark-case-details");
+    expect(details).not.toBeNull();
+    expect(within(details as HTMLElement).getByText("12.5")).toBeInTheDocument();
+    expect(within(details as HTMLElement).getByText("10")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Parser benchmark" })).not.toBeInTheDocument());
+    expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/jobs/benchmark-job/image",
+    );
+    expect(screen.getByLabelText(/Pot/)).toHaveValue("12.5");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/jobs/benchmark-job",
     ]);
   });
 

@@ -43,7 +43,9 @@ production it uses same-origin `/api/*`; `worker.js` forwards those requests to
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,
-per-field, and per-case results.
+per-field, and per-case results. Case drill-downs compare expected and detected
+values; selecting Review hand refetches the persisted job before opening it in
+the correction workspace.
 
 ## State Flow
 

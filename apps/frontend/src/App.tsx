@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Camera, Check, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, ChevronDown, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -7,6 +7,7 @@ import "./App.css";
 import {
   approveState,
   getBenchmarkOverview,
+  getJob,
   getSystemInfo,
   imageUrl,
   requestRecommendation,
@@ -16,6 +17,7 @@ import {
 } from "./api";
 import type {
   BenchmarkOverview,
+  BenchmarkFieldComparison,
   CanonicalState,
   Card,
   DetectedState,
@@ -152,6 +154,27 @@ function benchmarkFieldLabel(field: string): string {
 
 function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function benchmarkComparisonValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not detected";
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map(String).join(" ") : "None";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function benchmarkMismatchLabel(comparisons: BenchmarkFieldComparison[]): string {
+  const mismatchCount = comparisons.filter((comparison) => !comparison.matched).length;
+  if (mismatchCount === 0) {
+    return "All labeled fields matched";
+  }
+  return `${mismatchCount} ${mismatchCount === 1 ? "mismatch" : "mismatches"}`;
 }
 
 function readHistory(): HistoryItem[] {
@@ -568,6 +591,8 @@ export default function App() {
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
+  const [expandedBenchmarkCaseId, setExpandedBenchmarkCaseId] = useState<string | null>(null);
+  const [benchmarkReviewJobId, setBenchmarkReviewJobId] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemInfoLoading, setSystemInfoLoading] = useState(false);
   const [automationApprove, setAutomationApprove] = useState(true);
@@ -1017,6 +1042,7 @@ export default function App() {
   }
 
   function openBenchmarkDialog() {
+    setExpandedBenchmarkCaseId(null);
     setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
     void getBenchmarkOverview()
@@ -1066,6 +1092,27 @@ export default function App() {
       setError(messageFromError(benchmarkError, "Parser benchmark failed"));
     } finally {
       setBenchmarkRunning(false);
+    }
+  }
+
+  async function reviewBenchmarkCase(jobId: string) {
+    setBenchmarkReviewJobId(jobId);
+    setError(null);
+    try {
+      const reviewJob = await getJob(jobId);
+      setJobs((current) => {
+        const existing = current.some((candidate) => candidate.id === reviewJob.id);
+        return existing
+          ? current.map((candidate) => (candidate.id === reviewJob.id ? reviewJob : candidate))
+          : [reviewJob, ...current];
+      });
+      activateJob(reviewJob);
+      setBenchmarkDialogOpen(false);
+      setExpandedBenchmarkCaseId(null);
+    } catch (benchmarkError) {
+      setError(messageFromError(benchmarkError, "Could not open benchmark hand"));
+    } finally {
+      setBenchmarkReviewJobId(null);
     }
   }
 
@@ -1653,7 +1700,7 @@ export default function App() {
                 type="button"
                 className="dialog-icon-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null}
                 aria-label="Close parser benchmark"
               >
                 <X size={16} aria-hidden="true" />
@@ -1729,17 +1776,67 @@ export default function App() {
                     <section className="benchmark-result-section" aria-labelledby="benchmark-cases-title">
                       <h3 id="benchmark-cases-title">Cases</h3>
                       <div className="benchmark-case-list">
-                        {benchmarkOverview.latest_report.cases.map((benchmarkCase) => (
-                          <div key={benchmarkCase.job_id}>
-                            <span>
-                              <strong>{benchmarkCase.original_filename}</strong>
-                              <small>{benchmarkCase.error ?? `${benchmarkCase.correct_fields}/${benchmarkCase.evaluated_fields} fields`}</small>
-                            </span>
-                            <strong className={benchmarkCase.status === "error" ? "needs-review" : ""}>
-                              {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
-                            </strong>
-                          </div>
-                        ))}
+                        {benchmarkOverview.latest_report.cases.map((benchmarkCase) => {
+                          const expanded = expandedBenchmarkCaseId === benchmarkCase.job_id;
+                          const mismatches = benchmarkCase.comparisons.filter((comparison) => !comparison.matched);
+                          const detailId = `benchmark-case-${benchmarkCase.job_id}`;
+                          return (
+                            <div key={benchmarkCase.job_id} className="benchmark-case-row">
+                              <button
+                                type="button"
+                                className="benchmark-case-summary"
+                                onClick={() => setExpandedBenchmarkCaseId((current) => (current === benchmarkCase.job_id ? null : benchmarkCase.job_id))}
+                                aria-expanded={expanded}
+                                aria-controls={detailId}
+                                aria-label={`Toggle ${benchmarkCase.original_filename} benchmark details`}
+                              >
+                                <span>
+                                  <strong>{benchmarkCase.original_filename}</strong>
+                                  <small>{benchmarkCase.error ?? benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
+                                </span>
+                                <strong className={benchmarkCase.status === "error" || mismatches.length > 0 ? "needs-review" : ""}>
+                                  {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
+                                </strong>
+                                <ChevronDown size={15} aria-hidden="true" />
+                              </button>
+                              {expanded ? (
+                                <div id={detailId} className="benchmark-case-details">
+                                  {benchmarkCase.error ? <p className="benchmark-case-error">{benchmarkCase.error}</p> : null}
+                                  {mismatches.length > 0 ? (
+                                    <div className="benchmark-mismatch-list">
+                                      {mismatches.map((comparison) => (
+                                        <div key={comparison.field}>
+                                          <strong>{benchmarkFieldLabel(comparison.field)}</strong>
+                                          <span>
+                                            <small>Expected</small>
+                                            <code>{benchmarkComparisonValue(comparison.expected)}</code>
+                                          </span>
+                                          <span>
+                                            <small>Detected</small>
+                                            <code>{benchmarkComparisonValue(comparison.detected)}</code>
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : benchmarkCase.error ? null : (
+                                    <p className="benchmark-case-matched">Every labeled field matched the approved state.</p>
+                                  )}
+                                  <div className="benchmark-case-actions">
+                                    <button
+                                      type="button"
+                                      className="secondary-button"
+                                      onClick={() => void reviewBenchmarkCase(benchmarkCase.job_id)}
+                                      disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null || busy}
+                                    >
+                                      <Eye size={14} aria-hidden="true" />
+                                      {benchmarkReviewJobId === benchmarkCase.job_id ? "Opening..." : "Review hand"}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
                     </section>
                   </div>
@@ -1760,6 +1857,7 @@ export default function App() {
                   benchmarkLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
+                  benchmarkReviewJobId !== null ||
                   busy ||
                   (benchmarkOverview?.included_cases ?? 0) === 0
                 }
@@ -1771,7 +1869,7 @@ export default function App() {
                 type="button"
                 className="secondary-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null}
               >
                 Done
               </button>

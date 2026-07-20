@@ -17,6 +17,7 @@ const detectedState: DetectedState = {
   ],
   pot_size: 12.5,
   current_bet: 2.5,
+  hero_stack: 97.5,
   effective_stack: 96,
   players_in_hand: 3,
   hero_position: "button",
@@ -55,6 +56,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
         board_cards: 0.98,
         pot_size: 0.92,
         current_bet: 0.9,
+        hero_stack: 0.89,
         effective_stack: 0.88,
         players_in_hand: 0.86,
         hero_position: 0.84,
@@ -249,6 +251,7 @@ describe("App", () => {
       board_cards: [],
       pot_size: 3.5,
       current_bet: 1.5,
+      hero_stack: 100.4,
       effective_stack: 100.4,
       players_in_hand: 2,
       street: "preflop",
@@ -566,6 +569,7 @@ describe("App", () => {
       pot_size: 3.5,
       street: "preflop",
     });
+    delete (savedState as Partial<CanonicalState>).hero_stack;
     const savedJob: JobRecord = {
       ...recommendedJob(savedState),
       id: "history-job",
@@ -586,6 +590,7 @@ describe("App", () => {
 
     expect(await screen.findByDisplayValue("7d Ah")).toBeInTheDocument();
     expect(screen.getByDisplayValue("3.5")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Hero stack/)).toHaveValue("");
     expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
   });
 

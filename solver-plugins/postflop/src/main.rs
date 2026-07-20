@@ -25,6 +25,7 @@ struct CanonicalState {
     board_cards: Vec<InputCard>,
     pot_size: Option<f64>,
     current_bet: Option<f64>,
+    hero_stack: Option<f64>,
     effective_stack: Option<f64>,
     players_in_hand: Option<u8>,
     hero_position: Option<String>,
@@ -55,6 +56,7 @@ struct CandidateResult {
     solver_action: String,
 }
 
+#[derive(Debug)]
 struct TreeAmounts {
     starting_pot: i32,
     current_bet: i32,
@@ -97,7 +99,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         starting_pot,
         current_bet: scaled_bet,
         effective_stack: tree_stack,
-    } = tree_amounts(pot_size, current_bet, effective_stack)?;
+    } = tree_amounts(pot_size, current_bet, effective_stack, state.hero_stack)?;
 
     let hero_hand = hero_hand_code(&state.hero_cards)?;
     let mut oop_range = env_string("POKER_POSTFLOP_SOLVER_OOP_RANGE", DEFAULT_OOP_RANGE);
@@ -122,7 +124,8 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         turn_donk_sizes: None,
         river_donk_sizes: None,
         add_allin_threshold: 1.2,
-        force_allin_threshold: 0.15,
+        // Preserve the exact observed bet instead of rewriting near-all-in sizes.
+        force_allin_threshold: 0.0,
         merging_threshold: 0.0,
     };
 
@@ -226,6 +229,8 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
             "tree": {
                 "starting_pot": starting_pot as f64 / CHIP_SCALE,
                 "effective_stack": tree_stack as f64 / CHIP_SCALE,
+                "visible_effective_stack": effective_stack,
+                "hero_stack": state.hero_stack,
                 "compressed_memory_mb": round(compressed_memory as f64 / (1024.0 * 1024.0), 1),
                 "max_iterations": max_iterations,
                 "target_exploitability_ratio": target_ratio,
@@ -446,6 +451,7 @@ fn tree_amounts(
     pot_size: f64,
     current_bet: f64,
     effective_stack: f64,
+    hero_stack: Option<f64>,
 ) -> Result<TreeAmounts, String> {
     let scaled_pot = scale_amount(pot_size, "pot_size")?;
     let scaled_bet = scale_amount(current_bet, "current_bet")?;
@@ -458,8 +464,13 @@ fn tree_amounts(
         return Err("pot_size must be greater than current_bet".to_string());
     }
 
-    // The canonical effective stack is the visible stack behind at the decision point.
-    let tree_stack = scale_amount(effective_stack, "effective_stack")?;
+    let starting_effective_stack = if scaled_bet > 0 {
+        let hero_stack = positive_value(hero_stack, "hero_stack")?;
+        hero_stack.min(effective_stack + current_bet)
+    } else {
+        effective_stack
+    };
+    let tree_stack = scale_amount(starting_effective_stack, "effective_stack")?;
     Ok(TreeAmounts {
         starting_pot,
         current_bet: scaled_bet,
@@ -570,10 +581,26 @@ mod tests {
 
     #[test]
     fn visible_effective_stack_is_not_increased_by_the_call_amount() {
-        let amounts = tree_amounts(15.0, 5.0, 10.0).unwrap();
+        let amounts = tree_amounts(15.0, 5.0, 10.0, Some(10.0)).unwrap();
 
         assert_eq!(amounts.starting_pot, 1000);
         assert_eq!(amounts.current_bet, 500);
         assert_eq!(amounts.effective_stack, 1000);
+    }
+
+    #[test]
+    fn bettor_wager_is_restored_when_the_bettor_is_effective() {
+        let amounts = tree_amounts(30.0, 10.0, 5.0, Some(30.0)).unwrap();
+
+        assert_eq!(amounts.starting_pot, 2000);
+        assert_eq!(amounts.current_bet, 1000);
+        assert_eq!(amounts.effective_stack, 1500);
+    }
+
+    #[test]
+    fn facing_bet_requires_the_hero_stack() {
+        let error = tree_amounts(15.0, 5.0, 10.0, None).unwrap_err();
+
+        assert_eq!(error, "hero_stack is required");
     }
 }

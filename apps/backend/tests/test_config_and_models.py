@@ -175,6 +175,7 @@ def test_canonical_state_copies_detected_values() -> None:
         board_cards=[Card.from_code("Qs"), Card.from_code("Jc"), Card.from_code("2h")],
         pot_size=12.5,
         current_bet=2.5,
+        hero_stack=97.5,
         effective_stack=96.0,
         players_in_hand=3,
         hero_position="button",
@@ -193,6 +194,7 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.hero_cards == detected.hero_cards
     assert canonical.board_cards == detected.board_cards
     assert canonical.pot_size == 12.5
+    assert canonical.hero_stack == 97.5
     assert canonical.user_approved is False
 
 

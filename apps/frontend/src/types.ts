@@ -13,6 +13,7 @@ export interface DetectedState {
   board_cards: Card[];
   pot_size: number | null;
   current_bet: number | null;
+  hero_stack: number | null;
   effective_stack: number | null;
   players_in_hand: number | null;
   hero_position: string | null;

@@ -29,6 +29,7 @@ const EMPTY_STATE: CanonicalState = {
   board_cards: [],
   pot_size: null,
   current_bet: null,
+  hero_stack: null,
   effective_stack: null,
   players_in_hand: null,
   hero_position: null,
@@ -57,6 +58,7 @@ interface StateForm {
   board_cards: string;
   pot_size: string;
   current_bet: string;
+  hero_stack: string;
   effective_stack: string;
   players_in_hand: string;
   hero_position: string;
@@ -109,6 +111,7 @@ const CONFIDENCE_KEYS = [
   "street",
   "pot_size",
   "current_bet",
+  "hero_stack",
   "effective_stack",
   "players_in_hand",
   "hero_position",
@@ -265,6 +268,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     board_cards: state.board_cards,
     pot_size: state.pot_size,
     current_bet: state.current_bet,
+    hero_stack: state.hero_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
@@ -276,7 +280,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
 
 function stateFromJob(job: JobRecord): CanonicalState {
   if (job.approved_state) {
-    return job.approved_state;
+    return toCanonicalState(job.approved_state);
   }
   if (job.parser_result) {
     return toCanonicalState(job.parser_result.state);
@@ -290,6 +294,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     board_cards: formatCards(state.board_cards),
     pot_size: state.pot_size === null ? "" : String(state.pot_size),
     current_bet: state.current_bet === null ? "" : String(state.current_bet),
+    hero_stack: state.hero_stack == null ? "" : String(state.hero_stack),
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
@@ -308,6 +313,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     board_cards: boardCards,
     pot_size: parseOptionalNumber(form.pot_size, "Pot"),
     current_bet: parseOptionalNumber(form.current_bet, "Current bet"),
+    hero_stack: parseOptionalNumber(form.hero_stack, "Hero stack"),
     effective_stack: parseOptionalNumber(form.effective_stack, "Effective stack"),
     players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
@@ -323,6 +329,7 @@ function approvalKey(state: CanonicalState): string {
     board_cards: state.board_cards.map(cardToCode),
     pot_size: state.pot_size,
     current_bet: state.current_bet,
+    hero_stack: state.hero_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
@@ -1314,6 +1321,14 @@ export default function App() {
                   inputMode="decimal"
                   value={form.effective_stack}
                   onChange={(event) => updateForm("effective_stack", event.target.value)}
+                />
+              </Field>
+              <Field label="Hero stack" confidence={confidenceLabel(confidences.hero_stack)} confidenceValue={confidences.hero_stack}>
+                <input
+                  disabled={stateControlsDisabled}
+                  inputMode="decimal"
+                  value={form.hero_stack}
+                  onChange={(event) => updateForm("hero_stack", event.target.value)}
                 />
               </Field>
               <Field label="Players in hand" confidence={confidenceLabel(confidences.players_in_hand)} confidenceValue={confidences.players_in_hand}>

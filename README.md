@@ -85,6 +85,8 @@ heads-up flop, turn, and river states when `hero_position` identifies `IP`,
 player count does not identify the opponent's seat. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
+Facing-bet trees also require the visible hero stack so the adapter can
+reconstruct whether hero or the bettor was covered before the wager.
 
 Preflop, multiway, incomplete, ambiguous-position, oversized, and failed trees
 use `local_ev` when fallback is enabled. Recommendations preserve the requested

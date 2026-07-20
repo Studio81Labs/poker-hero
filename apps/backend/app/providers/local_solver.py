@@ -133,6 +133,8 @@ class LocalSolverProvider:
             return "the open-source engine supports heads-up postflop spots only"
         if _postflop_position(state.hero_position) is None:
             return "hero position must identify IP or OOP"
+        if (state.current_bet or 0) > 0 and (state.hero_stack is None or state.hero_stack <= 0):
+            return "hero stack is required to reconstruct a facing-bet postflop tree"
         return None
 
     @staticmethod

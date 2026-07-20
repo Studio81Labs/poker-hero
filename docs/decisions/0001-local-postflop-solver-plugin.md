@@ -18,10 +18,13 @@ pins the AGPL `b-inary/postflop-solver` dependency. `local_ev` remains a
 selectable engine and the default fallback.
 
 Only approved heads-up flop, turn, and river states with an explicit IP/OOP
-position reach the postflop engine. The adapter models the current decision
-from pot, call amount, position, configured ranges, and a constrained action
-tree. It records those assumptions, candidate frequencies, exploitability,
-memory estimate, and modeled history in recommendation metadata.
+position reach the postflop engine. Facing-bet states also require hero's
+visible stack so the adapter can reconstruct whether hero or the bettor was
+covered before the wager. The adapter models the current decision from pot,
+call amount, position, visible stacks, configured ranges, and a constrained
+action tree. It records those assumptions, candidate frequencies,
+exploitability, memory estimate, and modeled history in recommendation
+metadata.
 
 Unsupported spots and recoverable solver failures use `local_ev` only when
 fallback is enabled. The response records both the requested engine and the

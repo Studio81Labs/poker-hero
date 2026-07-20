@@ -81,6 +81,7 @@ class DetectedState(BaseModel):
     board_cards: list[Card] = Field(default_factory=list)
     pot_size: float | None = Field(default=None, ge=0)
     current_bet: float | None = Field(default=None, ge=0)
+    hero_stack: float | None = Field(default=None, ge=0)
     effective_stack: float | None = Field(default=None, ge=0)
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
@@ -123,6 +124,7 @@ class CanonicalState(BaseModel):
     board_cards: list[Card] = Field(default_factory=list)
     pot_size: float | None = Field(default=None, ge=0)
     current_bet: float | None = Field(default=None, ge=0)
+    hero_stack: float | None = Field(default=None, ge=0)
     effective_stack: float | None = Field(default=None, ge=0)
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
@@ -153,6 +155,7 @@ class CanonicalState(BaseModel):
             board_cards=state.board_cards,
             pot_size=state.pot_size,
             current_bet=state.current_bet,
+            hero_stack=state.hero_stack,
             effective_stack=state.effective_stack,
             players_in_hand=state.players_in_hand,
             hero_position=state.hero_position,

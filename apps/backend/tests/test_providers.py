@@ -17,6 +17,7 @@ def approved_state() -> CanonicalState:
         board_cards=[Card.from_code("Qs"), Card.from_code("Jc"), Card.from_code("2h")],
         pot_size=12.5,
         current_bet=2.5,
+        hero_stack=97.5,
         effective_stack=96.0,
         players_in_hand=3,
         hero_position="button",
@@ -229,6 +230,7 @@ def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) ->
         "import json, os, sys\n"
         "payload = json.loads(sys.stdin.read())\n"
         "assert payload['state']['hero_position'] == 'IP'\n"
+        "assert payload['state']['hero_stack'] == 97.5\n"
         "expected = {"
         "'POKER_POSTFLOP_SOLVER_MAX_ITERATIONS': '17', "
         "'POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY': '0.025', "
@@ -309,6 +311,21 @@ def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: P
     )
 
     with pytest.raises(ProviderConfigurationError, match="position must identify IP or OOP"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_requires_hero_stack_when_facing_bet(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.hero_stack = None
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="hero stack is required"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
@@ -496,6 +513,7 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 ],
                 "pot_size": 12.5,
                 "current_bet": 2.5,
+                "hero_stack": 97.5,
                 "effective_stack": 96.0,
                 "players_in_hand": 3,
                 "hero_position": "button",

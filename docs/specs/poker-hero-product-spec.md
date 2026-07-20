@@ -107,13 +107,20 @@ Canonical state should include, where available:
 - Community cards.
 - Pot size.
 - Current bet/call amount.
-- Effective stack or visible stacks.
+- Hero's visible stack.
+- Effective stack, defined as the minimum visible stack behind.
 - Number of players/seats.
 - Hero position when detectable.
 - Street: preflop, flop, turn, or river.
 - Any available action context.
 
-Each recommendation provider declares the minimum fields it requires. The backend validates the approved state against that provider before sending a request. If a solver-style provider requires more context than the screenshot contains, such as exact action history or effective stack, the UI must ask the user to supply or correct those fields instead of guessing.
+Each recommendation provider declares the minimum fields it requires. The
+backend validates the approved state against that provider before sending a
+request. A facing-bet postflop tree requires both hero's visible stack and the
+effective visible stack so the pre-bet effective stack can be reconstructed
+without guessing which player is covered. If a solver-style provider requires
+more context than the screenshot contains, the UI must ask the user to supply
+or correct those fields instead of guessing.
 
 ## Data Flow
 

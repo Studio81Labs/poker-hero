@@ -714,6 +714,7 @@ class OcrCvParser:
                 street=street,
                 pot_size=numeric_state.get("pot_size"),
                 current_bet=numeric_state.get("current_bet"),
+                hero_stack=numeric_state.get("hero_stack"),
                 effective_stack=numeric_state.get("effective_stack"),
                 players_in_hand=numeric_state.get("players_in_hand"),
                 hero_position=numeric_state.get("hero_position"),
@@ -1047,6 +1048,8 @@ def _parse_numeric_state(
 
     if hero_stack is not None and hero_cards_visible:
         normalized_hero_stack = _scale_money_read(hero_stack, money_scale.scale)
+        state["hero_stack"] = normalized_hero_stack.value
+        confidences["hero_stack"] = min(0.82, hero_stack.confidence)
         if money_scale.scale != 1:
             raw["hero_stack_normalized"] = _number_raw(normalized_hero_stack)
         effective_stack = (
@@ -1055,6 +1058,7 @@ def _parse_numeric_state(
         state["effective_stack"] = effective_stack
         confidences["effective_stack"] = 0.74 if opponent_stacks else 0.62
     else:
+        manual_review_fields.append("hero_stack")
         manual_review_fields.append("effective_stack")
 
     if pot is not None and call_amount is not None and hero_cards_visible:

@@ -1,11 +1,31 @@
-import { AlertTriangle, Archive, Camera, Check, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
-import { approveState, getSystemInfo, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
-import type { CanonicalState, Card, DetectedState, FacingAction, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
+import {
+  approveState,
+  getBenchmarkOverview,
+  getSystemInfo,
+  imageUrl,
+  requestRecommendation,
+  runParserBenchmark,
+  setBenchmarkInclusion,
+  uploadScreenshot,
+} from "./api";
+import type {
+  BenchmarkOverview,
+  CanonicalState,
+  Card,
+  DetectedState,
+  FacingAction,
+  JobRecord,
+  Rank,
+  Street,
+  Suit,
+  SystemInfo,
+} from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
   c: "clubs",
@@ -124,6 +144,14 @@ const CONFIDENCE_KEYS = [
 
 function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider.replace(/_/g, " ");
+}
+
+function benchmarkFieldLabel(field: string): string {
+  return field.replace(/_/g, " ");
+}
+
+function benchmarkPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function readHistory(): HistoryItem[] {
@@ -495,6 +523,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     parser_result: null,
     approved_state: null,
     recommendation: null,
+    benchmark_included: false,
     error: message,
     created_at: timestamp,
     updated_at: timestamp,
@@ -534,6 +563,11 @@ export default function App() {
   const [automationEnabled, setAutomationEnabled] = useState(true);
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
+  const [benchmarkOverview, setBenchmarkOverview] = useState<BenchmarkOverview | null>(null);
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemInfoLoading, setSystemInfoLoading] = useState(false);
   const [automationApprove, setAutomationApprove] = useState(true);
@@ -982,6 +1016,59 @@ export default function App() {
       .finally(() => setSystemInfoLoading(false));
   }
 
+  function openBenchmarkDialog() {
+    setBenchmarkDialogOpen(true);
+    setBenchmarkLoading(true);
+    void getBenchmarkOverview()
+      .then(setBenchmarkOverview)
+      .catch((benchmarkError) => setError(messageFromError(benchmarkError, "Could not load parser benchmark")))
+      .finally(() => setBenchmarkLoading(false));
+  }
+
+  async function toggleBenchmarkInclusion() {
+    if (!job || (!job.approved_state && !job.benchmark_included)) {
+      return;
+    }
+    setBenchmarkUpdating(true);
+    setError(null);
+    try {
+      const included = !job.benchmark_included;
+      const updated = await setBenchmarkInclusion(job.id, included);
+      replaceJob(updated);
+      setBenchmarkOverview((current) =>
+        current
+          ? {
+              ...current,
+              included_cases: Math.max(0, current.included_cases + (included ? 1 : -1)),
+            }
+          : {
+              included_cases: included ? 1 : 0,
+              latest_report: null,
+            },
+      );
+    } catch (benchmarkError) {
+      setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
+    } finally {
+      setBenchmarkUpdating(false);
+    }
+  }
+
+  async function onRunBenchmark() {
+    setBenchmarkRunning(true);
+    setError(null);
+    try {
+      const latestReport = await runParserBenchmark();
+      setBenchmarkOverview((current) => ({
+        included_cases: current?.included_cases ?? latestReport.total_cases,
+        latest_report: latestReport,
+      }));
+    } catch (benchmarkError) {
+      setError(messageFromError(benchmarkError, "Parser benchmark failed"));
+    } finally {
+      setBenchmarkRunning(false);
+    }
+  }
+
   function onAbortQueue() {
     queueAbortRequestedRef.current = true;
     queueAbortControllerRef.current?.abort();
@@ -1093,6 +1180,16 @@ export default function App() {
           </div>
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={openBenchmarkDialog}
+            disabled={busy}
+            title="Parser benchmark"
+            aria-label="Parser benchmark"
+          >
+            <FlaskConical size={18} aria-hidden="true" />
           </button>
         </div>
       </section>
@@ -1533,6 +1630,149 @@ export default function App() {
 
             <div className="automation-dialog-footer info-dialog-footer">
               <button type="button" className="secondary-button" onClick={() => setInfoDialogOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {benchmarkDialogOpen ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="benchmark-dialog-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="benchmark-dialog-title">Parser benchmark</h2>
+                <p>
+                  {benchmarkOverview?.latest_report
+                    ? `${providerLabel(benchmarkOverview.latest_report.parser_provider)} · ${benchmarkOverview.latest_report.layout_profile}`
+                    : "Ground-truth recognition checks"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={() => setBenchmarkDialogOpen(false)}
+                disabled={benchmarkRunning || benchmarkUpdating}
+                aria-label="Close parser benchmark"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="benchmark-dialog-body">
+              <button
+                type="button"
+                className="automation-toggle-row benchmark-ground-truth"
+                role="switch"
+                aria-checked={job?.benchmark_included ?? false}
+                onClick={toggleBenchmarkInclusion}
+                disabled={
+                  (!job?.approved_state && !job?.benchmark_included) ||
+                  busy ||
+                  benchmarkLoading ||
+                  benchmarkRunning ||
+                  benchmarkUpdating
+                }
+              >
+                <span>
+                  <strong>Use current hand as ground truth</strong>
+                  <small>
+                    {job?.approved_state
+                      ? job.original_filename
+                      : job?.benchmark_included
+                        ? "Previous approved state remains included"
+                        : "Approve the current hand first"}
+                  </small>
+                </span>
+                <span className={job?.benchmark_included ? "switch-control active" : "switch-control"} aria-hidden="true">
+                  <span />
+                </span>
+              </button>
+
+              {benchmarkLoading ? (
+                <div className="benchmark-empty">Reading benchmark results...</div>
+              ) : benchmarkOverview?.latest_report ? (
+                <>
+                  <div className="benchmark-summary" aria-label="Latest benchmark summary">
+                    <div>
+                      <strong>{benchmarkOverview.latest_report.total_cases}</strong>
+                      <span>cases</span>
+                    </div>
+                    <div>
+                      <strong>{benchmarkOverview.latest_report.correct_fields}/{benchmarkOverview.latest_report.evaluated_fields}</strong>
+                      <span>fields correct</span>
+                    </div>
+                    <div>
+                      <strong>{benchmarkPercent(benchmarkOverview.latest_report.accuracy)}</strong>
+                      <span>accuracy</span>
+                    </div>
+                    <div>
+                      <strong className={benchmarkOverview.latest_report.failed_cases > 0 ? "needs-review" : ""}>{benchmarkOverview.latest_report.failed_cases}</strong>
+                      <span>failed</span>
+                    </div>
+                  </div>
+
+                  <div className="benchmark-results-scroll">
+                    <section className="benchmark-result-section" aria-labelledby="benchmark-fields-title">
+                      <h3 id="benchmark-fields-title">Field accuracy</h3>
+                      <div className="benchmark-field-list">
+                        {benchmarkOverview.latest_report.field_metrics.map((metric) => (
+                          <div key={metric.field}>
+                            <span>{benchmarkFieldLabel(metric.field)}</span>
+                            <small>{metric.correct}/{metric.total}</small>
+                            <strong>{benchmarkPercent(metric.accuracy)}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                    <section className="benchmark-result-section" aria-labelledby="benchmark-cases-title">
+                      <h3 id="benchmark-cases-title">Cases</h3>
+                      <div className="benchmark-case-list">
+                        {benchmarkOverview.latest_report.cases.map((benchmarkCase) => (
+                          <div key={benchmarkCase.job_id}>
+                            <span>
+                              <strong>{benchmarkCase.original_filename}</strong>
+                              <small>{benchmarkCase.error ?? `${benchmarkCase.correct_fields}/${benchmarkCase.evaluated_fields} fields`}</small>
+                            </span>
+                            <strong className={benchmarkCase.status === "error" ? "needs-review" : ""}>
+                              {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                </>
+              ) : (
+                <div className="benchmark-empty">No benchmark has been run yet.</div>
+              )}
+            </div>
+
+            <div className="automation-dialog-footer benchmark-dialog-footer">
+              <span>
+                <strong>{benchmarkOverview?.included_cases ?? 0}</strong> ground-truth {benchmarkOverview?.included_cases === 1 ? "hand" : "hands"}
+              </span>
+              <button
+                type="button"
+                onClick={onRunBenchmark}
+                disabled={
+                  benchmarkLoading ||
+                  benchmarkRunning ||
+                  benchmarkUpdating ||
+                  busy ||
+                  (benchmarkOverview?.included_cases ?? 0) === 0
+                }
+              >
+                <Play size={14} aria-hidden="true" />
+                {benchmarkRunning ? "Running..." : "Run benchmark"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setBenchmarkDialogOpen(false)}
+                disabled={benchmarkRunning || benchmarkUpdating}
+              >
                 Done
               </button>
             </div>

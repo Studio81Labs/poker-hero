@@ -3,7 +3,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from app.models import JobRecord
+from app.models import BenchmarkReport, JobRecord
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
@@ -48,6 +48,13 @@ class FileJobStore:
             raise JobNotFoundError(job_id)
         return JobRecord.model_validate_json(path.read_text())
 
+    def list(self) -> list[JobRecord]:
+        jobs = [
+            JobRecord.model_validate_json(path.read_text())
+            for path in self.jobs_dir.glob("*/job.json")
+        ]
+        return sorted(jobs, key=lambda job: job.created_at)
+
     def save(self, job: JobRecord) -> JobRecord:
         job.touch()
         path = self._job_path(job.id)
@@ -91,3 +98,41 @@ class FileJobStore:
         except ValueError as exc:
             raise JobNotFoundError(str(candidate)) from exc
         return path
+
+
+class FileBenchmarkStore:
+    def __init__(self, data_dir: Path) -> None:
+        self.benchmarks_dir = (data_dir / "benchmarks").resolve()
+        self.benchmarks_dir.mkdir(parents=True, exist_ok=True)
+
+    def get_latest(self) -> BenchmarkReport | None:
+        path = self.benchmarks_dir / "latest.json"
+        if not path.exists():
+            return None
+        return BenchmarkReport.model_validate_json(path.read_text())
+
+    def save(self, report: BenchmarkReport) -> BenchmarkReport:
+        payload = report.model_dump_json(indent=2)
+        self._atomic_write(self.benchmarks_dir / f"{report.id}.json", payload)
+        self._atomic_write(self.benchmarks_dir / "latest.json", payload)
+        return report
+
+    def _atomic_write(self, path: Path, payload: str) -> None:
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=path.parent,
+                encoding="utf-8",
+                prefix="benchmark.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                temp_file.write(payload)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, path)
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()

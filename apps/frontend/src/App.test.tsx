@@ -69,6 +69,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     },
     approved_state: null,
     recommendation: null,
+    benchmark_included: false,
     error: null,
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
@@ -641,6 +642,103 @@ describe("App", () => {
     expect(payload.user_approved).toBe(true);
   });
 
+  it("adds an approved hand to ground truth and runs the parser benchmark", async () => {
+    const pendingOverview = deferredResponse();
+    const pendingInclusion = deferredResponse();
+    const pendingBenchmark = deferredResponse();
+    const benchmarkJob = { ...approvedJob(), benchmark_included: true };
+    const benchmarkReport = {
+      id: "benchmark-1",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-20T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 9,
+      evaluated_fields: 10,
+      accuracy: 0.9,
+      field_metrics: [{ field: "hero_cards", correct: 1, total: 1, accuracy: 1 }],
+      cases: [
+        {
+          job_id: "job-123",
+          original_filename: "table.png",
+          status: "completed",
+          correct_fields: 9,
+          evaluated_fields: 10,
+          accuracy: 0.9,
+          warnings: [],
+          error: null,
+          comparisons: [],
+        },
+      ],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockReturnValueOnce(pendingOverview.promise)
+      .mockReturnValueOnce(pendingInclusion.promise)
+      .mockReturnValueOnce(pendingBenchmark.promise)
+      .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), benchmark_included: false }));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", { name: /Use current hand as ground truth/ });
+    expect(groundTruthSwitch).toHaveAttribute("aria-checked", "false");
+    expect(groundTruthSwitch).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
+
+    pendingOverview.resolve(jsonResponse({ included_cases: 0, latest_report: null }));
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    await user.click(groundTruthSwitch);
+    expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+    pendingInclusion.resolve(jsonResponse(benchmarkJob));
+    await waitFor(() => expect(groundTruthSwitch).toHaveAttribute("aria-checked", "true"));
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled();
+    const runBenchmark = within(dialog).getByRole("button", { name: "Run benchmark" });
+    await waitFor(() => expect(runBenchmark).toBeEnabled());
+    await user.click(runBenchmark);
+    expect(groundTruthSwitch).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+    pendingBenchmark.resolve(jsonResponse(benchmarkReport));
+
+    expect(await within(dialog).findByLabelText("Latest benchmark summary")).toHaveTextContent("90%");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled());
+    expect(within(dialog).getByText("hero cards")).toBeInTheDocument();
+    expect(within(dialog).getByText("9/10 fields")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const reopenedDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const retainedGroundTruth = within(reopenedDialog).getByRole("switch", {
+      name: /Use current hand as ground truth.*Previous approved state remains included/,
+    });
+    expect(retainedGroundTruth).toBeEnabled();
+    await user.click(retainedGroundTruth);
+    await waitFor(() => expect(retainedGroundTruth).toHaveAttribute("aria-checked", "false"));
+
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/jobs",
+      "http://localhost:8000/api/jobs/job-123/approve",
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/jobs/job-123/benchmark",
+      "http://localhost:8000/api/benchmarks/run",
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/jobs/job-123/benchmark",
+    ]);
+  });
+
   it("prevents field edits while approval is pending", async () => {
     const pendingApproval = deferredResponse();
     fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201)).mockReturnValueOnce(pendingApproval.promise);
@@ -658,6 +756,7 @@ describe("App", () => {
     expect(heroCardsInput).toBeDisabled();
     expect(streetSelect).toBeDisabled();
     expect(actionContextInput).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Parser benchmark" })).toBeDisabled();
 
     await user.type(potInput, "18");
     expect(potInput).toHaveValue("12.5");
@@ -665,6 +764,7 @@ describe("App", () => {
     pendingApproval.resolve(jsonResponse(approvedJob()));
 
     await waitFor(() => expect(potInput).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Parser benchmark" })).toBeEnabled();
     expect(potInput).toHaveValue("12.5");
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled();
   });

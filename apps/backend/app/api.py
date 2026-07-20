@@ -6,7 +6,15 @@ from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 
 from app.config import Settings, get_settings
-from app.models import CanonicalState, JobRecord, RecommendationRequest
+from app.benchmarking import run_benchmark
+from app.models import (
+    BenchmarkOverview,
+    BenchmarkReport,
+    BenchmarkSelectionRequest,
+    CanonicalState,
+    JobRecord,
+    RecommendationRequest,
+)
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
 from app.providers.base import (
@@ -16,7 +24,7 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.registry import build_provider
-from app.storage import FileJobStore, JobNotFoundError
+from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
@@ -24,6 +32,7 @@ SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
+    benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     app = FastAPI(title="Poker Training Analyzer API")
     app.add_middleware(
         CORSMiddleware,
@@ -152,6 +161,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job.status = "recommended"
         job.error = None
         return store.save(job)
+
+    @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
+    def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
+        job = load_job_or_404(store, job_id)
+        if selection.included and (
+            job.approved_state is None or not job.approved_state.user_approved
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Approve corrected state before adding it to the benchmark",
+            )
+        job.benchmark_included = selection.included
+        return store.save(job)
+
+    @app.get("/api/benchmarks", response_model=BenchmarkOverview)
+    def get_benchmark_overview() -> BenchmarkOverview:
+        included_cases = sum(job.benchmark_included for job in store.list())
+        return BenchmarkOverview(
+            included_cases=included_cases,
+            latest_report=benchmark_store.get_latest(),
+        )
+
+    @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
+    def run_parser_benchmark() -> BenchmarkReport:
+        jobs = [job for job in store.list() if job.benchmark_included]
+        if not jobs:
+            raise HTTPException(status_code=409, detail="Add at least one approved hand to the benchmark")
+        try:
+            parser = build_parser(active_settings)
+            report = run_benchmark(
+                jobs=jobs,
+                parser=parser,
+                image_path_for=store.image_path,
+                parser_provider=active_settings.parser_provider,
+                layout_profile=active_settings.parser_layout_profile,
+            )
+        except ParserConfigurationError as exc:
+            raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
+        return benchmark_store.save(report)
 
     return app
 

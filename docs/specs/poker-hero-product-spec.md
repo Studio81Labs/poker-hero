@@ -22,6 +22,7 @@ Supported poker format:
 - Multiple poker-client layouts through configurable parser profiles and sample-driven validation.
 - Multi-image upload, browser capture, independent queue processing, and saved history.
 - Optional automation for approval and recommendation when configured confidence requirements are met.
+- A ground-truth parser benchmark built from explicitly selected approved hands.
 
 Out of scope:
 
@@ -61,6 +62,7 @@ The frontend is a browser control panel for:
 - Viewing the recommendation, sizing, confidence, and reasoning.
 - Seeing parser/provider errors and retrying when possible.
 - Moving completed items into an autosaved history.
+- Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
 
 ### Backend API
 
@@ -70,6 +72,8 @@ The backend API:
 - Creates one independent analysis job per screenshot.
 - Runs the configured parser.
 - Stores the original screenshot, parser output, approved/corrected state, and recommendation result.
+- Runs the active parser against an explicit ground-truth corpus without changing the original jobs.
+- Persists the latest benchmark report with case and field-level accuracy.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
 - Routes recommendation requests to the configured provider.
 
@@ -136,9 +140,23 @@ instead of guessing.
 7. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 8. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata.
 9. The UI retains completed items in processing until the user clears them into history.
+10. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
+
+## Parser Benchmark
+
+Approved states can become reusable parser labels only after the user explicitly
+enables `Use current hand as ground truth`. Auto-approval alone must not add a
+hand to the benchmark corpus. Re-approving a selected hand updates its expected
+state for future runs.
+
+A benchmark run re-parses every selected screenshot with the currently
+configured parser and layout profile. It does not overwrite the stored parser
+result, approved state, or recommendation. Reports include overall accuracy,
+field-level correct/total counts, per-case accuracy, warnings, and isolated
+case errors. One failed case must not stop the remaining corpus.
 
 ## Review And Auto-Approve
 
@@ -197,6 +215,7 @@ Recognition tests:
 - Store expected extracted state for each screenshot.
 - Start with 5-10 screenshots per target poker-client layout.
 - Measure field-level accuracy, not only whole-screenshot success.
+- Verify that benchmark runs preserve original jobs and continue after individual parser failures.
 
 Recommendation tests:
 
@@ -230,4 +249,5 @@ Poker Hero is successful when:
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
+- Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - The system can swap parsers and recommendation providers without changing the core UI workflow.

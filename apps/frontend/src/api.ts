@@ -1,4 +1,4 @@
-import type { CanonicalState, JobRecord, SystemInfo } from "./types";
+import type { BenchmarkOverview, BenchmarkReport, CanonicalState, JobRecord, SystemInfo } from "./types";
 
 const API_BASE_URL =
   typeof import.meta.env.VITE_API_BASE_URL === "string" && import.meta.env.VITE_API_BASE_URL.length > 0
@@ -62,4 +62,29 @@ export async function requestRecommendation(jobId: string, signal?: AbortSignal)
     credentials: "include",
   });
   return readJson<JobRecord>(response);
+}
+
+export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks`, {
+    credentials: "include",
+  });
+  return readJson<BenchmarkOverview>(response);
+}
+
+export async function setBenchmarkInclusion(jobId: string, included: boolean): Promise<JobRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/benchmark`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ included }),
+    credentials: "include",
+  });
+  return readJson<JobRecord>(response);
+}
+
+export async function runParserBenchmark(): Promise<BenchmarkReport> {
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks/run`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return readJson<BenchmarkReport>(response);
 }

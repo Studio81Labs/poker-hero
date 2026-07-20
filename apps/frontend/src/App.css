@@ -1384,16 +1384,72 @@ button:disabled {
 }
 
 .benchmark-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
   max-width: 680px;
 }
 
 .benchmark-dialog-body {
+  display: flex;
+  flex-direction: column;
   min-height: 180px;
+  overflow: hidden;
   padding: 0 22px;
 }
 
 .benchmark-ground-truth {
   border-bottom: 2px solid var(--line);
+}
+
+.benchmark-report-toolbar {
+  align-items: end;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+
+.benchmark-report-toolbar label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.benchmark-report-toolbar label > span,
+.benchmark-report-toolbar > span,
+.benchmark-report-toolbar > strong {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.benchmark-report-toolbar label > span,
+.benchmark-report-toolbar > span {
+  color: var(--muted);
+}
+
+.benchmark-report-toolbar select {
+  min-height: 31px;
+  min-width: min(300px, 48vw);
+  padding-block: 5px;
+}
+
+.benchmark-report-toolbar > strong {
+  color: var(--text);
+  padding-bottom: 8px;
+  text-align: right;
+}
+
+.benchmark-report-toolbar > strong.negative {
+  color: var(--accent-dark);
+}
+
+.benchmark-report-toolbar > span {
+  padding-bottom: 8px;
+  text-align: right;
 }
 
 .benchmark-summary {
@@ -1433,7 +1489,9 @@ button:disabled {
 
 .benchmark-results-scroll {
   border-top: 1px solid var(--line-soft);
+  flex: 1 1 auto;
   max-height: min(43vh, 390px);
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -1829,6 +1887,23 @@ button:disabled {
   .benchmark-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 14px;
+  }
+
+  .benchmark-report-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .benchmark-report-toolbar select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .benchmark-report-toolbar > span,
+  .benchmark-report-toolbar > strong {
+    padding-bottom: 0;
+    text-align: left;
   }
 
   .benchmark-summary > div:nth-child(3) {

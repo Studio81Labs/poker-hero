@@ -10,6 +10,7 @@ from app.benchmarking import run_benchmark
 from app.models import (
     BenchmarkOverview,
     BenchmarkReport,
+    BenchmarkReportSummary,
     BenchmarkSelectionRequest,
     CanonicalState,
     JobRecord,
@@ -24,7 +25,12 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.registry import build_provider
-from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
+from app.storage import (
+    BenchmarkNotFoundError,
+    FileBenchmarkStore,
+    FileJobStore,
+    JobNotFoundError,
+)
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
@@ -181,7 +187,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return BenchmarkOverview(
             included_cases=included_cases,
             latest_report=benchmark_store.get_latest(),
+            recent_reports=[
+                BenchmarkReportSummary.from_report(report)
+                for report in benchmark_store.list()
+            ],
         )
+
+    @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
+    def get_benchmark_report(report_id: str) -> BenchmarkReport:
+        try:
+            return benchmark_store.get(report_id)
+        except BenchmarkNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Benchmark report not found") from exc
 
     @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
     def run_parser_benchmark() -> BenchmarkReport:

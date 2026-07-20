@@ -7,6 +7,7 @@ import "./App.css";
 import {
   approveState,
   getBenchmarkOverview,
+  getBenchmarkReport,
   getJob,
   getSystemInfo,
   imageUrl,
@@ -16,8 +17,10 @@ import {
   uploadScreenshot,
 } from "./api";
 import type {
-  BenchmarkOverview,
   BenchmarkFieldComparison,
+  BenchmarkOverview,
+  BenchmarkReport,
+  BenchmarkReportSummary,
   CanonicalState,
   Card,
   DetectedState,
@@ -154,6 +157,52 @@ function benchmarkFieldLabel(field: string): string {
 
 function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
+  return {
+    id: report.id,
+    parser_provider: report.parser_provider,
+    layout_profile: report.layout_profile,
+    created_at: report.created_at,
+    total_cases: report.total_cases,
+    failed_cases: report.failed_cases,
+    accuracy: report.accuracy,
+  };
+}
+
+function benchmarkReportOption(summary: BenchmarkReportSummary, latestId: string | undefined): string {
+  const createdAt = new Date(summary.created_at);
+  const dateLabel = Number.isNaN(createdAt.getTime())
+    ? "Previous run"
+    : createdAt.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+  return `${summary.id === latestId ? "Latest" : dateLabel} · ${benchmarkPercent(summary.accuracy)}`;
+}
+
+function benchmarkAccuracyChange(
+  report: BenchmarkReport | null,
+  recentReports: BenchmarkReportSummary[],
+): number | null {
+  if (!report) {
+    return null;
+  }
+  const currentIndex = recentReports.findIndex((summary) => summary.id === report.id);
+  if (currentIndex < 0) {
+    return null;
+  }
+  const previous = recentReports
+    .slice(currentIndex + 1)
+    .find(
+      (summary) =>
+        summary.parser_provider === report.parser_provider &&
+        summary.layout_profile === report.layout_profile,
+    );
+  return previous ? Math.round((report.accuracy - previous.accuracy) * 100) : null;
 }
 
 function benchmarkComparisonValue(value: unknown): string {
@@ -589,8 +638,10 @@ export default function App() {
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
   const [benchmarkOverview, setBenchmarkOverview] = useState<BenchmarkOverview | null>(null);
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [benchmarkReportLoading, setBenchmarkReportLoading] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
+  const [selectedBenchmarkReport, setSelectedBenchmarkReport] = useState<BenchmarkReport | null>(null);
   const [expandedBenchmarkCaseId, setExpandedBenchmarkCaseId] = useState<string | null>(null);
   const [benchmarkReviewJobId, setBenchmarkReviewJobId] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -638,6 +689,19 @@ export default function App() {
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
+  const recentBenchmarkReports = useMemo(() => {
+    if (benchmarkOverview?.recent_reports?.length) {
+      return benchmarkOverview.recent_reports;
+    }
+    return benchmarkOverview?.latest_report
+      ? [benchmarkReportSummary(benchmarkOverview.latest_report)]
+      : [];
+  }, [benchmarkOverview]);
+  const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
+  const benchmarkAccuracyDelta = useMemo(
+    () => benchmarkAccuracyChange(benchmarkReport, recentBenchmarkReports),
+    [benchmarkReport, recentBenchmarkReports],
+  );
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1043,10 +1107,14 @@ export default function App() {
 
   function openBenchmarkDialog() {
     setExpandedBenchmarkCaseId(null);
+    setSelectedBenchmarkReport(null);
     setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
     void getBenchmarkOverview()
-      .then(setBenchmarkOverview)
+      .then((overview) => {
+        setBenchmarkOverview(overview);
+        setSelectedBenchmarkReport(overview.latest_report);
+      })
       .catch((benchmarkError) => setError(messageFromError(benchmarkError, "Could not load parser benchmark")))
       .finally(() => setBenchmarkLoading(false));
   }
@@ -1070,6 +1138,7 @@ export default function App() {
           : {
               included_cases: included ? 1 : 0,
               latest_report: null,
+              recent_reports: [],
             },
       );
     } catch (benchmarkError) {
@@ -1084,14 +1153,36 @@ export default function App() {
     setError(null);
     try {
       const latestReport = await runParserBenchmark();
+      const latestSummary = benchmarkReportSummary(latestReport);
+      setSelectedBenchmarkReport(latestReport);
       setBenchmarkOverview((current) => ({
         included_cases: current?.included_cases ?? latestReport.total_cases,
         latest_report: latestReport,
+        recent_reports: [
+          latestSummary,
+          ...(current?.recent_reports ?? []).filter((summary) => summary.id !== latestReport.id),
+        ].slice(0, 10),
       }));
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Parser benchmark failed"));
     } finally {
       setBenchmarkRunning(false);
+    }
+  }
+
+  async function selectBenchmarkReport(reportId: string) {
+    if (reportId === benchmarkReport?.id) {
+      return;
+    }
+    setBenchmarkReportLoading(true);
+    setExpandedBenchmarkCaseId(null);
+    setError(null);
+    try {
+      setSelectedBenchmarkReport(await getBenchmarkReport(reportId));
+    } catch (benchmarkError) {
+      setError(messageFromError(benchmarkError, "Could not load benchmark report"));
+    } finally {
+      setBenchmarkReportLoading(false);
     }
   }
 
@@ -1691,8 +1782,8 @@ export default function App() {
               <div>
                 <h2 id="benchmark-dialog-title">Parser benchmark</h2>
                 <p>
-                  {benchmarkOverview?.latest_report
-                    ? `${providerLabel(benchmarkOverview.latest_report.parser_provider)} · ${benchmarkOverview.latest_report.layout_profile}`
+                  {benchmarkReport
+                    ? `${providerLabel(benchmarkReport.parser_provider)} · ${benchmarkReport.layout_profile}`
                     : "Ground-truth recognition checks"}
                 </p>
               </div>
@@ -1700,7 +1791,7 @@ export default function App() {
                 type="button"
                 className="dialog-icon-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null}
                 aria-label="Close parser benchmark"
               >
                 <X size={16} aria-hidden="true" />
@@ -1718,6 +1809,7 @@ export default function App() {
                   (!job?.approved_state && !job?.benchmark_included) ||
                   busy ||
                   benchmarkLoading ||
+                  benchmarkReportLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
                   benchmarkReviewJobId !== null
@@ -1740,23 +1832,47 @@ export default function App() {
 
               {benchmarkLoading ? (
                 <div className="benchmark-empty">Reading benchmark results...</div>
-              ) : benchmarkOverview?.latest_report ? (
+              ) : benchmarkReport ? (
                 <>
-                  <div className="benchmark-summary" aria-label="Latest benchmark summary">
+                  <div className="benchmark-report-toolbar">
+                    <label>
+                      <span>Report</span>
+                      <select
+                        aria-label="Benchmark report"
+                        value={benchmarkReport.id}
+                        onChange={(event) => void selectBenchmarkReport(event.target.value)}
+                        disabled={benchmarkReportLoading || benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null || busy}
+                      >
+                        {recentBenchmarkReports.map((summary) => (
+                          <option key={summary.id} value={summary.id}>
+                            {benchmarkReportOption(summary, benchmarkOverview?.latest_report?.id)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {benchmarkAccuracyDelta !== null ? (
+                      <strong className={benchmarkAccuracyDelta < 0 ? "negative" : ""}>
+                        {benchmarkAccuracyDelta > 0 ? "+" : ""}{benchmarkAccuracyDelta} pts vs previous
+                      </strong>
+                    ) : (
+                      <span>No comparable earlier run</span>
+                    )}
+                  </div>
+                  <div className="benchmark-summary" aria-label="Benchmark summary">
                     <div>
-                      <strong>{benchmarkOverview.latest_report.total_cases}</strong>
+                      <strong>{benchmarkReport.total_cases}</strong>
                       <span>cases</span>
                     </div>
                     <div>
-                      <strong>{benchmarkOverview.latest_report.correct_fields}/{benchmarkOverview.latest_report.evaluated_fields}</strong>
+                      <strong>{benchmarkReport.correct_fields}/{benchmarkReport.evaluated_fields}</strong>
                       <span>fields correct</span>
                     </div>
                     <div>
-                      <strong>{benchmarkPercent(benchmarkOverview.latest_report.accuracy)}</strong>
+                      <strong>{benchmarkPercent(benchmarkReport.accuracy)}</strong>
                       <span>accuracy</span>
                     </div>
                     <div>
-                      <strong className={benchmarkOverview.latest_report.failed_cases > 0 ? "needs-review" : ""}>{benchmarkOverview.latest_report.failed_cases}</strong>
+                      <strong className={benchmarkReport.failed_cases > 0 ? "needs-review" : ""}>{benchmarkReport.failed_cases}</strong>
                       <span>failed</span>
                     </div>
                   </div>
@@ -1765,7 +1881,7 @@ export default function App() {
                     <section className="benchmark-result-section" aria-labelledby="benchmark-fields-title">
                       <h3 id="benchmark-fields-title">Field accuracy</h3>
                       <div className="benchmark-field-list">
-                        {benchmarkOverview.latest_report.field_metrics.map((metric) => (
+                        {benchmarkReport.field_metrics.map((metric) => (
                           <div key={metric.field}>
                             <span>{benchmarkFieldLabel(metric.field)}</span>
                             <small>{metric.correct}/{metric.total}</small>
@@ -1777,7 +1893,7 @@ export default function App() {
                     <section className="benchmark-result-section" aria-labelledby="benchmark-cases-title">
                       <h3 id="benchmark-cases-title">Cases</h3>
                       <div className="benchmark-case-list">
-                        {benchmarkOverview.latest_report.cases.map((benchmarkCase) => {
+                        {benchmarkReport.cases.map((benchmarkCase) => {
                           const expanded = expandedBenchmarkCaseId === benchmarkCase.job_id;
                           const mismatches = benchmarkCase.comparisons.filter((comparison) => !comparison.matched);
                           const detailId = `benchmark-case-${benchmarkCase.job_id}`;
@@ -1827,7 +1943,7 @@ export default function App() {
                                       type="button"
                                       className="secondary-button"
                                       onClick={() => void reviewBenchmarkCase(benchmarkCase.job_id)}
-                                      disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null || busy}
+                                      disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null || busy}
                                     >
                                       <Eye size={14} aria-hidden="true" />
                                       {benchmarkReviewJobId === benchmarkCase.job_id ? "Opening..." : "Review hand"}
@@ -1856,6 +1972,7 @@ export default function App() {
                 onClick={onRunBenchmark}
                 disabled={
                   benchmarkLoading ||
+                  benchmarkReportLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
                   benchmarkReviewJobId !== null ||
@@ -1870,7 +1987,7 @@ export default function App() {
                 type="button"
                 className="secondary-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null}
               >
                 Done
               </button>

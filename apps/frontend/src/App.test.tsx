@@ -186,7 +186,12 @@ afterEach(() => {
 describe("App", () => {
   it("renders live capture first and exposes upload mode", async () => {
     fetchMock().mockResolvedValueOnce(
-      jsonResponse({ status: "ok", parser_provider: "ocr_cv", recommendation_provider: "local_solver" }),
+      jsonResponse({
+        status: "ok",
+        parser_provider: "ocr_cv",
+        recommendation_provider: "local_solver",
+        recommendation_engine: "postflop_solver",
+      }),
     );
     render(<App />);
     const user = userEvent.setup();
@@ -200,9 +205,9 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getByRole("dialog", { name: "About Poker Training Analyzer" })).toBeInTheDocument();
     expect(await screen.findByText("OCR + computer vision")).toBeInTheDocument();
-    expect(screen.getByText("Local EV solver")).toBeInTheDocument();
+    expect(screen.getByText("Postflop solver")).toBeInTheDocument();
     expect(screen.getByText(/OCR and computer vision read the cards/)).toBeInTheDocument();
-    expect(screen.getByText(/solver compares candidate actions/i)).toBeInTheDocument();
+    expect(screen.getByText(/postflop engine solves heads-up game trees/i)).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/health");
     await user.click(screen.getByRole("button", { name: "Close app information" }));
     expect(screen.queryByRole("dialog", { name: "About Poker Training Analyzer" })).not.toBeInTheDocument();

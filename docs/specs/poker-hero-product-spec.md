@@ -91,7 +91,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the bundled range/EV engine or a configured local command.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default plugin solves heads-up postflop trees and records use of the bundled range/EV fallback for unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -171,6 +171,7 @@ Example configuration concepts:
 - `parser.autoApprove.enabled`: boolean.
 - `parser.autoApprove.thresholds`: required confidence thresholds per field.
 - `recommendation.provider`: `mock`, `local_solver`, `external_solver`, or `llm_advice`.
+- `recommendation.localEngine`: `postflop_solver` or `local_ev`.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
 

@@ -85,12 +85,15 @@ const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
 const PROVIDER_LABELS: Record<string, string> = {
+  custom_local: "Custom local solver",
   external_solver: "External solver",
   llm_advice: "LLM adviser",
   llm_vision: "External vision model",
-  local_solver: "Local EV solver",
+  local_ev: "Local EV solver",
+  local_solver: "Local solver",
   mock: "Demo engine",
   ocr_cv: "OCR + computer vision",
+  postflop_solver: "Postflop solver",
   rule_based: "Rule-based trainer",
 };
 
@@ -559,7 +562,8 @@ export default function App() {
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
-  const activeRecommendationProvider = systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
+  const activeRecommendationProvider =
+    systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1489,7 +1493,7 @@ export default function App() {
               </section>
               <section className="info-dialog-section">
                 <h3>Recommendations</h3>
-                <p>The solver compares candidate actions using estimated ranges, equity, pot odds, and expected value. Results are training guidance, not a full GTO tree solve.</p>
+                <p>The configured engine analyzes approved hand state and compares available actions. The postflop engine solves heads-up game trees; unsupported spots use the range/EV fallback.</p>
               </section>
               <section className="info-dialog-section">
                 <h3>Training scope</h3>

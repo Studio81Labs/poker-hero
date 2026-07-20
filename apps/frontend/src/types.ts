@@ -58,4 +58,5 @@ export interface SystemInfo {
   status: string;
   parser_provider: string;
   recommendation_provider: string;
+  recommendation_engine?: string;
 }

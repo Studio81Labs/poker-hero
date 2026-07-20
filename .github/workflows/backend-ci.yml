@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - "apps/backend/**"
+      - "solver-plugins/postflop/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "apps/backend/**"
+      - "solver-plugins/postflop/**"
       - ".github/workflows/backend-ci.yml"
 
 permissions:
@@ -38,6 +40,14 @@ jobs:
       - name: Run backend tests
         working-directory: apps/backend
         run: python -m pytest
+
+      - name: Test postflop solver plugin
+        run: >-
+          docker run --rm
+          -v "$PWD/solver-plugins/postflop:/work"
+          -w /work
+          rust:1.85-slim-bookworm
+          cargo test --locked
 
   image:
     name: Backend Image

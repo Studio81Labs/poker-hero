@@ -13,7 +13,11 @@ Configure the application with:
 
 Start from `infra/docker/backend.env.example`. At minimum, set the parser,
 layout, recommendation provider, data directory, upload limit, and allowed
-origins. Keep provider URLs and credentials in Coolify secrets.
+origins. The backend image already contains `poker-postflop-solver`; keep
+`POKER_LOCAL_SOLVER_ENGINE=postflop_solver` to use it. The default 768 MB solver
+tree limit is separate from container overhead, so allocate at least 1.5 GB RAM
+or lower `POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB`. Keep provider URLs and
+credentials in Coolify secrets.
 
 After deployment, verify:
 

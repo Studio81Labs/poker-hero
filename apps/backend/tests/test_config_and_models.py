@@ -16,6 +16,9 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.parser_layout_profile == "generic"
     assert settings.parser_auto_approve_enabled is False
     assert settings.recommendation_provider == "rule_based"
+    assert settings.local_solver_engine == "postflop_solver"
+    assert settings.local_solver_timeout_seconds == 120
+    assert settings.postflop_solver_fallback_enabled is True
     assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
 
@@ -23,11 +26,13 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
 def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POKER_PARSER_PROVIDER", "external")
     monkeypatch.setenv("POKER_RECOMMENDATION_PROVIDER", "solver")
+    monkeypatch.setenv("POKER_LOCAL_SOLVER_ENGINE", "local_ev")
 
     settings = Settings()
 
     assert settings.parser_provider == "external"
     assert settings.recommendation_provider == "solver"
+    assert settings.local_solver_engine == "local_ev"
 
 
 def test_application_settings_loader_reads_dotenv(

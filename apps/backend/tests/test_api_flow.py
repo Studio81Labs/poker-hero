@@ -66,6 +66,24 @@ def load_only_job(tmp_path: Path):
     return FileJobStore(tmp_path).get(job_dirs[0].name)
 
 
+def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="postflop_solver",
+    )
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "parser_provider": "mock",
+        "recommendation_provider": "local_solver",
+        "recommendation_engine": "postflop_solver",
+    }
+
+
 def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 

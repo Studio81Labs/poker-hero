@@ -26,6 +26,13 @@ def approved_state() -> CanonicalState:
     )
 
 
+def heads_up_postflop_state() -> CanonicalState:
+    state = approved_state().model_copy(deep=True)
+    state.players_in_hand = 2
+    state.hero_position = "IP"
+    return state
+
+
 def test_mock_provider_uses_rule_based_training_recommendation(tmp_path: Path) -> None:
     provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="mock"))
     request = RecommendationRequest(state=approved_state(), provider=provider.name)
@@ -178,6 +185,8 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.action == "call"
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "heads-up postflop" in result.raw["fallback_reason"]
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
     assert "solver compared candidate actions" in result.explanation.lower()
@@ -196,6 +205,103 @@ def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) 
 
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+
+
+def test_local_solver_can_select_bundled_ev_engine(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+
+    result = provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert "requested_engine" not in result.raw
+
+
+def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "assert payload['state']['hero_position'] == 'IP'\n"
+        "print(json.dumps({"
+        "'action': 'raise', "
+        "'sizing': 8.5, "
+        "'confidence': 0.88, "
+        "'explanation': 'Postflop tree response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    assert result.action == "raise"
+    assert result.sizing == 8.5
+    assert result.raw["engine"] == "postflop_solver"
+    assert "fallback_reason" not in result.raw
+
+
+def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text("import sys\nprint('tree too large', file=sys.stderr)\nsys.exit(8)\n")
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "tree too large" in result.raw["fallback_reason"]
+    assert "range/EV fallback" in result.explanation
+
+
+def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.hero_position = None
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="position must identify IP or OOP"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_local_solver_rejects_unknown_engine(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="missing",
+        )
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="Unknown local solver engine"):
+        provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
 
 
 def test_local_solver_reads_json_response(tmp_path: Path) -> None:

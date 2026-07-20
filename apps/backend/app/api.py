@@ -34,6 +34,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "status": "ok",
             "parser_provider": active_settings.parser_provider,
             "recommendation_provider": active_settings.recommendation_provider,
+            "recommendation_engine": (
+                (
+                    "custom_local"
+                    if active_settings.local_solver_command
+                    and active_settings.local_solver_command.strip()
+                    else active_settings.local_solver_engine
+                )
+                if active_settings.recommendation_provider == "local_solver"
+                else active_settings.recommendation_provider
+            ),
         }
 
     @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)

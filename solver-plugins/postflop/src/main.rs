@@ -55,6 +55,12 @@ struct CandidateResult {
     solver_action: String,
 }
 
+struct TreeAmounts {
+    starting_pot: i32,
+    current_bet: i32,
+    effective_stack: i32,
+}
+
 fn main() -> ExitCode {
     match read_request().and_then(solve_request) {
         Ok(result) => match serde_json::to_string(&result) {
@@ -87,17 +93,11 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let current_bet = non_negative_value(state.current_bet, "current_bet")?;
     let effective_stack = positive_value(state.effective_stack, "effective_stack")?;
 
-    let scaled_pot = scale_amount(pot_size, "pot_size")?;
-    let scaled_bet = scale_amount(current_bet, "current_bet")?;
-    let starting_pot = if scaled_bet > 0 {
-        scaled_pot - scaled_bet
-    } else {
-        scaled_pot
-    };
-    if starting_pot <= 0 {
-        return Err("pot_size must be greater than current_bet".to_string());
-    }
-    let initial_stack = scale_amount(effective_stack + current_bet, "effective_stack")?;
+    let TreeAmounts {
+        starting_pot,
+        current_bet: scaled_bet,
+        effective_stack: tree_stack,
+    } = tree_amounts(pot_size, current_bet, effective_stack)?;
 
     let hero_hand = hero_hand_code(&state.hero_cards)?;
     let mut oop_range = env_string("POKER_POSTFLOP_SOLVER_OOP_RANGE", DEFAULT_OOP_RANGE);
@@ -113,7 +113,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let tree_config = TreeConfig {
         initial_state: board_state,
         starting_pot,
-        effective_stack: initial_stack,
+        effective_stack: tree_stack,
         rake_rate: env_number("POKER_POSTFLOP_SOLVER_RAKE_RATE", 0.0)?,
         rake_cap: env_number("POKER_POSTFLOP_SOLVER_RAKE_CAP", 0.0)? * CHIP_SCALE,
         flop_bet_sizes: [bet_sizes.clone(), bet_sizes.clone()],
@@ -225,7 +225,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
             "ranges": {"oop": oop_range, "ip": ip_range},
             "tree": {
                 "starting_pot": starting_pot as f64 / CHIP_SCALE,
-                "effective_stack": initial_stack as f64 / CHIP_SCALE,
+                "effective_stack": tree_stack as f64 / CHIP_SCALE,
                 "compressed_memory_mb": round(compressed_memory as f64 / (1024.0 * 1024.0), 1),
                 "max_iterations": max_iterations,
                 "target_exploitability_ratio": target_ratio,
@@ -442,6 +442,31 @@ fn scale_amount(value: f64, field: &str) -> Result<i32, String> {
     Ok(scaled as i32)
 }
 
+fn tree_amounts(
+    pot_size: f64,
+    current_bet: f64,
+    effective_stack: f64,
+) -> Result<TreeAmounts, String> {
+    let scaled_pot = scale_amount(pot_size, "pot_size")?;
+    let scaled_bet = scale_amount(current_bet, "current_bet")?;
+    let starting_pot = if scaled_bet > 0 {
+        scaled_pot - scaled_bet
+    } else {
+        scaled_pot
+    };
+    if starting_pot <= 0 {
+        return Err("pot_size must be greater than current_bet".to_string());
+    }
+
+    // The canonical effective stack is the visible stack behind at the decision point.
+    let tree_stack = scale_amount(effective_stack, "effective_stack")?;
+    Ok(TreeAmounts {
+        starting_pot,
+        current_bet: scaled_bet,
+        effective_stack: tree_stack,
+    })
+}
+
 fn env_string(name: &str, default: &str) -> String {
     env::var(name)
         .ok()
@@ -541,5 +566,14 @@ mod tests {
 
         assert_eq!(hand, "AhKd");
         assert_eq!(include_hand("AKs,QQ+", &hand), "AhKd,AKs,QQ+");
+    }
+
+    #[test]
+    fn visible_effective_stack_is_not_increased_by_the_call_amount() {
+        let amounts = tree_amounts(15.0, 5.0, 10.0).unwrap();
+
+        assert_eq!(amounts.starting_pot, 1000);
+        assert_eq!(amounts.current_bet, 500);
+        assert_eq!(amounts.effective_stack, 1000);
     }
 }

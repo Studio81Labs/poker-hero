@@ -10,7 +10,7 @@ covert real-time assistance, or a tool for taking actions in a poker client.
 
 ## Quick Start
 
-Prerequisites: Node 24, pnpm 10+, Python 3.11+, and Docker.
+Prerequisites: Node 24, pnpm 10+, Python 3.11+, Rust 1.85+, and Docker.
 
 ```bash
 git clone <repo-url> && cd poker-hero
@@ -49,7 +49,7 @@ poker-hero/
 
 | Command | Description |
 | --- | --- |
-| `pnpm bootstrap` | Install frontend and backend development dependencies |
+| `pnpm bootstrap` | Install dependencies and build the local postflop solver |
 | `pnpm backend:dev` | Start FastAPI with reload on port 8000 |
 | `pnpm backend:test` | Run the backend pytest suite |
 | `pnpm frontend:dev` | Start Vite on port 5173 |
@@ -89,6 +89,11 @@ Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
 facing action must be confirmed as a first bet; raised pots use fallback until
 the canonical state carries full action history.
+
+`pnpm bootstrap` builds the adapter into
+`solver-plugins/postflop/target/release/poker-postflop-solver`; the local backend
+commands add that directory to `PATH`. Re-run bootstrap after pulling changes
+to the Rust plugin.
 
 Preflop, multiway, incomplete, ambiguous-position, oversized, and failed trees
 use `local_ev` when fallback is enabled. Recommendations preserve the requested

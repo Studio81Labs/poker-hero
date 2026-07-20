@@ -6,12 +6,16 @@ on:
     paths:
       - "apps/backend/**"
       - "solver-plugins/postflop/**"
+      - "scripts/bootstrap.sh"
+      - "package.json"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "apps/backend/**"
       - "solver-plugins/postflop/**"
+      - "scripts/bootstrap.sh"
+      - "package.json"
       - ".github/workflows/backend-ci.yml"
 
 permissions:

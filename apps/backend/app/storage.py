@@ -123,12 +123,23 @@ class FileBenchmarkStore:
         return BenchmarkReport.model_validate_json(path.read_text())
 
     def list(self, limit: int = 10) -> list[BenchmarkReport]:
+        if limit <= 0:
+            return []
+
+        report_paths = sorted(
+            (
+                path
+                for path in self.benchmarks_dir.glob("*.json")
+                if BENCHMARK_ID_PATTERN.fullmatch(path.stem) is not None
+            ),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )[:limit]
         reports = [
             BenchmarkReport.model_validate_json(path.read_text())
-            for path in self.benchmarks_dir.glob("*.json")
-            if BENCHMARK_ID_PATTERN.fullmatch(path.stem) is not None
+            for path in report_paths
         ]
-        return sorted(reports, key=lambda report: report.created_at, reverse=True)[:limit]
+        return sorted(reports, key=lambda report: report.created_at, reverse=True)
 
     def save(self, report: BenchmarkReport) -> BenchmarkReport:
         payload = report.model_dump_json(indent=2)

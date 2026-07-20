@@ -1,4 +1,5 @@
 import base64
+import os
 from pathlib import Path
 
 import pytest
@@ -440,6 +441,16 @@ def test_benchmark_exposes_recent_summaries_and_historical_report_detail(
     assert historical.json() == first_report
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Benchmark report not found"
+
+    stale_report_path = tmp_path / "benchmarks" / f"{'0' * 32}.json"
+    stale_report_path.write_text("not valid JSON")
+    os.utime(stale_report_path, ns=(0, 0))
+    bounded_history = FileBenchmarkStore(tmp_path).list(limit=2)
+
+    assert [report.id for report in bounded_history] == [
+        second_report["id"],
+        first_report["id"],
+    ]
 
 
 def test_benchmark_uses_corrections_without_mutating_original_parse(tmp_path: Path) -> None:

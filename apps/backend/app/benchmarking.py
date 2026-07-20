@@ -167,7 +167,7 @@ def _normalize(field: str, value: Any) -> Any:
         return None
     if field in {"hero_cards", "board_cards"}:
         codes = [card.code for card in value]
-        return sorted(codes) if field == "hero_cards" else codes
+        return sorted(codes)
     if isinstance(value, str):
         normalized = re.sub(r"\s+", " ", value.strip().lower())
         if field == "hero_position":

@@ -415,6 +415,24 @@ def test_benchmark_uses_corrections_without_mutating_original_parse(tmp_path: Pa
     assert FileJobStore(tmp_path).get(job_id).parser_result == original_parser_result
 
 
+def test_benchmark_treats_board_card_order_as_equivalent(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(
+        client,
+        job_id,
+        {**APPROVED_STATE, "board_cards": list(reversed(APPROVED_STATE["board_cards"]))},
+    )
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    report = client.post("/api/benchmarks/run").json()
+
+    board_metric = next(
+        metric for metric in report["field_metrics"] if metric["field"] == "board_cards"
+    )
+    assert board_metric == {"field": "board_cards", "correct": 1, "total": 1, "accuracy": 1.0}
+
+
 def test_benchmark_continues_after_an_individual_parser_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
-import { approveState, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
-import type { CanonicalState, Card, DetectedState, JobRecord, Rank, Street, Suit } from "./types";
+import { approveState, getSystemInfo, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
+import type { CanonicalState, Card, DetectedState, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
   c: "clubs",
@@ -516,6 +516,8 @@ export default function App() {
   const [automationEnabled, setAutomationEnabled] = useState(true);
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [systemInfoLoading, setSystemInfoLoading] = useState(false);
   const [automationApprove, setAutomationApprove] = useState(true);
   const [automationRecommend, setAutomationRecommend] = useState(true);
   const [automationAllowWarnings, setAutomationAllowWarnings] = useState(false);
@@ -556,6 +558,8 @@ export default function App() {
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
+  const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
+  const activeRecommendationProvider = systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -946,6 +950,19 @@ export default function App() {
     }
   }
 
+  function openInfoDialog() {
+    setInfoDialogOpen(true);
+    if (systemInfo || systemInfoLoading) {
+      return;
+    }
+
+    setSystemInfoLoading(true);
+    void getSystemInfo()
+      .then(setSystemInfo)
+      .catch(() => undefined)
+      .finally(() => setSystemInfoLoading(false));
+  }
+
   function onAbortQueue() {
     queueAbortRequestedRef.current = true;
     queueAbortControllerRef.current?.abort();
@@ -1055,7 +1072,7 @@ export default function App() {
               <Settings size={17} aria-hidden="true" />
             </button>
           </div>
-          <button type="button" className="header-icon-button" onClick={() => setInfoDialogOpen(true)} title="About this app" aria-label="About this app">
+          <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
           </button>
         </div>
@@ -1449,6 +1466,23 @@ export default function App() {
             </div>
 
             <div className="info-dialog-body">
+              <section className="info-dialog-section active-engines">
+                <h3>Currently active</h3>
+                {activeParserProvider && activeRecommendationProvider ? (
+                  <div className="info-provider-grid">
+                    <div>
+                      <small>Recognition</small>
+                      <strong>{providerLabel(activeParserProvider)}</strong>
+                    </div>
+                    <div>
+                      <small>Recommendation</small>
+                      <strong>{providerLabel(activeRecommendationProvider)}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <p>{systemInfoLoading ? "Reading backend configuration..." : "Active engine details are unavailable."}</p>
+                )}
+              </section>
               <section className="info-dialog-section">
                 <h3>Recognition</h3>
                 <p>OCR and computer vision read the cards, board, pot, bets, stacks, and table state from each screenshot. Confidence scores identify fields that need review.</p>
@@ -1458,23 +1492,9 @@ export default function App() {
                 <p>The solver compares candidate actions using estimated ranges, equity, pot odds, and expected value. Results are training guidance, not a full GTO tree solve.</p>
               </section>
               <section className="info-dialog-section">
-                <h3>Selected hand</h3>
-                {job ? (
-                  <div className="info-provider-grid">
-                    <div>
-                      <small>Recognition</small>
-                      <strong>{providerLabel(job.parser_provider)}</strong>
-                    </div>
-                    <div>
-                      <small>Recommendation</small>
-                      <strong>{providerLabel(job.recommendation_provider)}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <p>Analyze a screenshot to see the engines used for that hand.</p>
-                )}
+                <h3>Training scope</h3>
+                <p>Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
               </section>
-              <p className="training-notice">Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
             </div>
 
             <div className="automation-dialog-footer info-dialog-footer">

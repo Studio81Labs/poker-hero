@@ -1719,7 +1719,8 @@ export default function App() {
                   busy ||
                   benchmarkLoading ||
                   benchmarkRunning ||
-                  benchmarkUpdating
+                  benchmarkUpdating ||
+                  benchmarkReviewJobId !== null
                 }
               >
                 <span>

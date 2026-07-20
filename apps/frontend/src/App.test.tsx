@@ -748,6 +748,14 @@ describe("App", () => {
   });
 
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {
+    const pendingReviewJob = deferredResponse();
+    const activeJob = {
+      ...approvedJob(),
+      id: "active-job",
+      original_filename: "active.png",
+      image_filename: "active-job.png",
+      benchmark_included: true,
+    };
     const reviewedState = canonicalState({ pot_size: 12.5 });
     const reviewedJob = {
       ...approvedJob(reviewedState),
@@ -790,14 +798,21 @@ describe("App", () => {
         },
       ],
     };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: activeJob.id, job: activeJob, savedAt: "2026-07-20T12:00:00Z" }]),
+    );
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
-      .mockResolvedValueOnce(jsonResponse(reviewedJob));
+      .mockReturnValueOnce(pendingReviewJob.promise);
     render(<App />);
 
     const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", { name: /Use current hand as ground truth/ });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(within(dialog).getByRole("button", { name: "Toggle mismatch.png benchmark details" }));
 
     const details = within(dialog).getByText("Expected").closest(".benchmark-case-details");
@@ -806,6 +821,8 @@ describe("App", () => {
     expect(within(details as HTMLElement).getByText("10")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    expect(groundTruthSwitch).toBeDisabled();
+    pendingReviewJob.resolve(jsonResponse(reviewedJob));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Parser benchmark" })).not.toBeInTheDocument());
     expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(

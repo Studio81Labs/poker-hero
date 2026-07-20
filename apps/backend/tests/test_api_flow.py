@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api import create_app
 from app.config import Settings
-from app.parsers.base import ParserError
+from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
 from app.providers.base import ProviderError
 from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
@@ -471,6 +471,32 @@ def test_benchmark_continues_after_an_individual_image_path_failure(tmp_path: Pa
     failed_case = next(case for case in report["cases"] if case["status"] == "error")
     assert failed_case["job_id"] == invalid_id
     assert "outside.png" in failed_case["error"]
+
+
+def test_benchmark_parser_configuration_error_does_not_replace_latest_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    previous_report = client.post("/api/benchmarks/run").json()
+
+    class MisconfiguredParser:
+        name = "misconfigured"
+
+        def parse(self, image_path: Path):
+            raise ParserConfigurationError("external parser URL is missing")
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: MisconfiguredParser())
+
+    response = client.post("/api/benchmarks/run")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Parser configuration error: external parser URL is missing"
+    )
+    assert FileBenchmarkStore(tmp_path).get_latest().id == previous_report["id"]
 
 
 def test_provider_configuration_errors_are_http_errors(

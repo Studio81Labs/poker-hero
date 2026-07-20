@@ -190,15 +190,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail="Add at least one approved hand to the benchmark")
         try:
             parser = build_parser(active_settings)
+            report = run_benchmark(
+                jobs=jobs,
+                parser=parser,
+                image_path_for=store.image_path,
+                parser_provider=active_settings.parser_provider,
+                layout_profile=active_settings.parser_layout_profile,
+            )
         except ParserConfigurationError as exc:
             raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
-        report = run_benchmark(
-            jobs=jobs,
-            parser=parser,
-            image_path_for=store.image_path,
-            parser_provider=active_settings.parser_provider,
-            layout_profile=active_settings.parser_layout_profile,
-        )
         return benchmark_store.save(report)
 
     return app

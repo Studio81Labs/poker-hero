@@ -13,7 +13,7 @@ from app.models import (
     DetectedState,
     JobRecord,
 )
-from app.parsers.base import ScreenshotParser
+from app.parsers.base import ParserConfigurationError, ScreenshotParser
 
 
 BENCHMARK_FIELDS = (
@@ -96,6 +96,8 @@ def _run_case(
     try:
         image_path = image_path_for(job)
         result = parser.parse(image_path)
+    except ParserConfigurationError:
+        raise
     except Exception as exc:
         comparisons = _compare_states(expected, None, {})
         return BenchmarkCaseResult(

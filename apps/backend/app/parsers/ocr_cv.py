@@ -718,6 +718,7 @@ class OcrCvParser:
                 effective_stack=numeric_state.get("effective_stack"),
                 players_in_hand=numeric_state.get("players_in_hand"),
                 hero_position=numeric_state.get("hero_position"),
+                facing_action=numeric_state.get("facing_action"),
                 action_context=numeric_state.get("action_context"),
             ),
             confidences=confidences,
@@ -1065,6 +1066,7 @@ def _parse_numeric_state(
         normalized_pot = _scale_money_read(pot, money_scale.scale)
         normalized_call_amount = _scale_money_read(call_amount, money_scale.scale)
         if normalized_call_amount.value > 0:
+            manual_review_fields.append("facing_action")
             state["action_context"] = (
                 f"Hero faces {format_number(normalized_call_amount.value)} BB to call into "
                 f"{format_number(normalized_pot.value)} BB pot"

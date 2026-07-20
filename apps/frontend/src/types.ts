@@ -1,6 +1,7 @@
 export type Rank = "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "T" | "J" | "Q" | "K" | "A";
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Street = "preflop" | "flop" | "turn" | "river";
+export type FacingAction = "bet" | "raise";
 export type RecommendationAction = "fold" | "check" | "call" | "bet" | "raise";
 
 export interface Card {
@@ -18,6 +19,7 @@ export interface DetectedState {
   players_in_hand: number | null;
   hero_position: string | null;
   street: Street | null;
+  facing_action: FacingAction | null;
   action_context: string | null;
 }
 

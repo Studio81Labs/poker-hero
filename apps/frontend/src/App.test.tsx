@@ -22,6 +22,7 @@ const detectedState: DetectedState = {
   players_in_hand: 3,
   hero_position: "button",
   street: "flop",
+  facing_action: "bet",
   action_context: "Cutoff bet 2.5 into 12.5",
 };
 
@@ -61,6 +62,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
         players_in_hand: 0.86,
         hero_position: 0.84,
         street: 1,
+        facing_action: 0.9,
       },
       warnings: [],
       raw: { provider: "mock" },
@@ -234,6 +236,7 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Qs Jc 2h")).toBeInTheDocument();
     expect(screen.getByDisplayValue("12.5")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("bet");
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
 
@@ -570,6 +573,7 @@ describe("App", () => {
       street: "preflop",
     });
     delete (savedState as Partial<CanonicalState>).hero_stack;
+    delete (savedState as Partial<CanonicalState>).facing_action;
     const savedJob: JobRecord = {
       ...recommendedJob(savedState),
       id: "history-job",
@@ -591,6 +595,7 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("7d Ah")).toBeInTheDocument();
     expect(screen.getByDisplayValue("3.5")).toBeInTheDocument();
     expect(screen.getByLabelText(/Hero stack/)).toHaveValue("");
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
     expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
   });
 
@@ -632,6 +637,7 @@ describe("App", () => {
 
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
+    expect(payload.facing_action).toBe("bet");
     expect(payload.user_approved).toBe(true);
   });
 

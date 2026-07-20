@@ -1,3 +1,5 @@
+#[cfg(test)]
+use postflop_solver::BetSize;
 use postflop_solver::{
     card_from_str, flop_from_str, hole_to_string, solve, Action, ActionTree, BetSizeOptions,
     BoardState, CardConfig, PostFlopGame, Range, TreeConfig, NOT_DEALT,
@@ -30,6 +32,7 @@ struct CanonicalState {
     players_in_hand: Option<u8>,
     hero_position: Option<String>,
     street: Option<String>,
+    facing_action: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +64,12 @@ struct TreeAmounts {
     starting_pot: i32,
     current_bet: i32,
     effective_stack: i32,
+}
+
+struct StreetBetSizes {
+    flop: [BetSizeOptions; 2],
+    turn: [BetSizeOptions; 2],
+    river: [BetSizeOptions; 2],
 }
 
 fn main() -> ExitCode {
@@ -110,7 +119,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         ip_range = include_hand(&ip_range, &hero_hand);
     }
 
-    let bet_sizes = configured_bet_sizes(scaled_bet)?;
+    let bet_sizes = configured_bet_sizes(&board_state, scaled_bet)?;
     let card_config = card_config(&state, &oop_range, &ip_range)?;
     let tree_config = TreeConfig {
         initial_state: board_state,
@@ -118,9 +127,9 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         effective_stack: tree_stack,
         rake_rate: env_number("POKER_POSTFLOP_SOLVER_RAKE_RATE", 0.0)?,
         rake_cap: env_number("POKER_POSTFLOP_SOLVER_RAKE_CAP", 0.0)? * CHIP_SCALE,
-        flop_bet_sizes: [bet_sizes.clone(), bet_sizes.clone()],
-        turn_bet_sizes: [bet_sizes.clone(), bet_sizes.clone()],
-        river_bet_sizes: [bet_sizes.clone(), bet_sizes],
+        flop_bet_sizes: bet_sizes.flop,
+        turn_bet_sizes: bet_sizes.turn,
+        river_bet_sizes: bet_sizes.river,
         turn_donk_sizes: None,
         river_donk_sizes: None,
         add_allin_threshold: 1.2,
@@ -224,6 +233,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
             "algorithm": "discounted_cfr",
             "street": street,
             "hero_position": position.to_lowercase(),
+            "facing_action": state.facing_action,
             "modeled_history": modeled_history,
             "ranges": {"oop": oop_range, "ip": ip_range},
             "tree": {
@@ -266,6 +276,12 @@ fn validate_state(state: &CanonicalState) -> Result<(), String> {
     if state.players_in_hand != Some(2) {
         return Err("postflop-solver supports heads-up spots only".to_string());
     }
+    if state.current_bet.unwrap_or(0.0) > 0.0 && state.facing_action.as_deref() != Some("bet") {
+        return Err(
+            "facing action must identify a single bet; raises require full action history"
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
@@ -300,15 +316,48 @@ fn card_config(
     })
 }
 
-fn configured_bet_sizes(current_bet: i32) -> Result<BetSizeOptions, String> {
+fn configured_bet_sizes(
+    current_street: &BoardState,
+    current_bet: i32,
+) -> Result<StreetBetSizes, String> {
     let configured_bets = env_string("POKER_POSTFLOP_SOLVER_BET_SIZES", "70%");
     let raise_sizes = env_string("POKER_POSTFLOP_SOLVER_RAISE_SIZES", "2.5x");
-    let bet_sizes = if current_bet > 0 {
-        format!("{current_bet}c,{configured_bets}")
+    let base = BetSizeOptions::try_from((configured_bets.as_str(), raise_sizes.as_str()))?;
+    let current = if current_bet > 0 {
+        let bet_sizes = format!("{current_bet}c,{configured_bets}");
+        BetSizeOptions::try_from((bet_sizes.as_str(), raise_sizes.as_str()))?
     } else {
-        configured_bets
+        base.clone()
     };
-    BetSizeOptions::try_from((bet_sizes.as_str(), raise_sizes.as_str()))
+    let (flop, turn, river) = match current_street {
+        BoardState::Flop => (
+            paired_sizes(&current),
+            paired_sizes(&base),
+            paired_sizes(&base),
+        ),
+        BoardState::Turn => (
+            paired_sizes(&base),
+            paired_sizes(&current),
+            paired_sizes(&base),
+        ),
+        BoardState::River => (
+            paired_sizes(&base),
+            paired_sizes(&base),
+            paired_sizes(&current),
+        ),
+    };
+    Ok(StreetBetSizes { flop, turn, river })
+}
+
+fn paired_sizes(options: &BetSizeOptions) -> [BetSizeOptions; 2] {
+    [options.clone(), options.clone()]
+}
+
+#[cfg(test)]
+fn has_fixed_bet(options: &[BetSizeOptions; 2], amount: i32) -> bool {
+    options
+        .iter()
+        .any(|player| player.bet.contains(&BetSize::Additive(amount, 0)))
 }
 
 fn move_to_hero_decision(
@@ -537,6 +586,43 @@ fn fail(message: String) -> ExitCode {
 mod tests {
     use super::*;
 
+    fn facing_bet_state(facing_action: Option<&str>) -> CanonicalState {
+        CanonicalState {
+            hero_cards: vec![
+                InputCard {
+                    rank: "A".to_string(),
+                    suit: "hearts".to_string(),
+                },
+                InputCard {
+                    rank: "K".to_string(),
+                    suit: "diamonds".to_string(),
+                },
+            ],
+            board_cards: vec![
+                InputCard {
+                    rank: "2".to_string(),
+                    suit: "clubs".to_string(),
+                },
+                InputCard {
+                    rank: "3".to_string(),
+                    suit: "diamonds".to_string(),
+                },
+                InputCard {
+                    rank: "4".to_string(),
+                    suit: "hearts".to_string(),
+                },
+            ],
+            pot_size: Some(15.0),
+            current_bet: Some(5.0),
+            hero_stack: Some(10.0),
+            effective_stack: Some(10.0),
+            players_in_hand: Some(2),
+            hero_position: Some("IP".to_string()),
+            street: Some("flop".to_string()),
+            facing_action: facing_action.map(str::to_string),
+        }
+    }
+
     #[test]
     fn position_parser_accepts_explicit_and_unambiguous_labels() {
         assert_eq!(hero_player(Some("IP")), Ok(1));
@@ -545,6 +631,15 @@ mod tests {
         assert!(hero_player(Some("SB")).is_err());
         assert!(hero_player(Some("BB")).is_err());
         assert!(hero_player(Some("cutoff")).is_err());
+    }
+
+    #[test]
+    fn facing_bet_requires_an_explicit_first_bet_classification() {
+        assert!(validate_state(&facing_bet_state(Some("bet"))).is_ok());
+        for facing_action in [None, Some("raise")] {
+            let error = validate_state(&facing_bet_state(facing_action)).unwrap_err();
+            assert!(error.contains("raises require full action history"));
+        }
     }
 
     #[test]
@@ -602,5 +697,22 @@ mod tests {
         let error = tree_amounts(15.0, 5.0, 10.0, None).unwrap_err();
 
         assert_eq!(error, "hero_stack is required");
+    }
+
+    #[test]
+    fn observed_bet_size_is_available_on_the_current_street_only() {
+        let flop = configured_bet_sizes(&BoardState::Flop, 137).unwrap();
+        let turn = configured_bet_sizes(&BoardState::Turn, 137).unwrap();
+        let river = configured_bet_sizes(&BoardState::River, 137).unwrap();
+
+        assert!(has_fixed_bet(&flop.flop, 137));
+        assert!(!has_fixed_bet(&flop.turn, 137));
+        assert!(!has_fixed_bet(&flop.river, 137));
+        assert!(!has_fixed_bet(&turn.flop, 137));
+        assert!(has_fixed_bet(&turn.turn, 137));
+        assert!(!has_fixed_bet(&turn.river, 137));
+        assert!(!has_fixed_bet(&river.flop, 137));
+        assert!(!has_fixed_bet(&river.turn, 137));
+        assert!(has_fixed_bet(&river.river, 137));
     }
 }

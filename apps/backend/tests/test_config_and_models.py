@@ -169,6 +169,11 @@ def test_canonical_state_rejects_duplicate_cards_across_state() -> None:
         )
 
 
+def test_detected_state_rejects_unknown_facing_action() -> None:
+    with pytest.raises(ValidationError):
+        DetectedState(facing_action="call")
+
+
 def test_canonical_state_copies_detected_values() -> None:
     detected = DetectedState(
         hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
@@ -180,6 +185,7 @@ def test_canonical_state_copies_detected_values() -> None:
         players_in_hand=3,
         hero_position="button",
         street="flop",
+        facing_action="bet",
         action_context="Cutoff bet 2.5 into 12.5",
     )
     parser_result = ParserResult(
@@ -195,6 +201,7 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.board_cards == detected.board_cards
     assert canonical.pot_size == 12.5
     assert canonical.hero_stack == 97.5
+    assert canonical.facing_action == "bet"
     assert canonical.user_approved is False
 
 

@@ -31,6 +31,7 @@ def test_registry_builds_mock_parser(tmp_path: Path) -> None:
     assert result.state.hero_cards[0].code == "Ah"
     assert result.state.hero_cards[1].code == "Kd"
     assert result.state.street == "flop"
+    assert result.state.facing_action == "bet"
     assert result.confidences["hero_cards"] == 0.99
     assert result.raw["provider"] == "mock"
 

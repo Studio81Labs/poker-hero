@@ -18,6 +18,7 @@ class MockParser:
                 players_in_hand=3,
                 hero_position="button",
                 street="flop",
+                facing_action="bet",
                 action_context="Cutoff bet 2.5 into 12.5",
             ),
             confidences={
@@ -30,6 +31,7 @@ class MockParser:
                 "players_in_hand": 0.93,
                 "hero_position": 0.87,
                 "street": 1.0,
+                "facing_action": 0.9,
             },
             warnings=[],
             raw={

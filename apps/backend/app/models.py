@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 Rank = Literal["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
 Suit = Literal["clubs", "diamonds", "hearts", "spades"]
 Street = Literal["preflop", "flop", "turn", "river"]
+FacingAction = Literal["bet", "raise"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
 
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
@@ -86,6 +87,7 @@ class DetectedState(BaseModel):
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
     street: Street | None = Field(default=None)
+    facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)
 
     @field_validator("hero_cards")
@@ -129,6 +131,7 @@ class CanonicalState(BaseModel):
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
     street: Street | None = Field(default=None)
+    facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)
     user_approved: bool = Field(default=False)
 
@@ -160,6 +163,7 @@ class CanonicalState(BaseModel):
             players_in_hand=state.players_in_hand,
             hero_position=state.hero_position,
             street=state.street,
+            facing_action=state.facing_action,
             action_context=state.action_context,
         )
 

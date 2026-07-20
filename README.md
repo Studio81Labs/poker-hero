@@ -86,7 +86,9 @@ player count does not identify the opponent's seat. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 Facing-bet trees also require the visible hero stack so the adapter can
-reconstruct whether hero or the bettor was covered before the wager.
+reconstruct whether hero or the bettor was covered before the wager. The
+facing action must be confirmed as a first bet; raised pots use fallback until
+the canonical state carries full action history.
 
 Preflop, multiway, incomplete, ambiguous-position, oversized, and failed trees
 use `local_ev` when fallback is enabled. Recommendations preserve the requested

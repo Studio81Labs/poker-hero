@@ -5,7 +5,7 @@ import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { approveState, getSystemInfo, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
-import type { CanonicalState, Card, DetectedState, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
+import type { CanonicalState, Card, DetectedState, FacingAction, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
   c: "clubs",
@@ -34,11 +34,13 @@ const EMPTY_STATE: CanonicalState = {
   players_in_hand: null,
   hero_position: null,
   street: null,
+  facing_action: null,
   action_context: null,
   user_approved: false,
 };
 
 type StreetOption = "" | Street;
+type FacingActionOption = "" | FacingAction;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 
@@ -63,6 +65,7 @@ interface StateForm {
   players_in_hand: string;
   hero_position: string;
   street: StreetOption;
+  facing_action: FacingActionOption;
   action_context: string;
 }
 
@@ -115,6 +118,7 @@ const CONFIDENCE_KEYS = [
   "effective_stack",
   "players_in_hand",
   "hero_position",
+  "facing_action",
   "action_context",
 ] as const;
 
@@ -273,6 +277,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
     street: state.street,
+    facing_action: state.facing_action ?? null,
     action_context: state.action_context,
     user_approved: "user_approved" in state ? state.user_approved : false,
   };
@@ -299,6 +304,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
     street: state.street ?? "",
+    facing_action: state.facing_action ?? "",
     action_context: state.action_context ?? "",
   };
 }
@@ -318,6 +324,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
     street: form.street === "" ? null : form.street,
+    facing_action: form.facing_action === "" ? null : form.facing_action,
     action_context: form.action_context.trim() === "" ? null : form.action_context.trim(),
     user_approved: false,
   };
@@ -334,6 +341,7 @@ function approvalKey(state: CanonicalState): string {
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
     street: state.street,
+    facing_action: state.facing_action ?? null,
     action_context: state.action_context,
   });
 }
@@ -1341,6 +1349,13 @@ export default function App() {
               </Field>
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
+              </Field>
+              <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
+                <select disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value)}>
+                  <option value="">Select action</option>
+                  <option value="bet">Bet</option>
+                  <option value="raise">Raise or check-raise</option>
+                </select>
               </Field>
               <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>
                 <textarea disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />

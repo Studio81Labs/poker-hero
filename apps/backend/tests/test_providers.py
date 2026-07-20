@@ -22,6 +22,7 @@ def approved_state() -> CanonicalState:
         players_in_hand=3,
         hero_position="button",
         street="flop",
+        facing_action="bet",
         action_context="Cutoff bet 2.5 into 12.5",
         user_approved=True,
     )
@@ -231,6 +232,7 @@ def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) ->
         "payload = json.loads(sys.stdin.read())\n"
         "assert payload['state']['hero_position'] == 'IP'\n"
         "assert payload['state']['hero_stack'] == 97.5\n"
+        "assert payload['state']['facing_action'] == 'bet'\n"
         "expected = {"
         "'POKER_POSTFLOP_SOLVER_MAX_ITERATIONS': '17', "
         "'POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY': '0.025', "
@@ -326,6 +328,24 @@ def test_postflop_solver_requires_hero_stack_when_facing_bet(tmp_path: Path) -> 
     )
 
     with pytest.raises(ProviderConfigurationError, match="hero stack is required"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+@pytest.mark.parametrize("facing_action", [None, "raise"])
+def test_postflop_solver_rejects_unknown_or_raised_action_history(
+    tmp_path: Path, facing_action: str | None
+) -> None:
+    state = heads_up_postflop_state()
+    state.facing_action = facing_action
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="raises require full action history"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
@@ -518,6 +538,7 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 "players_in_hand": 3,
                 "hero_position": "button",
                 "street": "flop",
+                "facing_action": "bet",
                 "action_context": "Cutoff bet 2.5 into 12.5",
                 "user_approved": True,
             },

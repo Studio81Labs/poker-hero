@@ -27,10 +27,12 @@ APPROVED_STATE = {
     ],
     "pot_size": 12.5,
     "current_bet": 2.5,
+    "hero_stack": 97.5,
     "effective_stack": 96.0,
     "players_in_hand": 3,
     "hero_position": "button",
     "street": "flop",
+    "facing_action": "bet",
     "action_context": "Cutoff bet 2.5 into 12.5",
     "user_approved": True,
 }

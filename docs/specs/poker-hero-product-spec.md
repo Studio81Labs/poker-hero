@@ -112,15 +112,18 @@ Canonical state should include, where available:
 - Number of players/seats.
 - Hero position when detectable.
 - Street: preflop, flop, turn, or river.
+- Whether the current facing action is a bet or raise.
 - Any available action context.
 
 Each recommendation provider declares the minimum fields it requires. The
 backend validates the approved state against that provider before sending a
 request. A facing-bet postflop tree requires both hero's visible stack and the
 effective visible stack so the pre-bet effective stack can be reconstructed
-without guessing which player is covered. If a solver-style provider requires
-more context than the screenshot contains, the UI must ask the user to supply
-or correct those fields instead of guessing.
+without guessing which player is covered. It also requires an explicit action
+classification and accepts only a first bet until the canonical state supports
+full raise history. If a solver-style provider requires more context than the
+screenshot contains, the UI must ask the user to supply or correct those fields
+instead of guessing.
 
 ## Data Flow
 

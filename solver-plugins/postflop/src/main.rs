@@ -1,6 +1,6 @@
 use postflop_solver::{
-    card_from_str, flop_from_str, solve, Action, ActionTree, BetSizeOptions, BoardState,
-    CardConfig, PostFlopGame, Range, TreeConfig, NOT_DEALT,
+    card_from_str, flop_from_str, hole_to_string, solve, Action, ActionTree, BetSizeOptions,
+    BoardState, CardConfig, PostFlopGame, Range, TreeConfig, NOT_DEALT,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -99,11 +99,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     }
     let initial_stack = scale_amount(effective_stack + current_bet, "effective_stack")?;
 
-    let hero_hand = format!(
-        "{}{}",
-        card_code(&state.hero_cards[0])?,
-        card_code(&state.hero_cards[1])?
-    );
+    let hero_hand = hero_hand_code(&state.hero_cards)?;
     let mut oop_range = env_string("POKER_POSTFLOP_SOLVER_OOP_RANGE", DEFAULT_OOP_RANGE);
     let mut ip_range = env_string("POKER_POSTFLOP_SOLVER_IP_RANGE", DEFAULT_IP_RANGE);
     if hero_player == 0 {
@@ -380,6 +376,10 @@ fn hero_card_ids(cards: &[InputCard]) -> Result<(u8, u8), String> {
     Ok((first.min(second), first.max(second)))
 }
 
+fn hero_hand_code(cards: &[InputCard]) -> Result<String, String> {
+    hole_to_string(hero_card_ids(cards)?)
+}
+
 fn card_code(card: &InputCard) -> Result<String, String> {
     let suit = match card.suit.to_lowercase().as_str() {
         "clubs" | "c" => "c",
@@ -525,7 +525,21 @@ mod tests {
     }
 
     #[test]
-    fn exact_hero_hand_precedes_configured_range() {
-        assert_eq!(include_hand("AKs,QQ+", "AhKd"), "AhKd,AKs,QQ+");
+    fn exact_hero_hand_is_canonicalized_before_configured_range() {
+        let cards = [
+            InputCard {
+                rank: "K".to_string(),
+                suit: "d".to_string(),
+            },
+            InputCard {
+                rank: "A".to_string(),
+                suit: "h".to_string(),
+            },
+        ];
+
+        let hand = hero_hand_code(&cards).unwrap();
+
+        assert_eq!(hand, "AhKd");
+        assert_eq!(include_hand("AKs,QQ+", &hand), "AhKd,AKs,QQ+");
     }
 }

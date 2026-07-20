@@ -752,6 +752,7 @@ describe("App", () => {
     expect(heroCardsInput).toBeDisabled();
     expect(streetSelect).toBeDisabled();
     expect(actionContextInput).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Parser benchmark" })).toBeDisabled();
 
     await user.type(potInput, "18");
     expect(potInput).toHaveValue("12.5");
@@ -759,6 +760,7 @@ describe("App", () => {
     pendingApproval.resolve(jsonResponse(approvedJob()));
 
     await waitFor(() => expect(potInput).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Parser benchmark" })).toBeEnabled();
     expect(potInput).toHaveValue("12.5");
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled();
   });

@@ -1181,7 +1181,14 @@ export default function App() {
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
           </button>
-          <button type="button" className="header-icon-button" onClick={openBenchmarkDialog} title="Parser benchmark" aria-label="Parser benchmark">
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={openBenchmarkDialog}
+            disabled={busy}
+            title="Parser benchmark"
+            aria-label="Parser benchmark"
+          >
             <FlaskConical size={18} aria-hidden="true" />
           </button>
         </div>
@@ -1662,6 +1669,7 @@ export default function App() {
                 onClick={toggleBenchmarkInclusion}
                 disabled={
                   (!job?.approved_state && !job?.benchmark_included) ||
+                  busy ||
                   benchmarkLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating
@@ -1752,6 +1760,7 @@ export default function App() {
                   benchmarkLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
+                  busy ||
                   (benchmarkOverview?.included_cases ?? 0) === 0
                 }
               >

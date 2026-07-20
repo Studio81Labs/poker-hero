@@ -11,9 +11,16 @@ class ProviderConfigurationError(ProviderError):
     pass
 
 
+class ProviderInputError(ProviderError):
+    pass
+
+
 class RecommendationProvider(Protocol):
     name: str
     required_fields: list[str]
+
+    def required_fields_for(self, state: CanonicalState) -> list[str]:
+        raise NotImplementedError
 
     def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         raise NotImplementedError

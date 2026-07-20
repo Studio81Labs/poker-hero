@@ -27,10 +27,12 @@ APPROVED_STATE = {
     ],
     "pot_size": 12.5,
     "current_bet": 2.5,
+    "hero_stack": 97.5,
     "effective_stack": 96.0,
     "players_in_hand": 3,
     "hero_position": "button",
     "street": "flop",
+    "facing_action": "bet",
     "action_context": "Cutoff bet 2.5 into 12.5",
     "user_approved": True,
 }
@@ -64,6 +66,24 @@ def load_only_job(tmp_path: Path):
     job_dirs = list((tmp_path / "jobs").iterdir())
     assert len(job_dirs) == 1
     return FileJobStore(tmp_path).get(job_dirs[0].name)
+
+
+def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="postflop_solver",
+    )
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "parser_provider": "mock",
+        "recommendation_provider": "local_solver",
+        "recommendation_engine": "postflop_solver",
+    }
 
 
 def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
@@ -226,6 +246,9 @@ def test_provider_runtime_errors_are_bad_gateway_and_stored(
         name = "failing"
         required_fields = ["hero_cards", "street"]
 
+        def required_fields_for(self, state: object):
+            return self.required_fields
+
         def recommend(self, request: object):
             raise ProviderError("provider exploded")
 
@@ -253,6 +276,59 @@ def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
     assert response.status_code == 422
     assert response.json()["detail"] == {"missing_fields": ["hero_cards"]}
     assert FileJobStore(tmp_path).get(job_id).status == "approved"
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "value"),
+    [
+        ("hero_position", None),
+        ("facing_action", None),
+        ("hero_stack", None),
+    ],
+)
+def test_cfr_only_recommend_reports_missing_postflop_fields(
+    tmp_path: Path, missing_field: str, value: object
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="postflop_solver",
+        postflop_solver_fallback_enabled=False,
+    )
+    job_id = upload_job(client).json()["id"]
+    state = {**APPROVED_STATE, "players_in_hand": 2, missing_field: value}
+    approve_job(client, job_id, state)
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"missing_fields": [missing_field]}
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.error is None
+
+
+def test_cfr_only_unsupported_state_is_user_correctable(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="postflop_solver",
+        postflop_solver_fallback_enabled=False,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(
+        client,
+        job_id,
+        {**APPROVED_STATE, "players_in_hand": 2, "facing_action": "raise"},
+    )
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 422
+    assert "raises require full action history" in response.json()["detail"]
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.error is None
 
 
 def test_upload_auto_approves_when_thresholds_are_met(tmp_path: Path) -> None:
@@ -291,6 +367,9 @@ def test_provider_configuration_errors_are_http_errors(
     class MisconfiguredProvider:
         name = "misconfigured"
         required_fields = ["missing_field"]
+
+        def required_fields_for(self, state: object):
+            return self.required_fields
 
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

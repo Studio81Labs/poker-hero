@@ -7,7 +7,12 @@ import pytest
 
 from app.config import Settings
 from app.models import CanonicalState, Card, RecommendationRequest
-from app.providers.base import ProviderConfigurationError, ProviderError, missing_required_fields
+from app.providers.base import (
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderInputError,
+    missing_required_fields,
+)
 from app.providers.registry import build_provider
 
 
@@ -17,13 +22,22 @@ def approved_state() -> CanonicalState:
         board_cards=[Card.from_code("Qs"), Card.from_code("Jc"), Card.from_code("2h")],
         pot_size=12.5,
         current_bet=2.5,
+        hero_stack=97.5,
         effective_stack=96.0,
         players_in_hand=3,
         hero_position="button",
         street="flop",
+        facing_action="bet",
         action_context="Cutoff bet 2.5 into 12.5",
         user_approved=True,
     )
+
+
+def heads_up_postflop_state() -> CanonicalState:
+    state = approved_state().model_copy(deep=True)
+    state.players_in_hand = 2
+    state.hero_position = "IP"
+    return state
 
 
 def test_mock_provider_uses_rule_based_training_recommendation(tmp_path: Path) -> None:
@@ -178,6 +192,8 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.action == "call"
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "heads-up postflop" in result.raw["fallback_reason"]
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
     assert "solver compared candidate actions" in result.explanation.lower()
@@ -196,6 +212,159 @@ def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) 
 
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+
+
+def test_local_solver_can_select_bundled_ev_engine(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+
+    result = provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert "requested_engine" not in result.raw
+
+
+def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "assert payload['state']['hero_position'] == 'IP'\n"
+        "assert payload['state']['hero_stack'] == 97.5\n"
+        "assert payload['state']['facing_action'] == 'bet'\n"
+        "expected = {"
+        "'POKER_POSTFLOP_SOLVER_MAX_ITERATIONS': '17', "
+        "'POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY': '0.025', "
+        "'POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB': '321', "
+        "'POKER_POSTFLOP_SOLVER_BET_SIZES': '50%,100%', "
+        "'POKER_POSTFLOP_SOLVER_RAISE_SIZES': '3x', "
+        "'POKER_POSTFLOP_SOLVER_RAKE_RATE': '0.05', "
+        "'POKER_POSTFLOP_SOLVER_RAKE_CAP': '2.5', "
+        "'POKER_POSTFLOP_SOLVER_OOP_RANGE': 'AA', "
+        "'POKER_POSTFLOP_SOLVER_IP_RANGE': 'KK'"
+        "}\n"
+        "assert {key: os.environ[key] for key in expected} == expected\n"
+        "print(json.dumps({"
+        "'action': 'raise', "
+        "'sizing': 8.5, "
+        "'confidence': 0.88, "
+        "'explanation': 'Postflop tree response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_max_iterations=17,
+            postflop_solver_target_exploitability=0.025,
+            postflop_solver_max_memory_mb=321,
+            postflop_solver_bet_sizes="50%,100%",
+            postflop_solver_raise_sizes="3x",
+            postflop_solver_rake_rate=0.05,
+            postflop_solver_rake_cap=2.5,
+            postflop_solver_oop_range="AA",
+            postflop_solver_ip_range="KK",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    assert result.action == "raise"
+    assert result.sizing == 8.5
+    assert result.raw["engine"] == "postflop_solver"
+    assert "fallback_reason" not in result.raw
+
+
+def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text("import sys\nprint('tree too large', file=sys.stderr)\nsys.exit(8)\n")
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "tree too large" in result.raw["fallback_reason"]
+    assert "range/EV fallback" in result.explanation
+
+
+def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.hero_position = "SB"
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="position must identify IP or OOP"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_requires_hero_stack_when_facing_bet(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.hero_stack = None
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="hero stack is required"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+@pytest.mark.parametrize("facing_action", [None, "raise"])
+def test_postflop_solver_rejects_unknown_or_raised_action_history(
+    tmp_path: Path, facing_action: str | None
+) -> None:
+    state = heads_up_postflop_state()
+    state.facing_action = facing_action
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="raises require full action history"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_local_solver_rejects_unknown_engine(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="missing",
+        )
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="Unknown local solver engine"):
+        provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
 
 
 def test_local_solver_reads_json_response(tmp_path: Path) -> None:
@@ -369,10 +538,12 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 ],
                 "pot_size": 12.5,
                 "current_bet": 2.5,
+                "hero_stack": 97.5,
                 "effective_stack": 96.0,
                 "players_in_hand": 3,
                 "hero_position": "button",
                 "street": "flop",
+                "facing_action": "bet",
                 "action_context": "Cutoff bet 2.5 into 12.5",
                 "user_approved": True,
             },

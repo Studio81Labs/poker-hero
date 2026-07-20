@@ -13,7 +13,8 @@ Browser
   -> FastAPI backend
      -> parser registry -> OCR/CV or external vision service
      -> file-backed job store in POKER_DATA_DIR
-     -> provider registry -> local solver, rule engine, or external service
+     -> provider registry -> local solver router, rule engine, or external service
+        -> postflop-solver plugin or bundled range/EV fallback
 ```
 
 ## Applications
@@ -24,6 +25,13 @@ Browser
 state validation, automation-compatible job transitions, recommendation calls,
 and persisted job/image data. Integrations are selected by environment-driven
 registries so the frontend flow does not depend on a concrete engine.
+
+The `local_solver` provider has a second configurable boundary for local engine
+plugins. `postflop_solver` runs as a pinned Rust stdin/stdout process for
+heads-up postflop decisions. `local_ev` remains available directly and is used
+as a recorded fallback for preflop, multiway, incomplete, resource-limited, or
+failed postflop solves. Explicit custom commands still override the bundled
+engine selection.
 
 ### Frontend
 

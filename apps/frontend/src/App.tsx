@@ -5,7 +5,7 @@ import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { approveState, getSystemInfo, imageUrl, requestRecommendation, uploadScreenshot } from "./api";
-import type { CanonicalState, Card, DetectedState, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
+import type { CanonicalState, Card, DetectedState, FacingAction, JobRecord, Rank, Street, Suit, SystemInfo } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
   c: "clubs",
@@ -29,15 +29,18 @@ const EMPTY_STATE: CanonicalState = {
   board_cards: [],
   pot_size: null,
   current_bet: null,
+  hero_stack: null,
   effective_stack: null,
   players_in_hand: null,
   hero_position: null,
   street: null,
+  facing_action: null,
   action_context: null,
   user_approved: false,
 };
 
 type StreetOption = "" | Street;
+type FacingActionOption = "" | FacingAction;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 
@@ -57,10 +60,12 @@ interface StateForm {
   board_cards: string;
   pot_size: string;
   current_bet: string;
+  hero_stack: string;
   effective_stack: string;
   players_in_hand: string;
   hero_position: string;
   street: StreetOption;
+  facing_action: FacingActionOption;
   action_context: string;
 }
 
@@ -85,12 +90,15 @@ const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
 const PROVIDER_LABELS: Record<string, string> = {
+  custom_local: "Custom local solver",
   external_solver: "External solver",
   llm_advice: "LLM adviser",
   llm_vision: "External vision model",
-  local_solver: "Local EV solver",
+  local_ev: "Local EV solver",
+  local_solver: "Local solver",
   mock: "Demo engine",
   ocr_cv: "OCR + computer vision",
+  postflop_solver: "Postflop solver",
   rule_based: "Rule-based trainer",
 };
 
@@ -106,9 +114,11 @@ const CONFIDENCE_KEYS = [
   "street",
   "pot_size",
   "current_bet",
+  "hero_stack",
   "effective_stack",
   "players_in_hand",
   "hero_position",
+  "facing_action",
   "action_context",
 ] as const;
 
@@ -262,10 +272,12 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     board_cards: state.board_cards,
     pot_size: state.pot_size,
     current_bet: state.current_bet,
+    hero_stack: state.hero_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
     street: state.street,
+    facing_action: state.facing_action ?? null,
     action_context: state.action_context,
     user_approved: "user_approved" in state ? state.user_approved : false,
   };
@@ -273,7 +285,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
 
 function stateFromJob(job: JobRecord): CanonicalState {
   if (job.approved_state) {
-    return job.approved_state;
+    return toCanonicalState(job.approved_state);
   }
   if (job.parser_result) {
     return toCanonicalState(job.parser_result.state);
@@ -287,10 +299,12 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     board_cards: formatCards(state.board_cards),
     pot_size: state.pot_size === null ? "" : String(state.pot_size),
     current_bet: state.current_bet === null ? "" : String(state.current_bet),
+    hero_stack: state.hero_stack == null ? "" : String(state.hero_stack),
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
     street: state.street ?? "",
+    facing_action: state.facing_action ?? "",
     action_context: state.action_context ?? "",
   };
 }
@@ -305,10 +319,12 @@ function formToCanonical(form: StateForm): CanonicalState {
     board_cards: boardCards,
     pot_size: parseOptionalNumber(form.pot_size, "Pot"),
     current_bet: parseOptionalNumber(form.current_bet, "Current bet"),
+    hero_stack: parseOptionalNumber(form.hero_stack, "Hero stack"),
     effective_stack: parseOptionalNumber(form.effective_stack, "Effective stack"),
     players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
     street: form.street === "" ? null : form.street,
+    facing_action: form.facing_action === "" ? null : form.facing_action,
     action_context: form.action_context.trim() === "" ? null : form.action_context.trim(),
     user_approved: false,
   };
@@ -320,10 +336,12 @@ function approvalKey(state: CanonicalState): string {
     board_cards: state.board_cards.map(cardToCode),
     pot_size: state.pot_size,
     current_bet: state.current_bet,
+    hero_stack: state.hero_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
     street: state.street,
+    facing_action: state.facing_action ?? null,
     action_context: state.action_context,
   });
 }
@@ -559,7 +577,8 @@ export default function App() {
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
-  const activeRecommendationProvider = systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
+  const activeRecommendationProvider =
+    systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1312,6 +1331,14 @@ export default function App() {
                   onChange={(event) => updateForm("effective_stack", event.target.value)}
                 />
               </Field>
+              <Field label="Hero stack" confidence={confidenceLabel(confidences.hero_stack)} confidenceValue={confidences.hero_stack}>
+                <input
+                  disabled={stateControlsDisabled}
+                  inputMode="decimal"
+                  value={form.hero_stack}
+                  onChange={(event) => updateForm("hero_stack", event.target.value)}
+                />
+              </Field>
               <Field label="Players in hand" confidence={confidenceLabel(confidences.players_in_hand)} confidenceValue={confidences.players_in_hand}>
                 <input
                   disabled={stateControlsDisabled}
@@ -1322,6 +1349,13 @@ export default function App() {
               </Field>
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
+              </Field>
+              <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
+                <select disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value)}>
+                  <option value="">Select action</option>
+                  <option value="bet">Bet</option>
+                  <option value="raise">Raise or check-raise</option>
+                </select>
               </Field>
               <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>
                 <textarea disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
@@ -1489,7 +1523,7 @@ export default function App() {
               </section>
               <section className="info-dialog-section">
                 <h3>Recommendations</h3>
-                <p>The solver compares candidate actions using estimated ranges, equity, pot odds, and expected value. Results are training guidance, not a full GTO tree solve.</p>
+                <p>The configured engine analyzes approved hand state and compares available actions. The postflop engine solves heads-up game trees; unsupported spots use the range/EV fallback.</p>
               </section>
               <section className="info-dialog-section">
                 <h3>Training scope</h3>

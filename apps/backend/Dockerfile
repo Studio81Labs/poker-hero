@@ -2,6 +2,15 @@
 
 # Build from the repository root:
 # docker build -f apps/backend/Dockerfile .
+FROM rust:1.85-slim-bookworm AS postflop-solver-builder
+
+WORKDIR /build
+
+COPY solver-plugins/postflop/Cargo.toml solver-plugins/postflop/Cargo.lock ./
+COPY solver-plugins/postflop/src ./src
+
+RUN cargo build --locked --release
+
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -18,6 +27,7 @@ RUN addgroup --system poker && adduser --system --ingroup poker poker \
 COPY apps/backend/pyproject.toml ./
 COPY apps/backend/app ./app
 COPY apps/backend/docker-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
+COPY --from=postflop-solver-builder /build/target/release/poker-postflop-solver /usr/local/bin/poker-postflop-solver
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir .

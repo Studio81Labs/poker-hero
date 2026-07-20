@@ -26,6 +26,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+target/
 
 # IDE and OS files
 .idea/

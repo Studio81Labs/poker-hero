@@ -91,7 +91,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the bundled range/EV engine or a configured local command.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default plugin solves heads-up postflop trees and records use of the bundled range/EV fallback for unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -107,13 +107,23 @@ Canonical state should include, where available:
 - Community cards.
 - Pot size.
 - Current bet/call amount.
-- Effective stack or visible stacks.
+- Hero's visible stack.
+- Effective stack, defined as the minimum visible stack behind.
 - Number of players/seats.
 - Hero position when detectable.
 - Street: preflop, flop, turn, or river.
+- Whether the current facing action is a bet or raise.
 - Any available action context.
 
-Each recommendation provider declares the minimum fields it requires. The backend validates the approved state against that provider before sending a request. If a solver-style provider requires more context than the screenshot contains, such as exact action history or effective stack, the UI must ask the user to supply or correct those fields instead of guessing.
+Each recommendation provider declares the minimum fields it requires. The
+backend validates the approved state against that provider before sending a
+request. A facing-bet postflop tree requires both hero's visible stack and the
+effective visible stack so the pre-bet effective stack can be reconstructed
+without guessing which player is covered. It also requires an explicit action
+classification and accepts only a first bet until the canonical state supports
+full raise history. If a solver-style provider requires more context than the
+screenshot contains, the UI must ask the user to supply or correct those fields
+instead of guessing.
 
 ## Data Flow
 
@@ -171,6 +181,7 @@ Example configuration concepts:
 - `parser.autoApprove.enabled`: boolean.
 - `parser.autoApprove.thresholds`: required confidence thresholds per field.
 - `recommendation.provider`: `mock`, `local_solver`, `external_solver`, or `llm_advice`.
+- `recommendation.localEngine`: `postflop_solver` or `local_ev`.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
 

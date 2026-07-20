@@ -17,10 +17,12 @@ const detectedState: DetectedState = {
   ],
   pot_size: 12.5,
   current_bet: 2.5,
+  hero_stack: 97.5,
   effective_stack: 96,
   players_in_hand: 3,
   hero_position: "button",
   street: "flop",
+  facing_action: "bet",
   action_context: "Cutoff bet 2.5 into 12.5",
 };
 
@@ -55,10 +57,12 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
         board_cards: 0.98,
         pot_size: 0.92,
         current_bet: 0.9,
+        hero_stack: 0.89,
         effective_stack: 0.88,
         players_in_hand: 0.86,
         hero_position: 0.84,
         street: 1,
+        facing_action: 0.9,
       },
       warnings: [],
       raw: { provider: "mock" },
@@ -186,7 +190,12 @@ afterEach(() => {
 describe("App", () => {
   it("renders live capture first and exposes upload mode", async () => {
     fetchMock().mockResolvedValueOnce(
-      jsonResponse({ status: "ok", parser_provider: "ocr_cv", recommendation_provider: "local_solver" }),
+      jsonResponse({
+        status: "ok",
+        parser_provider: "ocr_cv",
+        recommendation_provider: "local_solver",
+        recommendation_engine: "postflop_solver",
+      }),
     );
     render(<App />);
     const user = userEvent.setup();
@@ -200,9 +209,9 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getByRole("dialog", { name: "About Poker Training Analyzer" })).toBeInTheDocument();
     expect(await screen.findByText("OCR + computer vision")).toBeInTheDocument();
-    expect(screen.getByText("Local EV solver")).toBeInTheDocument();
+    expect(screen.getByText("Postflop solver")).toBeInTheDocument();
     expect(screen.getByText(/OCR and computer vision read the cards/)).toBeInTheDocument();
-    expect(screen.getByText(/solver compares candidate actions/i)).toBeInTheDocument();
+    expect(screen.getByText(/postflop engine solves heads-up game trees/i)).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/health");
     await user.click(screen.getByRole("button", { name: "Close app information" }));
     expect(screen.queryByRole("dialog", { name: "About Poker Training Analyzer" })).not.toBeInTheDocument();
@@ -227,6 +236,7 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Qs Jc 2h")).toBeInTheDocument();
     expect(screen.getByDisplayValue("12.5")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("bet");
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
 
@@ -244,6 +254,7 @@ describe("App", () => {
       board_cards: [],
       pot_size: 3.5,
       current_bet: 1.5,
+      hero_stack: 100.4,
       effective_stack: 100.4,
       players_in_hand: 2,
       street: "preflop",
@@ -561,6 +572,8 @@ describe("App", () => {
       pot_size: 3.5,
       street: "preflop",
     });
+    delete (savedState as Partial<CanonicalState>).hero_stack;
+    delete (savedState as Partial<CanonicalState>).facing_action;
     const savedJob: JobRecord = {
       ...recommendedJob(savedState),
       id: "history-job",
@@ -581,6 +594,8 @@ describe("App", () => {
 
     expect(await screen.findByDisplayValue("7d Ah")).toBeInTheDocument();
     expect(screen.getByDisplayValue("3.5")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Hero stack/)).toHaveValue("");
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
     expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
   });
 
@@ -622,6 +637,7 @@ describe("App", () => {
 
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
+    expect(payload.facing_action).toBe("bet");
     expect(payload.user_approved).toBe(true);
   });
 

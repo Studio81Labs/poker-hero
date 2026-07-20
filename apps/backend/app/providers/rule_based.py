@@ -81,6 +81,9 @@ class RuleBasedTrainingProvider:
     name = "rule_based"
     required_fields = ["hero_cards", "street"]
 
+    def required_fields_for(self, state: CanonicalState) -> list[str]:
+        return self.required_fields
+
     def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         state = request.state
         if state.street == "preflop":

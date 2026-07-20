@@ -3,7 +3,7 @@ from json import JSONDecodeError
 import httpx
 from pydantic import ValidationError
 
-from app.models import RecommendationRequest, RecommendationResult
+from app.models import CanonicalState, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError, ProviderError
 
 
@@ -14,6 +14,9 @@ class HttpRecommendationProvider:
         self.name = name
         self.url = url
         self.missing_message = missing_message
+
+    def required_fields_for(self, state: CanonicalState) -> list[str]:
+        return self.required_fields
 
     def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         if not self.url:

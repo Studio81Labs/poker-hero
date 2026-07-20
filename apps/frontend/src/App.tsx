@@ -28,6 +28,7 @@ import type {
   FacingAction,
   JobRecord,
   Rank,
+  RecommendationResult,
   Street,
   Suit,
   SystemInfo,
@@ -111,6 +112,27 @@ interface QueueProgress {
   aborting: boolean;
 }
 
+interface RecommendationEvidenceMetric {
+  label: string;
+  value: number;
+  unit: "percent" | "bb";
+}
+
+interface RecommendationEvidenceCandidate {
+  action: string;
+  sizing: number | null;
+  ev: number | null;
+  frequency: number | null;
+}
+
+interface RecommendationEvidence {
+  engine: string | null;
+  fallbackFrom: string | null;
+  fallbackReason: string | null;
+  metrics: RecommendationEvidenceMetric[];
+  candidates: RecommendationEvidenceCandidate[];
+}
+
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
@@ -121,11 +143,13 @@ const PROVIDER_LABELS: Record<string, string> = {
   llm_advice: "LLM adviser",
   llm_vision: "External vision model",
   local_ev: "Local EV solver",
+  local_ev_solver_v1: "Local EV solver",
   local_solver: "Local solver",
   mock: "Demo engine",
   ocr_cv: "OCR + computer vision",
   postflop_solver: "Postflop solver",
   rule_based: "Rule-based trainer",
+  rule_based_training_v2: "Rule-based trainer",
 };
 
 const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
@@ -150,6 +174,129 @@ const CONFIDENCE_KEYS = [
 
 function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider.replace(/_/g, " ");
+}
+
+function metadataRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function metadataNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function metadataRatio(value: unknown): number | null {
+  const number = metadataNumber(value);
+  return number !== null && number >= 0 && number <= 1 ? number : null;
+}
+
+function metadataString(value: unknown, maxLength = 320): string | null {
+  if (typeof value !== "string" || value.trim() === "") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function recommendationEvidenceFromRaw(
+  raw: Record<string, unknown>,
+  recommendation: RecommendationResult,
+): RecommendationEvidence | null {
+  const equity = metadataRecord(raw.equity);
+  const rangeEquity = metadataRatio(equity?.equity ?? raw.equity);
+  const realizedEquity = metadataRatio(raw.realized_equity);
+  const requiredEquity = metadataRatio(raw.required_equity ?? raw.pot_odds);
+  const exploitability = metadataRecord(raw.exploitability);
+  const exploitabilityBb = metadataNumber(exploitability?.bb);
+  const metrics: RecommendationEvidenceMetric[] = [];
+
+  if (rangeEquity !== null) {
+    metrics.push({ label: "Range equity", value: rangeEquity, unit: "percent" });
+  }
+  if (realizedEquity !== null) {
+    metrics.push({ label: "Realized", value: realizedEquity, unit: "percent" });
+  }
+  if (requiredEquity !== null && requiredEquity > 0) {
+    metrics.push({ label: "Call price", value: requiredEquity, unit: "percent" });
+  }
+  if (exploitabilityBb !== null && exploitabilityBb >= 0) {
+    metrics.push({ label: "Exploitability", value: exploitabilityBb, unit: "bb" });
+  }
+
+  const sortedCandidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
+    .flatMap((candidate): RecommendationEvidenceCandidate[] => {
+      const record = metadataRecord(candidate);
+      const action = metadataString(record?.action, 24);
+      const ev = metadataNumber(record?.ev);
+      const frequency = metadataRatio(record?.frequency);
+      const rawSizing = metadataNumber(record?.sizing);
+      if (!record || !action || (ev === null && frequency === null)) {
+        return [];
+      }
+      return [{
+        action,
+        sizing: rawSizing !== null && rawSizing >= 0 ? rawSizing : null,
+        ev,
+        frequency,
+      }];
+    })
+    .sort((left, right) => {
+      if (left.ev !== null && right.ev !== null && left.ev !== right.ev) {
+        return right.ev - left.ev;
+      }
+      if (left.ev === null && right.ev !== null) {
+        return 1;
+      }
+      if (left.ev !== null && right.ev === null) {
+        return -1;
+      }
+      return (right.frequency ?? 0) - (left.frequency ?? 0);
+    });
+  const chosenCandidateIndex = sortedCandidates.findIndex((candidate) => (
+    candidateMatchesRecommendation(candidate, recommendation)
+  ));
+  const candidates = chosenCandidateIndex >= 4
+    ? [...sortedCandidates.slice(0, 3), sortedCandidates[chosenCandidateIndex]]
+    : sortedCandidates.slice(0, 4);
+
+  const engine = metadataString(raw.engine, 80);
+  const fallbackFrom = metadataString(raw.requested_engine, 80);
+  const fallbackReason = metadataString(raw.fallback_reason);
+  if (metrics.length === 0 && candidates.length === 0 && !fallbackReason) {
+    return null;
+  }
+  return {
+    engine: engine ? providerLabel(engine) : null,
+    fallbackFrom: fallbackFrom ? providerLabel(fallbackFrom) : null,
+    fallbackReason,
+    metrics,
+    candidates,
+  };
+}
+
+function formatEvidenceMetric(metric: RecommendationEvidenceMetric): string {
+  if (metric.unit === "percent") {
+    return `${Math.round(metric.value * 100)}%`;
+  }
+  return `${Number(metric.value.toFixed(3))} BB`;
+}
+
+function formatCandidateValue(value: number): string {
+  return Number(value.toFixed(3)).toString();
+}
+
+function candidateMatchesRecommendation(
+  candidate: RecommendationEvidenceCandidate,
+  recommendation: RecommendationResult,
+): boolean {
+  if (candidate.action !== recommendation.action) {
+    return false;
+  }
+  if (recommendation.sizing === null) {
+    return candidate.sizing === null;
+  }
+  return candidate.sizing !== null && Math.abs(candidate.sizing - recommendation.sizing) < 0.001;
 }
 
 function benchmarkFieldLabel(field: string): string {
@@ -683,6 +830,13 @@ export default function App() {
   const warnings = job?.error ? [...parserWarnings, job.error] : parserWarnings;
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
+  const activeRecommendation = currentStateApproved ? job?.recommendation ?? null : null;
+  const decisionEvidence = useMemo(
+    () => (activeRecommendation
+      ? recommendationEvidenceFromRaw(activeRecommendation.raw, activeRecommendation)
+      : null),
+    [activeRecommendation],
+  );
   const canApprove = Boolean(
     job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street && !currentStateApproved,
   );
@@ -1616,17 +1770,70 @@ export default function App() {
               </Field>
             </div>
 
-            {currentStateApproved && job?.recommendation ? (
+            {activeRecommendation ? (
               <section className="recommendation" aria-label="Recommendation">
                 <div className="recommendation-head">
                   <span>Recommended play</span>
-                  <strong>{Math.round(job.recommendation.confidence * 100)}% confidence</strong>
+                  <strong>{Math.round(activeRecommendation.confidence * 100)}% confidence</strong>
                 </div>
                 <div className="recommendation-main">
-                  <span className="recommendation-action">{job.recommendation.action}</span>
-                  {job.recommendation.sizing !== null ? <span className="recommendation-sizing">{job.recommendation.sizing}</span> : null}
+                  <span className="recommendation-action">{activeRecommendation.action}</span>
+                  {activeRecommendation.sizing !== null ? <span className="recommendation-sizing">{activeRecommendation.sizing}</span> : null}
                 </div>
-                <p>{job.recommendation.explanation}</p>
+                <p>{activeRecommendation.explanation}</p>
+                {decisionEvidence ? (
+                  <div className="recommendation-evidence" aria-label="Decision evidence">
+                    <div className="recommendation-evidence-head">
+                      <span>Decision evidence</span>
+                      {decisionEvidence.engine ? <strong>{decisionEvidence.engine}</strong> : null}
+                    </div>
+                    {decisionEvidence.fallbackReason ? (
+                      <div className="recommendation-fallback">
+                        <strong>{decisionEvidence.fallbackFrom ? `${decisionEvidence.fallbackFrom} fallback` : "Fallback used"}</strong>
+                        <span>{decisionEvidence.fallbackReason}</span>
+                      </div>
+                    ) : null}
+                    {decisionEvidence.metrics.length > 0 ? (
+                      <div className="recommendation-metrics">
+                        {decisionEvidence.metrics.map((metric) => (
+                          <div key={metric.label}>
+                            <strong>{formatEvidenceMetric(metric)}</strong>
+                            <span>{metric.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {decisionEvidence.candidates.length > 0 ? (
+                      <div className="recommendation-candidates" role="list" aria-label="Compared actions">
+                        <div className="recommendation-candidates-head">
+                          <span>Compared actions</span>
+                          <span>EV / frequency</span>
+                        </div>
+                        {decisionEvidence.candidates.map((candidate, index) => {
+                          const selected = candidateMatchesRecommendation(candidate, activeRecommendation);
+                          return (
+                            <div
+                              key={`${candidate.action}-${candidate.sizing ?? "none"}-${index}`}
+                              className={selected ? "selected" : undefined}
+                              role="listitem"
+                              aria-current={selected ? "true" : undefined}
+                            >
+                              <span className="recommendation-candidate-action">
+                                <strong>{candidate.action}</strong>
+                                {candidate.sizing !== null ? <small>{formatCandidateValue(candidate.sizing)} BB</small> : null}
+                                {selected ? <em>Chosen</em> : null}
+                              </span>
+                              <span className="recommendation-candidate-values">
+                                {candidate.ev !== null ? <strong>EV {formatCandidateValue(candidate.ev)} BB</strong> : null}
+                                {candidate.frequency !== null ? <small>{Math.round(candidate.frequency * 100)}% frequency</small> : null}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </section>
             ) : null}
           </div>

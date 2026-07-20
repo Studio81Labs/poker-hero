@@ -34,6 +34,29 @@ const recommendation: RecommendationResult = {
   raw: { provider: "mock" },
 };
 
+const recommendationWithEvidence: RecommendationResult = {
+  ...recommendation,
+  explanation: "Solver compared candidate actions and selected the highest EV line.",
+  raw: {
+    provider: "local_solver",
+    engine: "local_ev_solver_v1",
+    requested_engine: "postflop_solver",
+    fallback_reason: "the open-source engine supports heads-up postflop spots only",
+    equity: { equity: 0.61 },
+    realized_equity: 0.55,
+    required_equity: 0.2,
+    candidates: [
+      { action: "fold", sizing: null, ev: 0 },
+      { action: "call", sizing: null, ev: 3.1 },
+      { action: "check", sizing: null, ev: 3 },
+      { action: "bet", sizing: 2.5, ev: 2.9 },
+      { action: "raise", sizing: 4, ev: 2.8 },
+      { action: "raise", sizing: 7.5, ev: 2.4, frequency: 0.72 },
+      { action: "invalid", sizing: -1, ev: "unknown" },
+    ],
+  },
+};
+
 function canonicalState(overrides: Partial<CanonicalState> = {}): CanonicalState {
   return {
     ...detectedState,
@@ -598,6 +621,39 @@ describe("App", () => {
     expect(screen.getByLabelText(/Hero stack/)).toHaveValue("");
     expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
     expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Decision evidence")).not.toBeInTheDocument();
+  });
+
+  it("shows normalized decision evidence for solver recommendations", async () => {
+    const evidenceJob: JobRecord = {
+      ...recommendedJob(),
+      id: "evidence-job",
+      original_filename: "evidence.png",
+      image_filename: "evidence.png",
+      recommendation: recommendationWithEvidence,
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: evidenceJob.id, job: evidenceJob, savedAt: new Date().toISOString() }]),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    expect(within(evidence).getByText("Local EV solver")).toBeInTheDocument();
+    expect(within(evidence).getByText("Postflop solver fallback")).toBeInTheDocument();
+    expect(within(evidence).getByText("61%")).toBeInTheDocument();
+    expect(within(evidence).getByText("55%")).toBeInTheDocument();
+    expect(within(evidence).getByText("20%")).toBeInTheDocument();
+    expect(within(evidence).getByText("EV 2.4 BB")).toBeInTheDocument();
+    expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
+    const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
+    expect(chosen).toHaveTextContent("raise");
+    expect(chosen).toHaveTextContent("7.5 BB");
+    expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
+    expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
   });
 
   it("displays backend upload errors as queue attention items", async () => {

@@ -37,9 +37,12 @@ engine selection.
 ### Frontend
 
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and
-correction, automation controls, recommendations, and history presentation. In
-production it uses same-origin `/api/*`; `worker.js` forwards those requests to
-`BACKEND_URL` and serves all other routes from Worker Static Assets.
+correction, automation controls, recommendations, decision-evidence
+presentation, and history. It defensively normalizes optional provider metadata
+such as equity, candidate EVs/frequencies, exploitability, and fallback context;
+providers remain free to omit those fields. In production it uses same-origin
+`/api/*`; `worker.js` forwards those requests to `BACKEND_URL` and serves all
+other routes from Worker Static Assets.
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,

@@ -46,7 +46,7 @@ def run_benchmark(
     layout_profile: str,
 ) -> BenchmarkReport:
     cases = [
-        _run_case(job, parser, image_path_for(job))
+        _run_case(job, parser, image_path_for)
         for job in jobs
         if job.benchmark_included and job.approved_state is not None
     ]
@@ -84,12 +84,17 @@ def run_benchmark(
     )
 
 
-def _run_case(job: JobRecord, parser: ScreenshotParser, image_path: Path) -> BenchmarkCaseResult:
+def _run_case(
+    job: JobRecord,
+    parser: ScreenshotParser,
+    image_path_for: Callable[[JobRecord], Path],
+) -> BenchmarkCaseResult:
     expected = job.approved_state
     if expected is None:
         raise ValueError("Benchmark case requires an approved state")
 
     try:
+        image_path = image_path_for(job)
         result = parser.parse(image_path)
     except Exception as exc:
         comparisons = _compare_states(expected, None, {})

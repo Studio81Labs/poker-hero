@@ -448,6 +448,31 @@ def test_benchmark_continues_after_an_individual_parser_failure(
     assert failed_case["evaluated_fields"] > 0
 
 
+def test_benchmark_continues_after_an_individual_image_path_failure(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    valid_id = upload_job(client, filename="valid.png").json()["id"]
+    invalid_id = upload_job(client, filename="invalid.png").json()["id"]
+    for job_id in (valid_id, invalid_id):
+        approve_job(client, job_id)
+        client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    store = FileJobStore(tmp_path)
+    invalid_job = store.get(invalid_id)
+    invalid_job.image_filename = "../outside.png"
+    store.save(invalid_job)
+
+    response = client.post("/api/benchmarks/run")
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["total_cases"] == 2
+    assert report["successful_cases"] == 1
+    assert report["failed_cases"] == 1
+    failed_case = next(case for case in report["cases"] if case["status"] == "error")
+    assert failed_case["job_id"] == invalid_id
+    assert "outside.png" in failed_case["error"]
+
+
 def test_provider_configuration_errors_are_http_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

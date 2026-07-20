@@ -47,7 +47,10 @@ const recommendationWithEvidence: RecommendationResult = {
     required_equity: 0.2,
     candidates: [
       { action: "fold", sizing: null, ev: 0 },
-      { action: "call", sizing: null, ev: 1.1 },
+      { action: "call", sizing: null, ev: 3.1 },
+      { action: "check", sizing: null, ev: 3 },
+      { action: "bet", sizing: 2.5, ev: 2.9 },
+      { action: "raise", sizing: 4, ev: 2.8 },
       { action: "raise", sizing: 7.5, ev: 2.4, frequency: 0.72 },
       { action: "invalid", sizing: -1, ev: "unknown" },
     ],
@@ -648,6 +651,8 @@ describe("App", () => {
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
+    expect(chosen).toHaveTextContent("7.5 BB");
+    expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
   });
 

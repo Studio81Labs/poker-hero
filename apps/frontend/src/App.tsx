@@ -199,7 +199,10 @@ function metadataString(value: unknown, maxLength = 320): string | null {
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
 }
 
-function recommendationEvidenceFromRaw(raw: Record<string, unknown>): RecommendationEvidence | null {
+function recommendationEvidenceFromRaw(
+  raw: Record<string, unknown>,
+  recommendation: RecommendationResult,
+): RecommendationEvidence | null {
   const equity = metadataRecord(raw.equity);
   const rangeEquity = metadataRatio(equity?.equity ?? raw.equity);
   const realizedEquity = metadataRatio(raw.realized_equity);
@@ -221,8 +224,7 @@ function recommendationEvidenceFromRaw(raw: Record<string, unknown>): Recommenda
     metrics.push({ label: "Exploitability", value: exploitabilityBb, unit: "bb" });
   }
 
-  const candidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
-    .slice(0, 12)
+  const sortedCandidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
     .flatMap((candidate): RecommendationEvidenceCandidate[] => {
       const record = metadataRecord(candidate);
       const action = metadataString(record?.action, 24);
@@ -250,8 +252,13 @@ function recommendationEvidenceFromRaw(raw: Record<string, unknown>): Recommenda
         return -1;
       }
       return (right.frequency ?? 0) - (left.frequency ?? 0);
-    })
-    .slice(0, 4);
+    });
+  const chosenCandidateIndex = sortedCandidates.findIndex((candidate) => (
+    candidateMatchesRecommendation(candidate, recommendation)
+  ));
+  const candidates = chosenCandidateIndex >= 4
+    ? [...sortedCandidates.slice(0, 3), sortedCandidates[chosenCandidateIndex]]
+    : sortedCandidates.slice(0, 4);
 
   const engine = metadataString(raw.engine, 80);
   const fallbackFrom = metadataString(raw.requested_engine, 80);
@@ -825,7 +832,9 @@ export default function App() {
   const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
   const activeRecommendation = currentStateApproved ? job?.recommendation ?? null : null;
   const decisionEvidence = useMemo(
-    () => (activeRecommendation ? recommendationEvidenceFromRaw(activeRecommendation.raw) : null),
+    () => (activeRecommendation
+      ? recommendationEvidenceFromRaw(activeRecommendation.raw, activeRecommendation)
+      : null),
     [activeRecommendation],
   );
   const canApprove = Boolean(

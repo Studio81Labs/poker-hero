@@ -848,7 +848,10 @@ describe("App", () => {
       correct_fields: 14,
       evaluated_fields: 20,
       accuracy: 0.7,
-      field_metrics: [],
+      field_metrics: [
+        { field: "hero_cards", correct: 1, total: 2, accuracy: 0.5 },
+        { field: "pot_size", correct: 2, total: 2, accuracy: 1 },
+      ],
       cases: [],
     };
     const latestReport = {
@@ -857,9 +860,14 @@ describe("App", () => {
       created_at: "2026-07-20T12:00:00Z",
       correct_fields: 18,
       accuracy: 0.9,
+      field_metrics: [
+        { field: "hero_cards", correct: 2, total: 2, accuracy: 1 },
+        { field: "pot_size", correct: 1, total: 2, accuracy: 0.5 },
+        { field: "board_cards", correct: 2, total: 2, accuracy: 1 },
+      ],
     };
     const summaries = [latestReport, earlierReport].map(
-      ({ id, parser_provider, layout_profile, created_at, total_cases, failed_cases, accuracy }) => ({
+      ({ id, parser_provider, layout_profile, created_at, total_cases, failed_cases, accuracy, field_metrics }) => ({
         id,
         parser_provider,
         layout_profile,
@@ -867,6 +875,7 @@ describe("App", () => {
         total_cases,
         failed_cases,
         accuracy,
+        field_metrics,
       }),
     );
     fetchMock()
@@ -879,11 +888,15 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     expect(await within(dialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
     expect(within(dialog).getByText("+20 pts vs previous")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("hero cards change +50 pts")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("pot size change -50 pts")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("board cards change New")).toBeInTheDocument();
 
     await user.selectOptions(within(dialog).getByRole("combobox", { name: "Benchmark report" }), "benchmark-earlier");
 
     await waitFor(() => expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("70%"));
     expect(within(dialog).getByText("No comparable earlier run")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/change/)).not.toBeInTheDocument();
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/benchmark-earlier",

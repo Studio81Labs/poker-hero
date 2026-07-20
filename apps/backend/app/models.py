@@ -256,6 +256,7 @@ class BenchmarkReportSummary(BaseModel):
     total_cases: int
     failed_cases: int
     accuracy: float = Field(ge=0, le=1)
+    field_metrics: list[BenchmarkFieldMetric] = Field(default_factory=list)
 
     @classmethod
     def from_report(cls, report: BenchmarkReport) -> "BenchmarkReportSummary":
@@ -267,6 +268,7 @@ class BenchmarkReportSummary(BaseModel):
             total_cases=report.total_cases,
             failed_cases=report.failed_cases,
             accuracy=report.accuracy,
+            field_metrics=report.field_metrics,
         )
 
 

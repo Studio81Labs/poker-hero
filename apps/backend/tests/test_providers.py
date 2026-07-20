@@ -226,9 +226,21 @@ def test_local_solver_can_select_bundled_ev_engine(tmp_path: Path) -> None:
 def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text(
-        "import json, sys\n"
+        "import json, os, sys\n"
         "payload = json.loads(sys.stdin.read())\n"
         "assert payload['state']['hero_position'] == 'IP'\n"
+        "expected = {"
+        "'POKER_POSTFLOP_SOLVER_MAX_ITERATIONS': '17', "
+        "'POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY': '0.025', "
+        "'POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB': '321', "
+        "'POKER_POSTFLOP_SOLVER_BET_SIZES': '50%,100%', "
+        "'POKER_POSTFLOP_SOLVER_RAISE_SIZES': '3x', "
+        "'POKER_POSTFLOP_SOLVER_RAKE_RATE': '0.05', "
+        "'POKER_POSTFLOP_SOLVER_RAKE_CAP': '2.5', "
+        "'POKER_POSTFLOP_SOLVER_OOP_RANGE': 'AA', "
+        "'POKER_POSTFLOP_SOLVER_IP_RANGE': 'KK'"
+        "}\n"
+        "assert {key: os.environ[key] for key in expected} == expected\n"
         "print(json.dumps({"
         "'action': 'raise', "
         "'sizing': 8.5, "
@@ -242,6 +254,15 @@ def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) ->
             data_dir=tmp_path,
             recommendation_provider="local_solver",
             postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_max_iterations=17,
+            postflop_solver_target_exploitability=0.025,
+            postflop_solver_max_memory_mb=321,
+            postflop_solver_bet_sizes="50%,100%",
+            postflop_solver_raise_sizes="3x",
+            postflop_solver_rake_rate=0.05,
+            postflop_solver_rake_cap=2.5,
+            postflop_solver_oop_range="AA",
+            postflop_solver_ip_range="KK",
         )
     )
 
@@ -278,7 +299,7 @@ def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
 
 def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
-    state.hero_position = None
+    state.hero_position = "SB"
     provider = build_provider(
         Settings(
             data_dir=tmp_path,

@@ -397,7 +397,7 @@ fn hero_player(position: Option<&str>) -> Result<usize, String> {
         .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "));
     match normalized.as_deref() {
         Some("ip" | "in position" | "button" | "btn") => Ok(1),
-        Some("oop" | "out of position" | "big blind" | "bb" | "small blind" | "sb") => Ok(0),
+        Some("oop" | "out of position") => Ok(0),
         _ => Err("hero position must identify IP or OOP".to_string()),
     }
 }
@@ -506,7 +506,8 @@ mod tests {
         assert_eq!(hero_player(Some("IP")), Ok(1));
         assert_eq!(hero_player(Some("button")), Ok(1));
         assert_eq!(hero_player(Some("out-of-position")), Ok(0));
-        assert_eq!(hero_player(Some("BB")), Ok(0));
+        assert!(hero_player(Some("SB")).is_err());
+        assert!(hero_player(Some("BB")).is_err());
         assert!(hero_player(Some("cutoff")).is_err());
     }
 

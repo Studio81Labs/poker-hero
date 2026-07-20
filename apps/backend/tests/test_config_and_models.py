@@ -19,6 +19,11 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.local_solver_engine == "postflop_solver"
     assert settings.local_solver_timeout_seconds == 120
     assert settings.postflop_solver_fallback_enabled is True
+    assert settings.postflop_solver_max_iterations == 400
+    assert settings.postflop_solver_target_exploitability == 0.01
+    assert settings.postflop_solver_max_memory_mb == 768
+    assert settings.postflop_solver_bet_sizes == "70%"
+    assert settings.postflop_solver_raise_sizes == "2.5x"
     assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
 
@@ -38,7 +43,12 @@ def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.Mo
 def test_application_settings_loader_reads_dotenv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (tmp_path / ".env").write_text("POKER_PARSER_PROVIDER=ocr_cv\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        "POKER_PARSER_PROVIDER=ocr_cv\n"
+        "POKER_POSTFLOP_SOLVER_MAX_ITERATIONS=17\n"
+        "POKER_POSTFLOP_SOLVER_BET_SIZES=50%,100%\n",
+        encoding="utf-8",
+    )
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
 
@@ -48,6 +58,8 @@ def test_application_settings_loader_reads_dotenv(
         get_settings.cache_clear()
 
     assert settings.parser_provider == "ocr_cv"
+    assert settings.postflop_solver_max_iterations == 17
+    assert settings.postflop_solver_bet_sizes == "50%,100%"
 
 
 def test_settings_parses_thresholds_from_json_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -72,6 +84,17 @@ def test_settings_rejects_invalid_auto_approve_threshold() -> None:
 def test_settings_rejects_non_positive_solver_timeout() -> None:
     with pytest.raises(ValidationError):
         Settings(local_solver_timeout_seconds=0)
+
+
+def test_settings_rejects_invalid_postflop_solver_limits() -> None:
+    with pytest.raises(ValidationError):
+        Settings(postflop_solver_max_iterations=0)
+    with pytest.raises(ValidationError):
+        Settings(postflop_solver_target_exploitability=1.1)
+    with pytest.raises(ValidationError):
+        Settings(postflop_solver_max_memory_mb=0)
+    with pytest.raises(ValidationError):
+        Settings(postflop_solver_rake_rate=-0.01)
 
 
 def test_settings_rejects_non_positive_max_upload_bytes() -> None:

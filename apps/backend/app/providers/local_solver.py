@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -52,6 +53,7 @@ class LocalSolverProvider:
                 text=True,
                 capture_output=True,
                 cwd=cwd,
+                env=self._environment(),
                 timeout=self.settings.local_solver_timeout_seconds,
                 check=False,
             )
@@ -147,6 +149,29 @@ class LocalSolverProvider:
             raise ProviderConfigurationError(f"{field_name} must not be blank")
         return command
 
+    def _environment(self) -> dict[str, str]:
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "POKER_POSTFLOP_SOLVER_MAX_ITERATIONS": str(
+                    self.settings.postflop_solver_max_iterations
+                ),
+                "POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY": str(
+                    self.settings.postflop_solver_target_exploitability
+                ),
+                "POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB": str(
+                    self.settings.postflop_solver_max_memory_mb
+                ),
+                "POKER_POSTFLOP_SOLVER_BET_SIZES": self.settings.postflop_solver_bet_sizes,
+                "POKER_POSTFLOP_SOLVER_RAISE_SIZES": self.settings.postflop_solver_raise_sizes,
+                "POKER_POSTFLOP_SOLVER_RAKE_RATE": str(self.settings.postflop_solver_rake_rate),
+                "POKER_POSTFLOP_SOLVER_RAKE_CAP": str(self.settings.postflop_solver_rake_cap),
+                "POKER_POSTFLOP_SOLVER_OOP_RANGE": self.settings.postflop_solver_oop_range,
+                "POKER_POSTFLOP_SOLVER_IP_RANGE": self.settings.postflop_solver_ip_range,
+            }
+        )
+        return environment
+
 
 def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
     if value is None:
@@ -154,6 +179,6 @@ def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
     normalized = " ".join(value.lower().replace("_", " ").replace("-", " ").split())
     if normalized in {"ip", "in position", "button", "btn"}:
         return "ip"
-    if normalized in {"oop", "out of position", "big blind", "bb", "small blind", "sb"}:
+    if normalized in {"oop", "out of position"}:
         return "oop"
     return None

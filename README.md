@@ -81,9 +81,10 @@ for container-oriented values.
 With `POKER_RECOMMENDATION_PROVIDER=local_solver`, the default
 `postflop_solver` engine runs the pinned Rust Discounted CFR adapter. It accepts
 heads-up flop, turn, and river states when `hero_position` identifies `IP`,
-`OOP`, button, or a blind. Its ranges, bet tree, iteration target, rake, timeout,
-and memory ceiling are configurable through the `POKER_POSTFLOP_SOLVER_*`
-variables in the example env files.
+`OOP`, or button. Blind labels require explicit IP/OOP review because active
+player count does not identify the opponent's seat. Its ranges, bet tree,
+iteration target, rake, timeout, and memory ceiling are configurable through
+the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 
 Preflop, multiway, incomplete, ambiguous-position, oversized, and failed trees
 use `local_ev` when fallback is enabled. Recommendations preserve the requested

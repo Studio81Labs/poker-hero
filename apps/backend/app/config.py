@@ -7,6 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Threshold = Annotated[float, Field(ge=0, le=1)]
 
+DEFAULT_POSTFLOP_OOP_RANGE = "66+,A8s+,A5s-A4s,AJo+,K9s+,KQo,QTs+,JTs,96s+,85s+,75s+,65s,54s"
+DEFAULT_POSTFLOP_IP_RANGE = (
+    "QQ-22,AQs-A2s,ATo+,K5s+,KJo+,Q8s+,J8s+,T7s+,96s+,86s+,75s+,64s+,53s+"
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -36,6 +41,15 @@ class Settings(BaseSettings):
     local_solver_timeout_seconds: float = Field(default=120.0, gt=0)
     postflop_solver_command: str = Field(default="poker-postflop-solver")
     postflop_solver_fallback_enabled: bool = Field(default=True)
+    postflop_solver_max_iterations: int = Field(default=400, gt=0)
+    postflop_solver_target_exploitability: float = Field(default=0.01, gt=0, le=1)
+    postflop_solver_max_memory_mb: int = Field(default=768, gt=0)
+    postflop_solver_bet_sizes: str = Field(default="70%")
+    postflop_solver_raise_sizes: str = Field(default="2.5x")
+    postflop_solver_rake_rate: float = Field(default=0, ge=0, le=1)
+    postflop_solver_rake_cap: float = Field(default=0, ge=0)
+    postflop_solver_oop_range: str = Field(default=DEFAULT_POSTFLOP_OOP_RANGE)
+    postflop_solver_ip_range: str = Field(default=DEFAULT_POSTFLOP_IP_RANGE)
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 

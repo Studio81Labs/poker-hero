@@ -698,8 +698,12 @@ describe("App", () => {
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(groundTruthSwitch);
     expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
     pendingInclusion.resolve(jsonResponse(benchmarkJob));
     await waitFor(() => expect(groundTruthSwitch).toHaveAttribute("aria-checked", "true"));
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled();
     const runBenchmark = within(dialog).getByRole("button", { name: "Run benchmark" });
     await waitFor(() => expect(runBenchmark).toBeEnabled());
     await user.click(runBenchmark);

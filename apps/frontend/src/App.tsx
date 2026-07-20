@@ -1653,7 +1653,7 @@ export default function App() {
                 type="button"
                 className="dialog-icon-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning}
+                disabled={benchmarkRunning || benchmarkUpdating}
                 aria-label="Close parser benchmark"
               >
                 <X size={16} aria-hidden="true" />
@@ -1771,7 +1771,7 @@ export default function App() {
                 type="button"
                 className="secondary-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning}
+                disabled={benchmarkRunning || benchmarkUpdating}
               >
                 Done
               </button>

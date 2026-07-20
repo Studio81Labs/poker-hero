@@ -1642,7 +1642,13 @@ export default function App() {
                     : "Ground-truth recognition checks"}
                 </p>
               </div>
-              <button type="button" className="dialog-icon-button" onClick={() => setBenchmarkDialogOpen(false)} aria-label="Close parser benchmark">
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={() => setBenchmarkDialogOpen(false)}
+                disabled={benchmarkRunning}
+                aria-label="Close parser benchmark"
+              >
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
@@ -1752,7 +1758,12 @@ export default function App() {
                 <Play size={14} aria-hidden="true" />
                 {benchmarkRunning ? "Running..." : "Run benchmark"}
               </button>
-              <button type="button" className="secondary-button" onClick={() => setBenchmarkDialogOpen(false)}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setBenchmarkDialogOpen(false)}
+                disabled={benchmarkRunning}
+              >
                 Done
               </button>
             </div>

@@ -704,9 +704,12 @@ describe("App", () => {
     await waitFor(() => expect(runBenchmark).toBeEnabled());
     await user.click(runBenchmark);
     expect(groundTruthSwitch).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
     pendingBenchmark.resolve(jsonResponse(benchmarkReport));
 
     expect(await within(dialog).findByLabelText("Latest benchmark summary")).toHaveTextContent("90%");
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled());
     expect(within(dialog).getByText("hero cards")).toBeInTheDocument();
     expect(within(dialog).getByText("9/10 fields")).toBeInTheDocument();
 

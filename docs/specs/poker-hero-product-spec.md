@@ -60,6 +60,8 @@ The frontend is a browser control panel for:
 - Correcting detected fields.
 - Approving the final hand state.
 - Viewing the recommendation, sizing, confidence, and reasoning.
+- Inspecting available decision evidence such as equity, call price, candidate
+  action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
 - Moving completed items into an autosaved history.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
@@ -138,7 +140,7 @@ instead of guessing.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
 7. The backend normalizes approved state into a canonical Texas Hold'em decision request.
-8. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata.
+8. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
 9. The UI retains completed items in processing until the user clears them into history.
 10. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
@@ -252,6 +254,8 @@ Poker Hero is successful when:
 - The user can correct and approve the extracted state.
 - The recommendation provider is selected by configuration.
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
+- Solver-backed recommendations expose available decision evidence and disclose
+  when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.

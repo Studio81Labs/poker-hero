@@ -115,6 +115,7 @@ export interface BenchmarkReportSummary {
   total_cases: number;
   failed_cases: number;
   accuracy: number;
+  field_metrics?: BenchmarkFieldMetric[];
 }
 
 export interface BenchmarkOverview {

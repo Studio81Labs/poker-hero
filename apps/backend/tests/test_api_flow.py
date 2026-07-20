@@ -413,6 +413,7 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
             "total_cases": 1,
             "failed_cases": 0,
             "accuracy": 1.0,
+            "field_metrics": report["field_metrics"],
         }
     ]
 
@@ -436,7 +437,10 @@ def test_benchmark_exposes_recent_summaries_and_historical_report_detail(
         second_report["id"],
         first_report["id"],
     ]
-    assert all("cases" not in summary for summary in overview["recent_reports"])
+    assert all(
+        "cases" not in summary and summary["field_metrics"]
+        for summary in overview["recent_reports"]
+    )
     assert historical.status_code == 200
     assert historical.json() == first_report
     assert missing.status_code == 404

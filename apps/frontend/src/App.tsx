@@ -18,6 +18,7 @@ import {
 } from "./api";
 import type {
   BenchmarkFieldComparison,
+  BenchmarkFieldMetric,
   BenchmarkOverview,
   BenchmarkReport,
   BenchmarkReportSummary,
@@ -168,6 +169,7 @@ function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary
     total_cases: report.total_cases,
     failed_cases: report.failed_cases,
     accuracy: report.accuracy,
+    field_metrics: report.field_metrics,
   };
 }
 
@@ -184,10 +186,10 @@ function benchmarkReportOption(summary: BenchmarkReportSummary, latestId: string
   return `${summary.id === latestId ? "Latest" : dateLabel} · ${benchmarkPercent(summary.accuracy)}`;
 }
 
-function benchmarkAccuracyChange(
+function previousComparableBenchmarkReport(
   report: BenchmarkReport | null,
   recentReports: BenchmarkReportSummary[],
-): number | null {
+): BenchmarkReportSummary | null {
   if (!report) {
     return null;
   }
@@ -195,14 +197,24 @@ function benchmarkAccuracyChange(
   if (currentIndex < 0) {
     return null;
   }
-  const previous = recentReports
+  return recentReports
     .slice(currentIndex + 1)
     .find(
       (summary) =>
         summary.parser_provider === report.parser_provider &&
         summary.layout_profile === report.layout_profile,
-    );
-  return previous ? Math.round((report.accuracy - previous.accuracy) * 100) : null;
+    ) ?? null;
+}
+
+function benchmarkPointChange(current: number, previous: number): number {
+  return Math.round((current - previous) * 100);
+}
+
+function previousBenchmarkFieldMetric(
+  metric: BenchmarkFieldMetric,
+  previousReport: BenchmarkReportSummary | null,
+): BenchmarkFieldMetric | null {
+  return previousReport?.field_metrics?.find((candidate) => candidate.field === metric.field) ?? null;
 }
 
 function benchmarkComparisonValue(value: unknown): string {
@@ -698,9 +710,16 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
-  const benchmarkAccuracyDelta = useMemo(
-    () => benchmarkAccuracyChange(benchmarkReport, recentBenchmarkReports),
+  const previousBenchmarkReport = useMemo(
+    () => previousComparableBenchmarkReport(benchmarkReport, recentBenchmarkReports),
     [benchmarkReport, recentBenchmarkReports],
+  );
+  const benchmarkAccuracyDelta = useMemo(
+    () =>
+      benchmarkReport && previousBenchmarkReport
+        ? benchmarkPointChange(benchmarkReport.accuracy, previousBenchmarkReport.accuracy)
+        : null,
+    [benchmarkReport, previousBenchmarkReport],
   );
 
   function setError(nextError: string | null) {
@@ -1881,13 +1900,32 @@ export default function App() {
                     <section className="benchmark-result-section" aria-labelledby="benchmark-fields-title">
                       <h3 id="benchmark-fields-title">Field accuracy</h3>
                       <div className="benchmark-field-list">
-                        {benchmarkReport.field_metrics.map((metric) => (
-                          <div key={metric.field}>
-                            <span>{benchmarkFieldLabel(metric.field)}</span>
-                            <small>{metric.correct}/{metric.total}</small>
-                            <strong>{benchmarkPercent(metric.accuracy)}</strong>
-                          </div>
-                        ))}
+                        {benchmarkReport.field_metrics.map((metric) => {
+                          const previousMetric = previousBenchmarkFieldMetric(metric, previousBenchmarkReport);
+                          const fieldDelta = previousMetric
+                            ? benchmarkPointChange(metric.accuracy, previousMetric.accuracy)
+                            : null;
+                          const trendLabel = previousBenchmarkReport?.field_metrics?.length
+                            ? fieldDelta === null
+                              ? "New"
+                              : `${fieldDelta > 0 ? "+" : ""}${fieldDelta} pts`
+                            : null;
+                          return (
+                            <div key={metric.field} className={trendLabel ? "has-trend" : undefined}>
+                              <span>{benchmarkFieldLabel(metric.field)}</span>
+                              <small>{metric.correct}/{metric.total}</small>
+                              <strong>{benchmarkPercent(metric.accuracy)}</strong>
+                              {trendLabel ? (
+                                <small
+                                  className={`benchmark-field-trend${fieldDelta !== null && fieldDelta < 0 ? " negative" : ""}`}
+                                  aria-label={`${benchmarkFieldLabel(metric.field)} change ${trendLabel}`}
+                                >
+                                  {trendLabel}
+                                </small>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
                     </section>
                     <section className="benchmark-result-section" aria-labelledby="benchmark-cases-title">

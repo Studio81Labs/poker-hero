@@ -159,8 +159,9 @@ field-level correct/total counts, per-case accuracy, warnings, and isolated
 case errors. Case results expose expected and detected values for mismatched
 fields and can reopen the persisted hand in the review workspace for correction.
 Recent run summaries remain available for parser/layout comparison, with full
-historical report details loaded on demand. One failed case must not stop the
-remaining corpus.
+historical report details loaded on demand. Comparable runs show overall and
+field-level accuracy changes so parser regressions are visible. One failed case
+must not stop the remaining corpus.
 
 ## Review And Auto-Approve
 

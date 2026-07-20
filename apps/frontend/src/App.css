@@ -1529,6 +1529,10 @@ button:disabled {
   padding: 0 10px 0 0;
 }
 
+.benchmark-field-list > div.has-trend {
+  grid-template-columns: minmax(0, 1fr) auto 46px 54px;
+}
+
 .benchmark-field-list > div:nth-child(even) {
   border-left: 1px solid var(--line-soft);
   padding-left: 12px;
@@ -1547,6 +1551,18 @@ button:disabled {
 .benchmark-field-list strong {
   font-size: 12px;
   text-align: right;
+}
+
+.benchmark-field-list .benchmark-field-trend {
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 800;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.benchmark-field-list .benchmark-field-trend.negative {
+  color: var(--accent-dark);
 }
 
 .benchmark-case-summary {

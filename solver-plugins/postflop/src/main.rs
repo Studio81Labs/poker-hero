@@ -102,7 +102,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let hero_player = hero_player(state.hero_position.as_deref())?;
     let pot_size = positive_value(state.pot_size, "pot_size")?;
     let current_bet = non_negative_value(state.current_bet, "current_bet")?;
-    let effective_stack = positive_value(state.effective_stack, "effective_stack")?;
+    let effective_stack = effective_stack_value(state.effective_stack, current_bet)?;
 
     let TreeAmounts {
         starting_pot,
@@ -485,6 +485,14 @@ fn non_negative_value(value: Option<f64>, field: &str) -> Result<f64, String> {
     Ok(value)
 }
 
+fn effective_stack_value(value: Option<f64>, current_bet: f64) -> Result<f64, String> {
+    if current_bet > 0.0 {
+        non_negative_value(value, "effective_stack")
+    } else {
+        positive_value(value, "effective_stack")
+    }
+}
+
 fn scale_amount(value: f64, field: &str) -> Result<i32, String> {
     let scaled = (value * CHIP_SCALE).round();
     if scaled <= 0.0 && field != "current_bet" {
@@ -690,6 +698,23 @@ mod tests {
         assert_eq!(amounts.starting_pot, 2000);
         assert_eq!(amounts.current_bet, 1000);
         assert_eq!(amounts.effective_stack, 1500);
+    }
+
+    #[test]
+    fn all_in_bettor_wager_restores_zero_visible_effective_stack() {
+        let visible_stack = effective_stack_value(Some(0.0), 10.0).unwrap();
+        let amounts = tree_amounts(30.0, 10.0, visible_stack, Some(30.0)).unwrap();
+
+        assert_eq!(amounts.starting_pot, 2000);
+        assert_eq!(amounts.current_bet, 1000);
+        assert_eq!(amounts.effective_stack, 1000);
+    }
+
+    #[test]
+    fn zero_effective_stack_without_a_bet_is_rejected() {
+        let error = effective_stack_value(Some(0.0), 0.0).unwrap_err();
+
+        assert_eq!(error, "effective_stack must be a positive finite number");
     }
 
     #[test]

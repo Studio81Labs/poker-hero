@@ -643,6 +643,7 @@ describe("App", () => {
   });
 
   it("adds an approved hand to ground truth and runs the parser benchmark", async () => {
+    const pendingOverview = deferredResponse();
     const benchmarkJob = { ...approvedJob(), benchmark_included: true };
     const benchmarkReport = {
       id: "benchmark-1",
@@ -673,7 +674,7 @@ describe("App", () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
-      .mockResolvedValueOnce(jsonResponse({ included_cases: 0, latest_report: null }))
+      .mockReturnValueOnce(pendingOverview.promise)
       .mockResolvedValueOnce(jsonResponse(benchmarkJob))
       .mockResolvedValueOnce(jsonResponse(benchmarkReport))
       .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
@@ -688,8 +689,11 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     const groundTruthSwitch = within(dialog).getByRole("switch", { name: /Use current hand as ground truth/ });
     expect(groundTruthSwitch).toHaveAttribute("aria-checked", "false");
+    expect(groundTruthSwitch).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
 
+    pendingOverview.resolve(jsonResponse({ included_cases: 0, latest_report: null }));
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(groundTruthSwitch);
     await waitFor(() => expect(groundTruthSwitch).toHaveAttribute("aria-checked", "true"));
     await user.click(within(dialog).getByRole("button", { name: "Run benchmark" }));

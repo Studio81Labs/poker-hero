@@ -1041,7 +1041,10 @@ export default function App() {
               ...current,
               included_cases: Math.max(0, current.included_cases + (included ? 1 : -1)),
             }
-          : current,
+          : {
+              included_cases: included ? 1 : 0,
+              latest_report: null,
+            },
       );
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
@@ -1651,7 +1654,7 @@ export default function App() {
                 role="switch"
                 aria-checked={job?.benchmark_included ?? false}
                 onClick={toggleBenchmarkInclusion}
-                disabled={(!job?.approved_state && !job?.benchmark_included) || benchmarkUpdating}
+                disabled={(!job?.approved_state && !job?.benchmark_included) || benchmarkLoading || benchmarkUpdating}
               >
                 <span>
                   <strong>Use current hand as ground truth</strong>

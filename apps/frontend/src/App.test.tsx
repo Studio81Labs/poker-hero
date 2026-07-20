@@ -644,6 +644,8 @@ describe("App", () => {
 
   it("adds an approved hand to ground truth and runs the parser benchmark", async () => {
     const pendingOverview = deferredResponse();
+    const pendingInclusion = deferredResponse();
+    const pendingBenchmark = deferredResponse();
     const benchmarkJob = { ...approvedJob(), benchmark_included: true };
     const benchmarkReport = {
       id: "benchmark-1",
@@ -675,8 +677,8 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockReturnValueOnce(pendingOverview.promise)
-      .mockResolvedValueOnce(jsonResponse(benchmarkJob))
-      .mockResolvedValueOnce(jsonResponse(benchmarkReport))
+      .mockReturnValueOnce(pendingInclusion.promise)
+      .mockReturnValueOnce(pendingBenchmark.promise)
       .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), benchmark_included: false }));
     render(<App />);
@@ -695,8 +697,14 @@ describe("App", () => {
     pendingOverview.resolve(jsonResponse({ included_cases: 0, latest_report: null }));
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(groundTruthSwitch);
+    expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
+    pendingInclusion.resolve(jsonResponse(benchmarkJob));
     await waitFor(() => expect(groundTruthSwitch).toHaveAttribute("aria-checked", "true"));
-    await user.click(within(dialog).getByRole("button", { name: "Run benchmark" }));
+    const runBenchmark = within(dialog).getByRole("button", { name: "Run benchmark" });
+    await waitFor(() => expect(runBenchmark).toBeEnabled());
+    await user.click(runBenchmark);
+    expect(groundTruthSwitch).toBeDisabled();
+    pendingBenchmark.resolve(jsonResponse(benchmarkReport));
 
     expect(await within(dialog).findByLabelText("Latest benchmark summary")).toHaveTextContent("90%");
     expect(within(dialog).getByText("hero cards")).toBeInTheDocument();

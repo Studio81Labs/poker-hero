@@ -1654,7 +1654,12 @@ export default function App() {
                 role="switch"
                 aria-checked={job?.benchmark_included ?? false}
                 onClick={toggleBenchmarkInclusion}
-                disabled={(!job?.approved_state && !job?.benchmark_included) || benchmarkLoading || benchmarkUpdating}
+                disabled={
+                  (!job?.approved_state && !job?.benchmark_included) ||
+                  benchmarkLoading ||
+                  benchmarkRunning ||
+                  benchmarkUpdating
+                }
               >
                 <span>
                   <strong>Use current hand as ground truth</strong>
@@ -1737,7 +1742,12 @@ export default function App() {
               <button
                 type="button"
                 onClick={onRunBenchmark}
-                disabled={benchmarkLoading || benchmarkRunning || (benchmarkOverview?.included_cases ?? 0) === 0}
+                disabled={
+                  benchmarkLoading ||
+                  benchmarkRunning ||
+                  benchmarkUpdating ||
+                  (benchmarkOverview?.included_cases ?? 0) === 0
+                }
               >
                 <Play size={14} aria-hidden="true" />
                 {benchmarkRunning ? "Running..." : "Run benchmark"}

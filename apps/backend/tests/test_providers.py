@@ -7,7 +7,12 @@ import pytest
 
 from app.config import Settings
 from app.models import CanonicalState, Card, RecommendationRequest
-from app.providers.base import ProviderConfigurationError, ProviderError, missing_required_fields
+from app.providers.base import (
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderInputError,
+    missing_required_fields,
+)
 from app.providers.registry import build_provider
 
 
@@ -312,7 +317,7 @@ def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: P
         )
     )
 
-    with pytest.raises(ProviderConfigurationError, match="position must identify IP or OOP"):
+    with pytest.raises(ProviderInputError, match="position must identify IP or OOP"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
@@ -327,7 +332,7 @@ def test_postflop_solver_requires_hero_stack_when_facing_bet(tmp_path: Path) -> 
         )
     )
 
-    with pytest.raises(ProviderConfigurationError, match="hero stack is required"):
+    with pytest.raises(ProviderInputError, match="hero stack is required"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
@@ -345,7 +350,7 @@ def test_postflop_solver_rejects_unknown_or_raised_action_history(
         )
     )
 
-    with pytest.raises(ProviderConfigurationError, match="raises require full action history"):
+    with pytest.raises(ProviderInputError, match="raises require full action history"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 

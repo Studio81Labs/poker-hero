@@ -9,7 +9,12 @@ from app.config import Settings, get_settings
 from app.models import CanonicalState, JobRecord, RecommendationRequest
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
-from app.providers.base import ProviderConfigurationError, ProviderError, missing_required_fields
+from app.providers.base import (
+    ProviderConfigurationError,
+    ProviderError,
+    ProviderInputError,
+    missing_required_fields,
+)
 from app.providers.registry import build_provider
 from app.storage import FileJobStore, JobNotFoundError
 
@@ -115,7 +120,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         try:
             provider = build_provider(active_settings)
-            missing = missing_required_fields(job.approved_state, provider.required_fields)
+            missing = missing_required_fields(
+                job.approved_state,
+                provider.required_fields_for(job.approved_state),
+            )
         except ProviderConfigurationError as exc:
             job.status = "error"
             job.error = str(exc)
@@ -127,6 +135,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         try:
             result = provider.recommend(RecommendationRequest(state=job.approved_state, provider=provider.name))
+        except ProviderInputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ProviderConfigurationError as exc:
             job.status = "error"
             job.error = str(exc)

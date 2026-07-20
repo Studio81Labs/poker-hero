@@ -9,8 +9,8 @@ from typing import Literal
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.models import RecommendationRequest, RecommendationResult
-from app.providers.base import ProviderConfigurationError, ProviderError
+from app.models import CanonicalState, RecommendationRequest, RecommendationResult
+from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
 
 
 class LocalSolverProvider:
@@ -19,6 +19,16 @@ class LocalSolverProvider:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+
+    def required_fields_for(self, state: CanonicalState) -> list[str]:
+        required_fields = list(self.required_fields)
+        if not self._requires_postflop_solver_inputs(state):
+            return required_fields
+
+        required_fields.extend(["board_cards", "hero_position"])
+        if (state.current_bet or 0) > 0:
+            required_fields.extend(["facing_action", "hero_stack"])
+        return required_fields
 
     def recommend(self, request: RecommendationRequest) -> RecommendationResult:
         command, cwd, fallback_reason = self._command(request)
@@ -96,7 +106,7 @@ class LocalSolverProvider:
         unsupported_reason = self._postflop_unsupported_reason(request)
         if unsupported_reason is not None:
             if not self.settings.postflop_solver_fallback_enabled:
-                raise ProviderConfigurationError(unsupported_reason)
+                raise ProviderInputError(unsupported_reason)
             command, cwd = self._ev_command()
             return command, cwd, unsupported_reason
 
@@ -105,6 +115,18 @@ class LocalSolverProvider:
             "POKER_POSTFLOP_SOLVER_COMMAND",
         )
         return command, None, None
+
+    def _requires_postflop_solver_inputs(self, state: CanonicalState) -> bool:
+        custom_command_missing = (
+            self.settings.local_solver_command is None
+            or self.settings.local_solver_command.strip() == ""
+        )
+        return (
+            custom_command_missing
+            and self.settings.local_solver_engine.strip().lower() == "postflop_solver"
+            and not self.settings.postflop_solver_fallback_enabled
+            and state.street in {"flop", "turn", "river"}
+        )
 
     def _can_fallback(self) -> bool:
         custom_command_missing = (

@@ -156,7 +156,9 @@ A benchmark run re-parses every selected screenshot with the currently
 configured parser and layout profile. It does not overwrite the stored parser
 result, approved state, or recommendation. Reports include overall accuracy,
 field-level correct/total counts, per-case accuracy, warnings, and isolated
-case errors. One failed case must not stop the remaining corpus.
+case errors. Case results expose expected and detected values for mismatched
+fields and can reopen the persisted hand in the review workspace for correction.
+One failed case must not stop the remaining corpus.
 
 ## Review And Auto-Approve
 

@@ -32,6 +32,13 @@ export async function getSystemInfo(): Promise<SystemInfo> {
   return readJson<SystemInfo>(response);
 }
 
+export async function getJob(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
+    credentials: "include",
+  });
+  return readJson<JobRecord>(response);
+}
+
 export async function uploadScreenshot(file: File, signal?: AbortSignal): Promise<JobRecord> {
   const form = new FormData();
   form.append("file", file);

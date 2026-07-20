@@ -6,9 +6,14 @@ from pathlib import Path
 from app.models import BenchmarkReport, JobRecord
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
 
 
 class JobNotFoundError(KeyError):
+    pass
+
+
+class BenchmarkNotFoundError(KeyError):
     pass
 
 
@@ -111,11 +116,30 @@ class FileBenchmarkStore:
             return None
         return BenchmarkReport.model_validate_json(path.read_text())
 
+    def get(self, report_id: str) -> BenchmarkReport:
+        path = self._report_path(report_id)
+        if not path.exists():
+            raise BenchmarkNotFoundError(report_id)
+        return BenchmarkReport.model_validate_json(path.read_text())
+
+    def list(self, limit: int = 10) -> list[BenchmarkReport]:
+        reports = [
+            BenchmarkReport.model_validate_json(path.read_text())
+            for path in self.benchmarks_dir.glob("*.json")
+            if BENCHMARK_ID_PATTERN.fullmatch(path.stem) is not None
+        ]
+        return sorted(reports, key=lambda report: report.created_at, reverse=True)[:limit]
+
     def save(self, report: BenchmarkReport) -> BenchmarkReport:
         payload = report.model_dump_json(indent=2)
         self._atomic_write(self.benchmarks_dir / f"{report.id}.json", payload)
         self._atomic_write(self.benchmarks_dir / "latest.json", payload)
         return report
+
+    def _report_path(self, report_id: str) -> Path:
+        if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
+            raise BenchmarkNotFoundError(report_id)
+        return self.benchmarks_dir / f"{report_id}.json"
 
     def _atomic_write(self, path: Path, payload: str) -> None:
         temp_path: Path | None = None

@@ -372,7 +372,11 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
     assert rejected.json()["detail"] == "Approve corrected state before adding it to the benchmark"
     overview = client.get("/api/benchmarks")
     assert overview.status_code == 200
-    assert overview.json() == {"included_cases": 0, "latest_report": None}
+    assert overview.json() == {
+        "included_cases": 0,
+        "latest_report": None,
+        "recent_reports": [],
+    }
 
 
 def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Path) -> None:
@@ -397,7 +401,45 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
         "user_approved"
     }
     assert FileBenchmarkStore(tmp_path).get_latest().id == report["id"]
-    assert client.get("/api/benchmarks").json()["latest_report"]["id"] == report["id"]
+    overview = client.get("/api/benchmarks").json()
+    assert overview["latest_report"]["id"] == report["id"]
+    assert overview["recent_reports"] == [
+        {
+            "id": report["id"],
+            "parser_provider": "mock",
+            "layout_profile": "generic",
+            "created_at": report["created_at"],
+            "total_cases": 1,
+            "failed_cases": 0,
+            "accuracy": 1.0,
+        }
+    ]
+
+
+def test_benchmark_exposes_recent_summaries_and_historical_report_detail(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    first_report = client.post("/api/benchmarks/run").json()
+    approve_job(client, job_id, {**APPROVED_STATE, "pot_size": 18.0})
+    second_report = client.post("/api/benchmarks/run").json()
+
+    overview = client.get("/api/benchmarks").json()
+    historical = client.get(f"/api/benchmarks/{first_report['id']}")
+    missing = client.get("/api/benchmarks/not-a-report")
+
+    assert [summary["id"] for summary in overview["recent_reports"]] == [
+        second_report["id"],
+        first_report["id"],
+    ]
+    assert all("cases" not in summary for summary in overview["recent_reports"])
+    assert historical.status_code == 200
+    assert historical.json() == first_report
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Benchmark report not found"
 
 
 def test_benchmark_uses_corrections_without_mutating_original_parse(tmp_path: Path) -> None:

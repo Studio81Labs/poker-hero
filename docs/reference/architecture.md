@@ -45,7 +45,8 @@ The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,
 per-field, and per-case results. Case drill-downs compare expected and detected
 values; selecting Review hand refetches the persisted job before opening it in
-the correction workspace.
+the correction workspace. The overview returns a bounded recent-run summary;
+full archived reports are loaded only when selected.
 
 ## State Flow
 

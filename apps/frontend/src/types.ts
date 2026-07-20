@@ -107,7 +107,18 @@ export interface BenchmarkReport {
   cases: BenchmarkCaseResult[];
 }
 
+export interface BenchmarkReportSummary {
+  id: string;
+  parser_provider: string;
+  layout_profile: string;
+  created_at: string;
+  total_cases: number;
+  failed_cases: number;
+  accuracy: number;
+}
+
 export interface BenchmarkOverview {
   included_cases: number;
   latest_report: BenchmarkReport | null;
+  recent_reports: BenchmarkReportSummary[];
 }

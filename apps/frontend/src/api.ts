@@ -78,6 +78,13 @@ export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
   return readJson<BenchmarkOverview>(response);
 }
 
+export async function getBenchmarkReport(reportId: string): Promise<BenchmarkReport> {
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks/${reportId}`, {
+    credentials: "include",
+  });
+  return readJson<BenchmarkReport>(response);
+}
+
 export async function setBenchmarkInclusion(jobId: string, included: boolean): Promise<JobRecord> {
   const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/benchmark`, {
     method: "PUT",

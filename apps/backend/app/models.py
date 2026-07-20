@@ -248,6 +248,29 @@ class BenchmarkReport(BaseModel):
     cases: list[BenchmarkCaseResult] = Field(default_factory=list)
 
 
+class BenchmarkReportSummary(BaseModel):
+    id: str
+    parser_provider: str
+    layout_profile: str
+    created_at: datetime
+    total_cases: int
+    failed_cases: int
+    accuracy: float = Field(ge=0, le=1)
+
+    @classmethod
+    def from_report(cls, report: BenchmarkReport) -> "BenchmarkReportSummary":
+        return cls(
+            id=report.id,
+            parser_provider=report.parser_provider,
+            layout_profile=report.layout_profile,
+            created_at=report.created_at,
+            total_cases=report.total_cases,
+            failed_cases=report.failed_cases,
+            accuracy=report.accuracy,
+        )
+
+
 class BenchmarkOverview(BaseModel):
     included_cases: int
     latest_report: BenchmarkReport | None = None
+    recent_reports: list[BenchmarkReportSummary] = Field(default_factory=list)

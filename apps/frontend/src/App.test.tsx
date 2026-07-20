@@ -720,7 +720,7 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
     pendingBenchmark.resolve(jsonResponse(benchmarkReport));
 
-    expect(await within(dialog).findByLabelText("Latest benchmark summary")).toHaveTextContent("90%");
+    expect(await within(dialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled());
     expect(within(dialog).getByText("hero cards")).toBeInTheDocument();
     expect(within(dialog).getByText("1 mismatch")).toBeInTheDocument();
@@ -833,6 +833,60 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs/benchmark-job",
+    ]);
+  });
+
+  it("loads historical benchmark reports and compares accuracy", async () => {
+    const earlierReport = {
+      id: "benchmark-earlier",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-19T12:00:00Z",
+      total_cases: 2,
+      successful_cases: 2,
+      failed_cases: 0,
+      correct_fields: 14,
+      evaluated_fields: 20,
+      accuracy: 0.7,
+      field_metrics: [],
+      cases: [],
+    };
+    const latestReport = {
+      ...earlierReport,
+      id: "benchmark-latest",
+      created_at: "2026-07-20T12:00:00Z",
+      correct_fields: 18,
+      accuracy: 0.9,
+    };
+    const summaries = [latestReport, earlierReport].map(
+      ({ id, parser_provider, layout_profile, created_at, total_cases, failed_cases, accuracy }) => ({
+        id,
+        parser_provider,
+        layout_profile,
+        created_at,
+        total_cases,
+        failed_cases,
+        accuracy,
+      }),
+    );
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ included_cases: 2, latest_report: latestReport, recent_reports: summaries }))
+      .mockResolvedValueOnce(jsonResponse(earlierReport));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    expect(await within(dialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
+    expect(within(dialog).getByText("+20 pts vs previous")).toBeInTheDocument();
+
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Benchmark report" }), "benchmark-earlier");
+
+    await waitFor(() => expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("70%"));
+    expect(within(dialog).getByText("No comparable earlier run")).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks/benchmark-earlier",
     ]);
   });
 

@@ -156,6 +156,9 @@ for the runtime topology.
 - `GET /api/jobs/{job_id}/image`
 - `POST /api/jobs/{job_id}/approve`
 - `POST /api/jobs/{job_id}/recommend`
+- `PUT /api/jobs/{job_id}/benchmark`
+- `GET /api/benchmarks`
+- `POST /api/benchmarks/run`
 
 ## Documentation
 

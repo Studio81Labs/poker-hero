@@ -193,9 +193,61 @@ class JobRecord(BaseModel):
     parser_result: ParserResult | None = None
     approved_state: CanonicalState | None = None
     recommendation: RecommendationResult | None = None
+    benchmark_included: bool = False
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
+
+
+class BenchmarkSelectionRequest(BaseModel):
+    included: bool
+
+
+class BenchmarkFieldComparison(BaseModel):
+    field: str
+    expected: Any
+    detected: Any
+    matched: bool
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class BenchmarkCaseResult(BaseModel):
+    job_id: str
+    original_filename: str
+    status: Literal["completed", "error"]
+    correct_fields: int
+    evaluated_fields: int
+    accuracy: float = Field(ge=0, le=1)
+    warnings: list[str] = Field(default_factory=list)
+    error: str | None = None
+    comparisons: list[BenchmarkFieldComparison] = Field(default_factory=list)
+
+
+class BenchmarkFieldMetric(BaseModel):
+    field: str
+    correct: int
+    total: int
+    accuracy: float = Field(ge=0, le=1)
+
+
+class BenchmarkReport(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    parser_provider: str
+    layout_profile: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    total_cases: int
+    successful_cases: int
+    failed_cases: int
+    correct_fields: int
+    evaluated_fields: int
+    accuracy: float = Field(ge=0, le=1)
+    field_metrics: list[BenchmarkFieldMetric] = Field(default_factory=list)
+    cases: list[BenchmarkCaseResult] = Field(default_factory=list)
+
+
+class BenchmarkOverview(BaseModel):
+    included_cases: int
+    latest_report: BenchmarkReport | None = None

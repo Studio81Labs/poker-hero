@@ -7,8 +7,9 @@ from fastapi.testclient import TestClient
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserError
+from app.parsers.mock import MockParser
 from app.providers.base import ProviderError
-from app.storage import FileJobStore, JobNotFoundError
+from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
 
 
 VALID_PNG = (
@@ -359,6 +360,92 @@ def test_upload_stays_parsed_when_auto_approve_threshold_is_not_met(tmp_path: Pa
     job = response.json()
     assert job["status"] == "parsed"
     assert job["approved_state"] is None
+
+
+def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    rejected = client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Approve corrected state before adding it to the benchmark"
+    overview = client.get("/api/benchmarks")
+    assert overview.status_code == 200
+    assert overview.json() == {"included_cases": 0, "latest_report": None}
+
+
+def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    inclusion = client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    report_response = client.post("/api/benchmarks/run")
+
+    assert inclusion.status_code == 200
+    assert inclusion.json()["benchmark_included"] is True
+    assert report_response.status_code == 200
+    report = report_response.json()
+    assert report["parser_provider"] == "mock"
+    assert report["total_cases"] == 1
+    assert report["successful_cases"] == 1
+    assert report["failed_cases"] == 0
+    assert report["accuracy"] == 1
+    assert report["correct_fields"] == report["evaluated_fields"]
+    assert {metric["field"] for metric in report["field_metrics"]} == set(APPROVED_STATE) - {
+        "user_approved"
+    }
+    assert FileBenchmarkStore(tmp_path).get_latest().id == report["id"]
+    assert client.get("/api/benchmarks").json()["latest_report"]["id"] == report["id"]
+
+
+def test_benchmark_uses_corrections_without_mutating_original_parse(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    original_parser_result = FileJobStore(tmp_path).get(job_id).parser_result
+    approve_job(client, job_id, {**APPROVED_STATE, "pot_size": 18.0})
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    report = client.post("/api/benchmarks/run").json()
+
+    pot_metric = next(metric for metric in report["field_metrics"] if metric["field"] == "pot_size")
+    assert pot_metric == {"field": "pot_size", "correct": 0, "total": 1, "accuracy": 0.0}
+    assert report["accuracy"] < 1
+    assert FileJobStore(tmp_path).get(job_id).parser_result == original_parser_result
+
+
+def test_benchmark_continues_after_an_individual_parser_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = make_client(tmp_path)
+    first_id = upload_job(client, filename="first.png").json()["id"]
+    second_id = upload_job(client, filename="second.png").json()["id"]
+    for job_id in (first_id, second_id):
+        approve_job(client, job_id)
+        client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    class PartiallyFailingParser:
+        name = "partially_failing"
+
+        def parse(self, image_path: Path):
+            if image_path.parent.name == second_id:
+                raise ParserError("case failed")
+            return MockParser().parse(image_path)
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: PartiallyFailingParser())
+
+    response = client.post("/api/benchmarks/run")
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["total_cases"] == 2
+    assert report["successful_cases"] == 1
+    assert report["failed_cases"] == 1
+    failed_case = next(case for case in report["cases"] if case["status"] == "error")
+    assert failed_case["job_id"] == second_id
+    assert failed_case["error"] == "case failed"
+    assert failed_case["evaluated_fields"] > 0
 
 
 def test_provider_configuration_errors_are_http_errors(

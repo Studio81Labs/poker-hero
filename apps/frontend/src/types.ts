@@ -52,6 +52,7 @@ export interface JobRecord {
   parser_result: ParserResult | null;
   approved_state: CanonicalState | null;
   recommendation: RecommendationResult | null;
+  benchmark_included: boolean;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -62,4 +63,51 @@ export interface SystemInfo {
   parser_provider: string;
   recommendation_provider: string;
   recommendation_engine?: string;
+}
+
+export interface BenchmarkFieldComparison {
+  field: string;
+  expected: unknown;
+  detected: unknown;
+  matched: boolean;
+  confidence: number | null;
+}
+
+export interface BenchmarkCaseResult {
+  job_id: string;
+  original_filename: string;
+  status: "completed" | "error";
+  correct_fields: number;
+  evaluated_fields: number;
+  accuracy: number;
+  warnings: string[];
+  error: string | null;
+  comparisons: BenchmarkFieldComparison[];
+}
+
+export interface BenchmarkFieldMetric {
+  field: string;
+  correct: number;
+  total: number;
+  accuracy: number;
+}
+
+export interface BenchmarkReport {
+  id: string;
+  parser_provider: string;
+  layout_profile: string;
+  created_at: string;
+  total_cases: number;
+  successful_cases: number;
+  failed_cases: number;
+  correct_fields: number;
+  evaluated_fields: number;
+  accuracy: number;
+  field_metrics: BenchmarkFieldMetric[];
+  cases: BenchmarkCaseResult[];
+}
+
+export interface BenchmarkOverview {
+  included_cases: number;
+  latest_report: BenchmarkReport | null;
 }

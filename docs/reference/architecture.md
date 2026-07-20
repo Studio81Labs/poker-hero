@@ -13,6 +13,7 @@ Browser
   -> FastAPI backend
      -> parser registry -> OCR/CV or external vision service
      -> file-backed job store in POKER_DATA_DIR
+     -> parser benchmark -> explicit approved-state corpus and persisted reports
      -> provider registry -> local solver router, rule engine, or external service
         -> postflop-solver plugin or bundled range/EV fallback
 ```
@@ -23,7 +24,7 @@ Browser
 
 `apps/backend` owns upload validation, parser and provider selection, canonical
 state validation, automation-compatible job transitions, recommendation calls,
-and persisted job/image data. Integrations are selected by environment-driven
+persisted job/image data, and read-only parser benchmark runs. Integrations are selected by environment-driven
 registries so the frontend flow does not depend on a concrete engine.
 
 The `local_solver` provider has a second configurable boundary for local engine
@@ -40,6 +41,10 @@ correction, automation controls, recommendations, and history presentation. In
 production it uses same-origin `/api/*`; `worker.js` forwards those requests to
 `BACKEND_URL` and serves all other routes from Worker Static Assets.
 
+The benchmark dialog lets a user explicitly include the current approved hand
+as ground truth, run the active parser across the corpus, and inspect aggregate,
+per-field, and per-case results.
+
 ## State Flow
 
 1. A capture or upload creates an independent job.
@@ -47,13 +52,14 @@ production it uses same-origin `/api/*`; `worker.js` forwards those requests to
 3. The user or automation approves a canonical state when requirements are met.
 4. The configured provider returns an educational action, sizing, confidence, and reasoning.
 5. Completed queue items remain in processing until explicitly cleared into history.
+6. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.
 
 ## Persistence
 
-The backend stores jobs and images under `POKER_DATA_DIR`. Local development
+The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`. Local development
 uses `apps/backend/data`; the container contract uses `/app/data`. Coolify must
 mount persistent storage at `/app/data`. The container entrypoint repairs volume
 ownership before dropping to the non-root `poker` user.

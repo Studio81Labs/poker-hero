@@ -73,7 +73,9 @@ section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 The training progress endpoint derives action and exact-line accuracy, street
 breakdowns, and recent review links from persisted jobs. Hands processed only by
-automation are excluded because they have no player answer to evaluate.
+automation are excluded because they have no player answer to evaluate. A
+separate bounded queue returns the newest action and sizing differences so the
+frontend can review them without hiding older differences behind exact matches.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

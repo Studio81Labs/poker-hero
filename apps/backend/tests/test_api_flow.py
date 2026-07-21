@@ -173,11 +173,13 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["action_matches"] == 1
     assert progress["exact_matches"] == 1
     assert progress["different_actions"] == 0
+    assert progress["needs_review_hands"] == 0
     assert progress["action_accuracy"] == 1
     assert progress["exact_accuracy"] == 1
     assert progress["street_summaries"][0]["street"] == "flop"
     assert progress["recent_hands"][0]["job_id"] == job_id
     assert progress["recent_hands"][0]["outcome"] == "match"
+    assert progress["review_queue"] == []
 
 
 def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:

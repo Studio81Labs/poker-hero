@@ -684,25 +684,61 @@ describe("App", () => {
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
-  it("shows training progress and reopens a recent reviewed hand", async () => {
+  it("filters training progress to hands needing review and opens the next one", async () => {
     const trainingDecision = {
-      action: "raise" as const,
-      sizing: 7.5,
+      action: "call" as const,
+      sizing: null,
       recorded_at: "2026-07-20T12:00:00Z",
     };
     const reviewedJob = {
       ...recommendedJob(),
-      id: "reviewed-job",
-      original_filename: "reviewed.png",
+      id: "review-job",
+      original_filename: "review.png",
       image_filename: "original.png",
       training_decision: trainingDecision,
     };
+    const exactHand = {
+      job_id: "exact-job",
+      original_filename: "exact.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "raise" as const,
+      decision_sizing: 7.5,
+      recommended_action: "raise" as const,
+      recommended_sizing: 7.5,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+    };
+    const reviewQueue = [{
+      job_id: "review-job",
+      original_filename: "review.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      recommended_action: "raise" as const,
+      recommended_sizing: 7.5,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+    }, {
+      job_id: "size-job",
+      original_filename: "size.png",
+      street: "river" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "bet" as const,
+      decision_sizing: 5,
+      recommended_action: "bet" as const,
+      recommended_sizing: 6,
+      outcome: "same_action" as const,
+      recorded_at: "2026-07-20T11:00:00Z",
+    }];
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
         reviewed_hands: 3,
         action_matches: 2,
         exact_matches: 1,
         different_actions: 1,
+        needs_review_hands: 2,
         action_accuracy: 2 / 3,
         exact_accuracy: 1 / 3,
         street_summaries: [{
@@ -713,18 +749,8 @@ describe("App", () => {
           action_accuracy: 2 / 3,
           exact_accuracy: 1 / 3,
         }],
-        recent_hands: [{
-          job_id: "reviewed-job",
-          original_filename: "reviewed.png",
-          street: "flop",
-          hero_cards: canonicalState().hero_cards,
-          decision_action: "raise",
-          decision_sizing: 7.5,
-          recommended_action: "raise",
-          recommended_sizing: 7.5,
-          outcome: "match",
-          recorded_at: "2026-07-20T12:00:00Z",
-        }],
+        recent_hands: [exactHand],
+        review_queue: reviewQueue,
       }))
       .mockResolvedValueOnce(jsonResponse(reviewedJob));
     render(<App />);
@@ -742,14 +768,21 @@ describe("App", () => {
     expect(within(dialog).getByText("Exact match")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
 
-    await user.click(within(dialog).getByRole("button", { name: "Open reviewed.png training review" }));
+    await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
+
+    expect(within(dialog).getByRole("button", { name: "Needs review 2" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).queryByRole("button", { name: "Open exact.png training review" })).not.toBeInTheDocument();
+    expect(within(dialog).getByText("Different action")).toBeInTheDocument();
+    expect(within(dialog).getByText("Same action")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Review next" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Training progress" })).not.toBeInTheDocument());
     expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
       "src",
-      "http://localhost:8000/api/jobs/reviewed-job/image",
+      "http://localhost:8000/api/jobs/review-job/image",
     );
-    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/reviewed-job");
+    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/review-job");
   });
 
   it("loads saved history and reopens a reviewed hand", async () => {

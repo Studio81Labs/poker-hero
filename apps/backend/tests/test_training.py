@@ -90,6 +90,7 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert progress.action_matches == 2
     assert progress.exact_matches == 1
     assert progress.different_actions == 1
+    assert progress.needs_review_hands == 2
     assert progress.action_accuracy == pytest.approx(2 / 3)
     assert progress.exact_accuracy == pytest.approx(1 / 3)
     assert [summary.street for summary in progress.street_summaries] == [
@@ -107,6 +108,7 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
         "same_action",
         "match",
     ]
+    assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
 
 
 def test_summarize_training_limits_recent_hands() -> None:
@@ -126,6 +128,26 @@ def test_summarize_training_limits_recent_hands() -> None:
     assert progress.reviewed_hands == 4
     assert len(progress.recent_hands) == 2
     assert progress.recent_hands[0].job_id == f"{3:032x}"
+
+
+def test_summarize_training_limits_review_queue_independently() -> None:
+    jobs = [
+        reviewed_job(
+            f"{index:032x}",
+            "turn",
+            "raise",
+            "call",
+            datetime(2026, 7, index + 1, tzinfo=timezone.utc),
+            decision_sizing=4,
+        )
+        for index in range(4)
+    ]
+
+    progress = summarize_training(jobs, recent_limit=1, review_limit=2)
+
+    assert progress.needs_review_hands == 4
+    assert len(progress.recent_hands) == 1
+    assert [hand.job_id for hand in progress.review_queue] == [f"{3:032x}", f"{2:032x}"]
 
 
 def test_summarize_training_applies_sizing_tolerance() -> None:
@@ -155,13 +177,16 @@ def test_summarize_training_applies_sizing_tolerance() -> None:
     assert progress.action_matches == 2
     assert progress.exact_matches == 1
     assert [hand.outcome for hand in progress.recent_hands] == ["same_action", "match"]
+    assert [hand.job_id for hand in progress.review_queue] == ["6" * 32]
 
 
 def test_summarize_training_handles_empty_history() -> None:
     progress = summarize_training([])
 
     assert progress.reviewed_hands == 0
+    assert progress.needs_review_hands == 0
     assert progress.action_accuracy == 0
     assert progress.exact_accuracy == 0
     assert progress.street_summaries == []
     assert progress.recent_hands == []
+    assert progress.review_queue == []

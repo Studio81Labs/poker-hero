@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import api as api_module
+from app import dataset_export as dataset_export_module
+from app import dataset_import as dataset_import_module
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
@@ -655,6 +657,39 @@ def test_benchmark_exports_selected_images_and_approved_labels(tmp_path: Path) -
     assert all(case["job_id"] != excluded_id for case in manifest["cases"])
 
 
+def test_benchmark_case_limit_applies_to_selection_and_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    first_id = upload_job(client, filename="first.png").json()["id"]
+    second_id = upload_job(client, filename="second.png").json()["id"]
+    approve_job(client, first_id)
+    approve_job(client, second_id)
+    monkeypatch.setattr(api_module, "MAX_DATASET_CASES", 1)
+
+    first = client.put(f"/api/jobs/{first_id}/benchmark", json={"included": True})
+    rejected = client.put(
+        f"/api/jobs/{second_id}/benchmark",
+        json={"included": True},
+    )
+
+    assert first.status_code == 200
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Parser datasets support at most 1 case"
+
+    store = FileJobStore(tmp_path)
+    second = store.get(second_id)
+    second.benchmark_included = True
+    store.save(second)
+    monkeypatch.setattr(dataset_export_module, "MAX_DATASET_CASES", 1)
+
+    export = client.get("/api/benchmarks/export")
+
+    assert export.status_code == 409
+    assert export.json()["detail"] == "Parser datasets support at most 1 case"
+
+
 def test_benchmark_export_reports_missing_source_image(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client, filename="missing.png").json()["id"]
@@ -748,6 +783,38 @@ def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
     existing = FileJobStore(target_dir).get(job_id)
     assert existing.approved_state is not None
     assert existing.approved_state.pot_size == 20
+
+
+def test_benchmark_dataset_import_enforces_resulting_corpus_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="source.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+
+    target_client = make_client(tmp_path / "target")
+    target_job_id = upload_job(target_client, filename="target.png").json()["id"]
+    approve_job(target_client, target_job_id)
+    target_client.put(
+        f"/api/jobs/{target_job_id}/benchmark",
+        json={"included": True},
+    )
+    monkeypatch.setattr(dataset_import_module, "MAX_DATASET_CASES", 1)
+
+    response = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Parser datasets support at most 1 case"
+    assert FileJobStore(tmp_path / "target").get(target_job_id).benchmark_included is True
 
 
 def test_benchmark_dataset_import_serializes_reuse_with_corrections(

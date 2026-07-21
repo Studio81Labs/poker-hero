@@ -7,7 +7,12 @@ from zipfile import BadZipFile, ZipFile
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
-from app.dataset_export import DATASET_SCHEMA, DATASET_SCHEMA_VERSION
+from app.dataset_export import (
+    DATASET_SCHEMA,
+    DATASET_SCHEMA_VERSION,
+    MAX_DATASET_CASES,
+    dataset_case_limit_message,
+)
 from app.models import (
     BenchmarkDatasetImportResult,
     CanonicalState,
@@ -17,7 +22,6 @@ from app.models import (
 from app.storage import FileJobStore, JobNotFoundError
 
 
-MAX_DATASET_CASES = 250
 MAX_MANIFEST_BYTES = 1024 * 1024
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 
@@ -125,6 +129,13 @@ def import_parser_dataset(
     store: FileJobStore,
     recommendation_provider: str,
 ) -> BenchmarkDatasetImportResult:
+    included_job_ids = {job.id for job in store.list() if job.benchmark_included}
+    resulting_job_ids = included_job_ids | {case.job_id for case in dataset.cases}
+    if len(resulting_job_ids) > MAX_DATASET_CASES:
+        raise DatasetImportConflictError(
+            dataset_case_limit_message(MAX_DATASET_CASES)
+        )
+
     existing_jobs: dict[str, JobRecord] = {}
     for case in dataset.cases:
         try:

@@ -12,7 +12,9 @@ from app.config import Settings, get_settings
 from app.benchmarking import run_benchmark
 from app.dataset_export import (
     DatasetExportError,
+    MAX_DATASET_CASES,
     build_parser_dataset_archive,
+    dataset_case_limit_message,
     stream_archive,
 )
 from app.dataset_import import (
@@ -61,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
     dataset_import_lock = Lock()
+    benchmark_corpus_lock = Lock()
 
     def job_lock_index(job_id: str) -> int:
         return hash(job_id) % len(job_locks)
@@ -290,7 +293,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
-        with job_lock_for(job_id):
+        with benchmark_corpus_lock, job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
             if selection.included and (
                 job.approved_state is None or not job.approved_state.user_approved
@@ -299,6 +302,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     status_code=409,
                     detail="Approve corrected state before adding it to the benchmark",
                 )
+            if selection.included and not job.benchmark_included:
+                included_cases = sum(
+                    candidate.benchmark_included for candidate in store.list()
+                )
+                if included_cases >= MAX_DATASET_CASES:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=dataset_case_limit_message(MAX_DATASET_CASES),
+                    )
             job.benchmark_included = selection.included
             return store.save(job)
 
@@ -320,21 +332,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/benchmarks/export")
     def export_benchmark_dataset() -> StreamingResponse:
-        jobs = [job for job in store.list() if job.benchmark_included]
-        if not jobs:
-            raise HTTPException(
-                status_code=409,
-                detail="Add at least one approved hand to the benchmark",
-            )
-        try:
-            archive_file = build_parser_dataset_archive(
-                jobs=jobs,
-                image_path_for=store.image_path,
-                parser_provider=active_settings.parser_provider,
-                layout_profile=active_settings.parser_layout_profile,
-            )
-        except DatasetExportError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        with benchmark_corpus_lock:
+            jobs = [job for job in store.list() if job.benchmark_included]
+            if not jobs:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Add at least one approved hand to the benchmark",
+                )
+            try:
+                archive_file = build_parser_dataset_archive(
+                    jobs=jobs,
+                    image_path_for=store.image_path,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                )
+            except DatasetExportError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return StreamingResponse(
@@ -366,7 +379,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lock_indexes = sorted(
                 {job_lock_index(case.job_id) for case in dataset.cases}
             )
-            with dataset_import_lock, ExitStack() as job_lock_stack:
+            with (
+                dataset_import_lock,
+                benchmark_corpus_lock,
+                ExitStack() as job_lock_stack,
+            ):
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 return import_parser_dataset(

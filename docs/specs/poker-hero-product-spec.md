@@ -196,6 +196,7 @@ the whole archive before writing, preserves stable job IDs, reuses exact matches
 and rejects conflicting existing jobs without overwriting them. Imported cases
 are approved and selected as parser ground truth. They do not synthesize parser
 results or confidence from canonical labels.
+Parser dataset selection, export, and import share a 250-hand corpus limit.
 
 ## Review And Auto-Approve
 

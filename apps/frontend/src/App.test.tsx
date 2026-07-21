@@ -270,6 +270,38 @@ describe("App", () => {
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
   });
 
+  it("re-approves corrections to an approved-only imported job", async () => {
+    const importedJob = {
+      ...approvedJob(),
+      id: "imported-job",
+      original_filename: "imported.png",
+      parser_result: null,
+      benchmark_included: true,
+    };
+    const correctedState = canonicalState({ pot_size: 20 });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(importedJob, 201))
+      .mockResolvedValueOnce(jsonResponse({ ...importedJob, approved_state: correctedState }));
+    render(<App />);
+
+    const user = await uploadScreenshot("imported.png");
+    expect(await screen.findByDisplayValue("12.5")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+
+    const potInput = screen.getByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+
+    const approveButton = screen.getByRole("button", { name: "Approve state" });
+    expect(approveButton).toBeEnabled();
+    await user.click(approveButton);
+
+    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/imported-job/approve");
+    const payload = JSON.parse(String(fetchMock().mock.calls[1][1]?.body));
+    expect(payload.pot_size).toBe(20);
+    expect(payload.user_approved).toBe(true);
+  });
+
   it("uploads multiple screenshots and switches between parsed jobs", async () => {
     const secondState: DetectedState = {
       ...detectedState,

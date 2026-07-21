@@ -11,6 +11,7 @@ from app.models import JobRecord
 
 DATASET_SCHEMA = "poker-hero-parser-dataset"
 DATASET_SCHEMA_VERSION = 1
+MAX_DATASET_CASES = 250
 ARCHIVE_MEMORY_LIMIT = 8 * 1024 * 1024
 STREAM_CHUNK_SIZE = 1024 * 1024
 
@@ -19,12 +20,19 @@ class DatasetExportError(RuntimeError):
     pass
 
 
+def dataset_case_limit_message(limit: int) -> str:
+    unit = "case" if limit == 1 else "cases"
+    return f"Parser datasets support at most {limit} {unit}"
+
+
 def build_parser_dataset_archive(
     jobs: list[JobRecord],
     image_path_for: Callable[[JobRecord], Path],
     parser_provider: str,
     layout_profile: str,
 ) -> BinaryIO:
+    if len(jobs) > MAX_DATASET_CASES:
+        raise DatasetExportError(dataset_case_limit_message(MAX_DATASET_CASES))
     archive_file = SpooledTemporaryFile(max_size=ARCHIVE_MEMORY_LIMIT, mode="w+b")
     cases: list[dict[str, object]] = []
     try:

@@ -66,6 +66,8 @@ image bytes or approved state rejects the archive instead of being overwritten.
 Imported cases are approved benchmark jobs, while recommendation and training
 data remain absent. Ground-truth labels are not copied into parser results, so
 an imported job never presents user-approved state as detected OCR evidence.
+The shared import/export corpus contract is capped at 250 selected hands; the
+selection API prevents the app from producing a dataset that import rejects.
 
 ## State Flow
 

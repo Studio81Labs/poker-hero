@@ -671,6 +671,9 @@ function clearApprovedResult(job: JobRecord): JobRecord {
   if (!job.approved_state && !job.recommendation) {
     return job;
   }
+  if (!job.parser_result) {
+    return job;
+  }
 
   return {
     ...job,
@@ -913,7 +916,11 @@ export default function App() {
     [activeRecommendation],
   );
   const canApprove = Boolean(
-    job?.parser_result && validation.state && validation.state.hero_cards.length > 0 && validation.state.street && !currentStateApproved,
+    (job?.parser_result || job?.approved_state)
+      && validation.state
+      && validation.state.hero_cards.length > 0
+      && validation.state.street
+      && !currentStateApproved,
   );
   const canRecommend = currentStateApproved && !job?.recommendation;
   const stateControlsDisabled = busy;

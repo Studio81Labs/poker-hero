@@ -66,6 +66,9 @@ are loaded only when selected.
 Training decisions are persisted with the job. The API accepts them only for an
 approved state that does not yet have a recommendation, preventing a revealed
 solver result from being recorded afterward as a supposed pre-reveal answer.
+Mutations for one job are serialized. Solver work runs outside that critical
+section, then reloads and validates the latest approved state before committing
+its result so concurrent decisions and unrelated job metadata are preserved.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

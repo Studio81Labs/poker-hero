@@ -1,6 +1,7 @@
 import base64
 import os
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
 from app.providers.base import ProviderError
+from app.providers.mock import MockRecommendationProvider
 from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
 
 
@@ -190,6 +192,59 @@ def test_training_decision_rejects_sizing_for_non_wager_action(tmp_path: Path) -
 
     assert response.status_code == 422
     assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
+def test_recommendation_preserves_decision_recorded_while_provider_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_started = Event()
+    release_provider = Event()
+
+    class SlowRecommendationProvider(MockRecommendationProvider):
+        def recommend(self, request):
+            provider_started.set()
+            if not release_provider.wait(timeout=5):
+                raise ProviderError("test provider timed out")
+            return super().recommend(request)
+
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    monkeypatch.setattr(
+        "app.api.build_provider",
+        lambda settings: SlowRecommendationProvider(),
+    )
+    recommendation_responses = []
+    recommendation_thread = Thread(
+        target=lambda: recommendation_responses.append(
+            client.post(f"/api/jobs/{job_id}/recommend")
+        )
+    )
+
+    recommendation_thread.start()
+    try:
+        assert provider_started.wait(timeout=2)
+        decision_response = client.put(
+            f"/api/jobs/{job_id}/decision",
+            json={"action": "raise", "sizing": 7.5},
+        )
+        assert decision_response.status_code == 200
+    finally:
+        release_provider.set()
+        recommendation_thread.join(timeout=5)
+
+    assert not recommendation_thread.is_alive()
+    assert len(recommendation_responses) == 1
+    recommendation_response = recommendation_responses[0]
+    assert recommendation_response.status_code == 200
+    job = recommendation_response.json()
+    assert job["status"] == "recommended"
+    assert job["training_decision"]["action"] == "raise"
+    assert job["training_decision"]["sizing"] == 7.5
+    persisted_job = FileJobStore(tmp_path).get(job_id)
+    assert persisted_job.training_decision.action == "raise"
+    assert persisted_job.recommendation is not None
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:

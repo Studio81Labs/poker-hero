@@ -1,4 +1,5 @@
 from io import BytesIO
+from threading import Lock
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +42,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
+    job_locks_guard = Lock()
+    job_locks: dict[str, Lock] = {}
+
+    def job_lock_for(job_id: str):
+        with job_locks_guard:
+            return job_locks.setdefault(job_id, Lock())
+
+    def current_recommendation_target(
+        job_id: str,
+        expected_state: CanonicalState,
+    ) -> JobRecord:
+        current = load_job_or_404(store, job_id)
+        if current.approved_state != expected_state:
+            raise HTTPException(
+                status_code=409,
+                detail="Approved state changed while the recommendation was running",
+            )
+        return current
+
     app = FastAPI(title="Poker Training Analyzer API")
     app.add_middleware(
         CORSMiddleware,
@@ -121,93 +141,106 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
-        job = load_job_or_404(store, job_id)
-        state.user_approved = True
-        job.approved_state = state
-        job.training_decision = None
-        job.recommendation = None
-        job.status = "approved"
-        job.error = None
-        return store.save(job)
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            state.user_approved = True
+            job.approved_state = state
+            job.training_decision = None
+            job.recommendation = None
+            job.status = "approved"
+            job.error = None
+            return store.save(job)
 
     @app.put("/api/jobs/{job_id}/decision", response_model=JobRecord)
     def record_training_decision(
         job_id: str,
         decision: TrainingDecisionRequest,
     ) -> JobRecord:
-        job = load_job_or_404(store, job_id)
-        if job.approved_state is None or not job.approved_state.user_approved:
-            raise HTTPException(
-                status_code=409,
-                detail="Approve corrected state before recording your decision",
-            )
-        if job.recommendation is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Your decision must be recorded before revealing the recommendation",
-            )
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            if job.approved_state is None or not job.approved_state.user_approved:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Approve corrected state before recording your decision",
+                )
+            if job.recommendation is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Your decision must be recorded before revealing the recommendation",
+                )
 
-        job.training_decision = TrainingDecision(
-            action=decision.action,
-            sizing=decision.sizing,
-        )
-        job.status = "approved"
-        job.error = None
-        return store.save(job)
+            job.training_decision = TrainingDecision(
+                action=decision.action,
+                sizing=decision.sizing,
+            )
+            job.status = "approved"
+            job.error = None
+            return store.save(job)
 
     @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
     def recommend(job_id: str) -> JobRecord:
-        job = load_job_or_404(store, job_id)
-        if job.approved_state is None or not job.approved_state.user_approved:
-            raise HTTPException(status_code=409, detail="Approve corrected state before requesting recommendation")
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            if job.approved_state is None or not job.approved_state.user_approved:
+                raise HTTPException(status_code=409, detail="Approve corrected state before requesting recommendation")
+            approved_state = job.approved_state.model_copy(deep=True)
 
         try:
             provider = build_provider(active_settings)
             missing = missing_required_fields(
-                job.approved_state,
-                provider.required_fields_for(job.approved_state),
+                approved_state,
+                provider.required_fields_for(approved_state),
             )
         except ProviderConfigurationError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            store.save(job)
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.status = "error"
+                current.error = str(exc)
+                store.save(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
 
         if missing:
             raise HTTPException(status_code=422, detail={"missing_fields": missing})
 
         try:
-            result = provider.recommend(RecommendationRequest(state=job.approved_state, provider=provider.name))
+            result = provider.recommend(RecommendationRequest(state=approved_state, provider=provider.name))
         except ProviderInputError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ProviderConfigurationError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            store.save(job)
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.status = "error"
+                current.error = str(exc)
+                store.save(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except ProviderError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            store.save(job)
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.status = "error"
+                current.error = str(exc)
+                store.save(current)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-        job.recommendation = result
-        job.status = "recommended"
-        job.error = None
-        return store.save(job)
+        with job_lock_for(job_id):
+            current = current_recommendation_target(job_id, approved_state)
+            current.recommendation = result
+            current.status = "recommended"
+            current.error = None
+            return store.save(current)
 
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
-        job = load_job_or_404(store, job_id)
-        if selection.included and (
-            job.approved_state is None or not job.approved_state.user_approved
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="Approve corrected state before adding it to the benchmark",
-            )
-        job.benchmark_included = selection.included
-        return store.save(job)
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            if selection.included and (
+                job.approved_state is None or not job.approved_state.user_approved
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Approve corrected state before adding it to the benchmark",
+                )
+            job.benchmark_included = selection.included
+            return store.save(job)
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
     def get_benchmark_overview() -> BenchmarkOverview:

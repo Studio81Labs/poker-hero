@@ -117,6 +117,10 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
+    client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 7.5},
+    )
     client.post(f"/api/jobs/{job_id}/recommend")
 
     corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
@@ -126,8 +130,66 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     job = response.json()
     assert job["status"] == "approved"
     assert job["approved_state"]["pot_size"] == 18.0
+    assert job["training_decision"] is None
     assert job["recommendation"] is None
     assert FileJobStore(tmp_path).get(job_id).recommendation is None
+
+
+def test_records_training_decision_before_recommendation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 7.5},
+    )
+
+    assert response.status_code == 200
+    decision = response.json()["training_decision"]
+    assert decision["action"] == "raise"
+    assert decision["sizing"] == 7.5
+    assert decision["recorded_at"]
+    assert FileJobStore(tmp_path).get(job_id).training_decision.action == "raise"
+
+
+def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    before_approval = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None},
+    )
+    assert before_approval.status_code == 409
+    assert before_approval.json()["detail"] == (
+        "Approve corrected state before recording your decision"
+    )
+
+    approve_job(client, job_id)
+    client.post(f"/api/jobs/{job_id}/recommend")
+    after_recommendation = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None},
+    )
+    assert after_recommendation.status_code == 409
+    assert after_recommendation.json()["detail"] == (
+        "Your decision must be recorded before revealing the recommendation"
+    )
+
+
+def test_training_decision_rejects_sizing_for_non_wager_action(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": 2.5},
+    )
+
+    assert response.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:

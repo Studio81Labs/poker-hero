@@ -91,6 +91,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
       raw: { provider: "mock" },
     },
     approved_state: null,
+    training_decision: null,
     recommendation: null,
     benchmark_included: false,
     error: null,
@@ -584,6 +585,72 @@ describe("App", () => {
     expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
+  });
+
+  it("locks a training answer before reveal and compares it with the recommendation", async () => {
+    const trainingDecision = {
+      action: "raise" as const,
+      sizing: 7.5,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const decisionJob = { ...approvedJob(), training_decision: trainingDecision };
+    const revealedJob = {
+      ...recommendedJob(),
+      training_decision: trainingDecision,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(decisionJob))
+      .mockResolvedValueOnce(jsonResponse(revealedJob));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
+    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "7.5");
+    await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+
+    expect(await within(decisionPanel).findByText("Answer locked")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
+    expect(fetchMock().mock.calls[2][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ action: "raise", sizing: 7.5 }),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    expect(within(comparison).getByText("Raise 7.5 BB")).toBeInTheDocument();
+    expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
+  });
+
+  it("records a selected answer automatically when recommendation is requested", async () => {
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), training_decision: trainingDecision }))
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), training_decision: trainingDecision }));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    expect(within(comparison).getByText("Call")).toBeInTheDocument();
+    expect(within(comparison).getByText("Different action")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
   it("loads saved history and reopens a reviewed hand", async () => {

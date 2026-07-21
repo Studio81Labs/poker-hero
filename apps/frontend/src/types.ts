@@ -42,6 +42,12 @@ export interface RecommendationResult {
   raw: Record<string, unknown>;
 }
 
+export interface TrainingDecision {
+  action: RecommendationAction;
+  sizing: number | null;
+  recorded_at: string;
+}
+
 export interface JobRecord {
   id: string;
   status: "created" | "parsed" | "approved" | "recommended" | "error";
@@ -51,6 +57,7 @@ export interface JobRecord {
   recommendation_provider: string;
   parser_result: ParserResult | null;
   approved_state: CanonicalState | null;
+  training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
   benchmark_included: boolean;
   error: string | null;

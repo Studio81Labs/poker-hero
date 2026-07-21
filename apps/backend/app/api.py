@@ -15,6 +15,8 @@ from app.models import (
     CanonicalState,
     JobRecord,
     RecommendationRequest,
+    TrainingDecision,
+    TrainingDecisionRequest,
 )
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
@@ -122,7 +124,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         job = load_job_or_404(store, job_id)
         state.user_approved = True
         job.approved_state = state
+        job.training_decision = None
         job.recommendation = None
+        job.status = "approved"
+        job.error = None
+        return store.save(job)
+
+    @app.put("/api/jobs/{job_id}/decision", response_model=JobRecord)
+    def record_training_decision(
+        job_id: str,
+        decision: TrainingDecisionRequest,
+    ) -> JobRecord:
+        job = load_job_or_404(store, job_id)
+        if job.approved_state is None or not job.approved_state.user_approved:
+            raise HTTPException(
+                status_code=409,
+                detail="Approve corrected state before recording your decision",
+            )
+        if job.recommendation is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Your decision must be recorded before revealing the recommendation",
+            )
+
+        job.training_decision = TrainingDecision(
+            action=decision.action,
+            sizing=decision.sizing,
+        )
         job.status = "approved"
         job.error = None
         return store.save(job)

@@ -37,8 +37,8 @@ engine selection.
 ### Frontend
 
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and
-correction, automation controls, recommendations, decision-evidence
-presentation, and history. It defensively normalizes optional provider metadata
+correction, automation controls, pre-reveal training decisions, recommendations,
+decision-evidence presentation, and history. It defensively normalizes optional provider metadata
 such as equity, candidate EVs/frequencies, exploitability, and fallback context;
 providers remain free to omit those fields. In production it uses same-origin
 `/api/*`; `worker.js` forwards those requests to `BACKEND_URL` and serves all
@@ -57,9 +57,15 @@ are loaded only when selected.
 1. A capture or upload creates an independent job.
 2. The configured parser returns detected state, confidence, warnings, and raw metadata.
 3. The user or automation approves a canonical state when requirements are met.
-4. The configured provider returns an educational action, sizing, confidence, and reasoning.
-5. Completed queue items remain in processing until explicitly cleared into history.
-6. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+4. The user may lock an action and optional sizing before revealing provider output.
+5. The configured provider returns an educational action, sizing, confidence, and reasoning.
+6. The UI compares a locked training decision with the recommendation when one exists.
+7. Completed queue items remain in processing until explicitly cleared into history.
+8. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+
+Training decisions are persisted with the job. The API accepts them only for an
+approved state that does not yet have a recommendation, preventing a revealed
+solver result from being recorded afterward as a supposed pre-reveal answer.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

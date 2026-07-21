@@ -194,7 +194,8 @@ job-based paths. It excludes unselected jobs and recommendation/training data.
 The same ZIP can be imported into another installation. The backend validates
 the whole archive before writing, preserves stable job IDs, reuses exact matches,
 and rejects conflicting existing jobs without overwriting them. Imported cases
-are approved and selected as parser ground truth.
+are approved and selected as parser ground truth. They do not synthesize parser
+results or confidence from canonical labels.
 
 ## Review And Auto-Approve
 

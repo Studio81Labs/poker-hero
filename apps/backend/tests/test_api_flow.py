@@ -9,6 +9,7 @@ from zipfile import ZipFile
 import pytest
 from fastapi.testclient import TestClient
 
+from app import api as api_module
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
@@ -712,13 +713,9 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert imported_job.approved_state.model_dump(mode="json") == corrected_state
     assert imported_job.benchmark_included is True
     assert imported_job.status == "approved"
-    assert imported_job.parser_result is not None
-    assert imported_job.parser_result.raw == {
-        "provider": "dataset_import",
-        "schema": "poker-hero-parser-dataset",
-        "schema_version": 1,
-        "layout_profile": "fortuna",
-    }
+    assert imported_job.parser_result is None
+    assert imported_job.recommendation is None
+    assert imported_job.training_decision is None
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
 
 
@@ -751,6 +748,67 @@ def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
     existing = FileJobStore(target_dir).get(job_id)
     assert existing.approved_state is not None
     assert existing.approved_state.pot_size == 20
+
+
+def test_benchmark_dataset_import_serializes_reuse_with_corrections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="concurrent.png").json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    archive = client.get("/api/benchmarks/export").content
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": False})
+
+    import_entered = Event()
+    release_import = Event()
+    approval_started = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_import = api_module.import_parser_dataset
+
+    def paused_import(*args: object, **kwargs: object):
+        import_entered.set()
+        assert release_import.wait(timeout=2)
+        return original_import(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+
+    def run_import() -> None:
+        responses["import"] = client.post(
+            "/api/benchmarks/import",
+            files={"file": ("dataset.zip", archive, "application/zip")},
+        )
+
+    corrected_state = {**APPROVED_STATE, "pot_size": 21.0}
+
+    def run_approval() -> None:
+        approval_started.set()
+        responses["approval"] = approve_job(client, job_id, corrected_state)
+        approval_finished.set()
+
+    import_thread = Thread(target=run_import)
+    import_thread.start()
+    assert import_entered.wait(timeout=2)
+
+    approval_thread = Thread(target=run_approval)
+    approval_thread.start()
+    assert approval_started.wait(timeout=2)
+    assert not approval_finished.wait(timeout=0.1)
+
+    release_import.set()
+    import_thread.join(timeout=2)
+    approval_thread.join(timeout=2)
+
+    assert not import_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["import"].status_code == 200
+    assert responses["approval"].status_code == 200
+    current = FileJobStore(tmp_path).get(job_id)
+    assert current.approved_state is not None
+    assert current.approved_state.pot_size == 21
+    assert current.benchmark_included is True
 
 
 def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(

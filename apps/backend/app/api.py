@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from io import BytesIO
 from threading import Lock
@@ -61,8 +62,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
     dataset_import_lock = Lock()
 
+    def job_lock_index(job_id: str) -> int:
+        return hash(job_id) % len(job_locks)
+
     def job_lock_for(job_id: str):
-        return job_locks[hash(job_id) % len(job_locks)]
+        return job_locks[job_lock_index(job_id)]
 
     def current_recommendation_target(
         job_id: str,
@@ -359,7 +363,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 max_image_bytes=active_settings.max_upload_bytes,
                 max_uncompressed_bytes=active_settings.max_dataset_upload_bytes * 4,
             )
-            with dataset_import_lock:
+            lock_indexes = sorted(
+                {job_lock_index(case.job_id) for case in dataset.cases}
+            )
+            with dataset_import_lock, ExitStack() as job_lock_stack:
+                for lock_index in lock_indexes:
+                    job_lock_stack.enter_context(job_locks[lock_index])
                 return import_parser_dataset(
                     dataset,
                     store,

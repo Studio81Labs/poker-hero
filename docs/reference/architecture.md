@@ -64,7 +64,8 @@ the complete manifest, paths, limits, and image payloads before creating jobs.
 Stable job IDs make exact re-imports idempotent; an existing job with different
 image bytes or approved state rejects the archive instead of being overwritten.
 Imported cases are approved benchmark jobs, while recommendation and training
-data remain absent.
+data remain absent. Ground-truth labels are not copied into parser results, so
+an imported job never presents user-approved state as detected OCR evidence.
 
 ## State Flow
 

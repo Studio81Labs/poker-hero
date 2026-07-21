@@ -13,7 +13,6 @@ from app.models import (
     CanonicalState,
     DetectedState,
     JobRecord,
-    ParserResult,
 )
 from app.storage import FileJobStore, JobNotFoundError
 
@@ -167,21 +166,6 @@ def import_parser_dataset(
             raise DatasetImportConflictError(
                 f"Imported case {case.job_id} conflicts with an existing job"
             ) from exc
-        state_values = case.approved_state.model_dump(exclude={"user_approved"})
-        job.parser_result = ParserResult(
-            state=DetectedState.model_validate(state_values),
-            confidences={
-                field_name: 1.0
-                for field_name, value in state_values.items()
-                if value not in (None, "", [])
-            },
-            raw={
-                "provider": "dataset_import",
-                "schema": DATASET_SCHEMA,
-                "schema_version": DATASET_SCHEMA_VERSION,
-                "layout_profile": dataset.layout_profile,
-            },
-        )
         job.approved_state = case.approved_state
         job.benchmark_included = True
         job.status = "approved"

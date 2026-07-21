@@ -11,6 +11,7 @@ import {
   getJob,
   getSystemInfo,
   imageUrl,
+  recordTrainingDecision,
   requestRecommendation,
   runParserBenchmark,
   setBenchmarkInclusion,
@@ -28,6 +29,7 @@ import type {
   FacingAction,
   JobRecord,
   Rank,
+  RecommendationAction,
   RecommendationResult,
   Street,
   Suit,
@@ -50,6 +52,7 @@ const CODE_BY_SUIT: Record<Suit, string> = {
 
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
 const RANKS = new Set<string>(RANK_VALUES);
+const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -68,6 +71,7 @@ const EMPTY_STATE: CanonicalState = {
 
 type StreetOption = "" | Street;
 type FacingActionOption = "" | FacingAction;
+type TrainingActionOption = "" | RecommendationAction;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 
@@ -297,6 +301,46 @@ function candidateMatchesRecommendation(
     return candidate.sizing === null;
   }
   return candidate.sizing !== null && Math.abs(candidate.sizing - recommendation.sizing) < 0.001;
+}
+
+function trainingDecisionLabel(action: RecommendationAction, sizing: number | null): string {
+  const actionLabel = `${action.slice(0, 1).toUpperCase()}${action.slice(1)}`;
+  return sizing === null ? actionLabel : `${actionLabel} ${formatCandidateValue(sizing)} BB`;
+}
+
+function trainingDecisionComparison(
+  action: RecommendationAction,
+  sizing: number | null,
+  recommendation: RecommendationResult,
+): { label: string; tone: "match" | "partial" | "different" } {
+  if (action !== recommendation.action) {
+    return { label: "Different action", tone: "different" };
+  }
+  if (sizing === null || recommendation.sizing === null) {
+    return sizing === recommendation.sizing
+      ? { label: "Matched solver", tone: "match" }
+      : { label: "Same action", tone: "partial" };
+  }
+  return Math.abs(sizing - recommendation.sizing) < 0.01
+    ? { label: "Matched solver", tone: "match" }
+    : { label: "Same action, different size", tone: "partial" };
+}
+
+function parseTrainingSizing(
+  action: TrainingActionOption,
+  rawSizing: string,
+): { sizing: number | null; error: string | null } {
+  if (action !== "bet" && action !== "raise") {
+    return { sizing: null, error: null };
+  }
+  if (rawSizing.trim() === "") {
+    return { sizing: null, error: null };
+  }
+  const sizing = Number(rawSizing);
+  if (!Number.isFinite(sizing) || sizing < 0) {
+    return { sizing: null, error: "Enter a valid non-negative decision size" };
+  }
+  return { sizing, error: null };
 }
 
 function benchmarkFieldLabel(field: string): string {
@@ -614,6 +658,7 @@ function clearApprovedResult(job: JobRecord): JobRecord {
     ...job,
     status: job.parser_result ? "parsed" : "created",
     approved_state: null,
+    training_decision: null,
     recommendation: null,
   };
 }
@@ -753,6 +798,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     recommendation_provider: "none",
     parser_result: null,
     approved_state: null,
+    training_decision: null,
     recommendation: null,
     benchmark_included: false,
     error: message,
@@ -786,6 +832,8 @@ export default function App() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [form, setForm] = useState<StateForm>(() => stateToForm(EMPTY_STATE));
   const [approvedStateKey, setApprovedStateKey] = useState<string | null>(null);
+  const [trainingAction, setTrainingAction] = useState<TrainingActionOption>("");
+  const [trainingSizing, setTrainingSizing] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("live");
   const [shareMode, setShareMode] = useState<ShareMode>("window");
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -831,6 +879,7 @@ export default function App() {
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
   const activeRecommendation = currentStateApproved ? job?.recommendation ?? null : null;
+  const activeTrainingDecision = currentStateApproved ? job?.training_decision ?? null : null;
   const decisionEvidence = useMemo(
     () => (activeRecommendation
       ? recommendationEvidenceFromRaw(activeRecommendation.raw, activeRecommendation)
@@ -874,6 +923,16 @@ export default function App() {
         ? benchmarkPointChange(benchmarkReport.accuracy, previousBenchmarkReport.accuracy)
         : null,
     [benchmarkReport, previousBenchmarkReport],
+  );
+  const decisionComparison = useMemo(
+    () => (activeRecommendation && activeTrainingDecision
+      ? trainingDecisionComparison(
+        activeTrainingDecision.action,
+        activeTrainingDecision.sizing,
+        activeRecommendation,
+      )
+      : null),
+    [activeRecommendation, activeTrainingDecision],
   );
 
   function setError(nextError: string | null) {
@@ -925,6 +984,20 @@ export default function App() {
     }
     toast.dismiss(ERROR_TOAST_ID);
   }, [error, errorSequence]);
+
+  useEffect(() => {
+    if (!currentStateApproved) {
+      setTrainingAction("");
+      setTrainingSizing("");
+      return;
+    }
+    setTrainingAction(job?.training_decision?.action ?? "");
+    setTrainingSizing(
+      job?.training_decision?.sizing === null || job?.training_decision?.sizing === undefined
+        ? ""
+        : String(job.training_decision.sizing),
+    );
+  }, [currentStateApproved, job?.id, job?.training_decision?.action, job?.training_decision?.sizing]);
 
   useEffect(() => {
     if (job && validation.error) {
@@ -1235,9 +1308,44 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
+      if (trainingAction) {
+        const parsedSizing = parseTrainingSizing(trainingAction, trainingSizing);
+        if (parsedSizing.error) {
+          setError(parsedSizing.error);
+          return;
+        }
+        const decisionChanged = !job.training_decision
+          || job.training_decision.action !== trainingAction
+          || job.training_decision.sizing !== parsedSizing.sizing;
+        if (decisionChanged) {
+          replaceJob(await recordTrainingDecision(job.id, trainingAction, parsedSizing.sizing));
+        }
+      }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
       setError(messageFromError(recommendError, "Recommendation failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onSaveTrainingDecision() {
+    if (!job || !currentStateApproved || activeRecommendation || !trainingAction) {
+      return;
+    }
+    const parsedSizing = parseTrainingSizing(trainingAction, trainingSizing);
+    if (parsedSizing.error) {
+      setError(parsedSizing.error);
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      replaceJob(await recordTrainingDecision(job.id, trainingAction, parsedSizing.sizing));
+      toast.success("Training answer locked");
+    } catch (decisionError) {
+      setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
       setBusy(false);
     }
@@ -1770,6 +1878,60 @@ export default function App() {
               </Field>
             </div>
 
+            {currentStateApproved && !activeRecommendation ? (
+              <section className="training-decision" aria-label="Your training decision">
+                <div className="training-decision-head">
+                  <span>Your decision</span>
+                  <small>{activeTrainingDecision ? "Answer locked" : "Optional before reveal"}</small>
+                </div>
+                <div className="training-action-options" role="group" aria-label="Choose your action">
+                  {TRAINING_ACTIONS.map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className={trainingAction === action ? "active" : undefined}
+                      aria-pressed={trainingAction === action}
+                      onClick={() => {
+                        setTrainingAction(action);
+                        if (action !== "bet" && action !== "raise") {
+                          setTrainingSizing("");
+                        }
+                      }}
+                      disabled={busy}
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
+                <div className="training-decision-footer">
+                  {trainingAction === "bet" || trainingAction === "raise" ? (
+                    <label>
+                      <span>Size</span>
+                      <input
+                        aria-label="Decision sizing in BB"
+                        inputMode="decimal"
+                        value={trainingSizing}
+                        onChange={(event) => setTrainingSizing(event.target.value)}
+                        placeholder="BB"
+                        disabled={busy}
+                      />
+                    </label>
+                  ) : (
+                    <span className="training-decision-hint">No answer locked</span>
+                  )}
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={onSaveTrainingDecision}
+                    disabled={!trainingAction || busy}
+                  >
+                    <Check size={13} aria-hidden="true" />
+                    {activeTrainingDecision ? "Update answer" : "Lock answer"}
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
             {activeRecommendation ? (
               <section className="recommendation" aria-label="Recommendation">
                 <div className="recommendation-head">
@@ -1780,6 +1942,15 @@ export default function App() {
                   <span className="recommendation-action">{activeRecommendation.action}</span>
                   {activeRecommendation.sizing !== null ? <span className="recommendation-sizing">{activeRecommendation.sizing}</span> : null}
                 </div>
+                {activeTrainingDecision && decisionComparison ? (
+                  <div className="training-comparison" aria-label="Training decision comparison">
+                    <span>
+                      <small>Your answer</small>
+                      <strong>{trainingDecisionLabel(activeTrainingDecision.action, activeTrainingDecision.sizing)}</strong>
+                    </span>
+                    <em className={decisionComparison.tone}>{decisionComparison.label}</em>
+                  </div>
+                ) : null}
                 <p>{activeRecommendation.explanation}</p>
                 {decisionEvidence ? (
                   <div className="recommendation-evidence" aria-label="Decision evidence">

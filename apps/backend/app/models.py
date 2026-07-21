@@ -181,6 +181,21 @@ class RecommendationResult(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrainingDecisionRequest(BaseModel):
+    action: RecommendationAction
+    sizing: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_sizing(self) -> Self:
+        if self.action not in {"bet", "raise"} and self.sizing is not None:
+            raise ValueError("Sizing is only valid for bet or raise decisions")
+        return self
+
+
+class TrainingDecision(TrainingDecisionRequest):
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class JobRecord(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
@@ -192,6 +207,7 @@ class JobRecord(BaseModel):
     recommendation_provider: str
     parser_result: ParserResult | None = None
     approved_state: CanonicalState | None = None
+    training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
     benchmark_included: bool = False
     error: str | None = None

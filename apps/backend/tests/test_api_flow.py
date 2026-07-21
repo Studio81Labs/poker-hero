@@ -1,6 +1,7 @@
 import base64
 import os
 from pathlib import Path
+from threading import Event, Lock as ThreadLock, Thread
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
 from app.providers.base import ProviderError
+from app.providers.mock import MockRecommendationProvider
 from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
 
 
@@ -117,6 +119,10 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
+    client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 7.5},
+    )
     client.post(f"/api/jobs/{job_id}/recommend")
 
     corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
@@ -126,8 +132,119 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     job = response.json()
     assert job["status"] == "approved"
     assert job["approved_state"]["pot_size"] == 18.0
+    assert job["training_decision"] is None
     assert job["recommendation"] is None
     assert FileJobStore(tmp_path).get(job_id).recommendation is None
+
+
+def test_records_training_decision_before_recommendation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 7.5},
+    )
+
+    assert response.status_code == 200
+    decision = response.json()["training_decision"]
+    assert decision["action"] == "raise"
+    assert decision["sizing"] == 7.5
+    assert decision["recorded_at"]
+    assert FileJobStore(tmp_path).get(job_id).training_decision.action == "raise"
+
+
+def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    before_approval = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None},
+    )
+    assert before_approval.status_code == 409
+    assert before_approval.json()["detail"] == (
+        "Approve corrected state before recording your decision"
+    )
+
+    approve_job(client, job_id)
+    client.post(f"/api/jobs/{job_id}/recommend")
+    after_recommendation = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None},
+    )
+    assert after_recommendation.status_code == 409
+    assert after_recommendation.json()["detail"] == (
+        "Your decision must be recorded before revealing the recommendation"
+    )
+
+
+def test_training_decision_rejects_sizing_for_non_wager_action(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": 2.5},
+    )
+
+    assert response.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
+def test_recommendation_preserves_decision_recorded_while_provider_runs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider_started = Event()
+    release_provider = Event()
+
+    class SlowRecommendationProvider(MockRecommendationProvider):
+        def recommend(self, request):
+            provider_started.set()
+            if not release_provider.wait(timeout=5):
+                raise ProviderError("test provider timed out")
+            return super().recommend(request)
+
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    monkeypatch.setattr(
+        "app.api.build_provider",
+        lambda settings: SlowRecommendationProvider(),
+    )
+    recommendation_responses = []
+    recommendation_thread = Thread(
+        target=lambda: recommendation_responses.append(
+            client.post(f"/api/jobs/{job_id}/recommend")
+        )
+    )
+
+    recommendation_thread.start()
+    try:
+        assert provider_started.wait(timeout=2)
+        decision_response = client.put(
+            f"/api/jobs/{job_id}/decision",
+            json={"action": "raise", "sizing": 7.5},
+        )
+        assert decision_response.status_code == 200
+    finally:
+        release_provider.set()
+        recommendation_thread.join(timeout=5)
+
+    assert not recommendation_thread.is_alive()
+    assert len(recommendation_responses) == 1
+    recommendation_response = recommendation_responses[0]
+    assert recommendation_response.status_code == 200
+    job = recommendation_response.json()
+    assert job["status"] == "recommended"
+    assert job["training_decision"]["action"] == "raise"
+    assert job["training_decision"]["sizing"] == 7.5
+    persisted_job = FileJobStore(tmp_path).get(job_id)
+    assert persisted_job.training_decision.action == "raise"
+    assert persisted_job.recommendation is not None
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:
@@ -623,6 +740,38 @@ def test_invalid_job_id_returns_not_found(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found"
+
+
+def test_missing_job_mutations_do_not_allocate_per_job_locks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_locks = []
+
+    def counting_lock():
+        lock = ThreadLock()
+        created_locks.append(lock)
+        return lock
+
+    monkeypatch.setattr("app.api.Lock", counting_lock)
+    client = make_client(tmp_path)
+    initial_lock_count = len(created_locks)
+
+    for index in range(20):
+        job_id = f"{index:032x}"
+        responses = (
+            client.post(f"/api/jobs/{job_id}/approve", json=APPROVED_STATE),
+            client.put(
+                f"/api/jobs/{job_id}/decision",
+                json={"action": "call", "sizing": None},
+            ),
+            client.post(f"/api/jobs/{job_id}/recommend"),
+            client.put(f"/api/jobs/{job_id}/benchmark", json={"included": False}),
+        )
+        assert all(response.status_code == 404 for response in responses)
+
+    assert initial_lock_count > 0
+    assert len(created_locks) == initial_lock_count
 
 
 def test_image_endpoint_rejects_tampered_image_filename(tmp_path: Path) -> None:

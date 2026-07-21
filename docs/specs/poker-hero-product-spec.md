@@ -60,6 +60,8 @@ The frontend is a browser control panel for:
 - Correcting detected fields.
 - Approving the final hand state.
 - Viewing the recommendation, sizing, confidence, and reasoning.
+- Optionally locking the player's own action and sizing before revealing guidance.
+- Comparing a locked decision with the recommendation during post-hand review.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
@@ -73,7 +75,8 @@ The backend API:
 - Accepts screenshot uploads.
 - Creates one independent analysis job per screenshot.
 - Runs the configured parser.
-- Stores the original screenshot, parser output, approved/corrected state, and recommendation result.
+- Stores the original screenshot, parser output, approved/corrected state,
+  pre-reveal training decision, and recommendation result.
 - Runs the active parser against an explicit ground-truth corpus without changing the original jobs.
 - Persists the latest benchmark report with case and field-level accuracy.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
@@ -139,10 +142,12 @@ instead of guessing.
 4. Each parser result includes structured detected state and field confidence.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
-7. The backend normalizes approved state into a canonical Texas Hold'em decision request.
-8. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
-9. The UI retains completed items in processing until the user clears them into history.
-10. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+7. Before revealing guidance, the user may lock their own action and optional sizing as a training answer.
+8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
+9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
+10. When a training answer exists, the UI compares it with the recommendation.
+11. The UI retains completed items in processing until the user clears them into history.
+12. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -190,6 +195,7 @@ Required behavior:
 - Parser output includes confidence per field.
 - Missing or low-confidence required fields block recommendation until corrected.
 - Parser and provider raw responses are stored for debugging.
+- A training answer cannot be added or changed after recommendation output is revealed.
 - Parser or provider failures are recoverable in the UI.
 - Batch failures are isolated and surfaced on the affected queue items.
 - Users can retry with the currently configured backend.
@@ -254,6 +260,7 @@ Poker Hero is successful when:
 - The user can correct and approve the extracted state.
 - The recommendation provider is selected by configuration.
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
+- A user can optionally record their intended play before reveal and compare it with the recommendation afterward.
 - Solver-backed recommendations expose available decision evidence and disclose
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.

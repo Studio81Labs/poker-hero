@@ -62,8 +62,9 @@ are loaded only when selected.
 5. The configured provider returns an educational action, sizing, confidence, and reasoning.
 6. The UI compares a locked training decision with the recommendation when one exists.
 7. Completed decision/recommendation pairs contribute to the on-demand training progress summary.
-8. Completed queue items remain in processing until explicitly cleared into history.
-9. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+8. A non-exact comparison can be marked reviewed after the user revisits its evidence.
+9. Completed queue items remain in processing until explicitly cleared into history.
+10. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
 approved state that does not yet have a recommendation, preventing a revealed
@@ -76,6 +77,9 @@ breakdowns, and recent review links from persisted jobs. Hands processed only by
 automation are excluded because they have no player answer to evaluate. A
 separate bounded queue returns the newest action and sizing differences so the
 frontend can review them without hiding older differences behind exact matches.
+Completing a review persists a timestamp on the job and removes it from the
+pending queue without changing historical accuracy. Re-approval or a fresh
+recommendation clears that marker because the comparison inputs have changed.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

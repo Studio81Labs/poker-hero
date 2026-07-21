@@ -26,7 +26,7 @@ def summarize_training(
         for job in jobs
         if job.training_decision is not None and job.recommendation is not None
     ]
-    outcomes = {job.id: _training_outcome(job) for job in reviewed}
+    outcomes = {job.id: training_outcome(job) for job in reviewed}
     action_matches = sum(outcome != "different" for outcome in outcomes.values())
     exact_matches = sum(outcome == "match" for outcome in outcomes.values())
     reviewed_hands = len(reviewed)
@@ -63,9 +63,12 @@ def summarize_training(
     review_queue = [
         _recent_hand(job, outcomes[job.id])
         for job in newest_first
-        if outcomes[job.id] != "match"
+        if outcomes[job.id] != "match" and job.training_reviewed_at is None
     ][: max(0, review_limit)]
-    needs_review_hands = reviewed_hands - exact_matches
+    needs_review_hands = sum(
+        outcomes[job.id] != "match" and job.training_reviewed_at is None
+        for job in reviewed
+    )
     return TrainingProgress(
         reviewed_hands=reviewed_hands,
         action_matches=action_matches,
@@ -80,7 +83,7 @@ def summarize_training(
     )
 
 
-def _training_outcome(job: JobRecord) -> TrainingOutcome:
+def training_outcome(job: JobRecord) -> TrainingOutcome:
     decision = job.training_decision
     recommendation = job.recommendation
     if decision is None or recommendation is None:
@@ -118,4 +121,5 @@ def _recent_hand(job: JobRecord, outcome: TrainingOutcome) -> TrainingRecentHand
         recommended_sizing=recommendation.sizing,
         outcome=outcome,
         recorded_at=decision.recorded_at,
+        reviewed_at=job.training_reviewed_at,
     )

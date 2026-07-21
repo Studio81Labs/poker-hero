@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from io import BytesIO
 from threading import Lock
 
@@ -35,7 +36,7 @@ from app.storage import (
     FileJobStore,
     JobNotFoundError,
 )
-from app.training import summarize_training
+from app.training import summarize_training, training_outcome
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
@@ -149,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state = state
             job.training_decision = None
             job.recommendation = None
+            job.training_reviewed_at = None
             job.status = "approved"
             job.error = None
             return store.save(job)
@@ -175,6 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 action=decision.action,
                 sizing=decision.sizing,
             )
+            job.training_reviewed_at = None
             job.status = "approved"
             job.error = None
             return store.save(job)
@@ -226,9 +229,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with job_lock_for(job_id):
             current = current_recommendation_target(job_id, approved_state)
             current.recommendation = result
+            current.training_reviewed_at = None
             current.status = "recommended"
             current.error = None
             return store.save(current)
+
+    @app.put("/api/jobs/{job_id}/training-review", response_model=JobRecord)
+    def complete_training_review(job_id: str) -> JobRecord:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            if job.training_decision is None or job.recommendation is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A completed decision comparison is required before review",
+                )
+            if training_outcome(job) == "match":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Exact matches do not need review",
+                )
+            if job.training_reviewed_at is None:
+                job.training_reviewed_at = datetime.now(timezone.utc)
+                return store.save(job)
+            return job
 
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:

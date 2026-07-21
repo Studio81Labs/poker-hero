@@ -70,6 +70,7 @@ export interface TrainingRecentHand {
   recommended_sizing: number | null;
   outcome: TrainingOutcome;
   recorded_at: string;
+  reviewed_at: string | null;
 }
 
 export interface TrainingProgress {
@@ -96,6 +97,7 @@ export interface JobRecord {
   approved_state: CanonicalState | null;
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
+  training_reviewed_at: string | null;
   benchmark_included: boolean;
   error: string | null;
   created_at: string;

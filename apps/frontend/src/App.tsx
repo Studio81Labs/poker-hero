@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import {
   approveState,
+  completeTrainingReview,
   getBenchmarkOverview,
   getBenchmarkReport,
   getJob,
@@ -814,6 +815,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     approved_state: null,
     training_decision: null,
     recommendation: null,
+    training_reviewed_at: null,
     benchmark_included: false,
     error: message,
     created_at: timestamp,
@@ -1369,6 +1371,23 @@ export default function App() {
       toast.success("Training answer locked");
     } catch (decisionError) {
       setError(messageFromError(decisionError, "Could not save your training answer"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCompleteTrainingReview() {
+    if (!job || !activeTrainingDecision || !activeRecommendation || decisionComparison?.tone === "match") {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      replaceJob(await completeTrainingReview(job.id));
+      toast.success("Training review completed");
+    } catch (reviewError) {
+      setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
       setBusy(false);
     }
@@ -2013,7 +2032,22 @@ export default function App() {
                       <small>Your answer</small>
                       <strong>{trainingDecisionLabel(activeTrainingDecision.action, activeTrainingDecision.sizing)}</strong>
                     </span>
-                    <em className={decisionComparison.tone}>{decisionComparison.label}</em>
+                    <div className="training-comparison-result">
+                      <em className={decisionComparison.tone}>{decisionComparison.label}</em>
+                      {decisionComparison.tone !== "match" ? (
+                        job?.training_reviewed_at ? (
+                          <div className="training-review-complete">
+                            <Check size={12} aria-hidden="true" />
+                            Reviewed
+                          </div>
+                        ) : (
+                          <button type="button" onClick={onCompleteTrainingReview} disabled={busy}>
+                            <Check size={12} aria-hidden="true" />
+                            Mark reviewed
+                          </button>
+                        )
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
                 <p>{activeRecommendation.explanation}</p>
@@ -2348,7 +2382,9 @@ export default function App() {
                               <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
                               <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
                             </span>
-                            <em className={hand.outcome}>{trainingOutcomeLabel(hand.outcome)}</em>
+                            <em className={hand.reviewed_at ? "reviewed" : hand.outcome}>
+                              {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}
+                            </em>
                             <Eye size={15} aria-hidden="true" />
                           </button>
                         ))}

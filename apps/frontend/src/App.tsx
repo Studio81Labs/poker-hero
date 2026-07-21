@@ -986,13 +986,18 @@ export default function App() {
   }, [error, errorSequence]);
 
   useEffect(() => {
+    if (!currentStateApproved) {
+      setTrainingAction("");
+      setTrainingSizing("");
+      return;
+    }
     setTrainingAction(job?.training_decision?.action ?? "");
     setTrainingSizing(
       job?.training_decision?.sizing === null || job?.training_decision?.sizing === undefined
         ? ""
         : String(job.training_decision.sizing),
     );
-  }, [job?.id, job?.training_decision?.action, job?.training_decision?.sizing]);
+  }, [currentStateApproved, job?.id, job?.training_decision?.action, job?.training_decision?.sizing]);
 
   useEffect(() => {
     if (job && validation.error) {

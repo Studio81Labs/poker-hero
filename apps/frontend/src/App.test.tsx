@@ -653,6 +653,37 @@ describe("App", () => {
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
+  it("clears an unlocked training answer when the approved state is edited", async () => {
+    const editedState = canonicalState({ pot_size: 18 });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(editedState)))
+      .mockResolvedValueOnce(jsonResponse(recommendedJob(editedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const originalDecisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(originalDecisionPanel).getByRole("button", { name: "call" }));
+    expect(within(originalDecisionPanel).getByRole("button", { name: "call" })).toHaveAttribute("aria-pressed", "true");
+
+    const potInput = screen.getByLabelText(/Pot/);
+    await user.clear(potInput);
+    await user.type(potInput, "18");
+    expect(screen.queryByLabelText("Your training decision")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+    const updatedDecisionPanel = await screen.findByLabelText("Your training decision");
+    expect(within(updatedDecisionPanel).getByRole("button", { name: "call" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(updatedDecisionPanel).getByRole("button", { name: "Lock answer" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
+  });
+
   it("loads saved history and reopens a reviewed hand", async () => {
     const savedState = canonicalState({
       hero_cards: [

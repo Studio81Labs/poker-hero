@@ -13,6 +13,7 @@
     "bootstrap": "bash scripts/bootstrap.sh",
     "backend:dev": "cd apps/backend && PATH=\"$(pwd)/../../solver-plugins/postflop/target/release:$PATH\" .venv/bin/python -m uvicorn app.main:app --reload --host localhost --port 8000",
     "backend:start": "cd apps/backend && PATH=\"$(pwd)/../../solver-plugins/postflop/target/release:$PATH\" .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "backend:benchmark": "cd apps/backend && .venv/bin/python -m app.dataset_benchmark",
     "backend:test": "cd apps/backend && .venv/bin/python -m pytest",
     "frontend:dev": "pnpm -C apps/frontend dev",
     "frontend:build": "pnpm -C apps/frontend build",

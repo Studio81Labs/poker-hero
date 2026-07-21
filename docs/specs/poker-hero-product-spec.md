@@ -68,6 +68,7 @@ The frontend is a browser control panel for:
   sizing differences and reopening the persisted hand.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
+- Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
@@ -160,8 +161,10 @@ instead of guessing.
     reviewed without labeling solver guidance as unquestionable ground truth.
 13. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
-14. The UI retains completed items in processing until the user clears them into history.
-15. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+14. A completed review may be reopened, returning the unchanged comparison to
+    the pending queue.
+15. The UI retains completed items in processing until the user clears them into history.
+16. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -282,6 +285,8 @@ Poker Hero is successful when:
   hand needing review.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
+- A user can reopen a completed review without changing the locked answer or
+  recommendation.
 - Solver-backed recommendations expose available decision evidence and disclose
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.

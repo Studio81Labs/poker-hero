@@ -201,6 +201,9 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     response = client.put(f"/api/jobs/{job_id}/training-review")
     repeated = client.put(f"/api/jobs/{job_id}/training-review")
     after_review = client.get("/api/training/progress").json()
+    reopened = client.delete(f"/api/jobs/{job_id}/training-review")
+    repeated_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
+    after_reopen = client.get("/api/training/progress").json()
 
     assert before_review["needs_review_hands"] == 1
     assert before_review["review_queue"][0]["job_id"] == job_id
@@ -213,7 +216,16 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     assert after_review["needs_review_hands"] == 0
     assert after_review["review_queue"] == []
     assert after_review["recent_hands"][0]["reviewed_at"] == response.json()["training_reviewed_at"]
-    assert FileJobStore(tmp_path).get(job_id).training_reviewed_at is not None
+    assert reopened.status_code == 200
+    assert reopened.json()["training_reviewed_at"] is None
+    assert repeated_reopen.status_code == 200
+    assert repeated_reopen.json()["training_reviewed_at"] is None
+    assert after_reopen["reviewed_hands"] == 1
+    assert after_reopen["different_actions"] == 1
+    assert after_reopen["needs_review_hands"] == 1
+    assert after_reopen["review_queue"][0]["job_id"] == job_id
+    assert after_reopen["recent_hands"][0]["reviewed_at"] is None
+    assert FileJobStore(tmp_path).get(job_id).training_reviewed_at is None
 
 
 def test_training_review_requires_a_non_exact_comparison(tmp_path: Path) -> None:
@@ -221,6 +233,7 @@ def test_training_review_requires_a_non_exact_comparison(tmp_path: Path) -> None
     job_id = upload_job(client).json()["id"]
 
     incomplete = client.put(f"/api/jobs/{job_id}/training-review")
+    incomplete_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
 
     approve_job(client, job_id)
     client.put(
@@ -229,13 +242,20 @@ def test_training_review_requires_a_non_exact_comparison(tmp_path: Path) -> None
     )
     client.post(f"/api/jobs/{job_id}/recommend")
     exact = client.put(f"/api/jobs/{job_id}/training-review")
+    exact_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
 
     assert incomplete.status_code == 409
     assert incomplete.json()["detail"] == (
         "A completed decision comparison is required before review"
     )
+    assert incomplete_reopen.status_code == 409
+    assert incomplete_reopen.json()["detail"] == (
+        "A completed decision comparison is required before reopening review"
+    )
     assert exact.status_code == 409
     assert exact.json()["detail"] == "Exact matches do not need review"
+    assert exact_reopen.status_code == 409
+    assert exact_reopen.json()["detail"] == "Exact matches do not need review"
 
 
 def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:

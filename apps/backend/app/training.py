@@ -16,7 +16,11 @@ STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 TrainingOutcome = Literal["match", "same_action", "different"]
 
 
-def summarize_training(jobs: list[JobRecord], recent_limit: int = 8) -> TrainingProgress:
+def summarize_training(
+    jobs: list[JobRecord],
+    recent_limit: int = 8,
+    review_limit: int = 24,
+) -> TrainingProgress:
     reviewed = [
         job
         for job in jobs
@@ -51,23 +55,28 @@ def summarize_training(jobs: list[JobRecord], recent_limit: int = 8) -> Training
             )
         )
 
+    newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     recent_hands = [
         _recent_hand(job, outcomes[job.id])
-        for job in sorted(
-            reviewed,
-            key=_training_recorded_at,
-            reverse=True,
-        )[: max(0, recent_limit)]
+        for job in newest_first[: max(0, recent_limit)]
     ]
+    review_queue = [
+        _recent_hand(job, outcomes[job.id])
+        for job in newest_first
+        if outcomes[job.id] != "match"
+    ][: max(0, review_limit)]
+    needs_review_hands = reviewed_hands - exact_matches
     return TrainingProgress(
         reviewed_hands=reviewed_hands,
         action_matches=action_matches,
         exact_matches=exact_matches,
         different_actions=reviewed_hands - action_matches,
+        needs_review_hands=needs_review_hands,
         action_accuracy=action_matches / reviewed_hands if reviewed_hands else 0,
         exact_accuracy=exact_matches / reviewed_hands if reviewed_hands else 0,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
+        review_queue=review_queue,
     )
 
 

@@ -77,10 +77,12 @@ export interface TrainingProgress {
   action_matches: number;
   exact_matches: number;
   different_actions: number;
+  needs_review_hands: number;
   action_accuracy: number;
   exact_accuracy: number;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
+  review_queue: TrainingRecentHand[];
 }
 
 export interface JobRecord {

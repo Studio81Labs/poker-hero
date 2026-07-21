@@ -1767,6 +1767,43 @@ button:disabled {
   padding-bottom: 4px;
 }
 
+.training-review-heading {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.training-review-heading h3 {
+  margin: 0;
+}
+
+.training-view-switch {
+  border: 1px solid var(--line);
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.training-view-switch button {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  color: var(--text);
+  font-size: 10px;
+  min-height: 27px;
+  padding: 4px 9px;
+}
+
+.training-view-switch button:last-child {
+  border-right: 0;
+}
+
+.training-view-switch button.active {
+  background: var(--dark);
+  color: var(--bg);
+}
+
 .recent-training-list button {
   align-items: center;
   background: transparent;
@@ -1845,6 +1882,24 @@ button:disabled {
 .recent-training-list em.different {
   border-color: var(--accent);
   color: var(--accent-dark);
+}
+
+.training-review-empty {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  justify-content: center;
+  min-height: 92px;
+  text-align: center;
+}
+
+.training-progress-footer > button:not(.secondary-button) {
+  margin-left: auto;
+}
+
+.training-progress-footer > button:not(.secondary-button) + .secondary-button {
+  margin-left: 0;
 }
 
 .training-progress-empty {
@@ -2392,6 +2447,23 @@ button:disabled {
   .recent-training-list button {
     gap: 6px 10px;
     grid-template-columns: minmax(0, 1fr) auto 15px;
+  }
+
+  .training-review-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .training-view-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .training-progress-footer > button {
+    margin-left: 0;
+    width: 100%;
   }
 
   .recent-training-lines {

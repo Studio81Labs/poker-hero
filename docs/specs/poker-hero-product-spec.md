@@ -64,6 +64,8 @@ The frontend is a browser control panel for:
 - Comparing a locked decision with the recommendation during post-hand review.
 - Reviewing aggregate action and exact-line accuracy by street across locked
   answers.
+- Filtering recent decisions to a bounded needs-review queue for action or
+  sizing differences and reopening the persisted hand.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
@@ -152,8 +154,10 @@ instead of guessing.
 10. When a training answer exists, the UI compares it with the recommendation.
 11. Completed comparisons contribute to an aggregate progress view with
     street-level results and recent-hand review links.
-12. The UI retains completed items in processing until the user clears them into history.
-13. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+12. Non-exact comparisons appear in a separate bounded queue so they can be
+    reviewed without labeling solver guidance as unquestionable ground truth.
+13. The UI retains completed items in processing until the user clears them into history.
+14. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -269,6 +273,8 @@ Poker Hero is successful when:
 - A user can optionally record their intended play before reveal and compare it with the recommendation afterward.
 - A user can track action and exact-line accuracy across reviewed hands and
   reopen recent decisions.
+- A user can isolate the newest action or sizing differences and reopen the next
+  hand needing review.
 - Solver-backed recommendations expose available decision evidence and disclose
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.

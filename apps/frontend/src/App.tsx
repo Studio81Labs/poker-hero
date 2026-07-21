@@ -77,6 +77,7 @@ type FacingActionOption = "" | FacingAction;
 type TrainingActionOption = "" | RecommendationAction;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
+type TrainingProgressView = "recent" | "review";
 
 type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
   monitorTypeSurfaces?: "include" | "exclude";
@@ -857,6 +858,7 @@ export default function App() {
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
+  const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
@@ -951,6 +953,10 @@ export default function App() {
       : null),
     [activeRecommendation, activeTrainingDecision],
   );
+  const visibleTrainingHands = trainingProgressView === "review"
+    ? trainingProgress?.review_queue ?? []
+    : trainingProgress?.recent_hands ?? [];
+  const nextReviewHand = trainingProgress?.review_queue[0] ?? null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1406,6 +1412,7 @@ export default function App() {
   function openTrainingDialog() {
     setTrainingDialogOpen(true);
     setTrainingProgress(null);
+    setTrainingProgressView("recent");
     setTrainingProgressLoading(true);
     setError(null);
     void getTrainingProgress()
@@ -2268,10 +2275,10 @@ export default function App() {
                       <span>exact line</span>
                     </div>
                     <div>
-                      <strong className={trainingProgress.different_actions > 0 ? "needs-review" : ""}>
-                        {trainingProgress.different_actions}
+                      <strong className={trainingProgress.needs_review_hands > 0 ? "needs-review" : ""}>
+                        {trainingProgress.needs_review_hands}
                       </strong>
-                      <span>different</span>
+                      <span>needs review</span>
                     </div>
                   </div>
 
@@ -2299,30 +2306,56 @@ export default function App() {
                     </table>
                   </section>
 
-                  <section className="training-progress-section recent-training-section" aria-labelledby="recent-training-title">
-                    <h3 id="recent-training-title">Recent decisions</h3>
-                    <div className="recent-training-list">
-                      {trainingProgress.recent_hands.map((hand) => (
+                  <section className="training-progress-section recent-training-section" aria-labelledby="training-hands-title">
+                    <div className="training-review-heading">
+                      <h3 id="training-hands-title">
+                        {trainingProgressView === "review" ? "Needs review" : "Recent decisions"}
+                      </h3>
+                      <div className="training-view-switch" role="group" aria-label="Training decision view">
                         <button
-                          key={hand.job_id}
                           type="button"
-                          onClick={() => void reviewTrainingHand(hand.job_id)}
-                          disabled={trainingReviewJobId !== null || busy}
-                          aria-label={`Open ${hand.original_filename} training review`}
+                          className={trainingProgressView === "recent" ? "active" : ""}
+                          onClick={() => setTrainingProgressView("recent")}
+                          aria-pressed={trainingProgressView === "recent"}
                         >
-                          <span className="recent-training-hand">
-                            <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
-                            <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
-                          </span>
-                          <span className="recent-training-lines">
-                            <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
-                            <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
-                          </span>
-                          <em className={hand.outcome}>{trainingOutcomeLabel(hand.outcome)}</em>
-                          <Eye size={15} aria-hidden="true" />
+                          Recent
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          className={trainingProgressView === "review" ? "active" : ""}
+                          onClick={() => setTrainingProgressView("review")}
+                          aria-pressed={trainingProgressView === "review"}
+                        >
+                          Needs review {trainingProgress.needs_review_hands}
+                        </button>
+                      </div>
                     </div>
+                    {visibleTrainingHands.length > 0 ? (
+                      <div className="recent-training-list">
+                        {visibleTrainingHands.map((hand) => (
+                          <button
+                            key={hand.job_id}
+                            type="button"
+                            onClick={() => void reviewTrainingHand(hand.job_id)}
+                            disabled={trainingReviewJobId !== null || busy}
+                            aria-label={`Open ${hand.original_filename} training review`}
+                          >
+                            <span className="recent-training-hand">
+                              <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
+                              <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
+                            </span>
+                            <span className="recent-training-lines">
+                              <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
+                              <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
+                            </span>
+                            <em className={hand.outcome}>{trainingOutcomeLabel(hand.outcome)}</em>
+                            <Eye size={15} aria-hidden="true" />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="training-review-empty">No action or sizing differences need review.</div>
+                    )}
                   </section>
                 </>
               ) : (
@@ -2332,8 +2365,22 @@ export default function App() {
               )}
             </div>
 
-            <div className="automation-dialog-footer">
-              <span>Automation-only hands are not scored.</span>
+            <div className="automation-dialog-footer training-progress-footer">
+              <span>
+                {trainingProgress && trainingProgress.needs_review_hands > trainingProgress.review_queue.length
+                  ? `Showing ${trainingProgress.review_queue.length} newest of ${trainingProgress.needs_review_hands} review hands.`
+                  : "Automation-only hands are not scored."}
+              </span>
+              {nextReviewHand ? (
+                <button
+                  type="button"
+                  onClick={() => void reviewTrainingHand(nextReviewHand.job_id)}
+                  disabled={trainingReviewJobId !== null || busy}
+                >
+                  <Eye size={14} aria-hidden="true" />
+                  Review next
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="secondary-button"

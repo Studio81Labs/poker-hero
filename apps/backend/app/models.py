@@ -223,10 +223,12 @@ class TrainingProgress(BaseModel):
     action_matches: int = Field(ge=0)
     exact_matches: int = Field(ge=0)
     different_actions: int = Field(ge=0)
+    needs_review_hands: int = Field(ge=0)
     action_accuracy: float = Field(ge=0, le=1)
     exact_accuracy: float = Field(ge=0, le=1)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
+    review_queue: list[TrainingRecentHand] = Field(default_factory=list)
 
 
 class JobRecord(BaseModel):

@@ -18,6 +18,7 @@ from app.models import (
     RecommendationRequest,
     TrainingDecision,
     TrainingDecisionRequest,
+    TrainingProgress,
 )
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
@@ -34,6 +35,7 @@ from app.storage import (
     FileJobStore,
     JobNotFoundError,
 )
+from app.training import summarize_training
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
@@ -241,6 +243,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             job.benchmark_included = selection.included
             return store.save(job)
+
+    @app.get("/api/training/progress", response_model=TrainingProgress)
+    def get_training_progress() -> TrainingProgress:
+        return summarize_training(store.list())
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
     def get_benchmark_overview() -> BenchmarkOverview:

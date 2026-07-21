@@ -155,6 +155,31 @@ def test_records_training_decision_before_recommendation(tmp_path: Path) -> None
     assert FileJobStore(tmp_path).get(job_id).training_decision.action == "raise"
 
 
+def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None},
+    )
+    client.post(f"/api/jobs/{job_id}/recommend")
+
+    response = client.get("/api/training/progress")
+
+    assert response.status_code == 200
+    progress = response.json()
+    assert progress["reviewed_hands"] == 1
+    assert progress["action_matches"] == 1
+    assert progress["exact_matches"] == 1
+    assert progress["different_actions"] == 0
+    assert progress["action_accuracy"] == 1
+    assert progress["exact_accuracy"] == 1
+    assert progress["street_summaries"][0]["street"] == "flop"
+    assert progress["recent_hands"][0]["job_id"] == job_id
+    assert progress["recent_hands"][0]["outcome"] == "match"
+
+
 def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

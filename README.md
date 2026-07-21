@@ -158,6 +158,7 @@ for the runtime topology.
 - `PUT /api/jobs/{job_id}/decision`
 - `POST /api/jobs/{job_id}/recommend`
 - `PUT /api/jobs/{job_id}/benchmark`
+- `GET /api/training/progress`
 - `GET /api/benchmarks`
 - `GET /api/benchmarks/{report_id}`
 - `POST /api/benchmarks/run`

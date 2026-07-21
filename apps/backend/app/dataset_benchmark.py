@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,6 +21,13 @@ from app.storage import FileJobStore
 
 class DatasetBenchmarkError(RuntimeError):
     pass
+
+
+def _dataset_path_from_invocation(dataset_path: Path) -> Path:
+    if dataset_path.is_absolute():
+        return dataset_path
+    invocation_dir = os.environ.get("POKER_BENCHMARK_BASE_DIR")
+    return Path(invocation_dir) / dataset_path if invocation_dir else dataset_path
 
 
 def benchmark_dataset_archive(
@@ -163,7 +171,10 @@ def main(
         active_settings = active_settings.model_copy(update=overrides)
 
     try:
-        report = benchmark_dataset_archive(args.dataset, active_settings)
+        report = benchmark_dataset_archive(
+            _dataset_path_from_invocation(args.dataset),
+            active_settings,
+        )
     except DatasetBenchmarkError as exc:
         print(str(exc), file=sys.stderr)
         return 2

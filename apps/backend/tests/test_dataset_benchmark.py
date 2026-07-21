@@ -130,6 +130,30 @@ def test_benchmark_cli_emits_json_and_fails_below_threshold(
     assert "below the minimum 100.0%" in captured.err
 
 
+def test_benchmark_cli_resolves_relative_dataset_from_invocation_directory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invocation_dir = tmp_path / "repository-root"
+    invocation_dir.mkdir()
+    write_dataset_archive(
+        invocation_dir / "dataset.zip",
+        expected_mock_state(),
+    )
+    monkeypatch.setenv("POKER_BENCHMARK_BASE_DIR", str(invocation_dir))
+
+    exit_code = main(
+        ["dataset.zip", "--parser-provider", "mock"],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Accuracy: 11/11 (100.0%)" in captured.out
+    assert captured.err == ""
+
+
 def test_benchmark_dataset_archive_rejects_invalid_and_oversized_files(
     tmp_path: Path,
 ) -> None:

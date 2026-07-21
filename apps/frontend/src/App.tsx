@@ -946,14 +946,16 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
-  const benchmarkDatasetExportDisabled =
+  const benchmarkOperationsLocked =
     benchmarkLoading ||
     benchmarkReportLoading ||
     benchmarkRunning ||
     benchmarkUpdating ||
     benchmarkImporting ||
     benchmarkReviewJobId !== null ||
-    busy ||
+    busy;
+  const benchmarkDatasetExportDisabled =
+    benchmarkOperationsLocked ||
     (benchmarkOverview?.included_cases ?? 0) === 0;
   const previousBenchmarkReport = useMemo(
     () => previousComparableBenchmarkReport(benchmarkReport, recentBenchmarkReports),
@@ -1546,7 +1548,8 @@ export default function App() {
   async function onBenchmarkDatasetImport(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const datasetFile = input.files?.[0];
-    if (!datasetFile) {
+    if (!datasetFile || benchmarkOperationsLocked) {
+      input.value = "";
       return;
     }
 
@@ -2778,15 +2781,7 @@ export default function App() {
                 type="button"
                 className="secondary-button benchmark-dataset-action"
                 onClick={() => benchmarkDatasetInputRef.current?.click()}
-                disabled={
-                  benchmarkLoading ||
-                  benchmarkReportLoading ||
-                  benchmarkRunning ||
-                  benchmarkUpdating ||
-                  benchmarkImporting ||
-                  benchmarkReviewJobId !== null ||
-                  busy
-                }
+                disabled={benchmarkOperationsLocked}
                 aria-label="Import dataset"
                 title="Import dataset"
               >
@@ -2799,6 +2794,7 @@ export default function App() {
                 type="file"
                 accept=".zip,application/zip"
                 aria-label="Parser dataset ZIP"
+                disabled={benchmarkOperationsLocked}
                 onChange={(event) => void onBenchmarkDatasetImport(event)}
               />
               <a

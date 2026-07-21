@@ -1075,9 +1075,12 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     const groundTruthSwitch = within(dialog).getByRole("switch", { name: /Use current hand as ground truth/ });
+    const exportDataset = within(dialog).getByRole("link", { name: "Export dataset" });
     expect(groundTruthSwitch).toHaveAttribute("aria-checked", "false");
     expect(groundTruthSwitch).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
+    expect(exportDataset).toHaveAttribute("aria-disabled", "true");
+    expect(exportDataset).toHaveAttribute("href", "http://localhost:8000/api/benchmarks/export");
 
     pendingOverview.resolve(jsonResponse({ included_cases: 0, latest_report: null }));
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
@@ -1087,6 +1090,7 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
     pendingInclusion.resolve(jsonResponse(benchmarkJob));
     await waitFor(() => expect(groundTruthSwitch).toHaveAttribute("aria-checked", "true"));
+    expect(exportDataset).toHaveAttribute("aria-disabled", "false");
     expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeEnabled();
     expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled();
     const runBenchmark = within(dialog).getByRole("button", { name: "Run benchmark" });

@@ -123,6 +123,10 @@ export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
   return readJson<BenchmarkOverview>(response);
 }
 
+export function benchmarkDatasetUrl(): string {
+  return `${API_BASE_URL}/api/benchmarks/export`;
+}
+
 export async function getBenchmarkReport(reportId: string): Promise<BenchmarkReport> {
   const response = await fetch(`${API_BASE_URL}/api/benchmarks/${reportId}`, {
     credentials: "include",

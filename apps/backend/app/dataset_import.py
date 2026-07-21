@@ -11,7 +11,11 @@ from app.dataset_export import (
     DATASET_SCHEMA,
     DATASET_SCHEMA_VERSION,
     MAX_DATASET_CASES,
+    DatasetExportError,
+    ParserDatasetArchiveCase,
+    build_parser_dataset_archive_from_cases,
     dataset_case_limit_message,
+    parser_dataset_archive_case,
 )
 from app.models import (
     BenchmarkDatasetImportResult,
@@ -128,8 +132,12 @@ def import_parser_dataset(
     dataset: ParsedParserDataset,
     store: FileJobStore,
     recommendation_provider: str,
+    parser_provider: str,
+    layout_profile: str,
+    max_archive_bytes: int,
 ) -> BenchmarkDatasetImportResult:
-    included_job_ids = {job.id for job in store.list() if job.benchmark_included}
+    current_jobs = store.list()
+    included_job_ids = {job.id for job in current_jobs if job.benchmark_included}
     resulting_job_ids = included_job_ids | {case.job_id for case in dataset.cases}
     if len(resulting_job_ids) > MAX_DATASET_CASES:
         raise DatasetImportConflictError(
@@ -153,6 +161,37 @@ def import_parser_dataset(
                 f"Imported case {case.job_id} conflicts with an existing job"
             )
         existing_jobs[case.job_id] = existing
+
+    try:
+        prospective_cases = [
+            parser_dataset_archive_case(job, store.image_path)
+            for job in current_jobs
+            if job.benchmark_included or job.id in existing_jobs
+        ]
+        for case in dataset.cases:
+            existing = existing_jobs.get(case.job_id)
+            if existing is not None:
+                continue
+            prospective_cases.append(
+                ParserDatasetArchiveCase(
+                    job_id=case.job_id,
+                    original_filename=case.original_filename,
+                    image_suffix=(
+                        PurePosixPath(case.original_filename).suffix.lower() or ".png"
+                    ),
+                    image_source=case.image_bytes,
+                    expected_state=case.approved_state,
+                )
+            )
+        prospective_archive = build_parser_dataset_archive_from_cases(
+            prospective_cases,
+            parser_provider=parser_provider,
+            layout_profile=layout_profile,
+            max_archive_bytes=max_archive_bytes,
+        )
+    except DatasetExportError as exc:
+        raise DatasetImportConflictError(str(exc)) from exc
+    prospective_archive.close()
 
     imported_cases = 0
     reused_cases = 0

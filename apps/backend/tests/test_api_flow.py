@@ -690,6 +690,33 @@ def test_benchmark_case_limit_applies_to_selection_and_export(
     assert export.json()["detail"] == "Parser datasets support at most 1 case"
 
 
+def test_benchmark_archive_limit_applies_to_selection_and_export(tmp_path: Path) -> None:
+    archive_limit = 8_000
+    client = make_client(tmp_path, max_dataset_upload_bytes=archive_limit)
+    job_id = upload_job(client, content=VALID_PNG + os.urandom(9_000)).json()["id"]
+    approve_job(client, job_id)
+
+    selection = client.put(
+        f"/api/jobs/{job_id}/benchmark",
+        json={"included": True},
+    )
+
+    assert selection.status_code == 409
+    assert selection.json()["detail"] == (
+        f"Parser dataset exceeds the configured {archive_limit}-byte archive limit"
+    )
+    store = FileJobStore(tmp_path)
+    job = store.get(job_id)
+    assert job.benchmark_included is False
+
+    job.benchmark_included = True
+    store.save(job)
+    export = client.get("/api/benchmarks/export")
+
+    assert export.status_code == 409
+    assert export.json()["detail"] == selection.json()["detail"]
+
+
 def test_benchmark_export_reports_missing_source_image(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client, filename="missing.png").json()["id"]
@@ -907,6 +934,55 @@ def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
 
     assert oversized.status_code == 413
     assert oversized.json()["detail"] == "Dataset ZIP exceeds maximum size"
+
+
+def test_benchmark_dataset_import_rejects_a_combined_corpus_over_archive_limit(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    imported_id = upload_job(
+        source_client,
+        content=VALID_PNG + os.urandom(9_000),
+        filename="imported.png",
+    ).json()["id"]
+    approve_job(source_client, imported_id)
+    source_client.put(
+        f"/api/jobs/{imported_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    archive_limit = len(archive) * 3 // 2
+
+    target_dir = tmp_path / "target"
+    target_client = make_client(
+        target_dir,
+        max_dataset_upload_bytes=archive_limit,
+    )
+    existing_id = upload_job(
+        target_client,
+        content=VALID_PNG + os.urandom(9_000),
+        filename="existing.png",
+    ).json()["id"]
+    approve_job(target_client, existing_id)
+    inclusion = target_client.put(
+        f"/api/jobs/{existing_id}/benchmark",
+        json={"included": True},
+    )
+    assert inclusion.status_code == 200
+
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert imported.status_code == 409
+    assert imported.json()["detail"] == (
+        f"Parser dataset exceeds the configured {archive_limit}-byte archive limit"
+    )
+    target_store = FileJobStore(target_dir)
+    assert target_store.get(existing_id).benchmark_included is True
+    with pytest.raises(JobNotFoundError):
+        target_store.get(imported_id)
 
 
 def test_benchmark_dataset_import_rejects_unsafe_image_paths(tmp_path: Path) -> None:

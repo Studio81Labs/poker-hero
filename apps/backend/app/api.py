@@ -13,6 +13,7 @@ from app.benchmarking import run_benchmark
 from app.dataset_export import (
     DatasetExportError,
     MAX_DATASET_CASES,
+    MAX_DATASET_EXPANSION_RATIO,
     build_parser_dataset_archive,
     dataset_case_limit_message,
     stream_archive,
@@ -311,6 +312,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         status_code=409,
                         detail=dataset_case_limit_message(MAX_DATASET_CASES),
                     )
+                candidate_jobs = [
+                    candidate
+                    for candidate in store.list()
+                    if candidate.benchmark_included and candidate.id != job.id
+                ]
+                candidate_jobs.append(job)
+                try:
+                    candidate_archive = build_parser_dataset_archive(
+                        jobs=candidate_jobs,
+                        image_path_for=store.image_path,
+                        parser_provider=active_settings.parser_provider,
+                        layout_profile=active_settings.parser_layout_profile,
+                        max_archive_bytes=active_settings.max_dataset_upload_bytes,
+                    )
+                except DatasetExportError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                candidate_archive.close()
             job.benchmark_included = selection.included
             return store.save(job)
 
@@ -345,6 +363,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     image_path_for=store.image_path,
                     parser_provider=active_settings.parser_provider,
                     layout_profile=active_settings.parser_layout_profile,
+                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
                 )
             except DatasetExportError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -374,7 +393,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             dataset = parse_parser_dataset_archive(
                 archive_bytes,
                 max_image_bytes=active_settings.max_upload_bytes,
-                max_uncompressed_bytes=active_settings.max_dataset_upload_bytes * 4,
+                max_uncompressed_bytes=(
+                    active_settings.max_dataset_upload_bytes
+                    * MAX_DATASET_EXPANSION_RATIO
+                ),
             )
             lock_indexes = sorted(
                 {job_lock_index(case.job_id) for case in dataset.cases}
@@ -390,6 +412,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     dataset,
                     store,
                     recommendation_provider=active_settings.recommendation_provider,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
                 )
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

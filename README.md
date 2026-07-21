@@ -70,7 +70,8 @@ The main provider switches are:
 - `POKER_RECOMMENDATION_PROVIDER`: `rule_based`, `mock`, `local_solver`, `external_solver`, or `llm_advice`
 - `POKER_LOCAL_SOLVER_ENGINE`: `postflop_solver` (default) or `local_ev`
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
-- `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size (default 100 MiB)
+- `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size for
+  benchmark selection, export, and import (default 100 MiB)
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
 
 See [apps/backend/.env.example](./apps/backend/.env.example) for the complete

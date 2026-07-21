@@ -80,6 +80,8 @@ frontend can review them without hiding older differences behind exact matches.
 Completing a review persists a timestamp on the job and removes it from the
 pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.
+Deleting the review marker explicitly reopens the same comparison and returns
+it to the pending queue without changing the recorded decision or recommendation.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

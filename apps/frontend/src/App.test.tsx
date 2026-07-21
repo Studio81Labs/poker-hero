@@ -641,12 +641,17 @@ describe("App", () => {
       ...revealedJob,
       training_reviewed_at: "2026-07-20T12:05:00Z",
     };
+    const reopenedReviewJob = {
+      ...revealedJob,
+      training_reviewed_at: null,
+    };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse(decisionJob))
       .mockResolvedValueOnce(jsonResponse(revealedJob))
-      .mockResolvedValueOnce(jsonResponse(completedReviewJob));
+      .mockResolvedValueOnce(jsonResponse(completedReviewJob))
+      .mockResolvedValueOnce(jsonResponse(reopenedReviewJob));
     render(<App />);
 
     const user = await uploadScreenshot();
@@ -663,6 +668,14 @@ describe("App", () => {
     expect(await screen.findByText("Training review completed")).toBeInTheDocument();
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
     expect(fetchMock().mock.calls[4][1]).toMatchObject({ method: "PUT" });
+
+    await user.click(within(comparison).getByRole("button", { name: "Reopen review" }));
+
+    expect(await within(comparison).findByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
+    expect(within(comparison).queryByText("Reviewed")).not.toBeInTheDocument();
+    expect(await screen.findByText("Training review reopened")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[5][1]).toMatchObject({ method: "DELETE" });
   });
 
   it("records a selected answer automatically when recommendation is requested", async () => {
@@ -824,6 +837,74 @@ describe("App", () => {
       "http://localhost:8000/api/jobs/review-job/image",
     );
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/review-job");
+  });
+
+  it("reopens a completed review from recent training decisions", async () => {
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const reviewedAt = "2026-07-20T12:05:00Z";
+    const reviewedHand = {
+      job_id: "review-job",
+      original_filename: "review.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      recommended_action: "raise" as const,
+      recommended_sizing: 7.5,
+      outcome: "different" as const,
+      recorded_at: trainingDecision.recorded_at,
+      reviewed_at: reviewedAt,
+    };
+    const reopenedHand = { ...reviewedHand, reviewed_at: null };
+    const reviewedProgress = {
+      reviewed_hands: 1,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 1,
+      needs_review_hands: 0,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      street_summaries: [],
+      recent_hands: [reviewedHand],
+      review_queue: [],
+    };
+    const reopenedProgress = {
+      ...reviewedProgress,
+      needs_review_hands: 1,
+      recent_hands: [reopenedHand],
+      review_queue: [reopenedHand],
+    };
+    const reopenedJob = {
+      ...recommendedJob(),
+      id: "review-job",
+      original_filename: "review.png",
+      training_decision: trainingDecision,
+      training_reviewed_at: null,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(reviewedProgress))
+      .mockResolvedValueOnce(jsonResponse(reopenedJob))
+      .mockResolvedValueOnce(jsonResponse(reopenedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(dialog).getByText("Reviewed")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Reopen review.png training review" }));
+
+    expect(await within(dialog).findByRole("button", { name: "Needs review 1" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Different action")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Reopen review.png training review" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Training review reopened")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/review-job/training-review");
+    expect(fetchMock().mock.calls[1][1]).toMatchObject({ method: "DELETE" });
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
   it("loads saved history and reopens a reviewed hand", async () => {

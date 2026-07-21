@@ -101,6 +101,14 @@ export async function completeTrainingReview(jobId: string): Promise<JobRecord> 
   return readJson<JobRecord>(response);
 }
 
+export async function reopenTrainingReview(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/training-review`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  return readJson<JobRecord>(response);
+}
+
 export async function getTrainingProgress(): Promise<TrainingProgress> {
   const response = await fetch(`${API_BASE_URL}/api/training/progress`, {
     credentials: "include",

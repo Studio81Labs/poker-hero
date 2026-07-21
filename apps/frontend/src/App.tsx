@@ -14,6 +14,7 @@ import {
   getTrainingProgress,
   imageUrl,
   recordTrainingDecision,
+  reopenTrainingReview,
   requestRecommendation,
   runParserBenchmark,
   setBenchmarkInclusion,
@@ -1050,6 +1051,17 @@ export default function App() {
     setActiveJobId(updatedJob.id);
   }
 
+  function updateHistoryJob(updatedJob: JobRecord) {
+    setHistory((current) => {
+      if (!current.some((item) => item.id === updatedJob.id)) {
+        return current;
+      }
+      const next = current.map((item) => (item.id === updatedJob.id ? { ...item, job: updatedJob } : item));
+      writeHistory(next);
+      return next;
+    });
+  }
+
   function appendJob(created: JobRecord) {
     setJobs((current) => [...current, created]);
     activateJob(created);
@@ -1384,12 +1396,49 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      replaceJob(await completeTrainingReview(job.id));
+      const reviewedJob = await completeTrainingReview(job.id);
+      replaceJob(reviewedJob);
+      updateHistoryJob(reviewedJob);
       toast.success("Training review completed");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function onReopenTrainingReview() {
+    if (!job || !activeTrainingDecision || !activeRecommendation || decisionComparison?.tone === "match" || !job.training_reviewed_at) {
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const reopenedJob = await reopenTrainingReview(job.id);
+      replaceJob(reopenedJob);
+      updateHistoryJob(reopenedJob);
+      toast.success("Training review reopened");
+    } catch (reviewError) {
+      setError(messageFromError(reviewError, "Could not reopen training review"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopenTrainingReviewFromProgress(jobId: string) {
+    setTrainingReviewJobId(jobId);
+    setError(null);
+    try {
+      const reopenedJob = await reopenTrainingReview(jobId);
+      setJobs((current) => current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)));
+      updateHistoryJob(reopenedJob);
+      setTrainingProgress(await getTrainingProgress());
+      toast.success("Training review reopened");
+    } catch (reviewError) {
+      setError(messageFromError(reviewError, "Could not reopen training review"));
+    } finally {
+      setTrainingReviewJobId(null);
     }
   }
 
@@ -2037,8 +2086,14 @@ export default function App() {
                       {decisionComparison.tone !== "match" ? (
                         job?.training_reviewed_at ? (
                           <div className="training-review-complete">
-                            <Check size={12} aria-hidden="true" />
-                            Reviewed
+                            <span>
+                              <Check size={12} aria-hidden="true" />
+                              Reviewed
+                            </span>
+                            <button type="button" onClick={onReopenTrainingReview} disabled={busy}>
+                              <RefreshCcw size={11} aria-hidden="true" />
+                              Reopen review
+                            </button>
                           </div>
                         ) : (
                           <button type="button" onClick={onCompleteTrainingReview} disabled={busy}>
@@ -2367,26 +2422,40 @@ export default function App() {
                     {visibleTrainingHands.length > 0 ? (
                       <div className="recent-training-list">
                         {visibleTrainingHands.map((hand) => (
-                          <button
-                            key={hand.job_id}
-                            type="button"
-                            onClick={() => void reviewTrainingHand(hand.job_id)}
-                            disabled={trainingReviewJobId !== null || busy}
-                            aria-label={`Open ${hand.original_filename} training review`}
-                          >
-                            <span className="recent-training-hand">
-                              <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
-                              <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
-                            </span>
-                            <span className="recent-training-lines">
-                              <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
-                              <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
-                            </span>
-                            <em className={hand.reviewed_at ? "reviewed" : hand.outcome}>
-                              {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}
-                            </em>
-                            <Eye size={15} aria-hidden="true" />
-                          </button>
+                          <div className="recent-training-row" key={hand.job_id}>
+                            <button
+                              className="recent-training-open"
+                              type="button"
+                              onClick={() => void reviewTrainingHand(hand.job_id)}
+                              disabled={trainingReviewJobId !== null || busy}
+                              aria-label={`Open ${hand.original_filename} training review`}
+                            >
+                              <span className="recent-training-hand">
+                                <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
+                                <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
+                              </span>
+                              <span className="recent-training-lines">
+                                <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
+                                <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
+                              </span>
+                              <em className={hand.reviewed_at ? "reviewed" : hand.outcome}>
+                                {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}
+                              </em>
+                              <Eye size={15} aria-hidden="true" />
+                            </button>
+                            {hand.reviewed_at && hand.outcome !== "match" ? (
+                              <button
+                                className="recent-training-reopen"
+                                type="button"
+                                onClick={() => void reopenTrainingReviewFromProgress(hand.job_id)}
+                                disabled={trainingReviewJobId !== null || busy}
+                                aria-label={`Reopen ${hand.original_filename} training review`}
+                                title="Reopen review"
+                              >
+                                <RefreshCcw size={14} aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </div>
                         ))}
                       </div>
                     ) : (

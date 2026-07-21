@@ -253,6 +253,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return store.save(job)
             return job
 
+    @app.delete("/api/jobs/{job_id}/training-review", response_model=JobRecord)
+    def reopen_training_review(job_id: str) -> JobRecord:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            if job.training_decision is None or job.recommendation is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A completed decision comparison is required before reopening review",
+                )
+            if training_outcome(job) == "match":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Exact matches do not need review",
+                )
+            if job.training_reviewed_at is not None:
+                job.training_reviewed_at = None
+                return store.save(job)
+            return job
+
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
         with job_lock_for(job_id):

@@ -9,6 +9,9 @@ from zipfile import ZipFile
 import pytest
 from fastapi.testclient import TestClient
 
+from app import api as api_module
+from app import dataset_export as dataset_export_module
+from app import dataset_import as dataset_import_module
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
@@ -654,6 +657,66 @@ def test_benchmark_exports_selected_images_and_approved_labels(tmp_path: Path) -
     assert all(case["job_id"] != excluded_id for case in manifest["cases"])
 
 
+def test_benchmark_case_limit_applies_to_selection_and_export(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    first_id = upload_job(client, filename="first.png").json()["id"]
+    second_id = upload_job(client, filename="second.png").json()["id"]
+    approve_job(client, first_id)
+    approve_job(client, second_id)
+    monkeypatch.setattr(api_module, "MAX_DATASET_CASES", 1)
+
+    first = client.put(f"/api/jobs/{first_id}/benchmark", json={"included": True})
+    rejected = client.put(
+        f"/api/jobs/{second_id}/benchmark",
+        json={"included": True},
+    )
+
+    assert first.status_code == 200
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == "Parser datasets support at most 1 case"
+
+    store = FileJobStore(tmp_path)
+    second = store.get(second_id)
+    second.benchmark_included = True
+    store.save(second)
+    monkeypatch.setattr(dataset_export_module, "MAX_DATASET_CASES", 1)
+
+    export = client.get("/api/benchmarks/export")
+
+    assert export.status_code == 409
+    assert export.json()["detail"] == "Parser datasets support at most 1 case"
+
+
+def test_benchmark_archive_limit_applies_to_selection_and_export(tmp_path: Path) -> None:
+    archive_limit = 8_000
+    client = make_client(tmp_path, max_dataset_upload_bytes=archive_limit)
+    job_id = upload_job(client, content=VALID_PNG + os.urandom(9_000)).json()["id"]
+    approve_job(client, job_id)
+
+    selection = client.put(
+        f"/api/jobs/{job_id}/benchmark",
+        json={"included": True},
+    )
+
+    assert selection.status_code == 409
+    assert selection.json()["detail"] == (
+        f"Parser dataset exceeds the configured {archive_limit}-byte archive limit"
+    )
+    store = FileJobStore(tmp_path)
+    job = store.get(job_id)
+    assert job.benchmark_included is False
+
+    job.benchmark_included = True
+    store.save(job)
+    export = client.get("/api/benchmarks/export")
+
+    assert export.status_code == 409
+    assert export.json()["detail"] == selection.json()["detail"]
+
+
 def test_benchmark_export_reports_missing_source_image(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client, filename="missing.png").json()["id"]
@@ -666,6 +729,291 @@ def test_benchmark_export_reports_missing_source_image(tmp_path: Path) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "Image is unavailable for missing.png"
+
+
+def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source", parser_layout_profile="fortuna")
+    source_job_id = upload_job(source_client, filename="labeled.tmp").json()["id"]
+    corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
+    approve_job(source_client, source_job_id, corrected_state)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    repeated = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert imported.status_code == 200
+    assert imported.json() == {
+        "imported_cases": 1,
+        "reused_cases": 0,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    assert repeated.status_code == 200
+    assert repeated.json() == {
+        "imported_cases": 0,
+        "reused_cases": 1,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    imported_job = FileJobStore(target_dir).get(source_job_id)
+    assert imported_job.original_filename == "labeled.tmp"
+    assert imported_job.approved_state is not None
+    assert imported_job.approved_state.model_dump(mode="json") == corrected_state
+    assert imported_job.benchmark_included is True
+    assert imported_job.status == "approved"
+    assert imported_job.parser_result is None
+    assert imported_job.recommendation is None
+    assert imported_job.training_decision is None
+    assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
+
+
+def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    job_id = upload_job(source_client, filename="conflict.png").json()["id"]
+    approve_job(source_client, job_id)
+    source_client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    changed_state = {**APPROVED_STATE, "pot_size": 20.0}
+    approve_job(target_client, job_id, changed_state)
+
+    response = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        f"Imported case {job_id} conflicts with an existing job"
+    )
+    existing = FileJobStore(target_dir).get(job_id)
+    assert existing.approved_state is not None
+    assert existing.approved_state.pot_size == 20
+
+
+def test_benchmark_dataset_import_enforces_resulting_corpus_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="source.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+
+    target_client = make_client(tmp_path / "target")
+    target_job_id = upload_job(target_client, filename="target.png").json()["id"]
+    approve_job(target_client, target_job_id)
+    target_client.put(
+        f"/api/jobs/{target_job_id}/benchmark",
+        json={"included": True},
+    )
+    monkeypatch.setattr(dataset_import_module, "MAX_DATASET_CASES", 1)
+
+    response = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Parser datasets support at most 1 case"
+    assert FileJobStore(tmp_path / "target").get(target_job_id).benchmark_included is True
+
+
+def test_benchmark_dataset_import_serializes_reuse_with_corrections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="concurrent.png").json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    archive = client.get("/api/benchmarks/export").content
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": False})
+
+    import_entered = Event()
+    release_import = Event()
+    approval_started = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_import = api_module.import_parser_dataset
+
+    def paused_import(*args: object, **kwargs: object):
+        import_entered.set()
+        assert release_import.wait(timeout=2)
+        return original_import(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+
+    def run_import() -> None:
+        responses["import"] = client.post(
+            "/api/benchmarks/import",
+            files={"file": ("dataset.zip", archive, "application/zip")},
+        )
+
+    corrected_state = {**APPROVED_STATE, "pot_size": 21.0}
+
+    def run_approval() -> None:
+        approval_started.set()
+        responses["approval"] = approve_job(client, job_id, corrected_state)
+        approval_finished.set()
+
+    import_thread = Thread(target=run_import)
+    import_thread.start()
+    assert import_entered.wait(timeout=2)
+
+    approval_thread = Thread(target=run_approval)
+    approval_thread.start()
+    assert approval_started.wait(timeout=2)
+    assert not approval_finished.wait(timeout=0.1)
+
+    release_import.set()
+    import_thread.join(timeout=2)
+    approval_thread.join(timeout=2)
+
+    assert not import_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["import"].status_code == 200
+    assert responses["approval"].status_code == 200
+    current = FileJobStore(tmp_path).get(job_id)
+    assert current.approved_state is not None
+    assert current.approved_state.pot_size == 21
+    assert current.benchmark_included is True
+
+
+def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path / "invalid")
+    invalid = client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"] == "Upload must be a valid dataset ZIP"
+
+    source_client = make_client(tmp_path / "source")
+    job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, job_id)
+    source_client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    archive = source_client.get("/api/benchmarks/export").content
+    limited_client = make_client(
+        tmp_path / "limited",
+        max_dataset_upload_bytes=len(archive) - 1,
+    )
+
+    oversized = limited_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert oversized.status_code == 413
+    assert oversized.json()["detail"] == "Dataset ZIP exceeds maximum size"
+
+
+def test_benchmark_dataset_import_rejects_a_combined_corpus_over_archive_limit(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    imported_id = upload_job(
+        source_client,
+        content=VALID_PNG + os.urandom(9_000),
+        filename="imported.png",
+    ).json()["id"]
+    approve_job(source_client, imported_id)
+    source_client.put(
+        f"/api/jobs/{imported_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    archive_limit = len(archive) * 3 // 2
+
+    target_dir = tmp_path / "target"
+    target_client = make_client(
+        target_dir,
+        max_dataset_upload_bytes=archive_limit,
+    )
+    existing_id = upload_job(
+        target_client,
+        content=VALID_PNG + os.urandom(9_000),
+        filename="existing.png",
+    ).json()["id"]
+    approve_job(target_client, existing_id)
+    inclusion = target_client.put(
+        f"/api/jobs/{existing_id}/benchmark",
+        json={"included": True},
+    )
+    assert inclusion.status_code == 200
+
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert imported.status_code == 409
+    assert imported.json()["detail"] == (
+        f"Parser dataset exceeds the configured {archive_limit}-byte archive limit"
+    )
+    target_store = FileJobStore(target_dir)
+    assert target_store.get(existing_id).benchmark_included is True
+    with pytest.raises(JobNotFoundError):
+        target_store.get(imported_id)
+
+
+def test_benchmark_dataset_import_rejects_unsafe_image_paths(tmp_path: Path) -> None:
+    source_client = make_client(tmp_path / "source")
+    job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, job_id)
+    source_client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    exported = source_client.get("/api/benchmarks/export").content
+    with ZipFile(BytesIO(exported)) as source_archive:
+        manifest = json.loads(source_archive.read("manifest.json"))
+        image_name = manifest["cases"][0]["image_file"]
+        image_bytes = source_archive.read(image_name)
+    manifest["cases"][0]["image_file"] = f"../{job_id}.png"
+    unsafe_buffer = BytesIO()
+    with ZipFile(unsafe_buffer, mode="w") as unsafe_archive:
+        unsafe_archive.writestr("manifest.json", json.dumps(manifest))
+        unsafe_archive.writestr(f"../{job_id}.png", image_bytes)
+
+    response = make_client(tmp_path / "target").post(
+        "/api/benchmarks/import",
+        files={
+            "file": (
+                "dataset.zip",
+                unsafe_buffer.getvalue(),
+                "application/zip",
+            )
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Dataset image path is invalid for table.png"
 
 
 def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Path) -> None:

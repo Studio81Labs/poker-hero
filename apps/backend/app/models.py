@@ -259,6 +259,13 @@ class BenchmarkSelectionRequest(BaseModel):
     included: bool
 
 
+class BenchmarkDatasetImportResult(BaseModel):
+    imported_cases: int = Field(ge=0)
+    reused_cases: int = Field(ge=0)
+    included_cases: int = Field(ge=0)
+    job_ids: list[str] = Field(default_factory=list)
+
+
 class BenchmarkFieldComparison(BaseModel):
     field: str
     expected: Any

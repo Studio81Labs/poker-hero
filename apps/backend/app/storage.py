@@ -29,14 +29,18 @@ class FileJobStore:
         image_bytes: bytes,
         parser_provider: str,
         recommendation_provider: str,
+        job_id: str | None = None,
     ) -> JobRecord:
         image_suffix = Path(original_filename).suffix or ".png"
-        job = JobRecord(
-            original_filename=original_filename,
-            image_filename=f"original{image_suffix}",
-            parser_provider=parser_provider,
-            recommendation_provider=recommendation_provider,
-        )
+        job_values = {
+            "original_filename": original_filename,
+            "image_filename": f"original{image_suffix}",
+            "parser_provider": parser_provider,
+            "recommendation_provider": recommendation_provider,
+        }
+        if job_id is not None:
+            job_values["id"] = job_id
+        job = JobRecord.model_validate(job_values)
         job_dir = self._job_dir(job.id)
         job_dir.mkdir(parents=True, exist_ok=False)
         self.image_path(job).write_bytes(image_bytes)

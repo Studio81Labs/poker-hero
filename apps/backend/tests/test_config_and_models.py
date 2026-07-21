@@ -25,6 +25,7 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.postflop_solver_bet_sizes == "70%"
     assert settings.postflop_solver_raise_sizes == "2.5x"
     assert settings.max_upload_bytes == 10 * 1024 * 1024
+    assert settings.max_dataset_upload_bytes == 100 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
 
 
@@ -100,6 +101,8 @@ def test_settings_rejects_invalid_postflop_solver_limits() -> None:
 def test_settings_rejects_non_positive_max_upload_bytes() -> None:
     with pytest.raises(ValidationError):
         Settings(max_upload_bytes=0)
+    with pytest.raises(ValidationError):
+        Settings(max_dataset_upload_bytes=0)
 
 
 def test_card_from_code_normalizes_rank_and_suit() -> None:

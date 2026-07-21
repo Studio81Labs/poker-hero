@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     postflop_solver_oop_range: str = Field(default=DEFAULT_POSTFLOP_OOP_RANGE)
     postflop_solver_ip_range: str = Field(default=DEFAULT_POSTFLOP_IP_RANGE)
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    max_dataset_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

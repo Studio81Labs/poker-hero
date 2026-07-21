@@ -2303,7 +2303,7 @@ button:disabled {
   margin-left: 0;
 }
 
-.benchmark-export-button {
+.benchmark-dataset-action {
   align-items: center;
   border: 1px solid var(--line);
   color: var(--text);
@@ -2313,11 +2313,16 @@ button:disabled {
   gap: 7px;
   justify-content: center;
   min-height: 34px;
-  padding: 7px 12px;
+  padding: 7px;
   text-decoration: none;
+  width: 34px;
 }
 
-.benchmark-export-button:hover:not(.disabled) {
+.benchmark-dataset-action > span {
+  display: none;
+}
+
+.benchmark-dataset-action:hover:not(:disabled):not(.disabled) {
   background: rgba(32, 30, 29, 0.07);
 }
 
@@ -2513,6 +2518,10 @@ button:disabled {
 
   .automation-dialog-footer .secondary-button {
     width: 100%;
+  }
+
+  .benchmark-dataset-action > span {
+    display: inline;
   }
 
   .benchmark-summary {

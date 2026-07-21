@@ -1,7 +1,7 @@
 import base64
 import os
 from pathlib import Path
-from threading import Event, Thread
+from threading import Event, Lock as ThreadLock, Thread
 
 import pytest
 from fastapi.testclient import TestClient
@@ -740,6 +740,38 @@ def test_invalid_job_id_returns_not_found(tmp_path: Path) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found"
+
+
+def test_missing_job_mutations_do_not_allocate_per_job_locks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_locks = []
+
+    def counting_lock():
+        lock = ThreadLock()
+        created_locks.append(lock)
+        return lock
+
+    monkeypatch.setattr("app.api.Lock", counting_lock)
+    client = make_client(tmp_path)
+    initial_lock_count = len(created_locks)
+
+    for index in range(20):
+        job_id = f"{index:032x}"
+        responses = (
+            client.post(f"/api/jobs/{job_id}/approve", json=APPROVED_STATE),
+            client.put(
+                f"/api/jobs/{job_id}/decision",
+                json={"action": "call", "sizing": None},
+            ),
+            client.post(f"/api/jobs/{job_id}/recommend"),
+            client.put(f"/api/jobs/{job_id}/benchmark", json={"included": False}),
+        )
+        assert all(response.status_code == 404 for response in responses)
+
+    assert initial_lock_count > 0
+    assert len(created_locks) == initial_lock_count
 
 
 def test_image_endpoint_rejects_tampered_image_filename(tmp_path: Path) -> None:

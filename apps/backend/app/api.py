@@ -36,18 +36,18 @@ from app.storage import (
 )
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
+JOB_LOCK_STRIPES = 64
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
-    job_locks_guard = Lock()
-    job_locks: dict[str, Lock] = {}
+    # Fixed stripes serialize each job without retaining caller-supplied IDs.
+    job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
 
     def job_lock_for(job_id: str):
-        with job_locks_guard:
-            return job_locks.setdefault(job_id, Lock())
+        return job_locks[hash(job_id) % len(job_locks)]
 
     def current_recommendation_target(
         job_id: str,

@@ -1,7 +1,10 @@
 import base64
+import json
 import os
+from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock as ThreadLock, Thread
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -598,6 +601,71 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
         "latest_report": None,
         "recent_reports": [],
     }
+    export = client.get("/api/benchmarks/export")
+    assert export.status_code == 409
+    assert export.json()["detail"] == "Add at least one approved hand to the benchmark"
+
+
+def test_benchmark_exports_selected_images_and_approved_labels(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        parser_provider="mock",
+        parser_layout_profile="fortuna",
+    )
+    included_id = upload_job(client, filename="included.png").json()["id"]
+    excluded_id = upload_job(client, filename="excluded.png").json()["id"]
+    corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
+    approve_job(client, included_id, corrected_state)
+    approve_job(client, excluded_id)
+    client.put(f"/api/jobs/{included_id}/benchmark", json={"included": True})
+
+    response = client.get("/api/benchmarks/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="poker-hero-parser-dataset-'
+    )
+    with ZipFile(BytesIO(response.content)) as archive:
+        assert set(archive.namelist()) == {
+            "manifest.json",
+            f"images/{included_id}.png",
+        }
+        manifest = json.loads(archive.read("manifest.json"))
+        assert archive.read(f"images/{included_id}.png") == VALID_PNG
+
+    assert manifest["schema"] == "poker-hero-parser-dataset"
+    assert manifest["schema_version"] == 1
+    assert manifest["parser_provider"] == "mock"
+    assert manifest["layout_profile"] == "fortuna"
+    assert manifest["case_count"] == 1
+    assert manifest["cases"] == [
+        {
+            "job_id": included_id,
+            "original_filename": "included.png",
+            "image_file": f"images/{included_id}.png",
+            "expected_state": {
+                key: value
+                for key, value in corrected_state.items()
+                if key != "user_approved"
+            },
+        }
+    ]
+    assert all(case["job_id"] != excluded_id for case in manifest["cases"])
+
+
+def test_benchmark_export_reports_missing_source_image(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="missing.png").json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    store = FileJobStore(tmp_path)
+    store.image_path(store.get(job_id)).unlink()
+
+    response = client.get("/api/benchmarks/export")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Image is unavailable for missing.png"
 
 
 def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Path) -> None:

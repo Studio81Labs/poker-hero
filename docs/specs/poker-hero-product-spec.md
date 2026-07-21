@@ -74,6 +74,7 @@ The frontend is a browser control panel for:
 - Seeing parser/provider errors and retrying when possible.
 - Moving completed items into an autosaved history.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
+- Exporting the explicitly selected screenshots and canonical labels as a portable parser dataset.
 
 ### Backend API
 
@@ -187,6 +188,10 @@ historical report details loaded on demand. Comparable runs show overall and
 field-level accuracy changes so parser regressions are visible. One failed case
 must not stop the remaining corpus.
 
+The selected corpus can be exported independently of a benchmark run. The ZIP
+contains a versioned JSON manifest and original screenshots under stable,
+job-based paths. It excludes unselected jobs and recommendation/training data.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.
@@ -292,4 +297,5 @@ Poker Hero is successful when:
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
+- Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - The system can swap parsers and recommendation providers without changing the core UI workflow.

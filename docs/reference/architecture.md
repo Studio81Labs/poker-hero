@@ -53,6 +53,12 @@ the correction workspace. The overview returns a bounded recent-run summary;
 compact field metrics support trend comparisons, while full archived reports
 are loaded only when selected.
 
+The explicitly selected benchmark corpus can be exported as a ZIP without
+running the parser. `manifest.json` identifies schema version 1, parser/layout
+context, and each approved canonical state. Original screenshots are stored at
+stable `images/<job-id>.<ext>` paths referenced by the manifest. Unselected jobs,
+parser output, recommendations, and player decisions are excluded.
+
 ## State Flow
 
 1. A capture or upload creates an independent job.

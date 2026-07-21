@@ -162,6 +162,7 @@ for the runtime topology.
 - `PUT /api/jobs/{job_id}/benchmark`
 - `GET /api/training/progress`
 - `GET /api/benchmarks`
+- `GET /api/benchmarks/export`
 - `GET /api/benchmarks/{report_id}`
 - `POST /api/benchmarks/run`
 

@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Camera, Check, ChevronDown, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import {
   approveState,
+  benchmarkDatasetUrl,
   completeTrainingReview,
   getBenchmarkOverview,
   getBenchmarkReport,
@@ -935,6 +936,14 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
+  const benchmarkDatasetExportDisabled =
+    benchmarkLoading ||
+    benchmarkReportLoading ||
+    benchmarkRunning ||
+    benchmarkUpdating ||
+    benchmarkReviewJobId !== null ||
+    busy ||
+    (benchmarkOverview?.included_cases ?? 0) === 0;
   const previousBenchmarkReport = useMemo(
     () => previousComparableBenchmarkReport(benchmarkReport, recentBenchmarkReports),
     [benchmarkReport, recentBenchmarkReports],
@@ -2710,6 +2719,21 @@ export default function App() {
               <span>
                 <strong>{benchmarkOverview?.included_cases ?? 0}</strong> ground-truth {benchmarkOverview?.included_cases === 1 ? "hand" : "hands"}
               </span>
+              <a
+                className={`secondary-button benchmark-export-button${benchmarkDatasetExportDisabled ? " disabled" : ""}`}
+                href={benchmarkDatasetUrl()}
+                download
+                aria-disabled={benchmarkDatasetExportDisabled}
+                tabIndex={benchmarkDatasetExportDisabled ? -1 : undefined}
+                onClick={(event) => {
+                  if (benchmarkDatasetExportDisabled) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                <Download size={14} aria-hidden="true" />
+                Export dataset
+              </a>
               <button
                 type="button"
                 onClick={onRunBenchmark}

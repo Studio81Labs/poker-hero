@@ -4,11 +4,16 @@ from threading import Lock
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 
 from app.config import Settings, get_settings
 from app.benchmarking import run_benchmark
+from app.dataset_export import (
+    DatasetExportError,
+    build_parser_dataset_archive,
+    stream_archive,
+)
 from app.models import (
     BenchmarkOverview,
     BenchmarkReport,
@@ -300,6 +305,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 BenchmarkReportSummary.from_report(report)
                 for report in benchmark_store.list()
             ],
+        )
+
+    @app.get("/api/benchmarks/export")
+    def export_benchmark_dataset() -> StreamingResponse:
+        jobs = [job for job in store.list() if job.benchmark_included]
+        if not jobs:
+            raise HTTPException(
+                status_code=409,
+                detail="Add at least one approved hand to the benchmark",
+            )
+        try:
+            archive_file = build_parser_dataset_archive(
+                jobs=jobs,
+                image_path_for=store.image_path,
+                parser_provider=active_settings.parser_provider,
+                layout_profile=active_settings.parser_layout_profile,
+            )
+        except DatasetExportError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return StreamingResponse(
+            stream_archive(archive_file),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="poker-hero-parser-dataset-{timestamp}.zip"'
+                )
+            },
         )
 
     @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)

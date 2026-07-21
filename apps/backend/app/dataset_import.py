@@ -20,7 +20,6 @@ from app.storage import FileJobStore, JobNotFoundError
 MAX_DATASET_CASES = 250
 MAX_MANIFEST_BYTES = 1024 * 1024
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
-SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
 class DatasetImportError(RuntimeError):
@@ -191,7 +190,6 @@ def _read_dataset_case(
         or len(image_path.parts) != 2
         or image_path.parts[0] != "images"
         or image_path.stem != case.job_id
-        or image_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES
     ):
         raise DatasetImportError(
             f"Dataset image path is invalid for {case.original_filename}"

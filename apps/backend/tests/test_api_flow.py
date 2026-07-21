@@ -673,7 +673,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     tmp_path: Path,
 ) -> None:
     source_client = make_client(tmp_path / "source", parser_layout_profile="fortuna")
-    source_job_id = upload_job(source_client, filename="labeled.png").json()["id"]
+    source_job_id = upload_job(source_client, filename="labeled.tmp").json()["id"]
     corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
     approve_job(source_client, source_job_id, corrected_state)
     source_client.put(
@@ -708,7 +708,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
         "job_ids": [source_job_id],
     }
     imported_job = FileJobStore(target_dir).get(source_job_id)
-    assert imported_job.original_filename == "labeled.png"
+    assert imported_job.original_filename == "labeled.tmp"
     assert imported_job.approved_state is not None
     assert imported_job.approved_state.model_dump(mode="json") == corrected_state
     assert imported_job.benchmark_included is True

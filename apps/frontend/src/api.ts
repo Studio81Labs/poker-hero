@@ -1,4 +1,5 @@
 import type {
+  BenchmarkDatasetImportResult,
   BenchmarkOverview,
   BenchmarkReport,
   CanonicalState,
@@ -125,6 +126,17 @@ export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
 
 export function benchmarkDatasetUrl(): string {
   return `${API_BASE_URL}/api/benchmarks/export`;
+}
+
+export async function importBenchmarkDataset(file: File): Promise<BenchmarkDatasetImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks/import`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  return readJson<BenchmarkDatasetImportResult>(response);
 }
 
 export async function getBenchmarkReport(reportId: string): Promise<BenchmarkReport> {

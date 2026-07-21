@@ -191,6 +191,10 @@ must not stop the remaining corpus.
 The selected corpus can be exported independently of a benchmark run. The ZIP
 contains a versioned JSON manifest and original screenshots under stable,
 job-based paths. It excludes unselected jobs and recommendation/training data.
+The same ZIP can be imported into another installation. The backend validates
+the whole archive before writing, preserves stable job IDs, reuses exact matches,
+and rejects conflicting existing jobs without overwriting them. Imported cases
+are approved and selected as parser ground truth.
 
 ## Review And Auto-Approve
 
@@ -252,6 +256,7 @@ Recognition tests:
 - Start with 5-10 screenshots per target poker-client layout.
 - Measure field-level accuracy, not only whole-screenshot success.
 - Verify that benchmark runs preserve original jobs and continue after individual parser failures.
+- Verify dataset export/import round trips, idempotent re-imports, archive limits, and conflict rejection.
 
 Recommendation tests:
 
@@ -298,4 +303,5 @@ Poker Hero is successful when:
 - Completed work remains reviewable before being cleared into history.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
+- A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.
 - The system can swap parsers and recommendation providers without changing the core UI workflow.

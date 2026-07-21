@@ -169,3 +169,10 @@ export interface BenchmarkOverview {
   latest_report: BenchmarkReport | null;
   recent_reports: BenchmarkReportSummary[];
 }
+
+export interface BenchmarkDatasetImportResult {
+  imported_cases: number;
+  reused_cases: number;
+  included_cases: number;
+  job_ids: string[];
+}

@@ -14,6 +14,7 @@ import {
   getSystemInfo,
   getTrainingProgress,
   imageUrl,
+  importBenchmarkDataset,
   recordTrainingDecision,
   reopenTrainingReview,
   requestRecommendation,
@@ -871,6 +872,7 @@ export default function App() {
   const [benchmarkReportLoading, setBenchmarkReportLoading] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
   const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
+  const [benchmarkImporting, setBenchmarkImporting] = useState(false);
   const [selectedBenchmarkReport, setSelectedBenchmarkReport] = useState<BenchmarkReport | null>(null);
   const [expandedBenchmarkCaseId, setExpandedBenchmarkCaseId] = useState<string | null>(null);
   const [benchmarkReviewJobId, setBenchmarkReviewJobId] = useState<string | null>(null);
@@ -885,6 +887,7 @@ export default function App() {
   const [error, setErrorMessage] = useState<string | null>(null);
   const [errorSequence, setErrorSequence] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
 
@@ -941,6 +944,7 @@ export default function App() {
     benchmarkReportLoading ||
     benchmarkRunning ||
     benchmarkUpdating ||
+    benchmarkImporting ||
     benchmarkReviewJobId !== null ||
     busy ||
     (benchmarkOverview?.included_cases ?? 0) === 0;
@@ -1530,6 +1534,49 @@ export default function App() {
       })
       .catch((benchmarkError) => setError(messageFromError(benchmarkError, "Could not load parser benchmark")))
       .finally(() => setBenchmarkLoading(false));
+  }
+
+  async function onBenchmarkDatasetImport(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const datasetFile = input.files?.[0];
+    if (!datasetFile) {
+      return;
+    }
+
+    setBenchmarkImporting(true);
+    setError(null);
+    try {
+      const result = await importBenchmarkDataset(datasetFile);
+      const importedIds = new Set(result.job_ids);
+      setBenchmarkOverview((current) => ({
+        included_cases: result.included_cases,
+        latest_report: current?.latest_report ?? null,
+        recent_reports: current?.recent_reports ?? [],
+      }));
+      setJobs((current) =>
+        current.map((candidate) =>
+          importedIds.has(candidate.id)
+            ? { ...candidate, benchmark_included: true }
+            : candidate,
+        ),
+      );
+      setHistory((current) => {
+        const next = current.map((item) =>
+          importedIds.has(item.id)
+            ? { ...item, job: { ...item.job, benchmark_included: true } }
+            : item,
+        );
+        writeHistory(next);
+        return next;
+      });
+      const readyCases = result.imported_cases + result.reused_cases;
+      toast.success(`Dataset ready: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`);
+    } catch (benchmarkError) {
+      setError(messageFromError(benchmarkError, "Could not import parser dataset"));
+    } finally {
+      input.value = "";
+      setBenchmarkImporting(false);
+    }
   }
 
   async function toggleBenchmarkInclusion() {
@@ -2524,7 +2571,7 @@ export default function App() {
                 type="button"
                 className="dialog-icon-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
                 aria-label="Close parser benchmark"
               >
                 <X size={16} aria-hidden="true" />
@@ -2545,6 +2592,7 @@ export default function App() {
                   benchmarkReportLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
+                  benchmarkImporting ||
                   benchmarkReviewJobId !== null
                 }
               >
@@ -2574,7 +2622,7 @@ export default function App() {
                         aria-label="Benchmark report"
                         value={benchmarkReport.id}
                         onChange={(event) => void selectBenchmarkReport(event.target.value)}
-                        disabled={benchmarkReportLoading || benchmarkRunning || benchmarkUpdating || benchmarkReviewJobId !== null || busy}
+                        disabled={benchmarkReportLoading || benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReviewJobId !== null || busy}
                       >
                         {recentBenchmarkReports.map((summary) => (
                           <option key={summary.id} value={summary.id}>
@@ -2695,7 +2743,7 @@ export default function App() {
                                       type="button"
                                       className="secondary-button"
                                       onClick={() => void reviewBenchmarkCase(benchmarkCase.job_id)}
-                                      disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null || busy}
+                                      disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null || busy}
                                     >
                                       <Eye size={14} aria-hidden="true" />
                                       {benchmarkReviewJobId === benchmarkCase.job_id ? "Opening..." : "Review hand"}
@@ -2719,10 +2767,39 @@ export default function App() {
               <span>
                 <strong>{benchmarkOverview?.included_cases ?? 0}</strong> ground-truth {benchmarkOverview?.included_cases === 1 ? "hand" : "hands"}
               </span>
+              <button
+                type="button"
+                className="secondary-button benchmark-dataset-action"
+                onClick={() => benchmarkDatasetInputRef.current?.click()}
+                disabled={
+                  benchmarkLoading ||
+                  benchmarkReportLoading ||
+                  benchmarkRunning ||
+                  benchmarkUpdating ||
+                  benchmarkImporting ||
+                  benchmarkReviewJobId !== null ||
+                  busy
+                }
+                aria-label="Import dataset"
+                title="Import dataset"
+              >
+                <Upload size={14} aria-hidden="true" />
+                <span>{benchmarkImporting ? "Importing..." : "Import dataset"}</span>
+              </button>
+              <input
+                ref={benchmarkDatasetInputRef}
+                className="sr-only"
+                type="file"
+                accept=".zip,application/zip"
+                aria-label="Parser dataset ZIP"
+                onChange={(event) => void onBenchmarkDatasetImport(event)}
+              />
               <a
-                className={`secondary-button benchmark-export-button${benchmarkDatasetExportDisabled ? " disabled" : ""}`}
+                className={`secondary-button benchmark-dataset-action benchmark-export-button${benchmarkDatasetExportDisabled ? " disabled" : ""}`}
                 href={benchmarkDatasetUrl()}
                 download
+                aria-label="Export dataset"
+                title="Export dataset"
                 aria-disabled={benchmarkDatasetExportDisabled}
                 tabIndex={benchmarkDatasetExportDisabled ? -1 : undefined}
                 onClick={(event) => {
@@ -2732,7 +2809,7 @@ export default function App() {
                 }}
               >
                 <Download size={14} aria-hidden="true" />
-                Export dataset
+                <span>Export dataset</span>
               </a>
               <button
                 type="button"
@@ -2742,6 +2819,7 @@ export default function App() {
                   benchmarkReportLoading ||
                   benchmarkRunning ||
                   benchmarkUpdating ||
+                  benchmarkImporting ||
                   benchmarkReviewJobId !== null ||
                   busy ||
                   (benchmarkOverview?.included_cases ?? 0) === 0
@@ -2754,7 +2832,7 @@ export default function App() {
                 type="button"
                 className="secondary-button"
                 onClick={() => setBenchmarkDialogOpen(false)}
-                disabled={benchmarkRunning || benchmarkUpdating || benchmarkReportLoading || benchmarkReviewJobId !== null}
+                disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
               >
                 Done
               </button>

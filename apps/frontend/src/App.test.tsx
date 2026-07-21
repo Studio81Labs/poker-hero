@@ -1128,6 +1128,46 @@ describe("App", () => {
     ]);
   });
 
+  it("imports a parser dataset and enables corpus actions", async () => {
+    const pendingImport = deferredResponse();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ included_cases: 0, latest_report: null, recent_reports: [] }))
+      .mockReturnValueOnce(pendingImport.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const importDataset = within(dialog).getByRole("button", { name: "Import dataset" });
+    const exportDataset = within(dialog).getByRole("link", { name: "Export dataset" });
+    await waitFor(() => expect(importDataset).toBeEnabled());
+    expect(exportDataset).toHaveAttribute("aria-disabled", "true");
+
+    const dataset = new File(["dataset-zip"], "parser-dataset.zip", { type: "application/zip" });
+    await user.upload(within(dialog).getByLabelText("Parser dataset ZIP"), dataset);
+
+    expect(importDataset).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close parser benchmark" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+    pendingImport.resolve(jsonResponse({
+      imported_cases: 2,
+      reused_cases: 0,
+      included_cases: 2,
+      job_ids: ["a".repeat(32), "b".repeat(32)],
+    }));
+
+    expect(await screen.findByText("Dataset ready: 2 hands")).toBeInTheDocument();
+    expect(within(dialog).getByText("2").closest("span")).toHaveTextContent("2 ground-truth hands");
+    expect(exportDataset).toHaveAttribute("aria-disabled", "false");
+    expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeEnabled();
+    expect(importDataset).toBeEnabled();
+
+    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/benchmarks/import");
+    expect(fetchMock().mock.calls[1][1]).toMatchObject({ method: "POST" });
+    const form = fetchMock().mock.calls[1][1]?.body as FormData;
+    expect(form.get("file")).toBe(dataset);
+  });
+
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {
     const pendingReviewJob = deferredResponse();
     const activeJob = {

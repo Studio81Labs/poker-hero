@@ -59,6 +59,13 @@ context, and each approved canonical state. Original screenshots are stored at
 stable `images/<job-id>.<ext>` paths referenced by the manifest. Unselected jobs,
 parser output, recommendations, and player decisions are excluded.
 
+The same archive can be imported to restore or share a corpus. Import validates
+the complete manifest, paths, limits, and image payloads before creating jobs.
+Stable job IDs make exact re-imports idempotent; an existing job with different
+image bytes or approved state rejects the archive instead of being overwritten.
+Imported cases are approved benchmark jobs, while recommendation and training
+data remain absent.
+
 ## State Flow
 
 1. A capture or upload creates an independent job.

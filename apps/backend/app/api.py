@@ -14,7 +14,13 @@ from app.dataset_export import (
     build_parser_dataset_archive,
     stream_archive,
 )
+from app.dataset_import import (
+    DatasetImportError,
+    import_parser_dataset,
+    parse_parser_dataset_archive,
+)
 from app.models import (
+    BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
     BenchmarkReportSummary,
@@ -53,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
+    dataset_import_lock = Lock()
 
     def job_lock_for(job_id: str):
         return job_locks[hash(job_id) % len(job_locks)]
@@ -335,6 +342,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             },
         )
+
+    @app.post(
+        "/api/benchmarks/import",
+        response_model=BenchmarkDatasetImportResult,
+    )
+    async def import_benchmark_dataset(
+        file: UploadFile = File(...),
+    ) -> BenchmarkDatasetImportResult:
+        archive_bytes = await file.read(active_settings.max_dataset_upload_bytes + 1)
+        if len(archive_bytes) > active_settings.max_dataset_upload_bytes:
+            raise HTTPException(status_code=413, detail="Dataset ZIP exceeds maximum size")
+        try:
+            dataset = parse_parser_dataset_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=active_settings.max_dataset_upload_bytes * 4,
+            )
+            with dataset_import_lock:
+                return import_parser_dataset(
+                    dataset,
+                    store,
+                    recommendation_provider=active_settings.recommendation_provider,
+                )
+        except DatasetImportError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
     def get_benchmark_report(report_id: str) -> BenchmarkReport:

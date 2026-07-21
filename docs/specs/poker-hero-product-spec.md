@@ -62,6 +62,8 @@ The frontend is a browser control panel for:
 - Viewing the recommendation, sizing, confidence, and reasoning.
 - Optionally locking the player's own action and sizing before revealing guidance.
 - Comparing a locked decision with the recommendation during post-hand review.
+- Reviewing aggregate action and exact-line accuracy by street across locked
+  answers.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
@@ -79,6 +81,8 @@ The backend API:
   pre-reveal training decision, and recommendation result.
 - Runs the active parser against an explicit ground-truth corpus without changing the original jobs.
 - Persists the latest benchmark report with case and field-level accuracy.
+- Derives training progress from completed decision/recommendation pairs without
+  scoring automation-only hands.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
 - Routes recommendation requests to the configured provider.
 
@@ -146,8 +150,10 @@ instead of guessing.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
 10. When a training answer exists, the UI compares it with the recommendation.
-11. The UI retains completed items in processing until the user clears them into history.
-12. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+11. Completed comparisons contribute to an aggregate progress view with
+    street-level results and recent-hand review links.
+12. The UI retains completed items in processing until the user clears them into history.
+13. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -261,6 +267,8 @@ Poker Hero is successful when:
 - The recommendation provider is selected by configuration.
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
 - A user can optionally record their intended play before reveal and compare it with the recommendation afterward.
+- A user can track action and exact-line accuracy across reviewed hands and
+  reopen recent decisions.
 - Solver-backed recommendations expose available decision evidence and disclose
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.

@@ -684,6 +684,74 @@ describe("App", () => {
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
+  it("shows training progress and reopens a recent reviewed hand", async () => {
+    const trainingDecision = {
+      action: "raise" as const,
+      sizing: 7.5,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const reviewedJob = {
+      ...recommendedJob(),
+      id: "reviewed-job",
+      original_filename: "reviewed.png",
+      image_filename: "original.png",
+      training_decision: trainingDecision,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        reviewed_hands: 3,
+        action_matches: 2,
+        exact_matches: 1,
+        different_actions: 1,
+        action_accuracy: 2 / 3,
+        exact_accuracy: 1 / 3,
+        street_summaries: [{
+          street: "flop",
+          reviewed_hands: 3,
+          action_matches: 2,
+          exact_matches: 1,
+          action_accuracy: 2 / 3,
+          exact_accuracy: 1 / 3,
+        }],
+        recent_hands: [{
+          job_id: "reviewed-job",
+          original_filename: "reviewed.png",
+          street: "flop",
+          hero_cards: canonicalState().hero_cards,
+          decision_action: "raise",
+          decision_sizing: 7.5,
+          recommended_action: "raise",
+          recommended_sizing: 7.5,
+          outcome: "match",
+          recorded_at: "2026-07-20T12:00:00Z",
+        }],
+      }))
+      .mockResolvedValueOnce(jsonResponse(reviewedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const summary = await within(dialog).findByLabelText("Training progress summary");
+    expect(summary).toHaveTextContent("67%");
+    expect(within(summary).getByText("33%")).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /flop 3 67% 33%/i })).toBeInTheDocument();
+    expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
+    expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();
+    expect(within(dialog).getByText("Exact match")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
+
+    await user.click(within(dialog).getByRole("button", { name: "Open reviewed.png training review" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Training progress" })).not.toBeInTheDocument());
+    expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/jobs/reviewed-job/image",
+    );
+    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/reviewed-job");
+  });
+
   it("loads saved history and reopens a reviewed hand", async () => {
     const savedState = canonicalState({
       hero_cards: [

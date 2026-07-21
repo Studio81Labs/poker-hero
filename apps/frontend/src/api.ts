@@ -5,6 +5,7 @@ import type {
   JobRecord,
   RecommendationAction,
   SystemInfo,
+  TrainingProgress,
 } from "./types";
 
 const API_BASE_URL =
@@ -90,6 +91,13 @@ export async function recordTrainingDecision(
     credentials: "include",
   });
   return readJson<JobRecord>(response);
+}
+
+export async function getTrainingProgress(): Promise<TrainingProgress> {
+  const response = await fetch(`${API_BASE_URL}/api/training/progress`, {
+    credentials: "include",
+  });
+  return readJson<TrainingProgress>(response);
 }
 
 export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {

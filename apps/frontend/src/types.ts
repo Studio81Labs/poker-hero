@@ -48,6 +48,41 @@ export interface TrainingDecision {
   recorded_at: string;
 }
 
+export type TrainingOutcome = "match" | "same_action" | "different";
+
+export interface TrainingStreetSummary {
+  street: Street;
+  reviewed_hands: number;
+  action_matches: number;
+  exact_matches: number;
+  action_accuracy: number;
+  exact_accuracy: number;
+}
+
+export interface TrainingRecentHand {
+  job_id: string;
+  original_filename: string;
+  street: Street | null;
+  hero_cards: Card[];
+  decision_action: RecommendationAction;
+  decision_sizing: number | null;
+  recommended_action: RecommendationAction;
+  recommended_sizing: number | null;
+  outcome: TrainingOutcome;
+  recorded_at: string;
+}
+
+export interface TrainingProgress {
+  reviewed_hands: number;
+  action_matches: number;
+  exact_matches: number;
+  different_actions: number;
+  action_accuracy: number;
+  exact_accuracy: number;
+  street_summaries: TrainingStreetSummary[];
+  recent_hands: TrainingRecentHand[];
+}
+
 export interface JobRecord {
   id: string;
   status: "created" | "parsed" | "approved" | "recommended" | "error";

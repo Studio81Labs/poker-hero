@@ -196,6 +196,39 @@ class TrainingDecision(TrainingDecisionRequest):
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TrainingStreetSummary(BaseModel):
+    street: Street
+    reviewed_hands: int = Field(ge=0)
+    action_matches: int = Field(ge=0)
+    exact_matches: int = Field(ge=0)
+    action_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy: float = Field(ge=0, le=1)
+
+
+class TrainingRecentHand(BaseModel):
+    job_id: str
+    original_filename: str
+    street: Street | None
+    hero_cards: list[Card] = Field(default_factory=list)
+    decision_action: RecommendationAction
+    decision_sizing: float | None = Field(default=None, ge=0)
+    recommended_action: RecommendationAction
+    recommended_sizing: float | None = Field(default=None, ge=0)
+    outcome: Literal["match", "same_action", "different"]
+    recorded_at: datetime
+
+
+class TrainingProgress(BaseModel):
+    reviewed_hands: int = Field(ge=0)
+    action_matches: int = Field(ge=0)
+    exact_matches: int = Field(ge=0)
+    different_actions: int = Field(ge=0)
+    action_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy: float = Field(ge=0, le=1)
+    street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
+    recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
+
+
 class JobRecord(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 

@@ -38,11 +38,12 @@ engine selection.
 
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and
 correction, automation controls, pre-reveal training decisions, recommendations,
-decision-evidence presentation, and history. It defensively normalizes optional provider metadata
-such as equity, candidate EVs/frequencies, exploitability, and fallback context;
-providers remain free to omit those fields. In production it uses same-origin
-`/api/*`; `worker.js` forwards those requests to `BACKEND_URL` and serves all
-other routes from Worker Static Assets.
+decision-evidence presentation, aggregate training progress, and history. It
+defensively normalizes optional provider metadata such as equity, candidate
+EVs/frequencies, exploitability, and fallback context; providers remain free to
+omit those fields. In production it uses same-origin `/api/*`; `worker.js`
+forwards those requests to `BACKEND_URL` and serves all other routes from Worker
+Static Assets.
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,
@@ -60,8 +61,9 @@ are loaded only when selected.
 4. The user may lock an action and optional sizing before revealing provider output.
 5. The configured provider returns an educational action, sizing, confidence, and reasoning.
 6. The UI compares a locked training decision with the recommendation when one exists.
-7. Completed queue items remain in processing until explicitly cleared into history.
-8. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+7. Completed decision/recommendation pairs contribute to the on-demand training progress summary.
+8. Completed queue items remain in processing until explicitly cleared into history.
+9. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
 approved state that does not yet have a recommendation, preventing a revealed
@@ -69,6 +71,9 @@ solver result from being recorded afterward as a supposed pre-reveal answer.
 Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
+The training progress endpoint derives action and exact-line accuracy, street
+breakdowns, and recent review links from persisted jobs. Hands processed only by
+automation are excluded because they have no player answer to evaluate.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

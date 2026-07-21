@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Camera, Check, ChevronDown, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, Camera, Check, ChevronDown, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -10,6 +10,7 @@ import {
   getBenchmarkReport,
   getJob,
   getSystemInfo,
+  getTrainingProgress,
   imageUrl,
   recordTrainingDecision,
   requestRecommendation,
@@ -34,6 +35,8 @@ import type {
   Street,
   Suit,
   SystemInfo,
+  TrainingOutcome,
+  TrainingProgress,
 } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
@@ -349,6 +352,16 @@ function benchmarkFieldLabel(field: string): string {
 
 function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+function trainingOutcomeLabel(outcome: TrainingOutcome): string {
+  if (outcome === "match") {
+    return "Exact match";
+  }
+  if (outcome === "same_action") {
+    return "Same action";
+  }
+  return "Different action";
 }
 
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
@@ -842,6 +855,10 @@ export default function App() {
   const [automationEnabled, setAutomationEnabled] = useState(true);
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
+  const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
+  const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
+  const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
   const [benchmarkOverview, setBenchmarkOverview] = useState<BenchmarkOverview | null>(null);
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
@@ -1386,6 +1403,37 @@ export default function App() {
       .finally(() => setSystemInfoLoading(false));
   }
 
+  function openTrainingDialog() {
+    setTrainingDialogOpen(true);
+    setTrainingProgress(null);
+    setTrainingProgressLoading(true);
+    setError(null);
+    void getTrainingProgress()
+      .then(setTrainingProgress)
+      .catch((trainingError) => setError(messageFromError(trainingError, "Could not load training progress")))
+      .finally(() => setTrainingProgressLoading(false));
+  }
+
+  async function reviewTrainingHand(jobId: string) {
+    setTrainingReviewJobId(jobId);
+    setError(null);
+    try {
+      const reviewJob = await getJob(jobId);
+      setJobs((current) => {
+        const existing = current.some((candidate) => candidate.id === reviewJob.id);
+        return existing
+          ? current.map((candidate) => (candidate.id === reviewJob.id ? reviewJob : candidate))
+          : [reviewJob, ...current];
+      });
+      activateJob(reviewJob);
+      setTrainingDialogOpen(false);
+    } catch (trainingError) {
+      setError(messageFromError(trainingError, "Could not open training hand"));
+    } finally {
+      setTrainingReviewJobId(null);
+    }
+  }
+
   function openBenchmarkDialog() {
     setExpandedBenchmarkCaseId(null);
     setSelectedBenchmarkReport(null);
@@ -1599,6 +1647,16 @@ export default function App() {
           </div>
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={openTrainingDialog}
+            disabled={busy}
+            title="Training progress"
+            aria-label="Training progress"
+          >
+            <Target size={18} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -2165,6 +2223,123 @@ export default function App() {
 
             <div className="automation-dialog-footer info-dialog-footer">
               <button type="button" className="secondary-button" onClick={() => setInfoDialogOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {trainingDialogOpen ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog training-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="training-progress-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="training-progress-title">Training progress</h2>
+                <p>Your locked answers compared with completed recommendations</p>
+              </div>
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={() => setTrainingDialogOpen(false)}
+                disabled={trainingReviewJobId !== null}
+                aria-label="Close training progress"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="training-progress-body">
+              {trainingProgressLoading ? (
+                <div className="training-progress-empty">Reading reviewed decisions...</div>
+              ) : trainingProgress && trainingProgress.reviewed_hands > 0 ? (
+                <>
+                  <div className="training-progress-summary" aria-label="Training progress summary">
+                    <div>
+                      <strong>{trainingProgress.reviewed_hands}</strong>
+                      <span>reviewed</span>
+                    </div>
+                    <div>
+                      <strong>{benchmarkPercent(trainingProgress.action_accuracy)}</strong>
+                      <span>action match</span>
+                    </div>
+                    <div>
+                      <strong>{benchmarkPercent(trainingProgress.exact_accuracy)}</strong>
+                      <span>exact line</span>
+                    </div>
+                    <div>
+                      <strong className={trainingProgress.different_actions > 0 ? "needs-review" : ""}>
+                        {trainingProgress.different_actions}
+                      </strong>
+                      <span>different</span>
+                    </div>
+                  </div>
+
+                  <section className="training-progress-section" aria-labelledby="training-streets-title">
+                    <h3 id="training-streets-title">By street</h3>
+                    <table className="training-street-table">
+                      <thead>
+                        <tr>
+                          <th>Street</th>
+                          <th>Hands</th>
+                          <th>Action</th>
+                          <th>Exact</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {trainingProgress.street_summaries.map((summary) => (
+                          <tr key={summary.street}>
+                            <th>{summary.street}</th>
+                            <td>{summary.reviewed_hands}</td>
+                            <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                            <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </section>
+
+                  <section className="training-progress-section recent-training-section" aria-labelledby="recent-training-title">
+                    <h3 id="recent-training-title">Recent decisions</h3>
+                    <div className="recent-training-list">
+                      {trainingProgress.recent_hands.map((hand) => (
+                        <button
+                          key={hand.job_id}
+                          type="button"
+                          onClick={() => void reviewTrainingHand(hand.job_id)}
+                          disabled={trainingReviewJobId !== null || busy}
+                          aria-label={`Open ${hand.original_filename} training review`}
+                        >
+                          <span className="recent-training-hand">
+                            <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
+                            <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
+                          </span>
+                          <span className="recent-training-lines">
+                            <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
+                            <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
+                          </span>
+                          <em className={hand.outcome}>{trainingOutcomeLabel(hand.outcome)}</em>
+                          <Eye size={15} aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              ) : (
+                <div className="training-progress-empty">
+                  Lock an answer before revealing a recommendation to start tracking progress.
+                </div>
+              )}
+            </div>
+
+            <div className="automation-dialog-footer">
+              <span>Automation-only hands are not scored.</span>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setTrainingDialogOpen(false)}
+                disabled={trainingReviewJobId !== null}
+              >
                 Done
               </button>
             </div>

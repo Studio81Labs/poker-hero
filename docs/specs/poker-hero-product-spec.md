@@ -66,6 +66,8 @@ The frontend is a browser control panel for:
   answers.
 - Filtering recent decisions to a bounded needs-review queue for action or
   sizing differences and reopening the persisted hand.
+- Marking a revisited action or sizing difference reviewed without changing the
+  historical comparison result.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
@@ -156,8 +158,10 @@ instead of guessing.
     street-level results and recent-hand review links.
 12. Non-exact comparisons appear in a separate bounded queue so they can be
     reviewed without labeling solver guidance as unquestionable ground truth.
-13. The UI retains completed items in processing until the user clears them into history.
-14. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+13. The user may mark a revisited difference reviewed, which removes it from the
+    pending queue while preserving it in progress history.
+14. The UI retains completed items in processing until the user clears them into history.
+15. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -206,6 +210,7 @@ Required behavior:
 - Missing or low-confidence required fields block recommendation until corrected.
 - Parser and provider raw responses are stored for debugging.
 - A training answer cannot be added or changed after recommendation output is revealed.
+- Re-approval or a new recommendation clears any completed training-review marker.
 - Parser or provider failures are recoverable in the UI.
 - Batch failures are isolated and surfaced on the affected queue items.
 - Users can retry with the currently configured backend.
@@ -275,6 +280,8 @@ Poker Hero is successful when:
   reopen recent decisions.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
+- A user can complete that review so it leaves the pending queue without
+  changing recorded accuracy.
 - Solver-backed recommendations expose available decision evidence and disclose
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.

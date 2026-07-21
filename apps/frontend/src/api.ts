@@ -93,6 +93,14 @@ export async function recordTrainingDecision(
   return readJson<JobRecord>(response);
 }
 
+export async function completeTrainingReview(jobId: string): Promise<JobRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/training-review`, {
+    method: "PUT",
+    credentials: "include",
+  });
+  return readJson<JobRecord>(response);
+}
+
 export async function getTrainingProgress(): Promise<TrainingProgress> {
   const response = await fetch(`${API_BASE_URL}/api/training/progress`, {
     credentials: "include",

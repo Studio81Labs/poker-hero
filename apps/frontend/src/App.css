@@ -1263,6 +1263,35 @@ button:disabled {
   color: #ff9783;
 }
 
+.training-comparison-result {
+  align-items: flex-end;
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+}
+
+.training-comparison-result button,
+.training-review-complete {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #d7d3d3;
+  display: inline-flex;
+  font-size: 9px;
+  font-weight: 700;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0;
+}
+
+.training-comparison-result button:hover:not(:disabled) {
+  color: var(--bg);
+}
+
+.training-review-complete {
+  color: #77d6ab;
+}
+
 .recommendation p {
   border-top: 1px solid rgba(243, 242, 242, 0.14);
   color: #d7d3d3;
@@ -1882,6 +1911,11 @@ button:disabled {
 .recent-training-list em.different {
   border-color: var(--accent);
   color: var(--accent-dark);
+}
+
+.recent-training-list em.reviewed {
+  border-color: #4c695e;
+  color: #314d43;
 }
 
 .training-review-empty {

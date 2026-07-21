@@ -93,6 +93,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     approved_state: null,
     training_decision: null,
     recommendation: null,
+    training_reviewed_at: null,
     benchmark_included: false,
     error: null,
     created_at: "2026-07-10T00:00:00Z",
@@ -624,7 +625,44 @@ describe("App", () => {
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Raise 7.5 BB")).toBeInTheDocument();
     expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
+    expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(4);
+  });
+
+  it("marks a differing training decision reviewed", async () => {
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const decisionJob = { ...approvedJob(), training_decision: trainingDecision };
+    const revealedJob = { ...recommendedJob(), training_decision: trainingDecision };
+    const completedReviewJob = {
+      ...revealedJob,
+      training_reviewed_at: "2026-07-20T12:05:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(decisionJob))
+      .mockResolvedValueOnce(jsonResponse(revealedJob))
+      .mockResolvedValueOnce(jsonResponse(completedReviewJob));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    await user.click(within(comparison).getByRole("button", { name: "Mark reviewed" }));
+
+    expect(await within(comparison).findByText("Reviewed")).toBeInTheDocument();
+    expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Training review completed")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[4][1]).toMatchObject({ method: "PUT" });
   });
 
   it("records a selected answer automatically when recommendation is requested", async () => {
@@ -708,6 +746,7 @@ describe("App", () => {
       recommended_sizing: 7.5,
       outcome: "match" as const,
       recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
     };
     const reviewQueue = [{
       job_id: "review-job",
@@ -720,6 +759,7 @@ describe("App", () => {
       recommended_sizing: 7.5,
       outcome: "different" as const,
       recorded_at: "2026-07-20T12:00:00Z",
+      reviewed_at: null,
     }, {
       job_id: "size-job",
       original_filename: "size.png",
@@ -731,6 +771,7 @@ describe("App", () => {
       recommended_sizing: 6,
       outcome: "same_action" as const,
       recorded_at: "2026-07-20T11:00:00Z",
+      reviewed_at: null,
     }];
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({

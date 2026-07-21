@@ -216,6 +216,7 @@ class TrainingRecentHand(BaseModel):
     recommended_sizing: float | None = Field(default=None, ge=0)
     outcome: Literal["match", "same_action", "different"]
     recorded_at: datetime
+    reviewed_at: datetime | None = None
 
 
 class TrainingProgress(BaseModel):
@@ -244,6 +245,7 @@ class JobRecord(BaseModel):
     approved_state: CanonicalState | None = None
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
+    training_reviewed_at: datetime | None = None
     benchmark_included: bool = False
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

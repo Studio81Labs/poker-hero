@@ -22,6 +22,7 @@ def reviewed_job(
     recorded_at: datetime,
     decision_sizing: float | None = None,
     recommended_sizing: float | None = None,
+    training_reviewed_at: datetime | None = None,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -46,6 +47,7 @@ def reviewed_job(
             confidence=0.8,
             explanation="Test recommendation",
         ),
+        training_reviewed_at=training_reviewed_at,
     )
 
 
@@ -148,6 +150,37 @@ def test_summarize_training_limits_review_queue_independently() -> None:
     assert progress.needs_review_hands == 4
     assert len(progress.recent_hands) == 1
     assert [hand.job_id for hand in progress.review_queue] == [f"{3:032x}", f"{2:032x}"]
+
+
+def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> None:
+    completed_at = datetime(2026, 7, 10, tzinfo=timezone.utc)
+    jobs = [
+        reviewed_job(
+            "7" * 32,
+            "turn",
+            "raise",
+            "call",
+            datetime(2026, 7, 7, tzinfo=timezone.utc),
+            decision_sizing=5,
+            training_reviewed_at=completed_at,
+        ),
+        reviewed_job(
+            "8" * 32,
+            "river",
+            "bet",
+            "bet",
+            datetime(2026, 7, 8, tzinfo=timezone.utc),
+            decision_sizing=5,
+            recommended_sizing=6,
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.reviewed_hands == 2
+    assert progress.needs_review_hands == 1
+    assert [hand.job_id for hand in progress.review_queue] == ["8" * 32]
+    assert progress.recent_hands[1].reviewed_at == completed_at
 
 
 def test_summarize_training_applies_sizing_tolerance() -> None:

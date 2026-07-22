@@ -110,7 +110,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with opener-to-hero matchup defense boundaries, solves supported heads-up postflop trees, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with opener-to-hero and opening-size-aware defense boundaries, solves supported heads-up postflop trees, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -148,8 +148,10 @@ instead of guessing.
 For preflop single-open charts, structured opener position and total opening
 size take precedence over free-text action context. Existing approved hands may
 fall back to conservative action-text parsing. Defense ranges must use the
-resolved opener and hero positions instead of a single averaged response range.
-Contradictory structured amounts, hidden callers, later aggression, or
+resolved opener and hero positions instead of a single averaged response range,
+then tighten or widen transparently for supported 2-4 BB total opening sizes.
+The resolved total must agree with the amount to call plus any hero blind.
+Contradictory or unsupported amounts, hidden callers, later aggression, or
 implausible pot composition must decline the chart rather than inventing action
 history.
 

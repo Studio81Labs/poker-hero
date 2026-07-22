@@ -87,7 +87,8 @@ NON_OPEN_AGGRESSION_PATTERN = re.compile(
 )
 MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
-MAX_SINGLE_OPEN_CALL_BB = 4.0
+MIN_SINGLE_OPEN_SIZE_BB = 2.0
+MAX_SINGLE_OPEN_SIZE_BB = 4.0
 MONEY_TOLERANCE_BB = 0.05
 
 
@@ -116,7 +117,7 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
             return False
         pot_size = state.pot_size or 0
         return MIN_BLIND_ONLY_POT_BB <= pot_size <= MAX_BLIND_ONLY_POT_BB
-    if state.facing_action != "raise" or current_bet > MAX_SINGLE_OPEN_CALL_BB:
+    if state.facing_action != "raise":
         return False
 
     opener_position = opening_raise_position(
@@ -127,10 +128,17 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
         return False
     if POSITION_ACTION_ORDER[opener_position] >= POSITION_ACTION_ORDER[position]:
         return False
-    if state.preflop_open_size is not None:
-        expected_open_size = current_bet + POSTED_BLIND_BB[position]
-        if abs(state.preflop_open_size - expected_open_size) > MONEY_TOLERANCE_BB:
-            return False
+    opener_size = resolve_opening_raise_size(
+        action_context=state.action_context,
+        explicit_size=state.preflop_open_size,
+        amount_to_call=current_bet,
+        hero_position=position,
+    )
+    expected_open_size = current_bet + POSTED_BLIND_BB[position]
+    if not MIN_SINGLE_OPEN_SIZE_BB <= opener_size <= MAX_SINGLE_OPEN_SIZE_BB:
+        return False
+    if abs(opener_size - expected_open_size) > MONEY_TOLERANCE_BB:
+        return False
 
     pot_size = state.pot_size or 0
     dead_money = pot_size - current_bet
@@ -157,6 +165,21 @@ def opening_raise_size(action_context: str | None) -> float | None:
     normalized = " ".join(action_context.lower().replace("-", " ").split())
     match = POSITION_OPEN_RAISE_SIZE_PATTERN.search(normalized)
     return float(match.group("size")) if match is not None else None
+
+
+def resolve_opening_raise_size(
+    *,
+    action_context: str | None,
+    explicit_size: float | None,
+    amount_to_call: float,
+    hero_position: Position,
+) -> float:
+    if explicit_size is not None:
+        return explicit_size
+    parsed_size = opening_raise_size(action_context)
+    if parsed_size is not None:
+        return parsed_size
+    return amount_to_call + POSTED_BLIND_BB[hero_position]
 
 
 def _has_unsupported_action_history(action_context: str | None) -> bool:

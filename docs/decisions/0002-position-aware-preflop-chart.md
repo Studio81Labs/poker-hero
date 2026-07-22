@@ -24,7 +24,9 @@ unopened pots whose size suggests missing action. Those states continue to the
 existing range/EV fallback. Explanations must call this a transparent training
 chart, not a solved preflop game tree. Supported chart routing is independent
 of the postflop solver's fallback switch because it is a first-class local
-engine route, not a recovery from a failed postflop solve.
+engine route, not a recovery from a failed postflop solve. Facing-raise charts
+also require a plausible single-open call amount and approved action text that
+identifies an opener position acting before hero.
 
 ## Consequences
 

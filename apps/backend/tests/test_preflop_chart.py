@@ -93,14 +93,14 @@ def test_defends_medium_button_hand_against_assumed_open_raise() -> None:
             current_bet=2.5,
             pot_size=4.5,
             facing_action="raise",
-            action_context="Hero has 2.5 BB to call",
+            action_context="Cutoff raises; hero has 2.5 BB to call",
         )
     )
 
     assert result is not None
     assert result.action == "call"
     assert result.raw["scenario"] == "facing_open_raise"
-    assert any("opener position is unknown" in value for value in result.raw["assumptions"])
+    assert any("opener-position average" in value for value in result.raw["assumptions"])
 
 
 def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
@@ -112,6 +112,7 @@ def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
             pot_size=4.5,
             effective_stack=6,
             facing_action="raise",
+            action_context="Button raises to 3 BB",
         )
     )
 
@@ -137,6 +138,37 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
         request_for(("Ah", "Kd"), position="button", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", current_bet=2.5, pot_size=4.5),
+        request_for(
+            ("Ah", "Ad"),
+            position="BB",
+            current_bet=2.5,
+            pot_size=4.5,
+            facing_action="raise",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="BB",
+            current_bet=2.5,
+            pot_size=4.5,
+            facing_action="raise",
+            action_context="Opponent raises to 3 BB",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="UTG",
+            current_bet=2.5,
+            pot_size=4.5,
+            facing_action="raise",
+            action_context="Hijack raises to 3 BB",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="cutoff",
+            current_bet=2.5,
+            pot_size=4.5,
+            facing_action="raise",
+            action_context="Button raises to 3 BB",
+        ),
         request_for(("Ah", "Kd"), position="button", action_context="UTG limp, hero to act"),
         request_for(
             ("Ah", "Kd"),
@@ -153,6 +185,14 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=12,
             facing_action="raise",
             action_context="Hero faces a 3-bet",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=8,
+            pot_size=12,
+            facing_action="raise",
+            action_context="UTG raises to 9 BB",
         ),
         request_for(
             ("Ah", "Kd"),

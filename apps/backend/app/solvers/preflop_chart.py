@@ -123,8 +123,8 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         tier=tier,
         policy_fraction=boundary,
         assumptions=[
-            "The amount to call is treated as one open raise with no callers or prior hero action.",
-            "The opener position is unknown, so the defense chart uses a conservative position average.",
+            "The approved action context is treated as one open raise with no callers or prior hero action.",
+            "The defense chart uses a conservative opener-position average.",
             "The chart models a six-max chip-EV training spot before rake.",
         ],
     )

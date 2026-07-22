@@ -26,7 +26,9 @@ chart, not a solved preflop game tree. Supported chart routing is independent
 of the postflop solver's fallback switch because it is a first-class local
 engine route, not a recovery from a failed postflop solve. Facing-raise charts
 also require a plausible single-open call amount and approved action text that
-identifies an opener position acting before hero.
+identifies an opener position acting before hero. Explicitly selecting the
+`local_ev` engine bypasses chart routing and preserves the configured provider
+contract.
 
 ## Consequences
 

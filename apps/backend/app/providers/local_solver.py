@@ -114,7 +114,7 @@ class LocalSolverProvider:
         unsupported_reason = self._postflop_unsupported_reason(request)
         if unsupported_reason is not None:
             if supports_preflop_chart(request):
-                command, cwd = self._ev_command()
+                command, cwd = self._ev_command(preflop_chart_enabled=True)
                 return command, cwd, unsupported_reason
             if not self.settings.postflop_solver_fallback_enabled:
                 raise ProviderInputError(unsupported_reason)
@@ -173,8 +173,11 @@ class LocalSolverProvider:
         return None
 
     @staticmethod
-    def _ev_command() -> tuple[list[str], Path]:
-        return [sys.executable, "-m", "app.solvers.ev_solver_cli"], Path(__file__).resolve().parents[2]
+    def _ev_command(*, preflop_chart_enabled: bool = False) -> tuple[list[str], Path]:
+        command = [sys.executable, "-m", "app.solvers.ev_solver_cli"]
+        if preflop_chart_enabled:
+            command.append("--preflop-chart")
+        return command, Path(__file__).resolve().parents[2]
 
     @staticmethod
     def _parse_command(value: str, field_name: str) -> list[str]:

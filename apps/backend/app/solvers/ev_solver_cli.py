@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import random
 import sys
@@ -55,12 +56,14 @@ class Candidate:
     called_equity: float | None = None
 
 
-def recommend(raw_request: str) -> RecommendationResult:
+def recommend(raw_request: str, *, preflop_chart_enabled: bool = False) -> RecommendationResult:
     request = RecommendationRequest.model_validate_json(raw_request)
-    return solve(request)
+    return solve(request, preflop_chart_enabled=preflop_chart_enabled)
 
 
-def solve(request: RecommendationRequest) -> RecommendationResult:
+def solve(
+    request: RecommendationRequest, *, preflop_chart_enabled: bool = False
+) -> RecommendationResult:
     state = request.state
     hero_cards = state.hero_cards
     board_cards = state.board_cards
@@ -71,7 +74,7 @@ def solve(request: RecommendationRequest) -> RecommendationResult:
     effective_stack = max(0.0, state.effective_stack or max(20.0, pot_size * 8))
     facing_bet = current_bet > 0
 
-    if street == "preflop":
+    if preflop_chart_enabled and street == "preflop":
         chart_result = solve_preflop_chart(request)
         if chart_result is not None:
             return chart_result
@@ -602,8 +605,15 @@ def _seed(
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the bundled local range/EV engine")
+    parser.add_argument(
+        "--preflop-chart",
+        action="store_true",
+        help="route eligible preflop states through the position-aware chart",
+    )
+    args = parser.parse_args()
     try:
-        result = recommend(sys.stdin.read())
+        result = recommend(sys.stdin.read(), preflop_chart_enabled=args.preflop_chart)
     except ValidationError as exc:
         print(f"Invalid solver request: {exc}", file=sys.stderr)
         return 2

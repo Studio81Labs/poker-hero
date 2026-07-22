@@ -16,6 +16,7 @@ def request_for(
     current_bet: float = 0,
     pot_size: float = 1.5,
     effective_stack: float = 100,
+    players_in_hand: int = 6,
     facing_action: FacingAction | None = None,
     action_context: str | None = None,
 ) -> RecommendationRequest:
@@ -26,7 +27,7 @@ def request_for(
             pot_size=pot_size,
             current_bet=current_bet,
             effective_stack=effective_stack,
-            players_in_hand=6,
+            players_in_hand=players_in_hand,
             hero_position=position,
             street="preflop",
             facing_action=facing_action,
@@ -134,6 +135,7 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
     "recommendation_request",
     [
         request_for(("Ah", "Kd"), position=None),
+        request_for(("Ah", "Kd"), position="button", players_in_hand=7),
         request_for(("Ah", "Kd"), position="button", pot_size=2.5),
         request_for(("Ah", "Kd"), position="button", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),

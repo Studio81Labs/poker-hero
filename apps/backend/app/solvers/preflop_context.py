@@ -70,6 +70,8 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
     state = request.state
     if state.street != "preflop" or len(state.hero_cards) != 2 or state.board_cards:
         return False
+    if state.players_in_hand is None or not 2 <= state.players_in_hand <= 6:
+        return False
     position = normalize_position(state.hero_position)
     if position is None:
         return False

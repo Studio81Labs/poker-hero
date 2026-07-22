@@ -134,6 +134,30 @@ def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
     assert result.raw["chart_tier"] == "reraise"
 
 
+@pytest.mark.parametrize(
+    "action_context",
+    [
+        "Button opens to 2.5 BB",
+        "Button raises; hero has 1.5 BB to call",
+    ],
+)
+def test_sizes_blind_reraise_from_total_open(action_context: str) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Kh", "Ks"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context=action_context,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 7.5
+
+
 def test_checks_big_blind_when_no_amount_is_required() -> None:
     result = solve_preflop_chart(request_for(("7h", "2d"), position="BB"))
 
@@ -213,6 +237,14 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=6.5,
             facing_action="raise",
             action_context="UTG raises, CO calls, hero on button",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=2.5,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG raises, CO call, hero on button",
         ),
         request_for(
             ("Ah", "Kd"),

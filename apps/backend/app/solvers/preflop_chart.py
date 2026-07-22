@@ -5,7 +5,12 @@ from functools import lru_cache
 
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
-from app.solvers.preflop_context import Position, normalize_position, supports_preflop_chart
+from app.solvers.preflop_context import (
+    Position,
+    normalize_position,
+    opening_raise_size,
+    supports_preflop_chart,
+)
 
 RANKS = tuple("AKQJT98765432")
 RANK_INDEX = {rank: index for index, rank in enumerate(RANKS)}
@@ -35,6 +40,15 @@ POSITION_LABELS: dict[Position, str] = {
     "small_blind": "small blind",
     "big_blind": "big blind",
 }
+POSTED_BLIND_BB: dict[Position, float] = {
+    "utg": 0.0,
+    "hijack": 0.0,
+    "cutoff": 0.0,
+    "button": 0.0,
+    "small_blind": 0.5,
+    "big_blind": 1.0,
+}
+
 
 def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult | None:
     state = request.state
@@ -98,7 +112,10 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         can_reraise = top_fraction <= policy.reraise_fraction
     if can_reraise:
         action = "raise"
-        sizing = _reraise_size(current_bet, state.pot_size or 0, effective_stack)
+        opener_size = opening_raise_size(state.action_context)
+        if opener_size is None:
+            opener_size = current_bet + POSTED_BLIND_BB[position]
+        sizing = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
         tier = "reraise"
         boundary = policy.reraise_fraction
     elif top_fraction <= policy.continue_fraction:
@@ -181,8 +198,8 @@ def _open_size(effective_stack: float) -> float:
     return round(min(2.5, effective_stack), 2) if effective_stack > 0 else 2.5
 
 
-def _reraise_size(current_bet: float, pot_size: float, effective_stack: float) -> float:
-    target = max(current_bet * 3, pot_size * 1.1)
+def _reraise_size(opener_size: float, pot_size: float, effective_stack: float) -> float:
+    target = max(opener_size * 3, pot_size * 1.1)
     return round(min(target, effective_stack), 2)
 
 

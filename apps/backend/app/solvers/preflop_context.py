@@ -41,10 +41,10 @@ POSITION_REFERENCE = (
     r"under the gun|early position|middle position|small blind|big blind|"
     r"utg|ep|hijack|hj|mp|cutoff|co|button|btn|dealer|sb|bb"
 )
+OPEN_RAISE_ACTION_REFERENCE = r"(?:open(?:s|ed)?|(?:open\s+)?rais(?:e|es|ed))"
 POSITION_OPEN_RAISE_PATTERNS = (
     re.compile(
-        rf"\b(?P<position>{POSITION_REFERENCE})\b\s+"
-        rf"(?:open(?:s|ed)?|(?:open\s+)?rais(?:e|es|ed))\b",
+        rf"\b(?P<position>{POSITION_REFERENCE})\b\s+{OPEN_RAISE_ACTION_REFERENCE}\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -52,7 +52,13 @@ POSITION_OPEN_RAISE_PATTERNS = (
         re.IGNORECASE,
     ),
 )
+POSITION_OPEN_RAISE_SIZE_PATTERN = re.compile(
+    rf"\b(?:{POSITION_REFERENCE})\b\s+{OPEN_RAISE_ACTION_REFERENCE}\b\s+to\s+"
+    r"(?P<size>\d+(?:\.\d+)?)\s*bb\b",
+    re.IGNORECASE,
+)
 CALLER_ACTION_PATTERN = re.compile(
+    rf"\b(?:{POSITION_REFERENCE})\b\s+call\b|"
     r"\b(?:calls|called|callers?|overcall(?:s|ed|ing)?|"
     r"cold call(?:s|ed|ing)?|flat(?:s|ted|ting)?)\b",
     re.IGNORECASE,
@@ -114,6 +120,14 @@ def normalize_position(value: str | None) -> Position | None:
         return None
     normalized = " ".join(value.lower().replace("_", " ").replace("-", " ").split())
     return POSITION_ALIASES.get(normalized)
+
+
+def opening_raise_size(action_context: str | None) -> float | None:
+    if action_context is None:
+        return None
+    normalized = " ".join(action_context.lower().replace("-", " ").split())
+    match = POSITION_OPEN_RAISE_SIZE_PATTERN.search(normalized)
+    return float(match.group("size")) if match is not None else None
 
 
 def _has_unsupported_action_history(action_context: str | None) -> bool:

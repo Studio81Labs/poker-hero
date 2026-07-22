@@ -15,9 +15,10 @@ general preflop tree solve without inventing inputs.
 Route preflop states with two hero cards, a recognized six-max position, and an
 unambiguous first-in or single-open-raise context to a local training chart. The
 chart orders all 169 starting-hand classes with explicit playability
-adjustments, then applies conservative position-specific open, continue, and
-reraise boundaries. It returns the normalized hand class, position, scenario,
-boundary, assumptions, and candidate frequencies as recommendation evidence.
+adjustments, then applies conservative position-specific opening boundaries and
+opener-to-hero matchup boundaries for continuing and reraising. It returns the
+normalized hand class, positions, scenario, modeled opening range, response
+boundaries, assumptions, and candidate frequencies as recommendation evidence.
 
 The chart declines limped pots, 3-bet or later action, missing positions, and
 unopened pots whose size suggests missing action. Those states continue to the
@@ -33,12 +34,13 @@ contract.
 ## Consequences
 
 - Supported preflop recommendations use legal preflop actions and account for
-  hero position.
+  hero and opener position.
 - Ambiguous screenshots remain reviewable and retain a functional fallback.
 - The policy is deterministic, testable, and replaceable behind the existing
   provider boundary.
-- Accurate limper, opener-position, 3-bet, ante, and tournament modeling still
+- Accurate limper, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
 
 ADR 0003 later adds structured opener position and opening size to the canonical
-state while preserving this chart's conservative text fallback.
+state while preserving this chart's conservative text fallback. Those structured
+fields also make matchup-specific defense deterministic after manual review.

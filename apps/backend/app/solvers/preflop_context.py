@@ -36,6 +36,14 @@ POSITION_ACTION_ORDER: dict[Position, int] = {
     "small_blind": 4,
     "big_blind": 5,
 }
+POSTED_BLIND_BB: dict[Position, float] = {
+    "utg": 0.0,
+    "hijack": 0.0,
+    "cutoff": 0.0,
+    "button": 0.0,
+    "small_blind": 0.5,
+    "big_blind": 1.0,
+}
 
 POSITION_REFERENCE = (
     r"under the gun|early position|middle position|small blind|big blind|"
@@ -80,7 +88,6 @@ NON_OPEN_AGGRESSION_PATTERN = re.compile(
 MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MAX_SINGLE_OPEN_CALL_BB = 4.0
-MAX_SINGLE_OPEN_DEAD_MONEY_BB = 4.0
 
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
@@ -108,7 +115,12 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
     pot_size = state.pot_size or 0
     dead_money = pot_size - current_bet
-    if not MIN_BLIND_ONLY_POT_BB <= dead_money <= MAX_SINGLE_OPEN_DEAD_MONEY_BB:
+    posted_blind = POSTED_BLIND_BB[position]
+    if not (
+        MIN_BLIND_ONLY_POT_BB + posted_blind
+        <= dead_money
+        <= MAX_BLIND_ONLY_POT_BB + posted_blind
+    ):
         return False
 
     opener_position = _opening_raise_position(state.action_context)

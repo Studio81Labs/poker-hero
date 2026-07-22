@@ -103,7 +103,7 @@ def test_defends_medium_button_hand_against_assumed_open_raise(
             ("Ah", "Jd"),
             position="button",
             current_bet=2.5,
-            pot_size=4.5,
+            pot_size=4,
             facing_action="raise",
             action_context=action_context,
         )
@@ -120,7 +120,7 @@ def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
         request_for(
             ("Kh", "Ks"),
             position="big blind",
-            current_bet=2.5,
+            current_bet=2,
             pot_size=4.5,
             effective_stack=6,
             facing_action="raise",
@@ -205,6 +205,14 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=2.5,
             facing_action="raise",
             action_context="CO opens to 2.5 BB",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="button",
+            current_bet=2.5,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG raises to 2.5 BB",
         ),
         request_for(
             ("Ah", "Ad"),

@@ -6,6 +6,7 @@ from functools import lru_cache
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
+    POSTED_BLIND_BB,
     Position,
     normalize_position,
     opening_raise_size,
@@ -39,14 +40,6 @@ POSITION_LABELS: dict[Position, str] = {
     "button": "button",
     "small_blind": "small blind",
     "big_blind": "big blind",
-}
-POSTED_BLIND_BB: dict[Position, float] = {
-    "utg": 0.0,
-    "hijack": 0.0,
-    "cutoff": 0.0,
-    "button": 0.0,
-    "small_blind": 0.5,
-    "big_blind": 1.0,
 }
 
 

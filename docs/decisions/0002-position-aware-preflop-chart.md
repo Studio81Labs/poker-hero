@@ -49,6 +49,8 @@ contract.
   check, so contradictory call amounts decline chart routing.
 - Stack-depth adjustments are deterministic heuristics with explicit evidence;
   they are not represented as solved frequencies.
+- A stack-boosted reraise is emitted only when its capped all-in total exceeds
+  the opening size; otherwise the hand continues through the call/fold boundary.
 - Accurate limper, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
 

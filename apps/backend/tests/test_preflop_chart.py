@@ -459,6 +459,36 @@ def test_big_blind_reraise_range_accounts_for_stack_depth(
     assert result.raw["reraise_fraction"] == expected_fraction
 
 
+@pytest.mark.parametrize(
+    ("effective_stack", "expected_action", "expected_sizing"),
+    [
+        (2.0, "call", None),
+        (2.6, "raise", 2.6),
+    ],
+)
+def test_short_stack_reraise_requires_a_total_above_the_open(
+    effective_stack: float,
+    expected_action: str,
+    expected_sizing: float | None,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Jd"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            effective_stack=effective_stack,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.sizing == expected_sizing
+
+
 def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
     result = solve_preflop_chart(
         request_for(

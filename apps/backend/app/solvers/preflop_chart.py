@@ -199,14 +199,16 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         size_policy,
         stack_policy,
     )
+    reraise_size = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
 
-    if effective_stack <= current_bet:
-        can_reraise = False
-    else:
-        can_reraise = top_fraction <= defense_policy.reraise_fraction
+    can_reraise = (
+        effective_stack > current_bet
+        and reraise_size > opener_size
+        and top_fraction <= defense_policy.reraise_fraction
+    )
     if can_reraise:
         action = "raise"
-        sizing = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
+        sizing = reraise_size
         tier = "reraise"
         boundary = defense_policy.reraise_fraction
     elif top_fraction <= defense_policy.continue_fraction:

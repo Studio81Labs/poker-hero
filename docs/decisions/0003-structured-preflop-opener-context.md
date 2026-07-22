@@ -14,8 +14,9 @@ reconstruct blind action from pot and call amounts.
 Add optional `preflop_opener_position` and `preflop_open_size` fields to detected
 and canonical state. The review UI exposes them only when the hand is preflop and
 hero faces a raise. The chart prefers structured values, validates the opening
-size against the amount to call and hero's posted blind, and records resolved
-opener evidence in recommendation metadata.
+size against the amount to call and hero's posted blind, applies opener-to-hero
+matchup response boundaries, and records resolved opener and policy evidence in
+recommendation metadata.
 
 Free-text parsing remains a fallback for persisted jobs and schema-version 1
 datasets that predate these fields. Dataset exports omit unlabeled optional

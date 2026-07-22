@@ -2,11 +2,14 @@ import pytest
 
 from app.models import CanonicalState, Card, FacingAction, RecommendationRequest
 from app.solvers.preflop_chart import (
+    DEFENSE_POLICIES,
+    POSITION_POLICIES,
     canonical_hand_class,
     hand_top_fraction,
     normalize_position,
     solve_preflop_chart,
 )
+from app.solvers.preflop_context import POSITION_ACTION_ORDER
 
 
 def request_for(
@@ -71,6 +74,21 @@ def test_chart_ranking_accounts_for_suited_wheel_ace_playability() -> None:
     assert hand_top_fraction(suited_ace) < hand_top_fraction(weak_offsuit)
 
 
+def test_defense_policies_cover_every_legal_position_matchup() -> None:
+    expected_matchups = {
+        (opener, hero)
+        for opener in POSITION_POLICIES
+        for hero in POSITION_POLICIES
+        if POSITION_ACTION_ORDER[opener] < POSITION_ACTION_ORDER[hero]
+    }
+
+    assert set(DEFENSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.reraise_fraction <= policy.continue_fraction <= 1
+        for policy in DEFENSE_POLICIES.values()
+    )
+
+
 def test_opens_premium_hand_from_early_position() -> None:
     result = solve_preflop_chart(request_for(("Ah", "Ad"), position="UTG"))
 
@@ -116,7 +134,72 @@ def test_defends_medium_button_hand_against_assumed_open_raise(
     assert result is not None
     assert result.action == "call"
     assert result.raw["scenario"] == "facing_open_raise"
-    assert any("opener-position average" in value for value in result.raw["assumptions"])
+    assert result.raw["policy_source"] == "hero_opener_matchup"
+    assert any("matchup-specific" in value for value in result.raw["assumptions"])
+
+
+@pytest.mark.parametrize(
+    ("opener_position", "expected_action", "expected_continue_fraction"),
+    [
+        ("utg", "fold", 0.20),
+        ("button", "call", 0.40),
+    ],
+)
+def test_big_blind_continue_range_accounts_for_opener_position(
+    opener_position: str,
+    expected_action: str,
+    expected_continue_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "9d"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context="Hero faces 1.5 BB to call",
+            preflop_opener_position=opener_position,
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["continue_fraction"] == expected_continue_fraction
+    assert result.raw["opener_position"] == opener_position
+
+
+@pytest.mark.parametrize(
+    ("opener_position", "expected_action", "expected_reraise_fraction"),
+    [
+        ("utg", "call", 0.06),
+        ("button", "raise", 0.12),
+    ],
+)
+def test_big_blind_reraise_range_accounts_for_opener_position(
+    opener_position: str,
+    expected_action: str,
+    expected_reraise_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Qd"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context="Hero faces 1.5 BB to call",
+            preflop_opener_position=opener_position,
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["reraise_fraction"] == expected_reraise_fraction
+    assert result.raw["opener_open_fraction"] == (
+        0.17 if opener_position == "utg" else 0.45
+    )
 
 
 def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:

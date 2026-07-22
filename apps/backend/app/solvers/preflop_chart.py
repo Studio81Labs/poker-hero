@@ -21,17 +21,42 @@ RANK_INDEX = {rank: index for index, rank in enumerate(RANKS)}
 @dataclass(frozen=True)
 class PositionPolicy:
     open_fraction: float
+
+
+@dataclass(frozen=True)
+class DefensePolicy:
     continue_fraction: float
     reraise_fraction: float
 
 
 POSITION_POLICIES: dict[Position, PositionPolicy] = {
-    "utg": PositionPolicy(0.17, 0.08, 0.04),
-    "hijack": PositionPolicy(0.22, 0.11, 0.05),
-    "cutoff": PositionPolicy(0.30, 0.16, 0.07),
-    "button": PositionPolicy(0.45, 0.23, 0.09),
-    "small_blind": PositionPolicy(0.40, 0.20, 0.09),
-    "big_blind": PositionPolicy(0.0, 0.30, 0.08),
+    "utg": PositionPolicy(0.17),
+    "hijack": PositionPolicy(0.22),
+    "cutoff": PositionPolicy(0.30),
+    "button": PositionPolicy(0.45),
+    "small_blind": PositionPolicy(0.40),
+    "big_blind": PositionPolicy(0.0),
+}
+
+# Conservative six-max response boundaries keyed by (opener, hero). Later
+# openers permit wider continues and reraises, while cold-call-sensitive blind
+# matchups remain tighter than big-blind closes-action defense.
+DEFENSE_POLICIES: dict[tuple[Position, Position], DefensePolicy] = {
+    ("utg", "hijack"): DefensePolicy(0.10, 0.04),
+    ("utg", "cutoff"): DefensePolicy(0.12, 0.05),
+    ("utg", "button"): DefensePolicy(0.14, 0.05),
+    ("utg", "small_blind"): DefensePolicy(0.12, 0.05),
+    ("utg", "big_blind"): DefensePolicy(0.20, 0.06),
+    ("hijack", "cutoff"): DefensePolicy(0.14, 0.05),
+    ("hijack", "button"): DefensePolicy(0.17, 0.06),
+    ("hijack", "small_blind"): DefensePolicy(0.14, 0.06),
+    ("hijack", "big_blind"): DefensePolicy(0.23, 0.07),
+    ("cutoff", "button"): DefensePolicy(0.22, 0.08),
+    ("cutoff", "small_blind"): DefensePolicy(0.18, 0.08),
+    ("cutoff", "big_blind"): DefensePolicy(0.30, 0.09),
+    ("button", "small_blind"): DefensePolicy(0.24, 0.10),
+    ("button", "big_blind"): DefensePolicy(0.40, 0.12),
+    ("small_blind", "big_blind"): DefensePolicy(0.48, 0.13),
 }
 
 POSITION_LABELS: dict[Position, str] = {
@@ -106,6 +131,9 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     )
     if opener_position is None:
         return None
+    defense_policy = DEFENSE_POLICIES.get((opener_position, position))
+    if defense_policy is None:
+        return None
     opener_size = state.preflop_open_size
     if opener_size is None:
         opener_size = opening_raise_size(state.action_context)
@@ -115,22 +143,22 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     if effective_stack <= current_bet:
         can_reraise = False
     else:
-        can_reraise = top_fraction <= policy.reraise_fraction
+        can_reraise = top_fraction <= defense_policy.reraise_fraction
     if can_reraise:
         action = "raise"
         sizing = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
         tier = "reraise"
-        boundary = policy.reraise_fraction
-    elif top_fraction <= policy.continue_fraction:
+        boundary = defense_policy.reraise_fraction
+    elif top_fraction <= defense_policy.continue_fraction:
         action = "call"
         sizing = None
         tier = "defend"
-        boundary = policy.continue_fraction
+        boundary = defense_policy.continue_fraction
     else:
         action = "fold"
         sizing = None
         tier = "fold"
-        boundary = policy.continue_fraction
+        boundary = defense_policy.continue_fraction
 
     return _result(
         action=action,
@@ -145,11 +173,15 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         assumptions=[
             "The approved action context is treated as one open raise with no callers or prior hero action.",
             f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
-            "The defense chart uses a conservative opener-position average.",
+            f"The defense chart uses matchup-specific {POSITION_LABELS[position]}-versus-"
+            f"{POSITION_LABELS[opener_position]} boundaries.",
+            f"The opener model uses the {POSITION_LABELS[opener_position]}'s "
+            f"{POSITION_POLICIES[opener_position].open_fraction:.0%} first-in range.",
             "The chart models a six-max chip-EV training spot before rake.",
         ],
         opener_position=opener_position,
         opening_raise_size=opener_size,
+        defense_policy=defense_policy,
     )
 
 
@@ -228,6 +260,7 @@ def _result(
     assumptions: list[str],
     opener_position: Position | None = None,
     opening_raise_size: float | None = None,
+    defense_policy: DefensePolicy | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
     size_text = f" to {sizing:g} BB" if sizing is not None else ""
@@ -266,6 +299,15 @@ def _result(
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
         raw["opening_raise_size"] = opening_raise_size
+    if opener_position is not None and defense_policy is not None:
+        raw.update(
+            {
+                "policy_source": "hero_opener_matchup",
+                "opener_open_fraction": POSITION_POLICIES[opener_position].open_fraction,
+                "continue_fraction": defense_policy.continue_fraction,
+                "reraise_fraction": defense_policy.reraise_fraction,
+            }
+        )
 
     return RecommendationResult(
         action=action,

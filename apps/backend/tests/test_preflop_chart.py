@@ -86,7 +86,18 @@ def test_folds_weak_unopened_button_hand() -> None:
     assert result.sizing is None
 
 
-def test_defends_medium_button_hand_against_assumed_open_raise() -> None:
+@pytest.mark.parametrize(
+    "action_context",
+    [
+        "Cutoff raises; hero has 2.5 BB to call",
+        "Cutoff opens to 2.5 BB",
+        "Cutoff opened to 2.5 BB",
+        "Cutoff open raises to 2.5 BB",
+    ],
+)
+def test_defends_medium_button_hand_against_assumed_open_raise(
+    action_context: str,
+) -> None:
     result = solve_preflop_chart(
         request_for(
             ("Ah", "Jd"),
@@ -94,7 +105,7 @@ def test_defends_medium_button_hand_against_assumed_open_raise() -> None:
             current_bet=2.5,
             pot_size=4.5,
             facing_action="raise",
-            action_context="Cutoff raises; hero has 2.5 BB to call",
+            action_context=action_context,
         )
     )
 
@@ -142,6 +153,13 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=1.5,
             facing_action="raise",
             action_context="UTG raises",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=0,
+            pot_size=1.5,
+            action_context="UTG opens to 2.5 BB",
         ),
         request_for(("Ah", "Kd"), position="button", players_in_hand=7),
         request_for(("Ah", "Kd"), position="button", pot_size=2.5),
@@ -203,6 +221,14 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=6.5,
             facing_action="raise",
             action_context="UTG raises, button raises to 4 BB",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="BB",
+            current_bet=3,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG opens, button opens to 4 BB",
         ),
         request_for(
             ("Ah", "Kd"),

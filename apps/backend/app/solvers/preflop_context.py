@@ -43,7 +43,8 @@ POSITION_REFERENCE = (
 )
 POSITION_OPEN_RAISE_PATTERNS = (
     re.compile(
-        rf"\b(?P<position>{POSITION_REFERENCE})\b\s+(?:open\s+)?rais(?:e|es|ed)\b",
+        rf"\b(?P<position>{POSITION_REFERENCE})\b\s+"
+        rf"(?:open(?:s|ed)?|(?:open\s+)?rais(?:e|es|ed))\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -61,7 +62,10 @@ LATER_RAISE_PATTERN = re.compile(
     r"|\bre\s*rais(?:e|es|ed)\b",
     re.IGNORECASE,
 )
-RAISE_ACTION_PATTERN = re.compile(r"\brais(?:e|es|ed)\b", re.IGNORECASE)
+RAISE_ACTION_PATTERN = re.compile(
+    r"\b(?:open\s+rais(?:e|es|ed)|open(?:s|ed)?|rais(?:e|es|ed))\b",
+    re.IGNORECASE,
+)
 NON_OPEN_AGGRESSION_PATTERN = re.compile(
     r"\ball\s*in\b|\bjam(?:s|med|ming)?\b|\bshov(?:e|es|ed|ing)\b|"
     r"\bsqueez(?:e|es|ed|ing)\b",

@@ -19,6 +19,8 @@ def request_for(
     players_in_hand: int = 6,
     facing_action: FacingAction | None = None,
     action_context: str | None = None,
+    preflop_opener_position: str | None = None,
+    preflop_open_size: float | None = None,
 ) -> RecommendationRequest:
     return RecommendationRequest(
         provider="local_solver",
@@ -29,6 +31,8 @@ def request_for(
             effective_stack=effective_stack,
             players_in_hand=players_in_hand,
             hero_position=position,
+            preflop_opener_position=preflop_opener_position,
+            preflop_open_size=preflop_open_size,
             street="preflop",
             facing_action=facing_action,
             action_context=action_context,
@@ -175,6 +179,27 @@ def test_supports_big_blind_defense_against_small_blind_open() -> None:
     assert result.sizing == 9
 
 
+def test_prefers_structured_preflop_opener_context() -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Kh", "Ks"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context="Hero faces 1.5 BB to call into a 4 BB pot",
+            preflop_opener_position="button",
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 7.5
+    assert result.raw["opener_position"] == "button"
+    assert result.raw["opening_raise_size"] == 2.5
+
+
 def test_checks_big_blind_when_no_amount_is_required() -> None:
     result = solve_preflop_chart(request_for(("7h", "2d"), position="BB"))
 
@@ -204,6 +229,11 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
         ),
         request_for(("Ah", "Kd"), position="button", players_in_hand=7),
         request_for(("Ah", "Ad"), position="button", effective_stack=0),
+        request_for(
+            ("Ah", "Ad"),
+            position="button",
+            preflop_opener_position="cutoff",
+        ),
         request_for(("Ah", "Kd"), position="button", pot_size=2.5),
         request_for(("Ah", "Kd"), position="button", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),
@@ -230,6 +260,15 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=6.5,
             facing_action="raise",
             action_context="UTG raises to 2.5 BB",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=3,
         ),
         request_for(
             ("Ah", "Ad"),

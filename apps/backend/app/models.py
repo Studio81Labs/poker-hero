@@ -86,6 +86,8 @@ class DetectedState(BaseModel):
     effective_stack: float | None = Field(default=None, ge=0)
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
+    preflop_opener_position: str | None = Field(default=None)
+    preflop_open_size: float | None = Field(default=None, gt=0)
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)
@@ -130,6 +132,8 @@ class CanonicalState(BaseModel):
     effective_stack: float | None = Field(default=None, ge=0)
     players_in_hand: int | None = Field(default=None, ge=1)
     hero_position: str | None = Field(default=None)
+    preflop_opener_position: str | None = Field(default=None)
+    preflop_open_size: float | None = Field(default=None, gt=0)
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)
@@ -162,6 +166,8 @@ class CanonicalState(BaseModel):
             effective_stack=state.effective_stack,
             players_in_hand=state.players_in_hand,
             hero_position=state.hero_position,
+            preflop_opener_position=state.preflop_opener_position,
+            preflop_open_size=state.preflop_open_size,
             street=state.street,
             facing_action=state.facing_action,
             action_context=state.action_context,

@@ -177,6 +177,11 @@ def test_detected_state_rejects_unknown_facing_action() -> None:
         DetectedState(facing_action="call")
 
 
+def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
+    with pytest.raises(ValidationError):
+        CanonicalState(preflop_open_size=0)
+
+
 def test_canonical_state_copies_detected_values() -> None:
     detected = DetectedState(
         hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
@@ -187,6 +192,8 @@ def test_canonical_state_copies_detected_values() -> None:
         effective_stack=96.0,
         players_in_hand=3,
         hero_position="button",
+        preflop_opener_position="cutoff",
+        preflop_open_size=2.5,
         street="flop",
         facing_action="bet",
         action_context="Cutoff bet 2.5 into 12.5",
@@ -205,6 +212,8 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.pot_size == 12.5
     assert canonical.hero_stack == 97.5
     assert canonical.facing_action == "bet"
+    assert canonical.preflop_opener_position == "cutoff"
+    assert canonical.preflop_open_size == 2.5
     assert canonical.user_approved is False
 
 

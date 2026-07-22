@@ -9,6 +9,7 @@ from app.solvers.preflop_context import (
     POSTED_BLIND_BB,
     Position,
     normalize_position,
+    opening_raise_position,
     opening_raise_size,
     supports_preflop_chart,
 )
@@ -99,15 +100,24 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     if state.facing_action != "raise":
         return None
 
+    opener_position = opening_raise_position(
+        state.action_context,
+        state.preflop_opener_position,
+    )
+    if opener_position is None:
+        return None
+    opener_size = state.preflop_open_size
+    if opener_size is None:
+        opener_size = opening_raise_size(state.action_context)
+    if opener_size is None:
+        opener_size = current_bet + POSTED_BLIND_BB[position]
+
     if effective_stack <= current_bet:
         can_reraise = False
     else:
         can_reraise = top_fraction <= policy.reraise_fraction
     if can_reraise:
         action = "raise"
-        opener_size = opening_raise_size(state.action_context)
-        if opener_size is None:
-            opener_size = current_bet + POSTED_BLIND_BB[position]
         sizing = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
         tier = "reraise"
         boundary = policy.reraise_fraction
@@ -134,9 +144,12 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         policy_fraction=boundary,
         assumptions=[
             "The approved action context is treated as one open raise with no callers or prior hero action.",
+            f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
             "The defense chart uses a conservative opener-position average.",
             "The chart models a six-max chip-EV training spot before rake.",
         ],
+        opener_position=opener_position,
+        opening_raise_size=opener_size,
     )
 
 
@@ -213,6 +226,8 @@ def _result(
     tier: str,
     policy_fraction: float | None,
     assumptions: list[str],
+    opener_position: Position | None = None,
+    opening_raise_size: float | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
     size_text = f" to {sizing:g} BB" if sizing is not None else ""
@@ -232,6 +247,26 @@ def _result(
         }
         for candidate in actions
     ]
+    raw: dict[str, object] = {
+        "provider": "local_solver",
+        "engine": "preflop_chart_v1",
+        "stage": "preflop",
+        "hand_class": hand_class,
+        "position": position,
+        "scenario": scenario,
+        "chart_tier": tier,
+        "hand_top_fraction": top_fraction,
+        "policy_fraction": policy_fraction,
+        "ranking_method": "starting_hand_score_with_playability_adjustments",
+        "assumptions": assumptions,
+        "candidates": candidates,
+        "process_boundary": "stdin_stdout_json",
+    }
+    if opener_position is not None:
+        raw["opener_position"] = opener_position
+    if opening_raise_size is not None:
+        raw["opening_raise_size"] = opening_raise_size
+
     return RecommendationResult(
         action=action,
         sizing=sizing,
@@ -242,19 +277,5 @@ def _result(
             f"{top_fraction:.1%}{range_text}. {assumption_text} This is a transparent training "
             "chart, not a solved preflop game tree."
         ),
-        raw={
-            "provider": "local_solver",
-            "engine": "preflop_chart_v1",
-            "stage": "preflop",
-            "hand_class": hand_class,
-            "position": position,
-            "scenario": scenario,
-            "chart_tier": tier,
-            "hand_top_fraction": top_fraction,
-            "policy_fraction": policy_fraction,
-            "ranking_method": "starting_hand_score_with_playability_adjustments",
-            "assumptions": assumptions,
-            "candidates": candidates,
-            "process_boundary": "stdin_stdout_json",
-        },
+        raw=raw,
     )

@@ -132,6 +132,7 @@ def build_parser_dataset_archive_from_cases(
                     "expected_state": case.expected_state.model_dump(
                         mode="json",
                         exclude={"user_approved"},
+                        exclude_none=True,
                     ),
                 }
             )

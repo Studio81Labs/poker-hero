@@ -88,6 +88,7 @@ NON_OPEN_AGGRESSION_PATTERN = re.compile(
 MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MAX_SINGLE_OPEN_CALL_BB = 4.0
+MONEY_TOLERANCE_BB = 0.05
 
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
@@ -106,18 +107,30 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
     current_bet = state.current_bet or 0
     if current_bet <= 0:
-        if state.facing_action is not None or _has_raise_action(state.action_context):
+        if (
+            state.facing_action is not None
+            or state.preflop_opener_position is not None
+            or state.preflop_open_size is not None
+            or _has_raise_action(state.action_context)
+        ):
             return False
         pot_size = state.pot_size or 0
         return MIN_BLIND_ONLY_POT_BB <= pot_size <= MAX_BLIND_ONLY_POT_BB
     if state.facing_action != "raise" or current_bet > MAX_SINGLE_OPEN_CALL_BB:
         return False
 
-    opener_position = _opening_raise_position(state.action_context)
+    opener_position = opening_raise_position(
+        state.action_context,
+        state.preflop_opener_position,
+    )
     if opener_position is None:
         return False
     if POSITION_ACTION_ORDER[opener_position] >= POSITION_ACTION_ORDER[position]:
         return False
+    if state.preflop_open_size is not None:
+        expected_open_size = current_bet + POSTED_BLIND_BB[position]
+        if abs(state.preflop_open_size - expected_open_size) > MONEY_TOLERANCE_BB:
+            return False
 
     pot_size = state.pot_size or 0
     dead_money = pot_size - current_bet
@@ -158,7 +171,12 @@ def _has_unsupported_action_history(action_context: str | None) -> bool:
     )
 
 
-def _opening_raise_position(action_context: str | None) -> Position | None:
+def opening_raise_position(
+    action_context: str | None,
+    explicit_position: str | None = None,
+) -> Position | None:
+    if explicit_position is not None:
+        return normalize_position(explicit_position)
     if action_context is None:
         return None
     normalized = " ".join(action_context.lower().replace("-", " ").split())

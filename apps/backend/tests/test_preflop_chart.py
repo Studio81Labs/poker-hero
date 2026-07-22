@@ -133,6 +133,7 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
     "recommendation_request",
     [
         request_for(("Ah", "Kd"), position=None),
+        request_for(("Ah", "Kd"), position="button", pot_size=2.5),
         request_for(("Ah", "Kd"), position="button", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", current_bet=2.5, pot_size=4.5),
@@ -152,6 +153,22 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             pot_size=12,
             facing_action="raise",
             action_context="Hero faces a 3-bet",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=24,
+            pot_size=36,
+            facing_action="raise",
+            action_context="Hero faces a five-bet",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=8,
+            pot_size=12,
+            facing_action="raise",
+            action_context="Small blind re-raises, hero to act",
         ),
     ],
 )

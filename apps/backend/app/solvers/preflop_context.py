@@ -33,6 +33,13 @@ CALLER_ACTION_PATTERN = re.compile(
     r"\b(?:calls|called|callers?|overcalls?|cold calls?|flats?)\b",
     re.IGNORECASE,
 )
+LATER_RAISE_PATTERN = re.compile(
+    r"\b(?:(?:[3-9]|\d{2,})|three|four|five|six|seven|eight|nine)\s*bets?\b"
+    r"|\bre\s*raises?\b",
+    re.IGNORECASE,
+)
+MIN_BLIND_ONLY_POT_BB = 1.25
+MAX_BLIND_ONLY_POT_BB = 1.75
 
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
@@ -46,7 +53,8 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
     current_bet = state.current_bet or 0
     if current_bet <= 0:
-        return (state.pot_size or 0) <= 2.5
+        pot_size = state.pot_size or 0
+        return MIN_BLIND_ONLY_POT_BB <= pot_size <= MAX_BLIND_ONLY_POT_BB
     return state.facing_action == "raise"
 
 
@@ -61,7 +69,6 @@ def _has_unsupported_action_history(action_context: str | None) -> bool:
     if action_context is None:
         return False
     normalized = " ".join(action_context.lower().replace("-", " ").split())
-    compact = normalized.replace(" ", "")
-    return any(marker in compact for marker in ("3bet", "4bet", "limp")) or bool(
-        CALLER_ACTION_PATTERN.search(normalized)
+    return "limp" in normalized or bool(
+        CALLER_ACTION_PATTERN.search(normalized) or LATER_RAISE_PATTERN.search(normalized)
     )

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Literal
 
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
+from app.solvers.preflop_context import Position, normalize_position, supports_preflop_chart
 
 RANKS = tuple("AKQJT98765432")
 RANK_INDEX = {rank: index for index, rank in enumerate(RANKS)}
-Position = Literal["utg", "hijack", "cutoff", "button", "small_blind", "big_blind"]
 
 
 @dataclass(frozen=True)
@@ -37,36 +36,13 @@ POSITION_LABELS: dict[Position, str] = {
     "big_blind": "big blind",
 }
 
-POSITION_ALIASES: dict[str, Position] = {
-    "utg": "utg",
-    "under the gun": "utg",
-    "ep": "utg",
-    "early": "utg",
-    "early position": "utg",
-    "hj": "hijack",
-    "hijack": "hijack",
-    "mp": "hijack",
-    "middle": "hijack",
-    "middle position": "hijack",
-    "co": "cutoff",
-    "cutoff": "cutoff",
-    "btn": "button",
-    "button": "button",
-    "dealer": "button",
-    "sb": "small_blind",
-    "small blind": "small_blind",
-    "bb": "big_blind",
-    "big blind": "big_blind",
-}
-
-
 def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult | None:
     state = request.state
-    if state.street != "preflop" or len(state.hero_cards) != 2 or state.board_cards:
+    if not supports_preflop_chart(request):
         return None
 
     position = normalize_position(state.hero_position)
-    if position is None or _has_unsupported_action_history(state.action_context):
+    if position is None:
         return None
 
     hand_class = canonical_hand_class(state.hero_cards)
@@ -154,13 +130,6 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     )
 
 
-def normalize_position(value: str | None) -> Position | None:
-    if value is None:
-        return None
-    normalized = " ".join(value.lower().replace("_", " ").replace("-", " ").split())
-    return POSITION_ALIASES.get(normalized)
-
-
 def canonical_hand_class(cards: list[Card]) -> str:
     if len(cards) != 2:
         raise ValueError("A preflop hand class requires exactly two cards")
@@ -206,13 +175,6 @@ def _chart_score(cards: list[Card]) -> float:
     if suited and high != low and high - low <= 2:
         score += 6
     return score
-
-
-def _has_unsupported_action_history(action_context: str | None) -> bool:
-    if action_context is None:
-        return False
-    normalized = action_context.lower().replace(" ", "").replace("-", "")
-    return any(marker in normalized for marker in ("3bet", "4bet", "limp"))
 
 
 def _open_size(effective_stack: float) -> float:

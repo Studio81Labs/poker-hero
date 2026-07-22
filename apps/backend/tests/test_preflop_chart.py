@@ -93,6 +93,7 @@ def test_defends_medium_button_hand_against_assumed_open_raise() -> None:
             current_bet=2.5,
             pot_size=4.5,
             facing_action="raise",
+            action_context="Hero has 2.5 BB to call",
         )
     )
 
@@ -136,6 +137,14 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", current_bet=2.5, pot_size=4.5),
         request_for(("Ah", "Kd"), position="button", action_context="UTG limp, hero to act"),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
+            current_bet=2.5,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG raises, CO calls, hero on button",
+        ),
         request_for(
             ("Ah", "Kd"),
             position="button",

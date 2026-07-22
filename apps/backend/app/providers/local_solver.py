@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.config import Settings
 from app.models import CanonicalState, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
+from app.solvers.preflop_context import supports_preflop_chart
 
 
 class LocalSolverProvider:
@@ -112,6 +113,9 @@ class LocalSolverProvider:
 
         unsupported_reason = self._postflop_unsupported_reason(request)
         if unsupported_reason is not None:
+            if supports_preflop_chart(request):
+                command, cwd = self._ev_command()
+                return command, cwd, unsupported_reason
             if not self.settings.postflop_solver_fallback_enabled:
                 raise ProviderInputError(unsupported_reason)
             command, cwd = self._ev_command()

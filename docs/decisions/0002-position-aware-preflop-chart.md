@@ -22,7 +22,9 @@ boundary, assumptions, and candidate frequencies as recommendation evidence.
 The chart declines limped pots, 3-bet or later action, missing positions, and
 unopened pots whose size suggests missing action. Those states continue to the
 existing range/EV fallback. Explanations must call this a transparent training
-chart, not a solved preflop game tree.
+chart, not a solved preflop game tree. Supported chart routing is independent
+of the postflop solver's fallback switch because it is a first-class local
+engine route, not a recovery from a failed postflop solve.
 
 ## Consequences
 

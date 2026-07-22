@@ -230,8 +230,17 @@ def test_local_solver_can_select_bundled_ev_engine(tmp_path: Path) -> None:
     assert "requested_engine" not in result.raw
 
 
-def test_local_solver_routes_supported_preflop_spot_to_chart(tmp_path: Path) -> None:
-    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="local_solver"))
+@pytest.mark.parametrize("fallback_enabled", [True, False])
+def test_local_solver_routes_supported_preflop_spot_to_chart(
+    tmp_path: Path, fallback_enabled: bool
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=fallback_enabled,
+        )
+    )
     state = CanonicalState(
         hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
         pot_size=1.5,

@@ -57,9 +57,10 @@ CALLER_ACTION_PATTERN = re.compile(
 )
 LATER_RAISE_PATTERN = re.compile(
     r"\b(?:(?:[3-9]|\d{2,})|three|four|five|six|seven|eight|nine)\s*bets?\b"
-    r"|\bre\s*raises?\b",
+    r"|\bre\s*rais(?:e|es|ed)\b",
     re.IGNORECASE,
 )
+RAISE_ACTION_PATTERN = re.compile(r"\brais(?:e|es|ed)\b", re.IGNORECASE)
 MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MAX_SINGLE_OPEN_CALL_BB = 4.0
@@ -80,6 +81,8 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
     current_bet = state.current_bet or 0
     if current_bet <= 0:
+        if state.facing_action is not None or _has_raise_action(state.action_context):
+            return False
         pot_size = state.pot_size or 0
         return MIN_BLIND_ONLY_POT_BB <= pot_size <= MAX_BLIND_ONLY_POT_BB
     if state.facing_action != "raise" or current_bet > MAX_SINGLE_OPEN_CALL_BB:
@@ -121,3 +124,10 @@ def _opening_raise_position(action_context: str | None) -> Position | None:
         if match is not None:
             return normalize_position(match.group("position"))
     return None
+
+
+def _has_raise_action(action_context: str | None) -> bool:
+    if action_context is None:
+        return False
+    normalized = " ".join(action_context.lower().replace("-", " ").split())
+    return bool(RAISE_ACTION_PATTERN.search(normalized))

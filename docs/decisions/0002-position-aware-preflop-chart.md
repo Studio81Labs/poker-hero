@@ -16,9 +16,12 @@ Route preflop states with two hero cards, a recognized six-max position, and an
 unambiguous first-in or single-open-raise context to a local training chart. The
 chart orders all 169 starting-hand classes with explicit playability
 adjustments, then applies conservative position-specific opening boundaries and
-opener-to-hero matchup boundaries for continuing and reraising. It returns the
-normalized hand class, positions, scenario, modeled opening range, response
-boundaries, assumptions, and candidate frequencies as recommendation evidence.
+opener-to-hero matchup boundaries for continuing and reraising. Supported 2-4
+BB total opens apply ordered size bands: smaller opens widen the response ranges,
+while larger opens tighten them. It returns the normalized hand class,
+positions, scenario, modeled opening range, base and adjusted response
+boundaries, size policy, assumptions, and candidate frequencies as
+recommendation evidence.
 
 The chart declines limped pots, 3-bet or later action, missing positions, and
 unopened pots whose size suggests missing action. Those states continue to the
@@ -38,6 +41,8 @@ contract.
 - Ambiguous screenshots remain reviewable and retain a functional fallback.
 - The policy is deterministic, testable, and replaceable behind the existing
   provider boundary.
+- Parsed, structured, and reconstructed opening sizes share one consistency
+  check, so contradictory call amounts decline chart routing.
 - Accurate limper, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
 

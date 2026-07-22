@@ -6,11 +6,10 @@ from functools import lru_cache
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
-    POSTED_BLIND_BB,
     Position,
     normalize_position,
     opening_raise_position,
-    opening_raise_size,
+    resolve_opening_raise_size,
     supports_preflop_chart,
 )
 
@@ -27,6 +26,14 @@ class PositionPolicy:
 class DefensePolicy:
     continue_fraction: float
     reraise_fraction: float
+
+
+@dataclass(frozen=True)
+class OpenSizePolicy:
+    name: str
+    maximum_size: float
+    continue_multiplier: float
+    reraise_multiplier: float
 
 
 POSITION_POLICIES: dict[Position, PositionPolicy] = {
@@ -58,6 +65,15 @@ DEFENSE_POLICIES: dict[tuple[Position, Position], DefensePolicy] = {
     ("button", "big_blind"): DefensePolicy(0.40, 0.12),
     ("small_blind", "big_blind"): DefensePolicy(0.48, 0.13),
 }
+
+# The standard band preserves the 2.5 BB matchup chart. Adjacent bands make
+# modest, monotonic changes instead of pretending to solve a continuous tree.
+OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
+    OpenSizePolicy("small", 2.25, 1.10, 1.05),
+    OpenSizePolicy("standard", 2.75, 1.00, 1.00),
+    OpenSizePolicy("large", 3.25, 0.90, 0.95),
+    OpenSizePolicy("very_large", 4.00, 0.78, 0.90),
+)
 
 POSITION_LABELS: dict[Position, str] = {
     "utg": "UTG",
@@ -131,14 +147,19 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     )
     if opener_position is None:
         return None
-    defense_policy = DEFENSE_POLICIES.get((opener_position, position))
-    if defense_policy is None:
+    base_defense_policy = DEFENSE_POLICIES.get((opener_position, position))
+    if base_defense_policy is None:
         return None
-    opener_size = state.preflop_open_size
-    if opener_size is None:
-        opener_size = opening_raise_size(state.action_context)
-    if opener_size is None:
-        opener_size = current_bet + POSTED_BLIND_BB[position]
+    opener_size = resolve_opening_raise_size(
+        action_context=state.action_context,
+        explicit_size=state.preflop_open_size,
+        amount_to_call=current_bet,
+        hero_position=position,
+    )
+    size_policy = policy_for_open_size(opener_size)
+    if size_policy is None:
+        return None
+    defense_policy = adjusted_defense_policy(base_defense_policy, size_policy)
 
     if effective_stack <= current_bet:
         can_reraise = False
@@ -177,11 +198,15 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             f"{POSITION_LABELS[opener_position]} boundaries.",
             f"The opener model uses the {POSITION_LABELS[opener_position]}'s "
             f"{POSITION_POLICIES[opener_position].open_fraction:.0%} first-in range.",
+            f"The {opener_size:g} BB opening size uses the {size_policy.name.replace('_', ' ')} "
+            "open adjustment.",
             "The chart models a six-max chip-EV training spot before rake.",
         ],
         opener_position=opener_position,
         opening_raise_size=opener_size,
+        base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
+        size_policy=size_policy,
     )
 
 
@@ -246,6 +271,29 @@ def _boundary_confidence(top_fraction: float, boundary: float) -> float:
     return round(min(0.84, 0.62 + distance * 0.8), 2)
 
 
+def policy_for_open_size(opening_size: float) -> OpenSizePolicy | None:
+    return next(
+        (policy for policy in OPEN_SIZE_POLICIES if opening_size <= policy.maximum_size),
+        None,
+    )
+
+
+def adjusted_defense_policy(
+    base_policy: DefensePolicy,
+    size_policy: OpenSizePolicy,
+) -> DefensePolicy:
+    return DefensePolicy(
+        continue_fraction=round(
+            min(1.0, base_policy.continue_fraction * size_policy.continue_multiplier),
+            4,
+        ),
+        reraise_fraction=round(
+            min(1.0, base_policy.reraise_fraction * size_policy.reraise_multiplier),
+            4,
+        ),
+    )
+
+
 def _result(
     *,
     action: RecommendationAction,
@@ -260,7 +308,9 @@ def _result(
     assumptions: list[str],
     opener_position: Position | None = None,
     opening_raise_size: float | None = None,
+    base_defense_policy: DefensePolicy | None = None,
     defense_policy: DefensePolicy | None = None,
+    size_policy: OpenSizePolicy | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
     size_text = f" to {sizing:g} BB" if sizing is not None else ""
@@ -299,13 +349,23 @@ def _result(
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
         raw["opening_raise_size"] = opening_raise_size
-    if opener_position is not None and defense_policy is not None:
+    if (
+        opener_position is not None
+        and base_defense_policy is not None
+        and defense_policy is not None
+        and size_policy is not None
+    ):
         raw.update(
             {
-                "policy_source": "hero_opener_matchup",
+                "policy_source": "hero_opener_size_matchup",
                 "opener_open_fraction": POSITION_POLICIES[opener_position].open_fraction,
+                "base_continue_fraction": base_defense_policy.continue_fraction,
+                "base_reraise_fraction": base_defense_policy.reraise_fraction,
                 "continue_fraction": defense_policy.continue_fraction,
                 "reraise_fraction": defense_policy.reraise_fraction,
+                "open_size_policy": size_policy.name,
+                "continue_size_multiplier": size_policy.continue_multiplier,
+                "reraise_size_multiplier": size_policy.reraise_multiplier,
             }
         )
 

@@ -3,13 +3,18 @@ import pytest
 from app.models import CanonicalState, Card, FacingAction, RecommendationRequest
 from app.solvers.preflop_chart import (
     DEFENSE_POLICIES,
+    OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
     canonical_hand_class,
     hand_top_fraction,
     normalize_position,
     solve_preflop_chart,
 )
-from app.solvers.preflop_context import POSITION_ACTION_ORDER
+from app.solvers.preflop_context import (
+    MAX_SINGLE_OPEN_SIZE_BB,
+    MIN_SINGLE_OPEN_SIZE_BB,
+    POSITION_ACTION_ORDER,
+)
 
 
 def request_for(
@@ -89,6 +94,19 @@ def test_defense_policies_cover_every_legal_position_matchup() -> None:
     )
 
 
+def test_open_size_policies_tighten_as_the_raise_grows() -> None:
+    assert MIN_SINGLE_OPEN_SIZE_BB <= OPEN_SIZE_POLICIES[0].maximum_size
+    assert OPEN_SIZE_POLICIES[-1].maximum_size == MAX_SINGLE_OPEN_SIZE_BB
+    assert [policy.maximum_size for policy in OPEN_SIZE_POLICIES] == sorted(
+        policy.maximum_size for policy in OPEN_SIZE_POLICIES
+    )
+    assert all(
+        current.continue_multiplier >= following.continue_multiplier
+        and current.reraise_multiplier >= following.reraise_multiplier
+        for current, following in zip(OPEN_SIZE_POLICIES, OPEN_SIZE_POLICIES[1:])
+    )
+
+
 def test_opens_premium_hand_from_early_position() -> None:
     result = solve_preflop_chart(request_for(("Ah", "Ad"), position="UTG"))
 
@@ -134,7 +152,7 @@ def test_defends_medium_button_hand_against_assumed_open_raise(
     assert result is not None
     assert result.action == "call"
     assert result.raw["scenario"] == "facing_open_raise"
-    assert result.raw["policy_source"] == "hero_opener_matchup"
+    assert result.raw["policy_source"] == "hero_opener_size_matchup"
     assert any("matchup-specific" in value for value in result.raw["assumptions"])
 
 
@@ -200,6 +218,81 @@ def test_big_blind_reraise_range_accounts_for_opener_position(
     assert result.raw["opener_open_fraction"] == (
         0.17 if opener_position == "utg" else 0.45
     )
+
+
+@pytest.mark.parametrize(
+    (
+        "opening_size",
+        "amount_to_call",
+        "pot_size",
+        "expected_action",
+        "expected_policy",
+        "expected_continue_fraction",
+    ),
+    [
+        (2.0, 1.0, 3.5, "call", "small", 0.44),
+        (4.0, 3.0, 5.5, "fold", "very_large", 0.312),
+    ],
+)
+def test_big_blind_continue_range_accounts_for_opening_size(
+    opening_size: float,
+    amount_to_call: float,
+    pot_size: float,
+    expected_action: str,
+    expected_policy: str,
+    expected_continue_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("7h", "6h"),
+            position="big blind",
+            current_bet=amount_to_call,
+            pot_size=pot_size,
+            facing_action="raise",
+            action_context="Hero faces a button open",
+            preflop_opener_position="button",
+            preflop_open_size=opening_size,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["open_size_policy"] == expected_policy
+    assert result.raw["base_continue_fraction"] == 0.40
+    assert result.raw["continue_fraction"] == expected_continue_fraction
+
+
+@pytest.mark.parametrize(
+    ("opening_size", "amount_to_call", "pot_size", "expected_action", "expected_fraction"),
+    [
+        (2.0, 1.0, 3.5, "raise", 0.126),
+        (4.0, 3.0, 5.5, "call", 0.108),
+    ],
+)
+def test_big_blind_reraise_range_accounts_for_opening_size(
+    opening_size: float,
+    amount_to_call: float,
+    pot_size: float,
+    expected_action: str,
+    expected_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Jd"),
+            position="big blind",
+            current_bet=amount_to_call,
+            pot_size=pot_size,
+            facing_action="raise",
+            action_context="Hero faces a button open",
+            preflop_opener_position="button",
+            preflop_open_size=opening_size,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["base_reraise_fraction"] == 0.12
+    assert result.raw["reraise_fraction"] == expected_fraction
 
 
 def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
@@ -352,6 +445,32 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             facing_action="raise",
             preflop_opener_position="button",
             preflop_open_size=3,
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context="Button opens to 3 BB",
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="big blind",
+            current_bet=0.5,
+            pot_size=3,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=1.5,
+        ),
+        request_for(
+            ("Ah", "Ad"),
+            position="big blind",
+            current_bet=3.5,
+            pot_size=6,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=4.5,
         ),
         request_for(
             ("Ah", "Ad"),

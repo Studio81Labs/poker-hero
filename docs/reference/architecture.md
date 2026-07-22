@@ -31,10 +31,12 @@ The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies structured preflop opener position and total
 opening size, the chart uses those values for eligibility, matchup-specific
-continue/reraise boundaries, and sizing. Older states retain a conservative
-free-text fallback, and inconsistent structured amounts decline chart routing
-instead of being guessed. Recommendation evidence records the resolved opener,
-the modeled opening range, and both response boundaries.
+continue/reraise boundaries, opening-size adjustments, and sizing. Older states
+retain a conservative free-text fallback. Every resolved total must match the
+call amount plus hero's posted blind and remain within the supported 2-4 BB
+single-open range. Recommendation evidence records the resolved opener, modeled
+opening range, base response boundaries, size multipliers, and adjusted
+boundaries.
 `postflop_solver` runs as a pinned Rust stdin/stdout process for heads-up
 postflop decisions. `local_ev` remains available directly and is used as a
 recorded fallback for ambiguous preflop, multiway, incomplete,

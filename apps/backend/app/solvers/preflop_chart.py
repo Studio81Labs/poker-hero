@@ -6,6 +6,7 @@ from functools import lru_cache
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
+    POSTED_BLIND_BB,
     Position,
     normalize_position,
     opening_raise_position,
@@ -199,11 +200,20 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         size_policy,
         stack_policy,
     )
-    reraise_size = _reraise_size(opener_size, state.pot_size or 0, effective_stack)
+    maximum_reraise_total = _maximum_reraise_total(
+        effective_stack=effective_stack,
+        hero_stack=state.hero_stack,
+        hero_position=position,
+        opener_size=opener_size,
+    )
+    reraise_size = _reraise_size(
+        opener_size,
+        state.pot_size or 0,
+        maximum_reraise_total,
+    )
 
     can_reraise = (
-        effective_stack > current_bet
-        and reraise_size > opener_size
+        reraise_size > opener_size
         and top_fraction <= defense_policy.reraise_fraction
     )
     if can_reraise:
@@ -250,6 +260,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         base_opener_open_fraction=base_opener_open_fraction,
         opener_open_fraction=opener_open_fraction,
         opening_raise_size=opener_size,
+        maximum_reraise_total=maximum_reraise_total,
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
         size_policy=size_policy,
@@ -308,9 +319,24 @@ def _open_size(effective_stack: float, stack_policy: StackDepthPolicy) -> float:
     return round(min(stack_policy.opening_size, effective_stack), 2)
 
 
-def _reraise_size(opener_size: float, pot_size: float, effective_stack: float) -> float:
+def _maximum_reraise_total(
+    *,
+    effective_stack: float,
+    hero_stack: float | None,
+    hero_position: Position,
+    opener_size: float,
+) -> float:
+    hero_blind = POSTED_BLIND_BB[hero_position]
+    if hero_stack is None:
+        return effective_stack + hero_blind
+    hero_total = hero_stack + hero_blind
+    opponent_total = effective_stack + opener_size
+    return min(hero_total, opponent_total)
+
+
+def _reraise_size(opener_size: float, pot_size: float, maximum_total: float) -> float:
     target = max(opener_size * 3, pot_size * 1.1)
-    return round(min(target, effective_stack), 2)
+    return round(min(target, maximum_total), 2)
 
 
 def _boundary_confidence(top_fraction: float, boundary: float) -> float:
@@ -401,6 +427,7 @@ def _result(
     base_opener_open_fraction: float | None = None,
     opener_open_fraction: float | None = None,
     opening_raise_size: float | None = None,
+    maximum_reraise_total: float | None = None,
     base_defense_policy: DefensePolicy | None = None,
     defense_policy: DefensePolicy | None = None,
     size_policy: OpenSizePolicy | None = None,
@@ -443,6 +470,8 @@ def _result(
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
         raw["opening_raise_size"] = opening_raise_size
+    if maximum_reraise_total is not None:
+        raw["maximum_reraise_total"] = maximum_reraise_total
     if effective_stack is not None and stack_policy is not None:
         raw.update(
             {

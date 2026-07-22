@@ -26,6 +26,7 @@ def request_for(
     position: str | None,
     current_bet: float = 0,
     pot_size: float = 1.5,
+    hero_stack: float | None = None,
     effective_stack: float = 100,
     players_in_hand: int = 6,
     facing_action: FacingAction | None = None,
@@ -39,6 +40,7 @@ def request_for(
             hero_cards=[Card.from_code(code) for code in cards],
             pot_size=pot_size,
             current_bet=current_bet,
+            hero_stack=hero_stack,
             effective_stack=effective_stack,
             players_in_hand=players_in_hand,
             hero_position=position,
@@ -462,8 +464,9 @@ def test_big_blind_reraise_range_accounts_for_stack_depth(
 @pytest.mark.parametrize(
     ("effective_stack", "expected_action", "expected_sizing"),
     [
-        (2.0, "call", None),
-        (2.6, "raise", 2.6),
+        (1.4, "call", None),
+        (1.6, "raise", 2.6),
+        (2.6, "raise", 3.6),
     ],
 )
 def test_short_stack_reraise_requires_a_total_above_the_open(
@@ -489,7 +492,28 @@ def test_short_stack_reraise_requires_a_total_above_the_open(
     assert result.sizing == expected_sizing
 
 
-def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
+def test_reraise_uses_opponent_total_when_hero_covers() -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Jd"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            hero_stack=10,
+            effective_stack=1,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 3.5
+    assert result.raw["maximum_reraise_total"] == 3.5
+
+
+def test_reraises_premium_hand_and_caps_size_to_effective_total() -> None:
     result = solve_preflop_chart(
         request_for(
             ("Kh", "Ks"),
@@ -504,7 +528,8 @@ def test_reraises_premium_hand_and_caps_size_to_effective_stack() -> None:
 
     assert result is not None
     assert result.action == "raise"
-    assert result.sizing == 6
+    assert result.sizing == 7
+    assert result.raw["maximum_reraise_total"] == 7
     assert result.raw["chart_tier"] == "reraise"
 
 

@@ -51,6 +51,9 @@ contract.
   they are not represented as solved frequencies.
 - A stack-boosted reraise is emitted only when its capped all-in total exceeds
   the opening size; otherwise the hand continues through the call/fold boundary.
+  Blind caps include hero's posted blind. When hero stack is available, the cap
+  also respects the opener's effective stack behind; the resolved total remains
+  recommendation evidence.
 - Accurate limper, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
 

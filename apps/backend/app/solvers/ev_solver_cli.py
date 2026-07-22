@@ -22,6 +22,7 @@ from app.providers.rule_based import (
     _score_key,
     _starting_hand_score,
 )
+from app.solvers.preflop_chart import solve_preflop_chart
 
 MAX_EXACT_CASES = 140_000
 
@@ -69,6 +70,11 @@ def solve(request: RecommendationRequest) -> RecommendationResult:
     players = max(2, min(state.players_in_hand or 2, 6))
     effective_stack = max(0.0, state.effective_stack or max(20.0, pot_size * 8))
     facing_bet = current_bet > 0
+
+    if street == "preflop":
+        chart_result = solve_preflop_chart(request)
+        if chart_result is not None:
+            return chart_result
 
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
     equity = _estimate_range_equity(

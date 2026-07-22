@@ -43,11 +43,18 @@ class LocalSolverProvider:
 
         if fallback_reason is not None:
             result.raw["requested_engine"] = "postflop_solver"
-            result.raw["fallback_reason"] = fallback_reason
-            result.explanation = (
-                f"The postflop solver used the range/EV fallback because {fallback_reason}. "
-                f"{result.explanation}"
-            )
+            if result.raw.get("engine") == "preflop_chart_v1":
+                result.raw["routing_reason"] = fallback_reason
+                result.explanation = (
+                    f"The postflop engine routed this hand to the preflop chart because "
+                    f"{fallback_reason}. {result.explanation}"
+                )
+            else:
+                result.raw["fallback_reason"] = fallback_reason
+                result.explanation = (
+                    f"The postflop solver used the range/EV fallback because {fallback_reason}. "
+                    f"{result.explanation}"
+                )
         return result
 
     def _run(

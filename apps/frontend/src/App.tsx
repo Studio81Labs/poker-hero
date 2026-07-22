@@ -141,6 +141,7 @@ interface RecommendationEvidence {
   engine: string | null;
   fallbackFrom: string | null;
   fallbackReason: string | null;
+  routed: boolean;
   metrics: RecommendationEvidenceMetric[];
   candidates: RecommendationEvidenceCandidate[];
 }
@@ -159,6 +160,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   local_solver: "Local solver",
   mock: "Demo engine",
   ocr_cv: "OCR + computer vision",
+  preflop_chart_v1: "Preflop chart",
   postflop_solver: "Postflop solver",
   rule_based: "Rule-based trainer",
   rule_based_training_v2: "Rule-based trainer",
@@ -221,6 +223,8 @@ function recommendationEvidenceFromRaw(
   const requiredEquity = metadataRatio(raw.required_equity ?? raw.pot_odds);
   const exploitability = metadataRecord(raw.exploitability);
   const exploitabilityBb = metadataNumber(exploitability?.bb);
+  const handTopFraction = metadataRatio(raw.hand_top_fraction);
+  const policyFraction = metadataRatio(raw.policy_fraction);
   const metrics: RecommendationEvidenceMetric[] = [];
 
   if (rangeEquity !== null) {
@@ -234,6 +238,12 @@ function recommendationEvidenceFromRaw(
   }
   if (exploitabilityBb !== null && exploitabilityBb >= 0) {
     metrics.push({ label: "Exploitability", value: exploitabilityBb, unit: "bb" });
+  }
+  if (handTopFraction !== null) {
+    metrics.push({ label: "Hand rank", value: handTopFraction, unit: "percent" });
+  }
+  if (policyFraction !== null) {
+    metrics.push({ label: "Chart range", value: policyFraction, unit: "percent" });
   }
 
   const sortedCandidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
@@ -274,7 +284,8 @@ function recommendationEvidenceFromRaw(
 
   const engine = metadataString(raw.engine, 80);
   const fallbackFrom = metadataString(raw.requested_engine, 80);
-  const fallbackReason = metadataString(raw.fallback_reason);
+  const routingReason = metadataString(raw.routing_reason);
+  const fallbackReason = routingReason ?? metadataString(raw.fallback_reason);
   if (metrics.length === 0 && candidates.length === 0 && !fallbackReason) {
     return null;
   }
@@ -282,6 +293,7 @@ function recommendationEvidenceFromRaw(
     engine: engine ? providerLabel(engine) : null,
     fallbackFrom: fallbackFrom ? providerLabel(fallbackFrom) : null,
     fallbackReason,
+    routed: routingReason !== null,
     metrics,
     candidates,
   };
@@ -292,6 +304,13 @@ function formatEvidenceMetric(metric: RecommendationEvidenceMetric): string {
     return `${Math.round(metric.value * 100)}%`;
   }
   return `${Number(metric.value.toFixed(3))} BB`;
+}
+
+function recommendationContextLabel(evidence: RecommendationEvidence): string {
+  if (evidence.fallbackFrom) {
+    return `${evidence.fallbackFrom} ${evidence.routed ? "route" : "fallback"}`;
+  }
+  return evidence.routed ? "Specialized route" : "Fallback used";
 }
 
 function formatCandidateValue(value: number): string {
@@ -2180,7 +2199,9 @@ export default function App() {
                     </div>
                     {decisionEvidence.fallbackReason ? (
                       <div className="recommendation-fallback">
-                        <strong>{decisionEvidence.fallbackFrom ? `${decisionEvidence.fallbackFrom} fallback` : "Fallback used"}</strong>
+                        <strong>
+                          {recommendationContextLabel(decisionEvidence)}
+                        </strong>
                         <span>{decisionEvidence.fallbackReason}</span>
                       </div>
                     ) : null}
@@ -2375,7 +2396,7 @@ export default function App() {
               </section>
               <section className="info-dialog-section">
                 <h3>Recommendations</h3>
-                <p>The configured engine analyzes approved hand state and compares available actions. The postflop engine solves heads-up game trees; unsupported spots use the range/EV fallback.</p>
+                <p>The configured engine analyzes approved hand state and compares available actions. Preflop uses a position-aware training chart, the postflop engine solves supported heads-up game trees, and ambiguous spots use the range/EV fallback.</p>
               </section>
               <section className="info-dialog-section">
                 <h3>Training scope</h3>

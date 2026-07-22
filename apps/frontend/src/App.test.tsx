@@ -237,7 +237,7 @@ describe("App", () => {
     expect(await screen.findByText("OCR + computer vision")).toBeInTheDocument();
     expect(screen.getByText("Postflop solver")).toBeInTheDocument();
     expect(screen.getByText(/OCR and computer vision read the cards/)).toBeInTheDocument();
-    expect(screen.getByText(/postflop engine solves heads-up game trees/i)).toBeInTheDocument();
+    expect(screen.getByText(/Preflop uses a position-aware training chart/i)).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/health");
     await user.click(screen.getByRole("button", { name: "Close app information" }));
     expect(screen.queryByRole("dialog", { name: "About Poker Training Analyzer" })).not.toBeInTheDocument();
@@ -1007,6 +1007,50 @@ describe("App", () => {
     expect(chosen).toHaveTextContent("7.5 BB");
     expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
+  });
+
+  it("labels position-aware chart evidence without exposing its internal id", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "preflop-chart-job",
+      original_filename: "preflop.png",
+      image_filename: "preflop.png",
+      recommendation: {
+        action: "raise",
+        sizing: 2.5,
+        confidence: 0.74,
+        explanation: "The position-aware preflop chart recommends raise to 2.5 BB.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          requested_engine: "postflop_solver",
+          routing_reason: "the hand is preflop",
+          hand_top_fraction: 0.28,
+          policy_fraction: 0.45,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 2.5, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    expect(within(evidence).getByText("Preflop chart")).toBeInTheDocument();
+    expect(within(evidence).getByText("Postflop solver route")).toBeInTheDocument();
+    expect(within(evidence).queryByText("preflop_chart_v1")).not.toBeInTheDocument();
+    expect(within(evidence).getByText("28%")).toBeInTheDocument();
+    expect(within(evidence).getByText("45%")).toBeInTheDocument();
+    expect(within(evidence).getByText("100% frequency")).toBeInTheDocument();
   });
 
   it("displays backend upload errors as queue attention items", async () => {

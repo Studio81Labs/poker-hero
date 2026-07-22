@@ -27,16 +27,17 @@ from pot, call amount, position, visible stacks, configured ranges, and a
 constrained action tree. It records those assumptions, candidate frequencies,
 exploitability, memory estimate, and modeled history in recommendation metadata.
 
-Unsupported spots and recoverable solver failures use `local_ev` only when
-fallback is enabled. The response records both the requested engine and the
-fallback reason.
+Supported preflop spots route to the position-aware training chart described in
+ADR 0002. Other unsupported spots and recoverable solver failures use
+`local_ev` only when fallback is enabled. The response records both the
+requested engine and the routing or fallback reason.
 
 ## Consequences
 
 - Docker builds gain a Rust build stage and a larger build-time dependency set.
 - Heads-up postflop recommendations can use Discounted CFR locally.
 - Preflop and multiway behavior remains available without pretending to be a
-  full tree solve.
+  full tree solve; supported preflop states use the more specific chart route.
 - A future licensed solver can replace this executable or provider without a
   frontend workflow change.
 - Public distribution or network use requires a fresh review of the AGPL

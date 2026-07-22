@@ -98,9 +98,13 @@ the canonical state carries full action history.
 commands add that directory to `PATH`. Re-run bootstrap after pulling changes
 to the Rust plugin.
 
-Preflop, multiway, incomplete, ambiguous-position, oversized, and failed trees
-use `local_ev` when fallback is enabled. Recommendations preserve the requested
-engine and fallback reason in `raw` metadata. Set
+Preflop hands with a recognized six-max position and an unambiguous unopened or
+single-open-raise context use the bundled position-aware training chart. The
+chart reports its hand-class ranking, policy boundary, assumptions, and action
+frequencies without presenting the result as a solved preflop tree. Positionless,
+limped, 3-bet, multiway postflop, incomplete, ambiguous-position, oversized, and
+failed trees use `local_ev` when fallback is enabled. Recommendations preserve
+the requested engine and routing or fallback reason in `raw` metadata. Set
 `POKER_LOCAL_SOLVER_ENGINE=local_ev` to bypass CFR, or select
 `external_solver` at the provider boundary for a future licensed service.
 

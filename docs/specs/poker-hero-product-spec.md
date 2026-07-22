@@ -130,6 +130,7 @@ Canonical state should include, where available:
 - Effective stack, defined as the minimum visible stack behind.
 - Number of players/seats.
 - Hero position when detectable.
+- Preflop opener position and total opening size when facing a raise.
 - Street: preflop, flop, turn, or river.
 - Whether the current facing action is a bet or raise.
 - Any available action context.
@@ -143,6 +144,12 @@ classification and accepts only a first bet until the canonical state supports
 full raise history. If a solver-style provider requires more context than the
 screenshot contains, the UI must ask the user to supply or correct those fields
 instead of guessing.
+
+For preflop single-open charts, structured opener position and total opening
+size take precedence over free-text action context. Existing approved hands may
+fall back to conservative action-text parsing. Contradictory structured amounts,
+hidden callers, later aggression, or implausible pot composition must decline
+the chart rather than inventing action history.
 
 ## Data Flow
 

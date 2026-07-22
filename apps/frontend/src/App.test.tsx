@@ -21,6 +21,8 @@ const detectedState: DetectedState = {
   effective_stack: 96,
   players_in_hand: 3,
   hero_position: "button",
+  preflop_opener_position: null,
+  preflop_open_size: null,
   street: "flop",
   facing_action: "bet",
   action_context: "Cutoff bet 2.5 into 12.5",
@@ -1093,6 +1095,44 @@ describe("App", () => {
     expect(payload.current_bet).toBe(3.5);
     expect(payload.facing_action).toBe("bet");
     expect(payload.user_approved).toBe(true);
+  });
+
+  it("submits structured opener context for preflop raise states", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 4,
+      current_bet: 1.5,
+      hero_position: "big blind",
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Hero faces 1.5 BB to call into a 4 BB pot",
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...preflopState,
+      preflop_opener_position: "button",
+      preflop_open_size: 2.5,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.selectOptions(await screen.findByLabelText(/Opener position/), "button");
+    await user.type(screen.getByLabelText(/Opening size/), "2.5");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    const payload = JSON.parse(String(fetchMock().mock.calls[1][1]?.body));
+    expect(payload.preflop_opener_position).toBe("button");
+    expect(payload.preflop_open_size).toBe(2.5);
   });
 
   it("adds an approved hand to ground truth and runs the parser benchmark", async () => {

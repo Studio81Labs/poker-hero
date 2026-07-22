@@ -22,10 +22,16 @@ class HttpRecommendationProvider:
         if not self.url:
             raise ProviderConfigurationError(self.missing_message)
 
+        payload = request.model_dump(mode="json")
+        state_payload = payload["state"]
+        for field in ("preflop_opener_position", "preflop_open_size"):
+            if state_payload[field] is None:
+                del state_payload[field]
+
         try:
             response = httpx.post(
                 self.url,
-                json=request.model_dump(mode="json"),
+                json=payload,
                 timeout=60.0,
             )
         except httpx.RequestError as exc:

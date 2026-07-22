@@ -101,7 +101,10 @@ to the Rust plugin.
 Preflop hands with a recognized six-max position and an unambiguous unopened or
 single-open-raise context use the bundled position-aware training chart. The
 chart reports its hand-class ranking, policy boundary, assumptions, and action
-frequencies without presenting the result as a solved preflop tree. Positionless,
+frequencies without presenting the result as a solved preflop tree. Approved
+states may provide the opener position and total opening size as structured
+fields; the chart prefers those values and retains action-text parsing for older
+saved hands. Positionless,
 limped, 3-bet, multiway postflop, incomplete, ambiguous-position, oversized, and
 failed trees use `local_ev` when fallback is enabled. Recommendations preserve
 the requested engine and routing or fallback reason in `raw` metadata. Set

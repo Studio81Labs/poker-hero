@@ -772,7 +772,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     imported_job = FileJobStore(target_dir).get(source_job_id)
     assert imported_job.original_filename == "labeled.tmp"
     assert imported_job.approved_state is not None
-    assert imported_job.approved_state.model_dump(mode="json") == corrected_state
+    assert imported_job.approved_state.model_dump(mode="json", exclude_none=True) == corrected_state
     assert imported_job.benchmark_included is True
     assert imported_job.status == "approved"
     assert imported_job.parser_result is None

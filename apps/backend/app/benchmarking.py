@@ -26,6 +26,8 @@ BENCHMARK_FIELDS = (
     "effective_stack",
     "players_in_hand",
     "hero_position",
+    "preflop_opener_position",
+    "preflop_open_size",
     "facing_action",
     "action_context",
 )
@@ -170,7 +172,7 @@ def _normalize(field: str, value: Any) -> Any:
         return sorted(codes)
     if isinstance(value, str):
         normalized = re.sub(r"\s+", " ", value.strip().lower())
-        if field == "hero_position":
+        if field in {"hero_position", "preflop_opener_position"}:
             return POSITION_ALIASES.get(normalized, normalized)
         return normalized
     return value

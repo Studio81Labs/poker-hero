@@ -39,3 +39,6 @@ contract.
   provider boundary.
 - Accurate limper, opener-position, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
+
+ADR 0003 later adds structured opener position and opening size to the canonical
+state while preserving this chart's conservative text fallback.

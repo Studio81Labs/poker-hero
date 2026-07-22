@@ -18,6 +18,8 @@ export interface DetectedState {
   effective_stack: number | null;
   players_in_hand: number | null;
   hero_position: string | null;
+  preflop_opener_position: string | null;
+  preflop_open_size: number | null;
   street: Street | null;
   facing_action: FacingAction | null;
   action_context: string | null;

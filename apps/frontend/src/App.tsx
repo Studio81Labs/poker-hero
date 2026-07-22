@@ -70,6 +70,8 @@ const EMPTY_STATE: CanonicalState = {
   effective_stack: null,
   players_in_hand: null,
   hero_position: null,
+  preflop_opener_position: null,
+  preflop_open_size: null,
   street: null,
   facing_action: null,
   action_context: null,
@@ -103,6 +105,8 @@ interface StateForm {
   effective_stack: string;
   players_in_hand: string;
   hero_position: string;
+  preflop_opener_position: string;
+  preflop_open_size: string;
   street: StreetOption;
   facing_action: FacingActionOption;
   action_context: string;
@@ -171,6 +175,15 @@ const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
   { value: "window", label: "Window" },
   { value: "monitor", label: "Screen" },
 ];
+
+const PREFLOP_POSITIONS = [
+  { value: "utg", label: "UTG" },
+  { value: "hijack", label: "Hijack" },
+  { value: "cutoff", label: "Cutoff" },
+  { value: "button", label: "Button" },
+  { value: "small_blind", label: "Small blind" },
+  { value: "big_blind", label: "Big blind" },
+] as const;
 
 const CONFIDENCE_KEYS = [
   "hero_cards",
@@ -616,6 +629,8 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
+    preflop_opener_position: state.preflop_opener_position ?? null,
+    preflop_open_size: state.preflop_open_size ?? null,
     street: state.street,
     facing_action: state.facing_action ?? null,
     action_context: state.action_context,
@@ -634,6 +649,7 @@ function stateFromJob(job: JobRecord): CanonicalState {
 }
 
 function stateToForm(state: DetectedState | CanonicalState): StateForm {
+  const showPreflopOpen = state.street === "preflop" && state.facing_action === "raise";
   return {
     hero_cards: formatCards(state.hero_cards),
     board_cards: formatCards(state.board_cards),
@@ -643,6 +659,11 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
+    preflop_opener_position: showPreflopOpen ? (state.preflop_opener_position ?? "") : "",
+    preflop_open_size:
+      showPreflopOpen && state.preflop_open_size !== null && state.preflop_open_size !== undefined
+        ? String(state.preflop_open_size)
+        : "",
     street: state.street ?? "",
     facing_action: state.facing_action ?? "",
     action_context: state.action_context ?? "",
@@ -653,6 +674,13 @@ function formToCanonical(form: StateForm): CanonicalState {
   const heroCards = parseCards(form.hero_cards, "Hero cards");
   const boardCards = parseCards(form.board_cards, "Board cards");
   validateCardState(heroCards, boardCards);
+  const showPreflopOpen = form.street === "preflop" && form.facing_action === "raise";
+  const preflopOpenSize = showPreflopOpen
+    ? parseOptionalNumber(form.preflop_open_size, "Opening size")
+    : null;
+  if (preflopOpenSize !== null && preflopOpenSize <= 0) {
+    throw new Error("Opening size must be greater than 0");
+  }
 
   return {
     hero_cards: heroCards,
@@ -663,6 +691,11 @@ function formToCanonical(form: StateForm): CanonicalState {
     effective_stack: parseOptionalNumber(form.effective_stack, "Effective stack"),
     players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
+    preflop_opener_position:
+      showPreflopOpen && form.preflop_opener_position !== ""
+        ? form.preflop_opener_position
+        : null,
+    preflop_open_size: preflopOpenSize,
     street: form.street === "" ? null : form.street,
     facing_action: form.facing_action === "" ? null : form.facing_action,
     action_context: form.action_context.trim() === "" ? null : form.action_context.trim(),
@@ -680,6 +713,8 @@ function approvalKey(state: CanonicalState): string {
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     hero_position: state.hero_position,
+    preflop_opener_position: state.preflop_opener_position ?? null,
+    preflop_open_size: state.preflop_open_size ?? null,
     street: state.street,
     facing_action: state.facing_action ?? null,
     action_context: state.action_context,
@@ -1484,7 +1519,17 @@ export default function App() {
   }
 
   function updateForm(field: keyof StateForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const next = { ...current, [field]: value };
+      if (
+        (field === "street" && value !== "preflop") ||
+        (field === "facing_action" && value !== "raise")
+      ) {
+        next.preflop_opener_position = "";
+        next.preflop_open_size = "";
+      }
+      return next;
+    });
     setApprovedStateKey(null);
     setJobs((current) => current.map((candidate) => (candidate.id === job?.id ? clearApprovedResult(candidate) : candidate)));
   }
@@ -2091,6 +2136,33 @@ export default function App() {
                   <option value="raise">Raise or check-raise</option>
                 </select>
               </Field>
+              {form.street === "preflop" && form.facing_action === "raise" ? (
+                <>
+                  <Field label="Opener position" confidence="manual">
+                    <select
+                      disabled={stateControlsDisabled}
+                      value={form.preflop_opener_position}
+                      onChange={(event) => updateForm("preflop_opener_position", event.target.value)}
+                    >
+                      <option value="">Select position</option>
+                      {PREFLOP_POSITIONS.map((position) => (
+                        <option key={position.value} value={position.value}>
+                          {position.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Opening size" confidence="manual">
+                    <input
+                      disabled={stateControlsDisabled}
+                      inputMode="decimal"
+                      value={form.preflop_open_size}
+                      onChange={(event) => updateForm("preflop_open_size", event.target.value)}
+                      placeholder="BB"
+                    />
+                  </Field>
+                </>
+              ) : null}
               <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>
                 <textarea disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
               </Field>

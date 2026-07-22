@@ -62,6 +62,11 @@ LATER_RAISE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 RAISE_ACTION_PATTERN = re.compile(r"\brais(?:e|es|ed)\b", re.IGNORECASE)
+NON_OPEN_AGGRESSION_PATTERN = re.compile(
+    r"\ball\s*in\b|\bjam(?:s|med|ming)?\b|\bshov(?:e|es|ed|ing)\b|"
+    r"\bsqueez(?:e|es|ed|ing)\b",
+    re.IGNORECASE,
+)
 MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MAX_SINGLE_OPEN_CALL_BB = 4.0
@@ -113,7 +118,9 @@ def _has_unsupported_action_history(action_context: str | None) -> bool:
     normalized = " ".join(action_context.lower().replace("-", " ").split())
     raise_count = len(RAISE_ACTION_PATTERN.findall(normalized))
     return "limp" in normalized or raise_count > 1 or bool(
-        CALLER_ACTION_PATTERN.search(normalized) or LATER_RAISE_PATTERN.search(normalized)
+        CALLER_ACTION_PATTERN.search(normalized)
+        or LATER_RAISE_PATTERN.search(normalized)
+        or NON_OPEN_AGGRESSION_PATTERN.search(normalized)
     )
 
 

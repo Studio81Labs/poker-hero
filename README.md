@@ -51,6 +51,7 @@ poker-hero/
 | --- | --- |
 | `pnpm bootstrap` | Install dependencies and build the local postflop solver |
 | `pnpm backend:dev` | Start FastAPI with reload on port 8000 |
+| `pnpm backend:benchmark <dataset.zip>` | Benchmark a parser against an exported labeled dataset |
 | `pnpm backend:test` | Run the backend pytest suite |
 | `pnpm frontend:dev` | Start Vite on port 5173 |
 | `pnpm frontend:test` | Run frontend tests |
@@ -102,6 +103,25 @@ use `local_ev` when fallback is enabled. Recommendations preserve the requested
 engine and fallback reason in `raw` metadata. Set
 `POKER_LOCAL_SOLVER_ENGINE=local_ev` to bypass CFR, or select
 `external_solver` at the provider boundary for a future licensed service.
+
+### Offline Parser Benchmarks
+
+Export approved ground-truth hands from the Parser benchmark dialog, then run
+the same field-level evaluation without importing them into the configured data
+directory:
+
+```bash
+pnpm backend:benchmark ./poker-hero-parser-dataset.zip \
+  --parser-provider ocr_cv \
+  --layout-profile fortuna_nations \
+  --minimum-accuracy 0.80
+```
+
+The command prints overall and per-field accuracy plus cases needing review. Add
+`--json` for a complete machine-readable report. It exits with status `1` when
+any case fails or accuracy is below the optional threshold, making the same
+dataset suitable for local regression checks and CI. Evaluation uses temporary
+storage and never changes the configured `POKER_DATA_DIR` or the source ZIP.
 
 ## Docker
 

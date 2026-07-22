@@ -158,6 +158,23 @@ def test_sizes_blind_reraise_from_total_open(action_context: str) -> None:
     assert result.sizing == 7.5
 
 
+def test_supports_big_blind_defense_against_small_blind_open() -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Kh", "Ks"),
+            position="big blind",
+            current_bet=2,
+            pot_size=4,
+            facing_action="raise",
+            action_context="Small blind opens to 3 BB",
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 9
+
+
 def test_checks_big_blind_when_no_amount_is_required() -> None:
     result = solve_preflop_chart(request_for(("7h", "2d"), position="BB"))
 

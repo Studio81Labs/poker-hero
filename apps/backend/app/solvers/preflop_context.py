@@ -113,20 +113,22 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
     if state.facing_action != "raise" or current_bet > MAX_SINGLE_OPEN_CALL_BB:
         return False
 
-    pot_size = state.pot_size or 0
-    dead_money = pot_size - current_bet
-    posted_blind = POSTED_BLIND_BB[position]
-    if not (
-        MIN_BLIND_ONLY_POT_BB + posted_blind
-        <= dead_money
-        <= MAX_BLIND_ONLY_POT_BB + posted_blind
-    ):
-        return False
-
     opener_position = _opening_raise_position(state.action_context)
     if opener_position is None:
         return False
-    return POSITION_ACTION_ORDER[opener_position] < POSITION_ACTION_ORDER[position]
+    if POSITION_ACTION_ORDER[opener_position] >= POSITION_ACTION_ORDER[position]:
+        return False
+
+    pot_size = state.pot_size or 0
+    dead_money = pot_size - current_bet
+    blind_adjustment = POSTED_BLIND_BB[position] - POSTED_BLIND_BB[opener_position]
+    if not (
+        MIN_BLIND_ONLY_POT_BB + blind_adjustment
+        <= dead_money
+        <= MAX_BLIND_ONLY_POT_BB + blind_adjustment
+    ):
+        return False
+    return True
 
 
 def normalize_position(value: str | None) -> Position | None:

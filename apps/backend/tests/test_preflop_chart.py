@@ -310,6 +310,9 @@ def test_big_blind_reraise_range_accounts_for_opener_position(
     assert result is not None
     assert result.action == expected_action
     assert result.raw["reraise_fraction"] == expected_reraise_fraction
+    assert result.raw["base_opener_open_fraction"] == (
+        0.17 if opener_position == "utg" else 0.45
+    )
     assert result.raw["opener_open_fraction"] == (
         0.17 if opener_position == "utg" else 0.45
     )
@@ -420,6 +423,8 @@ def test_big_blind_continue_range_accounts_for_stack_depth(
     assert result.action == expected_action
     assert result.raw["stack_depth_policy"] == expected_policy
     assert result.raw["continue_fraction"] == expected_fraction
+    assert result.raw["base_opener_open_fraction"] == 0.45
+    assert result.raw["opener_open_fraction"] == (0.405 if effective_stack == 20 else 0.45)
 
 
 @pytest.mark.parametrize(

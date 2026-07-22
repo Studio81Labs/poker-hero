@@ -22,9 +22,10 @@ while larger opens tighten them. Effective stack applies short (up to 20 BB),
 medium (up to 50 BB), standard (up to 150 BB), and deep bands. Shorter bands
 trim speculative first-in and calling ranges, reduce first-in sizing, and move
 more continues into reraises; deep stacks modestly widen calls and reduce the
-reraise share. It returns the normalized hand class, positions, scenario,
-modeled opening range, base and adjusted response boundaries, size and stack
-policies, assumptions, and candidate frequencies as recommendation evidence.
+reraise share. It returns the normalized hand class, positions, scenario, base
+and stack-adjusted modeled opening ranges, base and adjusted response
+boundaries, size and stack policies, assumptions, and candidate frequencies as
+recommendation evidence.
 
 The chart declines limped pots, 3-bet or later action, missing positions, and
 unopened pots whose size suggests missing action. Those states continue to the

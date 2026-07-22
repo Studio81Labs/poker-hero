@@ -34,9 +34,9 @@ opening size, the chart uses those values for eligibility, matchup-specific
 continue/reraise boundaries, opening-size adjustments, and sizing. Older states
 retain a conservative free-text fallback. Every resolved total must match the
 call amount plus hero's posted blind and remain within the supported 2-4 BB
-single-open range. Recommendation evidence records the resolved opener, modeled
-opening range, base response boundaries, size multipliers, and adjusted
-boundaries. Effective stack selects a short (up to 20 BB), medium (up to 50 BB),
+single-open range. Recommendation evidence records the resolved opener, base and
+stack-adjusted opening ranges, base response boundaries, size multipliers, and
+adjusted boundaries. Effective stack selects a short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and
 sizing plus continue/reraise boundaries; its band and multipliers are retained
 in the same evidence payload.

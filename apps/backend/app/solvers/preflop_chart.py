@@ -180,6 +180,11 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     base_defense_policy = DEFENSE_POLICIES.get((opener_position, position))
     if base_defense_policy is None:
         return None
+    base_opener_open_fraction = POSITION_POLICIES[opener_position].open_fraction
+    opener_open_fraction = adjusted_open_fraction(
+        POSITION_POLICIES[opener_position],
+        stack_policy,
+    )
     opener_size = resolve_opening_raise_size(
         action_context=state.action_context,
         explicit_size=state.preflop_open_size,
@@ -230,8 +235,9 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
             f"The defense chart uses matchup-specific {POSITION_LABELS[position]}-versus-"
             f"{POSITION_LABELS[opener_position]} boundaries.",
-            f"The opener model uses the {POSITION_LABELS[opener_position]}'s "
-            f"{POSITION_POLICIES[opener_position].open_fraction:.0%} first-in range.",
+            f"The opener model adjusts the {POSITION_LABELS[opener_position]}'s "
+            f"{base_opener_open_fraction:.0%} base first-in range to "
+            f"{opener_open_fraction:.1%} for this stack depth.",
             f"The {opener_size:g} BB opening size uses the {size_policy.name.replace('_', ' ')} "
             "open adjustment.",
             stack_assumption(effective_stack, stack_policy),
@@ -239,6 +245,8 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         ],
         effective_stack=effective_stack,
         opener_position=opener_position,
+        base_opener_open_fraction=base_opener_open_fraction,
+        opener_open_fraction=opener_open_fraction,
         opening_raise_size=opener_size,
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
@@ -388,6 +396,8 @@ def _result(
     effective_stack: float | None = None,
     base_open_fraction: float | None = None,
     opener_position: Position | None = None,
+    base_opener_open_fraction: float | None = None,
+    opener_open_fraction: float | None = None,
     opening_raise_size: float | None = None,
     base_defense_policy: DefensePolicy | None = None,
     defense_policy: DefensePolicy | None = None,
@@ -452,6 +462,8 @@ def _result(
         )
     if (
         opener_position is not None
+        and base_opener_open_fraction is not None
+        and opener_open_fraction is not None
         and base_defense_policy is not None
         and defense_policy is not None
         and size_policy is not None
@@ -460,7 +472,8 @@ def _result(
         raw.update(
             {
                 "policy_source": "hero_opener_size_stack_matchup",
-                "opener_open_fraction": POSITION_POLICIES[opener_position].open_fraction,
+                "base_opener_open_fraction": base_opener_open_fraction,
+                "opener_open_fraction": opener_open_fraction,
                 "base_continue_fraction": base_defense_policy.continue_fraction,
                 "base_reraise_fraction": base_defense_policy.reraise_fraction,
                 "continue_fraction": defense_policy.continue_fraction,

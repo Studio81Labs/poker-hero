@@ -191,6 +191,22 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
         request_for(
             ("Ah", "Kd"),
             position="button",
+            current_bet=2.5,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG raises, CO flatted, hero on button",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="BB",
+            current_bet=3,
+            pot_size=6.5,
+            facing_action="raise",
+            action_context="UTG raises, button raises to 4 BB",
+        ),
+        request_for(
+            ("Ah", "Kd"),
+            position="button",
             current_bet=8,
             pot_size=12,
             facing_action="raise",

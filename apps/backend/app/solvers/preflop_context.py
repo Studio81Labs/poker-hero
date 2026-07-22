@@ -52,7 +52,8 @@ POSITION_OPEN_RAISE_PATTERNS = (
     ),
 )
 CALLER_ACTION_PATTERN = re.compile(
-    r"\b(?:calls|called|callers?|overcalls?|cold calls?|flats?)\b",
+    r"\b(?:calls|called|callers?|overcall(?:s|ed|ing)?|"
+    r"cold call(?:s|ed|ing)?|flat(?:s|ted|ting)?)\b",
     re.IGNORECASE,
 )
 LATER_RAISE_PATTERN = re.compile(
@@ -110,7 +111,8 @@ def _has_unsupported_action_history(action_context: str | None) -> bool:
     if action_context is None:
         return False
     normalized = " ".join(action_context.lower().replace("-", " ").split())
-    return "limp" in normalized or bool(
+    raise_count = len(RAISE_ACTION_PATTERN.findall(normalized))
+    return "limp" in normalized or raise_count > 1 or bool(
         CALLER_ACTION_PATTERN.search(normalized) or LATER_RAISE_PATTERN.search(normalized)
     )
 

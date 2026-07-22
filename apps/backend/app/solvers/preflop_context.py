@@ -100,7 +100,7 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
     pot_size = state.pot_size or 0
     dead_money = pot_size - current_bet
-    if pot_size < current_bet or dead_money > MAX_SINGLE_OPEN_DEAD_MONEY_BB:
+    if not MIN_BLIND_ONLY_POT_BB <= dead_money <= MAX_SINGLE_OPEN_DEAD_MONEY_BB:
         return False
 
     opener_position = _opening_raise_position(state.action_context)

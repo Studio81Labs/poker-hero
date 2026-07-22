@@ -15,7 +15,7 @@ Browser
      -> file-backed job store in POKER_DATA_DIR
      -> parser benchmark -> explicit approved-state corpus and persisted reports
      -> provider registry -> local solver router, rule engine, or external service
-        -> postflop-solver plugin or bundled range/EV fallback
+        -> preflop chart, postflop-solver plugin, or bundled range/EV fallback
 ```
 
 ## Applications
@@ -28,11 +28,12 @@ persisted job/image data, and read-only parser benchmark runs. Integrations are 
 registries so the frontend flow does not depend on a concrete engine.
 
 The `local_solver` provider has a second configurable boundary for local engine
-plugins. `postflop_solver` runs as a pinned Rust stdin/stdout process for
-heads-up postflop decisions. `local_ev` remains available directly and is used
-as a recorded fallback for preflop, multiway, incomplete, resource-limited, or
-failed postflop solves. Explicit custom commands still override the bundled
-engine selection.
+plugins. Supported preflop states use a position-aware 169-hand training chart.
+`postflop_solver` runs as a pinned Rust stdin/stdout process for heads-up
+postflop decisions. `local_ev` remains available directly and is used as a
+recorded fallback for ambiguous preflop, multiway, incomplete,
+resource-limited, or failed postflop solves. Explicit custom commands still
+override the bundled engine selection.
 
 ### Frontend
 

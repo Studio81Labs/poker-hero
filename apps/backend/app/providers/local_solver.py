@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.config import Settings
 from app.models import CanonicalState, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
+from app.solvers.preflop_context import supports_preflop_chart
 
 
 class LocalSolverProvider:
@@ -43,11 +44,18 @@ class LocalSolverProvider:
 
         if fallback_reason is not None:
             result.raw["requested_engine"] = "postflop_solver"
-            result.raw["fallback_reason"] = fallback_reason
-            result.explanation = (
-                f"The postflop solver used the range/EV fallback because {fallback_reason}. "
-                f"{result.explanation}"
-            )
+            if result.raw.get("engine") == "preflop_chart_v1":
+                result.raw["routing_reason"] = fallback_reason
+                result.explanation = (
+                    f"The postflop engine routed this hand to the preflop chart because "
+                    f"{fallback_reason}. {result.explanation}"
+                )
+            else:
+                result.raw["fallback_reason"] = fallback_reason
+                result.explanation = (
+                    f"The postflop solver used the range/EV fallback because {fallback_reason}. "
+                    f"{result.explanation}"
+                )
         return result
 
     def _run(
@@ -105,6 +113,9 @@ class LocalSolverProvider:
 
         unsupported_reason = self._postflop_unsupported_reason(request)
         if unsupported_reason is not None:
+            if supports_preflop_chart(request):
+                command, cwd = self._ev_command(preflop_chart_enabled=True)
+                return command, cwd, unsupported_reason
             if not self.settings.postflop_solver_fallback_enabled:
                 raise ProviderInputError(unsupported_reason)
             command, cwd = self._ev_command()
@@ -162,8 +173,11 @@ class LocalSolverProvider:
         return None
 
     @staticmethod
-    def _ev_command() -> tuple[list[str], Path]:
-        return [sys.executable, "-m", "app.solvers.ev_solver_cli"], Path(__file__).resolve().parents[2]
+    def _ev_command(*, preflop_chart_enabled: bool = False) -> tuple[list[str], Path]:
+        command = [sys.executable, "-m", "app.solvers.ev_solver_cli"]
+        if preflop_chart_enabled:
+            command.append("--preflop-chart")
+        return command, Path(__file__).resolve().parents[2]
 
     @staticmethod
     def _parse_command(value: str, field_name: str) -> list[str]:

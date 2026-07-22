@@ -230,6 +230,84 @@ def test_local_solver_can_select_bundled_ev_engine(tmp_path: Path) -> None:
     assert "requested_engine" not in result.raw
 
 
+def test_local_ev_selection_bypasses_supported_preflop_chart(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
+        pot_size=1.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=6,
+        hero_position="button",
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert "requested_engine" not in result.raw
+    assert "routing_reason" not in result.raw
+
+
+@pytest.mark.parametrize("fallback_enabled", [True, False])
+def test_local_solver_routes_supported_preflop_spot_to_chart(
+    tmp_path: Path, fallback_enabled: bool
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=fallback_enabled,
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
+        pot_size=1.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=6,
+        hero_position="button",
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "raise"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert result.raw["routing_reason"] == "the hand is preflop"
+    assert "fallback_reason" not in result.raw
+    assert "routed this hand to the preflop chart" in result.explanation
+    assert "range/EV fallback" not in result.explanation
+
+
+def test_local_solver_keeps_ev_fallback_for_preflop_spot_without_position(tmp_path: Path) -> None:
+    provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="local_solver"))
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
+        pot_size=1.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=6,
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "range/EV fallback" in result.explanation
+
+
 def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text(

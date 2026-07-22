@@ -36,6 +36,16 @@ class OpenSizePolicy:
     reraise_multiplier: float
 
 
+@dataclass(frozen=True)
+class StackDepthPolicy:
+    name: str
+    maximum_stack: float | None
+    open_multiplier: float
+    continue_multiplier: float
+    reraise_multiplier: float
+    opening_size: float
+
+
 POSITION_POLICIES: dict[Position, PositionPolicy] = {
     "utg": PositionPolicy(0.17),
     "hijack": PositionPolicy(0.22),
@@ -75,6 +85,15 @@ OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
     OpenSizePolicy("very_large", 4.00, 0.78, 0.90),
 )
 
+# Stack bands keep the chart explicit and deterministic. Shorter stacks trim
+# speculative opens/calls and move more of the continuing range into reraises.
+STACK_DEPTH_POLICIES: tuple[StackDepthPolicy, ...] = (
+    StackDepthPolicy("short", 20.0, 0.90, 0.90, 1.30, 2.20),
+    StackDepthPolicy("medium", 50.0, 0.95, 0.95, 1.15, 2.30),
+    StackDepthPolicy("standard", 150.0, 1.00, 1.00, 1.00, 2.50),
+    StackDepthPolicy("deep", None, 1.03, 1.05, 0.90, 2.50),
+)
+
 POSITION_LABELS: dict[Position, str] = {
     "utg": "UTG",
     "hijack": "hijack",
@@ -99,6 +118,9 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     policy = POSITION_POLICIES[position]
     current_bet = state.current_bet or 0
     effective_stack = state.effective_stack or 0
+    stack_policy = policy_for_stack_depth(effective_stack)
+    if stack_policy is None:
+        return None
 
     if current_bet <= 0:
         if (state.pot_size or 0) > 2.5:
@@ -117,25 +139,33 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
                 assumptions=[
                     "No amount is required to continue.",
                     "No limper or prior raise is represented in the approved state.",
+                    stack_assumption(effective_stack, stack_policy),
                 ],
+                effective_stack=effective_stack,
+                stack_policy=stack_policy,
             )
-        should_open = top_fraction <= policy.open_fraction
+        open_fraction = adjusted_open_fraction(policy, stack_policy)
+        should_open = top_fraction <= open_fraction
         action: RecommendationAction = "raise" if should_open else "fold"
-        sizing = _open_size(effective_stack) if should_open else None
+        sizing = _open_size(effective_stack, stack_policy) if should_open else None
         return _result(
             action=action,
             sizing=sizing,
-            confidence=_boundary_confidence(top_fraction, policy.open_fraction),
+            confidence=_boundary_confidence(top_fraction, open_fraction),
             hand_class=hand_class,
             top_fraction=top_fraction,
             position=position,
             scenario="first_in",
             tier="open" if should_open else "fold",
-            policy_fraction=policy.open_fraction,
+            policy_fraction=open_fraction,
             assumptions=[
                 "The pot is treated as unopened with no limpers or prior hero action.",
+                stack_assumption(effective_stack, stack_policy),
                 "The chart models a six-max chip-EV training spot before rake.",
             ],
+            effective_stack=effective_stack,
+            base_open_fraction=policy.open_fraction,
+            stack_policy=stack_policy,
         )
 
     if state.facing_action != "raise":
@@ -159,7 +189,11 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     size_policy = policy_for_open_size(opener_size)
     if size_policy is None:
         return None
-    defense_policy = adjusted_defense_policy(base_defense_policy, size_policy)
+    defense_policy = adjusted_defense_policy(
+        base_defense_policy,
+        size_policy,
+        stack_policy,
+    )
 
     if effective_stack <= current_bet:
         can_reraise = False
@@ -200,13 +234,16 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             f"{POSITION_POLICIES[opener_position].open_fraction:.0%} first-in range.",
             f"The {opener_size:g} BB opening size uses the {size_policy.name.replace('_', ' ')} "
             "open adjustment.",
+            stack_assumption(effective_stack, stack_policy),
             "The chart models a six-max chip-EV training spot before rake.",
         ],
+        effective_stack=effective_stack,
         opener_position=opener_position,
         opening_raise_size=opener_size,
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
         size_policy=size_policy,
+        stack_policy=stack_policy,
     )
 
 
@@ -257,8 +294,8 @@ def _chart_score(cards: list[Card]) -> float:
     return score
 
 
-def _open_size(effective_stack: float) -> float:
-    return round(min(2.5, effective_stack), 2) if effective_stack > 0 else 2.5
+def _open_size(effective_stack: float, stack_policy: StackDepthPolicy) -> float:
+    return round(min(stack_policy.opening_size, effective_stack), 2)
 
 
 def _reraise_size(opener_size: float, pot_size: float, effective_stack: float) -> float:
@@ -278,19 +315,61 @@ def policy_for_open_size(opening_size: float) -> OpenSizePolicy | None:
     )
 
 
+def policy_for_stack_depth(effective_stack: float) -> StackDepthPolicy | None:
+    return next(
+        (
+            policy
+            for policy in STACK_DEPTH_POLICIES
+            if policy.maximum_stack is None or effective_stack <= policy.maximum_stack
+        ),
+        None,
+    )
+
+
+def adjusted_open_fraction(
+    position_policy: PositionPolicy,
+    stack_policy: StackDepthPolicy,
+) -> float:
+    return round(
+        min(1.0, position_policy.open_fraction * stack_policy.open_multiplier),
+        4,
+    )
+
+
 def adjusted_defense_policy(
     base_policy: DefensePolicy,
     size_policy: OpenSizePolicy,
+    stack_policy: StackDepthPolicy,
 ) -> DefensePolicy:
     return DefensePolicy(
         continue_fraction=round(
-            min(1.0, base_policy.continue_fraction * size_policy.continue_multiplier),
+            min(
+                1.0,
+                base_policy.continue_fraction
+                * size_policy.continue_multiplier
+                * stack_policy.continue_multiplier,
+            ),
             4,
         ),
         reraise_fraction=round(
-            min(1.0, base_policy.reraise_fraction * size_policy.reraise_multiplier),
+            min(
+                1.0,
+                base_policy.reraise_fraction
+                * size_policy.reraise_multiplier
+                * stack_policy.reraise_multiplier,
+            ),
             4,
         ),
+    )
+
+
+def stack_assumption(
+    effective_stack: float,
+    stack_policy: StackDepthPolicy,
+) -> str:
+    return (
+        f"The {effective_stack:g} BB effective stack uses the "
+        f"{stack_policy.name} stack-depth adjustment."
     )
 
 
@@ -306,11 +385,14 @@ def _result(
     tier: str,
     policy_fraction: float | None,
     assumptions: list[str],
+    effective_stack: float | None = None,
+    base_open_fraction: float | None = None,
     opener_position: Position | None = None,
     opening_raise_size: float | None = None,
     base_defense_policy: DefensePolicy | None = None,
     defense_policy: DefensePolicy | None = None,
     size_policy: OpenSizePolicy | None = None,
+    stack_policy: StackDepthPolicy | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
     size_text = f" to {sizing:g} BB" if sizing is not None else ""
@@ -349,15 +431,35 @@ def _result(
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
         raw["opening_raise_size"] = opening_raise_size
+    if effective_stack is not None and stack_policy is not None:
+        raw.update(
+            {
+                "effective_stack": effective_stack,
+                "stack_depth_policy": stack_policy.name,
+                "open_stack_multiplier": stack_policy.open_multiplier,
+                "continue_stack_multiplier": stack_policy.continue_multiplier,
+                "reraise_stack_multiplier": stack_policy.reraise_multiplier,
+            }
+        )
+    if base_open_fraction is not None and stack_policy is not None:
+        raw.update(
+            {
+                "policy_source": "hero_position_stack",
+                "base_open_fraction": base_open_fraction,
+                "open_fraction": policy_fraction,
+                "target_open_size": stack_policy.opening_size,
+            }
+        )
     if (
         opener_position is not None
         and base_defense_policy is not None
         and defense_policy is not None
         and size_policy is not None
+        and stack_policy is not None
     ):
         raw.update(
             {
-                "policy_source": "hero_opener_size_matchup",
+                "policy_source": "hero_opener_size_stack_matchup",
                 "opener_open_fraction": POSITION_POLICIES[opener_position].open_fraction,
                 "base_continue_fraction": base_defense_policy.continue_fraction,
                 "base_reraise_fraction": base_defense_policy.reraise_fraction,

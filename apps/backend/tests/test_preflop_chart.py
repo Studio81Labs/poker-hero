@@ -5,9 +5,12 @@ from app.solvers.preflop_chart import (
     DEFENSE_POLICIES,
     OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
+    STACK_DEPTH_POLICIES,
+    adjusted_defense_policy,
     canonical_hand_class,
     hand_top_fraction,
     normalize_position,
+    policy_for_stack_depth,
     solve_preflop_chart,
 )
 from app.solvers.preflop_context import (
@@ -107,6 +110,54 @@ def test_open_size_policies_tighten_as_the_raise_grows() -> None:
     )
 
 
+def test_stack_depth_policies_are_ordered_and_keep_reraises_inside_continues() -> None:
+    finite_maximums = [
+        policy.maximum_stack
+        for policy in STACK_DEPTH_POLICIES
+        if policy.maximum_stack is not None
+    ]
+
+    assert finite_maximums == sorted(finite_maximums)
+    assert STACK_DEPTH_POLICIES[-1].maximum_stack is None
+    assert all(
+        current.open_multiplier <= following.open_multiplier
+        and current.continue_multiplier <= following.continue_multiplier
+        and current.reraise_multiplier >= following.reraise_multiplier
+        and current.opening_size <= following.opening_size
+        for current, following in zip(STACK_DEPTH_POLICIES, STACK_DEPTH_POLICIES[1:])
+    )
+    for base_policy in DEFENSE_POLICIES.values():
+        for size_policy in OPEN_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_defense_policy(
+                    base_policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert adjusted.reraise_fraction <= adjusted.continue_fraction
+
+
+@pytest.mark.parametrize(
+    ("effective_stack", "expected_policy"),
+    [
+        (20.0, "short"),
+        (20.01, "medium"),
+        (50.0, "medium"),
+        (50.01, "standard"),
+        (150.0, "standard"),
+        (150.01, "deep"),
+    ],
+)
+def test_stack_depth_policy_boundaries(
+    effective_stack: float,
+    expected_policy: str,
+) -> None:
+    policy = policy_for_stack_depth(effective_stack)
+
+    assert policy is not None
+    assert policy.name == expected_policy
+
+
 def test_opens_premium_hand_from_early_position() -> None:
     result = solve_preflop_chart(request_for(("Ah", "Ad"), position="UTG"))
 
@@ -116,6 +167,50 @@ def test_opens_premium_hand_from_early_position() -> None:
     assert result.raw["engine"] == "preflop_chart_v1"
     assert result.raw["scenario"] == "first_in"
     assert result.raw["chart_tier"] == "open"
+
+
+@pytest.mark.parametrize(
+    ("effective_stack", "expected_action", "expected_policy", "expected_fraction"),
+    [
+        (20, "fold", "short", 0.405),
+        (100, "raise", "standard", 0.45),
+    ],
+)
+def test_first_in_range_accounts_for_stack_depth(
+    effective_stack: float,
+    expected_action: str,
+    expected_policy: str,
+    expected_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("9h", "8d"),
+            position="button",
+            effective_stack=effective_stack,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["policy_source"] == "hero_position_stack"
+    assert result.raw["stack_depth_policy"] == expected_policy
+    assert result.raw["base_open_fraction"] == 0.45
+    assert result.raw["open_fraction"] == expected_fraction
+
+
+def test_short_stack_uses_smaller_first_in_open_size() -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Ad"),
+            position="button",
+            effective_stack=20,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 2.2
+    assert result.raw["target_open_size"] == 2.2
 
 
 def test_folds_weak_unopened_button_hand() -> None:
@@ -152,7 +247,7 @@ def test_defends_medium_button_hand_against_assumed_open_raise(
     assert result is not None
     assert result.action == "call"
     assert result.raw["scenario"] == "facing_open_raise"
-    assert result.raw["policy_source"] == "hero_opener_size_matchup"
+    assert result.raw["policy_source"] == "hero_opener_size_stack_matchup"
     assert any("matchup-specific" in value for value in result.raw["assumptions"])
 
 
@@ -292,6 +387,70 @@ def test_big_blind_reraise_range_accounts_for_opening_size(
     assert result is not None
     assert result.action == expected_action
     assert result.raw["base_reraise_fraction"] == 0.12
+    assert result.raw["reraise_fraction"] == expected_fraction
+
+
+@pytest.mark.parametrize(
+    ("effective_stack", "expected_action", "expected_policy", "expected_fraction"),
+    [
+        (20, "fold", "short", 0.36),
+        (100, "call", "standard", 0.40),
+    ],
+)
+def test_big_blind_continue_range_accounts_for_stack_depth(
+    effective_stack: float,
+    expected_action: str,
+    expected_policy: str,
+    expected_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("7h", "6h"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            effective_stack=effective_stack,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["stack_depth_policy"] == expected_policy
+    assert result.raw["continue_fraction"] == expected_fraction
+
+
+@pytest.mark.parametrize(
+    ("effective_stack", "expected_action", "expected_policy", "expected_fraction"),
+    [
+        (20, "raise", "short", 0.156),
+        (100, "call", "standard", 0.12),
+    ],
+)
+def test_big_blind_reraise_range_accounts_for_stack_depth(
+    effective_stack: float,
+    expected_action: str,
+    expected_policy: str,
+    expected_fraction: float,
+) -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Jd"),
+            position="big blind",
+            current_bet=1.5,
+            pot_size=4,
+            effective_stack=effective_stack,
+            facing_action="raise",
+            preflop_opener_position="button",
+            preflop_open_size=2.5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["stack_depth_policy"] == expected_policy
     assert result.raw["reraise_fraction"] == expected_fraction
 
 

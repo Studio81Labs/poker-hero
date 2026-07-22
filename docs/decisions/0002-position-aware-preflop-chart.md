@@ -18,10 +18,13 @@ chart orders all 169 starting-hand classes with explicit playability
 adjustments, then applies conservative position-specific opening boundaries and
 opener-to-hero matchup boundaries for continuing and reraising. Supported 2-4
 BB total opens apply ordered size bands: smaller opens widen the response ranges,
-while larger opens tighten them. It returns the normalized hand class,
-positions, scenario, modeled opening range, base and adjusted response
-boundaries, size policy, assumptions, and candidate frequencies as
-recommendation evidence.
+while larger opens tighten them. Effective stack applies short (up to 20 BB),
+medium (up to 50 BB), standard (up to 150 BB), and deep bands. Shorter bands
+trim speculative first-in and calling ranges, reduce first-in sizing, and move
+more continues into reraises; deep stacks modestly widen calls and reduce the
+reraise share. It returns the normalized hand class, positions, scenario,
+modeled opening range, base and adjusted response boundaries, size and stack
+policies, assumptions, and candidate frequencies as recommendation evidence.
 
 The chart declines limped pots, 3-bet or later action, missing positions, and
 unopened pots whose size suggests missing action. Those states continue to the
@@ -43,6 +46,8 @@ contract.
   provider boundary.
 - Parsed, structured, and reconstructed opening sizes share one consistency
   check, so contradictory call amounts decline chart routing.
+- Stack-depth adjustments are deterministic heuristics with explicit evidence;
+  they are not represented as solved frequencies.
 - Accurate limper, 3-bet, ante, and tournament modeling still
   requires richer canonical action history or a licensed preflop solver.
 

@@ -101,10 +101,11 @@ to the Rust plugin.
 Preflop hands with a recognized six-max position and an unambiguous unopened or
 single-open-raise context use the bundled position-aware training chart. The
 chart uses opener-to-hero matchup boundaries plus transparent adjustments for
-2-4 BB opening sizes. It reports its hand-class ranking, base and adjusted
-continue/reraise policy, assumptions, and action frequencies without presenting
-the result as a solved preflop tree. Approved
-states may provide the opener position and total opening size as structured
+2-4 BB opening sizes and short, medium, standard, or deep effective stacks.
+First-in ranges and sizing also adjust by stack depth. The chart reports its
+hand-class ranking, base and adjusted policy, assumptions, and action frequencies
+without presenting the result as a solved preflop tree. Approved states may
+provide the opener position and total opening size as structured
 fields; the chart prefers those values and retains action-text parsing for older
 saved hands. Positionless,
 limped, 3-bet, multiway postflop, incomplete, ambiguous-position, oversized, and

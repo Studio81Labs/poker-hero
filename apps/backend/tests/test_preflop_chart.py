@@ -186,6 +186,7 @@ def test_checks_big_blind_when_no_amount_is_required() -> None:
             action_context="UTG opens to 2.5 BB",
         ),
         request_for(("Ah", "Kd"), position="button", players_in_hand=7),
+        request_for(("Ah", "Ad"), position="button", effective_stack=0),
         request_for(("Ah", "Kd"), position="button", pot_size=2.5),
         request_for(("Ah", "Kd"), position="button", pot_size=4.5),
         request_for(("Ah", "Ad"), position="BB", pot_size=4.5),

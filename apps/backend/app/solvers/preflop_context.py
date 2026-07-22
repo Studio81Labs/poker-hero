@@ -89,6 +89,8 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
         return False
     if state.players_in_hand is None or not 2 <= state.players_in_hand <= 6:
         return False
+    if state.effective_stack is None or state.effective_stack <= 0:
+        return False
     position = normalize_position(state.hero_position)
     if position is None:
         return False

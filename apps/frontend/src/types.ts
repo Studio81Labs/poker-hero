@@ -95,6 +95,14 @@ export interface TrainingTrend {
   average_ev_loss_delta_bb: number | null;
 }
 
+export interface TrainingActionDifference {
+  decision_action: RecommendationAction;
+  recommended_action: RecommendationAction;
+  hands: number;
+  ev_compared_hands: number;
+  average_ev_loss_bb: number | null;
+}
+
 export interface TrainingProgress {
   reviewed_hands: number;
   action_matches: number;
@@ -106,6 +114,7 @@ export interface TrainingProgress {
   ev_compared_hands: number;
   average_ev_loss_bb: number | null;
   trend?: TrainingTrend | null;
+  action_differences?: TrainingActionDifference[];
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   review_street_counts?: Partial<Record<Street, number>>;

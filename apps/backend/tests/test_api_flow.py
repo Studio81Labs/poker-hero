@@ -190,6 +190,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["ev_compared_hands"] == 0
     assert progress["average_ev_loss_bb"] is None
     assert progress["trend"] is None
+    assert progress["action_differences"] == []
     assert progress["street_summaries"][0]["street"] == "flop"
     assert progress["street_summaries"][0]["ev_compared_hands"] == 0
     assert progress["street_summaries"][0]["average_ev_loss_bb"] is None

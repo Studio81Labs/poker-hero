@@ -976,6 +976,13 @@ describe("App", () => {
       exact_accuracy: 0,
       ev_compared_hands: 2,
       average_ev_loss_bb: 0.8,
+      action_differences: [{
+        decision_action: "fold" as const,
+        recommended_action: "call" as const,
+        hands: 2,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.8,
+      }],
       trend: {
         window_hands: 1,
         recent_action_accuracy: 0,
@@ -1045,6 +1052,11 @@ describe("App", () => {
     expect(within(trend).getByText("Last 1 vs previous 1")).toBeInTheDocument();
     expect(within(trend).getByText("0.2 BB")).toBeInTheDocument();
     expect(within(trend).getByText("-1.2 BB")).toHaveClass("improving");
+    const differences = within(dialog).getByRole("region", { name: "Common differences" });
+    expect(within(differences).getByText("Fold")).toBeInTheDocument();
+    expect(within(differences).getByText("Call")).toBeInTheDocument();
+    expect(within(differences).getByText("2 hands")).toBeInTheDocument();
+    expect(within(differences).getByText("0.8 BB avg loss")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: /Focus turn reviews/ }));
 
     expect(within(dialog).getByText("Updating review queue...")).toBeInTheDocument();

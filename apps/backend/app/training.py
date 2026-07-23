@@ -8,6 +8,7 @@ from app.models import (
     RecommendationAction,
     RecommendationResult,
     Street,
+    TrainingActionDifference,
     TrainingDecision,
     TrainingOutcome,
     TrainingProgress,
@@ -81,6 +82,7 @@ def summarize_training(
 
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     trend = _training_trend(newest_first, outcomes, ev_losses)
+    action_differences = _action_differences(reviewed, outcomes, ev_losses)
     recent_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
@@ -129,6 +131,7 @@ def summarize_training(
         ev_compared_hands=len(comparable_ev_losses),
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         trend=trend,
+        action_differences=action_differences,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         review_street_counts=dict(review_street_counts),
@@ -359,6 +362,52 @@ def _training_trend(
         recent_average_ev_loss_bb=recent_average_ev_loss,
         previous_average_ev_loss_bb=previous_average_ev_loss,
         average_ev_loss_delta_bb=ev_loss_delta,
+    )
+
+
+def _action_differences(
+    reviewed: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    ev_losses: dict[str, float | None],
+) -> list[TrainingActionDifference]:
+    grouped: dict[
+        tuple[RecommendationAction, RecommendationAction],
+        list[JobRecord],
+    ] = defaultdict(list)
+    for job in reviewed:
+        if outcomes[job.id] != "different":
+            continue
+        decision = job.training_decision
+        recommendation = job.recommendation
+        if decision is None or recommendation is None:
+            continue
+        grouped[(decision.action, recommendation.action)].append(job)
+
+    summaries = []
+    for (decision_action, recommended_action), jobs in grouped.items():
+        difference_ev_losses = [
+            loss
+            for job in jobs
+            if (loss := ev_losses[job.id]) is not None
+        ]
+        summaries.append(
+            TrainingActionDifference(
+                decision_action=decision_action,
+                recommended_action=recommended_action,
+                hands=len(jobs),
+                ev_compared_hands=len(difference_ev_losses),
+                average_ev_loss_bb=_average_ev_loss(difference_ev_losses),
+            )
+        )
+    return sorted(
+        summaries,
+        key=lambda summary: (
+            -summary.hands,
+            summary.average_ev_loss_bb is None,
+            -(summary.average_ev_loss_bb or 0),
+            summary.decision_action,
+            summary.recommended_action,
+        ),
     )
 
 

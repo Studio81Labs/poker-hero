@@ -69,6 +69,8 @@ The frontend is a browser control panel for:
   exposes a complete numeric candidate line in big blinds.
 - Comparing equal recent and previous windows for action accuracy, exact-line
   accuracy, and available EV-loss movement.
+- Reviewing repeated unsupported action choices grouped by the player's action
+  and the solver's headline action, with available average EV loss.
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by street, ordering it by recency or available EV
   loss, and reopening the persisted hand.
@@ -186,7 +188,8 @@ frequencies.
     and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with
     street-level results, optional EV-loss grading, recent-hand review links,
-    and equal-window recent trends capped at ten hands per period.
+    equal-window recent trends capped at ten hands per period, and common
+    unsupported action differences.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and prioritize the highest available EV
@@ -338,6 +341,8 @@ Poker Hero is successful when:
   candidate EV metadata without excluding ungraded hands from other statistics.
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
+- A user can identify repeated unsupported action choices without treating
+  solver-supported mixed actions or sizing-only differences as mistakes.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
 - A user can reorder pending reviews by EV loss so the highest-cost comparable

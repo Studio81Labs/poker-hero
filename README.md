@@ -126,7 +126,10 @@ queue limit. Training progress suggests an actionable focus street from the
 pending queue, preferring the highest graded average EV loss and otherwise the
 lowest action accuracy. It also compares equal recent and previous windows,
 capped at ten hands each, so action, exact-line, and available EV-loss movement
-is visible without letting a larger period skew the trend.
+is visible without letting a larger period skew the trend. Common unsupported
+action choices are grouped by the player's action and the solver's headline
+action, with available average EV loss, to make repeated differences easier to
+study.
 
 ### Offline Parser Benchmarks
 

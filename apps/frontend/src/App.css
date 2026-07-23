@@ -1902,6 +1902,37 @@ button:disabled {
   margin: 0;
 }
 
+.training-review-controls {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.training-review-order {
+  align-items: center;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  min-height: 29px;
+}
+
+.training-review-order > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 7px;
+  text-transform: uppercase;
+}
+
+.training-review-order select {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--text);
+  font-size: 10px;
+  height: 27px;
+  padding: 0 22px 0 7px;
+}
+
 .training-view-switch {
   border: 1px solid var(--line);
   display: inline-flex;
@@ -2651,6 +2682,15 @@ button:disabled {
     align-items: stretch;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .training-review-controls {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .training-review-order select {
+    flex: 1;
   }
 
   .training-view-switch {

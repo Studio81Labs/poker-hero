@@ -198,6 +198,16 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["review_queue"] == []
 
 
+def test_training_progress_validates_review_order(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    impact = client.get("/api/training/progress?review_order=ev_loss")
+    invalid = client.get("/api/training/progress?review_order=unknown")
+
+    assert impact.status_code == 200
+    assert invalid.status_code == 422
+
+
 def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

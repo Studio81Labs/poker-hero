@@ -12,6 +12,7 @@ from app.models import (
     TrainingOutcome,
     TrainingProgress,
     TrainingRecentHand,
+    TrainingReviewOrder,
     TrainingStreetSummary,
 )
 
@@ -26,6 +27,7 @@ def summarize_training(
     jobs: list[JobRecord],
     recent_limit: int = 8,
     review_limit: int = 24,
+    review_order: TrainingReviewOrder = "recent",
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -79,12 +81,21 @@ def summarize_training(
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
     ]
-    review_queue = [
-        _recent_hand(job, outcomes[job.id], ev_losses[job.id])
+    pending_review_jobs = [
+        job
         for job in newest_first
         if outcomes[job.id] not in {"match", "mixed"}
         and job.training_reviewed_at is None
-    ][: max(0, review_limit)]
+    ]
+    if review_order == "ev_loss":
+        pending_review_jobs.sort(
+            key=lambda job: _review_ev_priority(job, ev_losses[job.id]),
+            reverse=True,
+        )
+    review_queue = [
+        _recent_hand(job, outcomes[job.id], ev_losses[job.id])
+        for job in pending_review_jobs[: max(0, review_limit)]
+    ]
     needs_review_hands = sum(
         outcomes[job.id] not in {"match", "mixed"}
         and job.training_reviewed_at is None
@@ -247,6 +258,17 @@ def _training_recorded_at(job: JobRecord) -> datetime:
     if job.training_decision is None:
         raise ValueError("Training hand requires a decision")
     return job.training_decision.recorded_at
+
+
+def _review_ev_priority(
+    job: JobRecord,
+    ev_loss_bb: float | None,
+) -> tuple[bool, float, datetime]:
+    return (
+        ev_loss_bb is not None,
+        ev_loss_bb if ev_loss_bb is not None else 0,
+        _training_recorded_at(job),
+    )
 
 
 def _average_ev_loss(losses: list[float]) -> float | None:

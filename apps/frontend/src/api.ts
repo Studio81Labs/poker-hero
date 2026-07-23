@@ -7,6 +7,7 @@ import type {
   RecommendationAction,
   SystemInfo,
   TrainingProgress,
+  TrainingReviewOrder,
 } from "./types";
 
 const API_BASE_URL =
@@ -110,8 +111,11 @@ export async function reopenTrainingReview(jobId: string): Promise<JobRecord> {
   return readJson<JobRecord>(response);
 }
 
-export async function getTrainingProgress(): Promise<TrainingProgress> {
-  const response = await fetch(`${API_BASE_URL}/api/training/progress`, {
+export async function getTrainingProgress(
+  reviewOrder: TrainingReviewOrder = "recent",
+): Promise<TrainingProgress> {
+  const query = reviewOrder === "recent" ? "" : `?review_order=${reviewOrder}`;
+  const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {
     credentials: "include",
   });
   return readJson<TrainingProgress>(response);

@@ -943,6 +943,91 @@ describe("App", () => {
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/review-job");
   });
 
+  it("orders training reviews by EV loss before opening the highest-impact hand", async () => {
+    const lowHand = {
+      job_id: "low-job",
+      original_filename: "low.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      ev_loss_bb: 0.2,
+    };
+    const highHand = {
+      ...lowHand,
+      job_id: "high-job",
+      original_filename: "high.png",
+      recorded_at: "2026-07-20T12:00:00Z",
+      ev_loss_bb: 1.4,
+    };
+    const recentProgress = {
+      reviewed_hands: 2,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 2,
+      needs_review_hands: 2,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 0.8,
+      street_summaries: [],
+      recent_hands: [lowHand, highHand],
+      review_queue: [lowHand, highHand],
+    };
+    const impactProgress = {
+      ...recentProgress,
+      review_queue: [highHand, lowHand],
+    };
+    const pendingOrder = deferredResponse();
+    const highJob = {
+      ...recommendedJob(),
+      id: "high-job",
+      original_filename: "high.png",
+      training_decision: {
+        action: "fold" as const,
+        sizing: null,
+        recorded_at: highHand.recorded_at,
+      },
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(recentProgress))
+      .mockReturnValueOnce(pendingOrder.promise)
+      .mockResolvedValueOnce(jsonResponse(highJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
+    await user.selectOptions(within(dialog).getByLabelText("Review order"), "ev_loss");
+
+    const reviewHighestLoss = within(dialog).getByRole("button", { name: "Review highest loss" });
+    expect(reviewHighestLoss).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Open low.png training review" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Open high.png training review" })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_order=ev_loss",
+    );
+
+    pendingOrder.resolve(jsonResponse(impactProgress));
+    await waitFor(() => expect(reviewHighestLoss).toBeEnabled());
+    expect(within(dialog).getByLabelText("Review order")).toHaveValue("ev_loss");
+    expect(within(dialog).getByRole("button", { name: "Open high.png training review" })).toBeEnabled();
+    await user.click(reviewHighestLoss);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Training progress" })).not.toBeInTheDocument());
+    expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/jobs/high-job/image",
+    );
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/high-job");
+  });
+
   it("reopens a completed review from recent training decisions", async () => {
     const trainingDecision = {
       action: "call" as const,

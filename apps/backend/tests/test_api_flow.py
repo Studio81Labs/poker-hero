@@ -264,6 +264,39 @@ def test_training_review_requires_a_non_exact_comparison(tmp_path: Path) -> None
     assert exact_reopen.json()["detail"] == "Exact matches do not need review"
 
 
+def test_training_review_rejects_supported_mixed_line(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 8},
+    )
+    client.post(f"/api/jobs/{job_id}/recommend")
+
+    store = FileJobStore(tmp_path)
+    job = store.get(job_id)
+    assert job.recommendation is not None
+    job.recommendation.raw["candidates"] = [
+        {"action": "call", "sizing": None, "frequency": 0.8},
+        {"action": "raise", "sizing": 8, "frequency": 0.2},
+    ]
+    store.save(job)
+
+    complete = client.put(f"/api/jobs/{job_id}/training-review")
+    reopen = client.delete(f"/api/jobs/{job_id}/training-review")
+    progress = client.get("/api/training/progress").json()
+
+    assert complete.status_code == 409
+    assert complete.json()["detail"] == "Exact matches do not need review"
+    assert reopen.status_code == 409
+    assert reopen.json()["detail"] == "Exact matches do not need review"
+    assert store.get(job_id).training_reviewed_at is None
+    assert progress["recent_hands"][0]["outcome"] == "mixed"
+    assert progress["recent_hands"][0]["reviewed_at"] is None
+    assert progress["review_queue"] == []
+
+
 def test_training_decision_requires_approval_and_precedes_recommendation(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

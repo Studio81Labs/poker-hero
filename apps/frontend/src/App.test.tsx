@@ -1008,6 +1008,8 @@ describe("App", () => {
 
     const reviewHighestLoss = within(dialog).getByRole("button", { name: "Review highest loss" });
     expect(reviewHighestLoss).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Open low.png training review" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Open high.png training review" })).not.toBeInTheDocument();
     expect(fetchMock().mock.calls[1][0]).toBe(
       "http://localhost:8000/api/training/progress?review_order=ev_loss",
     );
@@ -1015,6 +1017,7 @@ describe("App", () => {
     pendingOrder.resolve(jsonResponse(impactProgress));
     await waitFor(() => expect(reviewHighestLoss).toBeEnabled());
     expect(within(dialog).getByLabelText("Review order")).toHaveValue("ev_loss");
+    expect(within(dialog).getByRole("button", { name: "Open high.png training review" })).toBeEnabled();
     await user.click(reviewHighestLoss);
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Training progress" })).not.toBeInTheDocument());

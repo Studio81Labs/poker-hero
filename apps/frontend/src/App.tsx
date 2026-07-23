@@ -2991,7 +2991,7 @@ export default function App() {
                               className="recent-training-open"
                               type="button"
                               onClick={() => void reviewTrainingHand(hand.job_id)}
-                              disabled={trainingReviewJobId !== null || busy}
+                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                               aria-label={`Open ${hand.original_filename} training review`}
                             >
                               <span className="recent-training-hand">

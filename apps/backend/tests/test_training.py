@@ -277,16 +277,32 @@ def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> N
                     {"action": "raise", "sizing": 8, "frequency": True},
                 ]
             },
-        )
+        ),
+        reviewed_job(
+            "c" * 32,
+            "turn",
+            "call",
+            "raise",
+            datetime(2026, 7, 12, tzinfo=timezone.utc),
+            recommended_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "frequency": 0.2},
+                ]
+            },
+        ),
     ]
 
     progress = summarize_training(jobs)
 
     assert progress.action_matches == 0
     assert progress.exact_matches == 0
-    assert progress.different_actions == 1
-    assert progress.needs_review_hands == 1
-    assert progress.recent_hands[0].outcome == "different"
+    assert progress.different_actions == 2
+    assert progress.needs_review_hands == 2
+    assert [hand.outcome for hand in progress.recent_hands] == [
+        "different",
+        "different",
+    ]
 
 
 def test_summarize_training_handles_empty_history() -> None:

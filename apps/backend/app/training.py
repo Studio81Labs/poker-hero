@@ -135,6 +135,8 @@ def _policy_support(
             or frequency > 1
         ):
             continue
+        if "sizing" not in candidate:
+            continue
         sizing = _candidate_sizing(decision.action, candidate.get("sizing"))
         if sizing is _INVALID_SIZING:
             continue

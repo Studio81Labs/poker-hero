@@ -153,6 +153,7 @@ interface RecommendationEvidence {
   routed: boolean;
   metrics: RecommendationEvidenceMetric[];
   details: RecommendationEvidenceDetail[];
+  ranges: RecommendationEvidenceDetail[];
   candidates: RecommendationEvidenceCandidate[];
 }
 
@@ -237,10 +238,20 @@ function metadataLabel(value: unknown): string | null {
   if (!normalized) {
     return null;
   }
-  if (normalized === "utg") {
-    return "UTG";
+  if (["ip", "oop", "utg"].includes(normalized)) {
+    return normalized.toUpperCase();
   }
   return `${normalized.slice(0, 1).toUpperCase()}${normalized.slice(1)}`;
+}
+
+function metadataStringList(value: unknown, maxItems = 3, maxLength = 80): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.slice(0, maxItems).flatMap((item) => {
+    const normalized = metadataString(item, maxLength);
+    return normalized ? [normalized] : [];
+  });
 }
 
 function formatEvidenceRatio(value: number): string {
@@ -252,10 +263,15 @@ function formatEvidenceBb(value: number): string {
   return `${Number(value.toFixed(2))} BB`;
 }
 
+function formatEvidenceNumber(value: number, precision = 1): string {
+  return Number(value.toFixed(precision)).toString();
+}
+
 function recommendationEvidenceFromRaw(
   raw: Record<string, unknown>,
   recommendation: RecommendationResult,
 ): RecommendationEvidence | null {
+  const engine = metadataString(raw.engine, 80);
   const equity = metadataRecord(raw.equity);
   const rangeEquity = metadataRatio(equity?.equity ?? raw.equity);
   const realizedEquity = metadataRatio(raw.realized_equity);
@@ -266,6 +282,7 @@ function recommendationEvidenceFromRaw(
   const policyFraction = metadataRatio(raw.policy_fraction);
   const metrics: RecommendationEvidenceMetric[] = [];
   const details: RecommendationEvidenceDetail[] = [];
+  const ranges: RecommendationEvidenceDetail[] = [];
 
   if (rangeEquity !== null) {
     metrics.push({ label: "Range equity", value: rangeEquity, unit: "percent" });
@@ -351,6 +368,63 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "All-in cap", value: formatEvidenceBb(maximumReraiseTotal) });
   }
 
+  if (engine === "postflop_solver") {
+    const heroPosition = metadataLabel(raw.hero_position);
+    if (heroPosition && ["IP", "OOP"].includes(heroPosition)) {
+      details.push({ label: "Position", value: heroPosition });
+    }
+
+    const modeledHistory = metadataStringList(raw.modeled_history);
+    if (modeledHistory.length > 0) {
+      details.push({ label: "Modeled action", value: modeledHistory.join(" → ") });
+    }
+
+    const tree = metadataRecord(raw.tree);
+    const startingPot = metadataNumber(tree?.starting_pot);
+    const treeStack = metadataNumber(tree?.effective_stack);
+    const treeParts: string[] = [];
+    if (startingPot !== null && startingPot > 0) {
+      treeParts.push(`${formatEvidenceBb(startingPot)} pot`);
+    }
+    if (treeStack !== null && treeStack >= 0) {
+      treeParts.push(`${formatEvidenceBb(treeStack)} stack`);
+    }
+    if (treeParts.length > 0) {
+      details.push({ label: "Tree", value: treeParts.join(" · ") });
+    }
+
+    const maxIterations = metadataNumber(tree?.max_iterations);
+    const compressedMemoryMb = metadataNumber(tree?.compressed_memory_mb);
+    const solveBudget: string[] = [];
+    if (maxIterations !== null && Number.isInteger(maxIterations) && maxIterations > 0) {
+      solveBudget.push(`${maxIterations} iterations`);
+    }
+    if (compressedMemoryMb !== null && compressedMemoryMb >= 0) {
+      solveBudget.push(`${formatEvidenceNumber(compressedMemoryMb)} MB estimate`);
+    }
+    if (solveBudget.length > 0) {
+      details.push({ label: "Solve budget", value: solveBudget.join(" · ") });
+    }
+
+    const targetExploitability = metadataRatio(tree?.target_exploitability_ratio);
+    if (targetExploitability !== null && targetExploitability > 0) {
+      details.push({
+        label: "Solve target",
+        value: `${formatEvidenceRatio(targetExploitability)} pot exploitability`,
+      });
+    }
+
+    const rawRanges = metadataRecord(raw.ranges);
+    const oopRange = metadataString(rawRanges?.oop, 240);
+    const ipRange = metadataString(rawRanges?.ip, 240);
+    if (oopRange) {
+      ranges.push({ label: "OOP", value: oopRange });
+    }
+    if (ipRange) {
+      ranges.push({ label: "IP", value: ipRange });
+    }
+  }
+
   const sortedCandidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
     .flatMap((candidate): RecommendationEvidenceCandidate[] => {
       const record = metadataRecord(candidate);
@@ -387,11 +461,16 @@ function recommendationEvidenceFromRaw(
     ? [...sortedCandidates.slice(0, 3), sortedCandidates[chosenCandidateIndex]]
     : sortedCandidates.slice(0, 4);
 
-  const engine = metadataString(raw.engine, 80);
   const fallbackFrom = metadataString(raw.requested_engine, 80);
   const routingReason = metadataString(raw.routing_reason);
   const fallbackReason = routingReason ?? metadataString(raw.fallback_reason);
-  if (metrics.length === 0 && details.length === 0 && candidates.length === 0 && !fallbackReason) {
+  if (
+    metrics.length === 0
+    && details.length === 0
+    && ranges.length === 0
+    && candidates.length === 0
+    && !fallbackReason
+  ) {
     return null;
   }
   return {
@@ -401,6 +480,7 @@ function recommendationEvidenceFromRaw(
     routed: routingReason !== null,
     metrics,
     details,
+    ranges,
     candidates,
   };
 }
@@ -2381,7 +2461,7 @@ export default function App() {
                       </div>
                     ) : null}
                     {decisionEvidence.details.length > 0 ? (
-                      <dl className="recommendation-context" aria-label="Chart context">
+                      <dl className="recommendation-context" aria-label="Decision context">
                         {decisionEvidence.details.map((detail) => (
                           <div key={detail.label}>
                             <dt>{detail.label}</dt>
@@ -2389,6 +2469,19 @@ export default function App() {
                           </div>
                         ))}
                       </dl>
+                    ) : null}
+                    {decisionEvidence.ranges.length > 0 ? (
+                      <details className="recommendation-ranges" aria-label="Modeled ranges">
+                        <summary>Modeled ranges</summary>
+                        <dl>
+                          {decisionEvidence.ranges.map((range) => (
+                            <div key={range.label}>
+                              <dt>{range.label}</dt>
+                              <dd>{range.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </details>
                     ) : null}
                     {decisionEvidence.candidates.length > 0 ? (
                       <div className="recommendation-candidates" role="list" aria-label="Compared actions">

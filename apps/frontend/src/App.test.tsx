@@ -1013,7 +1013,115 @@ describe("App", () => {
     expect(chosen).toHaveTextContent("7.5 BB");
     expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
-    expect(within(evidence).queryByLabelText("Chart context")).not.toBeInTheDocument();
+    expect(within(evidence).queryByLabelText("Decision context")).not.toBeInTheDocument();
+    expect(within(evidence).queryByLabelText("Modeled ranges")).not.toBeInTheDocument();
+  });
+
+  it("shows postflop tree assumptions and expandable ranges", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "postflop-solver-job",
+      original_filename: "postflop.png",
+      image_filename: "postflop.png",
+      recommendation: {
+        action: "call",
+        sizing: null,
+        confidence: 0.81,
+        explanation: "The postflop solver recommends calling at 64% frequency.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "ip",
+          modeled_history: ["OOP bet 2.50 BB"],
+          tree: {
+            starting_pot: 10,
+            effective_stack: 95,
+            compressed_memory_mb: 34.6,
+            max_iterations: 400,
+            target_exploitability_ratio: 0.01,
+          },
+          ranges: {
+            oop: "66+,A8s+,A5s-A4s,AJo+",
+            ip: "QQ-22,AQs-A2s,ATo+",
+          },
+          exploitability: { bb: 0.12 },
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0.1, ev: 0 },
+            { action: "call", sizing: null, frequency: 0.64, ev: 2.4 },
+            { action: "raise", sizing: 8, frequency: 0.26, ev: 2.1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    expect(within(evidence).getByText("Postflop solver")).toBeInTheDocument();
+    expect(within(evidence).getByText("0.12 BB")).toBeInTheDocument();
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText("IP")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("OOP bet 2.50 BB")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("10 BB pot · 95 BB stack")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("400 iterations · 34.6 MB estimate")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("1% pot exploitability")).toBeInTheDocument();
+
+    const modeledRanges = within(evidence).getByLabelText("Modeled ranges");
+    expect(modeledRanges).not.toHaveAttribute("open");
+    await user.click(within(modeledRanges).getByText("Modeled ranges"));
+    expect(modeledRanges).toHaveAttribute("open");
+    expect(within(modeledRanges).getByText("66+,A8s+,A5s-A4s,AJo+")).toBeVisible();
+    expect(within(modeledRanges).getByText("QQ-22,AQs-A2s,ATo+")).toBeVisible();
+  });
+
+  it("omits malformed postflop context while preserving valid evidence", async () => {
+    const malformedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "malformed-postflop-job",
+      original_filename: "malformed.png",
+      image_filename: "malformed.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.7,
+        explanation: "Check remains available.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "button",
+          modeled_history: "OOP check",
+          tree: {
+            starting_pot: -1,
+            effective_stack: -2,
+            compressed_memory_mb: -1,
+            max_iterations: 2.5,
+            target_exploitability_ratio: 4,
+          },
+          ranges: { oop: 42, ip: "" },
+          candidates: [{ action: "check", sizing: null, frequency: 1 }],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: malformedJob.id, job: malformedJob, savedAt: new Date().toISOString() }]),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    expect(within(evidence).getByText("Postflop solver")).toBeInTheDocument();
+    expect(within(evidence).getByText("100% frequency")).toBeInTheDocument();
+    expect(within(evidence).queryByLabelText("Decision context")).not.toBeInTheDocument();
+    expect(within(evidence).queryByLabelText("Modeled ranges")).not.toBeInTheDocument();
   });
 
   it("labels position-aware chart evidence without exposing its internal id", async () => {
@@ -1063,7 +1171,7 @@ describe("App", () => {
     expect(within(evidence).getByText("28%")).toBeInTheDocument();
     expect(within(evidence).getAllByText("45%")).toHaveLength(2);
     expect(within(evidence).getByText("100% frequency")).toBeInTheDocument();
-    const chartContext = within(evidence).getByLabelText("Chart context");
+    const chartContext = within(evidence).getByLabelText("Decision context");
     expect(within(chartContext).getByText("Standard · 100 BB")).toBeInTheDocument();
     expect(within(chartContext).getByText("Opening range")).toBeInTheDocument();
     expect(within(chartContext).getByText("Open target")).toBeInTheDocument();
@@ -1114,7 +1222,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
 
     const evidence = await screen.findByLabelText("Decision evidence");
-    const chartContext = within(evidence).getByLabelText("Chart context");
+    const chartContext = within(evidence).getByLabelText("Decision context");
     expect(within(chartContext).getByText("Short · 20 BB")).toBeInTheDocument();
     expect(within(chartContext).getByText("Button · 40.5% modeled (base 45%)")).toBeInTheDocument();
     expect(within(chartContext).getByText("2.5 BB · Standard")).toBeInTheDocument();

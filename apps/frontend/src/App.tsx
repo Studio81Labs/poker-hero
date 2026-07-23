@@ -41,6 +41,7 @@ import type {
   SystemInfo,
   TrainingOutcome,
   TrainingProgress,
+  TrainingReviewOrder,
 } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
@@ -1244,6 +1245,7 @@ export default function App() {
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
   const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
+  const [trainingReviewOrder, setTrainingReviewOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
@@ -1832,7 +1834,7 @@ export default function App() {
       const reopenedJob = await reopenTrainingReview(jobId);
       setJobs((current) => current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)));
       updateHistoryJob(reopenedJob);
-      setTrainingProgress(await getTrainingProgress());
+      setTrainingProgress(await getTrainingProgress(trainingReviewOrder));
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
@@ -1890,12 +1892,31 @@ export default function App() {
     setTrainingDialogOpen(true);
     setTrainingProgress(null);
     setTrainingProgressView("recent");
+    setTrainingReviewOrder("recent");
     setTrainingProgressLoading(true);
     setError(null);
     void getTrainingProgress()
       .then(setTrainingProgress)
       .catch((trainingError) => setError(messageFromError(trainingError, "Could not load training progress")))
       .finally(() => setTrainingProgressLoading(false));
+  }
+
+  async function updateTrainingReviewOrder(reviewOrder: TrainingReviewOrder) {
+    if (reviewOrder === trainingReviewOrder || trainingProgressLoading) {
+      return;
+    }
+    const previousOrder = trainingReviewOrder;
+    setTrainingReviewOrder(reviewOrder);
+    setTrainingProgressLoading(true);
+    setError(null);
+    try {
+      setTrainingProgress(await getTrainingProgress(reviewOrder));
+    } catch (trainingError) {
+      setTrainingReviewOrder(previousOrder);
+      setError(messageFromError(trainingError, "Could not reorder training reviews"));
+    } finally {
+      setTrainingProgressLoading(false);
+    }
   }
 
   async function reviewTrainingHand(jobId: string) {
@@ -2925,23 +2946,41 @@ export default function App() {
                       <h3 id="training-hands-title">
                         {trainingProgressView === "review" ? "Needs review" : "Recent decisions"}
                       </h3>
-                      <div className="training-view-switch" role="group" aria-label="Training decision view">
-                        <button
-                          type="button"
-                          className={trainingProgressView === "recent" ? "active" : ""}
-                          onClick={() => setTrainingProgressView("recent")}
-                          aria-pressed={trainingProgressView === "recent"}
-                        >
-                          Recent
-                        </button>
-                        <button
-                          type="button"
-                          className={trainingProgressView === "review" ? "active" : ""}
-                          onClick={() => setTrainingProgressView("review")}
-                          aria-pressed={trainingProgressView === "review"}
-                        >
-                          Needs review {trainingProgress.needs_review_hands}
-                        </button>
+                      <div className="training-review-controls">
+                        {trainingProgressView === "review" ? (
+                          <label className="training-review-order">
+                            <span>Order</span>
+                            <select
+                              aria-label="Review order"
+                              value={trainingReviewOrder}
+                              onChange={(event) => void updateTrainingReviewOrder(
+                                event.target.value as TrainingReviewOrder,
+                              )}
+                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                            >
+                              <option value="recent">Newest</option>
+                              <option value="ev_loss">EV loss</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        <div className="training-view-switch" role="group" aria-label="Training decision view">
+                          <button
+                            type="button"
+                            className={trainingProgressView === "recent" ? "active" : ""}
+                            onClick={() => setTrainingProgressView("recent")}
+                            aria-pressed={trainingProgressView === "recent"}
+                          >
+                            Recent
+                          </button>
+                          <button
+                            type="button"
+                            className={trainingProgressView === "review" ? "active" : ""}
+                            onClick={() => setTrainingProgressView("review")}
+                            aria-pressed={trainingProgressView === "review"}
+                          >
+                            Needs review {trainingProgress.needs_review_hands}
+                          </button>
+                        </div>
                       </div>
                     </div>
                     {visibleTrainingHands.length > 0 ? (
@@ -3003,7 +3042,7 @@ export default function App() {
             <div className="automation-dialog-footer training-progress-footer">
               <span>
                 {trainingProgress && trainingProgress.needs_review_hands > trainingProgress.review_queue.length
-                  ? `Showing ${trainingProgress.review_queue.length} newest of ${trainingProgress.needs_review_hands} review hands.`
+                  ? `Showing ${trainingProgress.review_queue.length} ${trainingReviewOrder === "ev_loss" ? "highest-loss" : "newest"} of ${trainingProgress.needs_review_hands} review hands.`
                   : "Automation-only hands are not scored."}
               </span>
               {nextReviewHand ? (
@@ -3013,7 +3052,9 @@ export default function App() {
                   disabled={trainingReviewJobId !== null || busy}
                 >
                   <Eye size={14} aria-hidden="true" />
-                  Review next
+                  {trainingReviewOrder === "ev_loss" && typeof nextReviewHand.ev_loss_bb === "number"
+                    ? "Review highest loss"
+                    : "Review next"}
                 </button>
               ) : null}
               <button

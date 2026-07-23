@@ -51,6 +51,7 @@ export interface TrainingDecision {
 }
 
 export type TrainingOutcome = "match" | "mixed" | "same_action" | "mixed_action" | "different";
+export type TrainingReviewOrder = "recent" | "ev_loss";
 
 export interface TrainingStreetSummary {
   street: Street;

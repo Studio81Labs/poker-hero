@@ -154,6 +154,65 @@ def test_summarize_training_limits_review_queue_independently() -> None:
     assert [hand.job_id for hand in progress.review_queue] == [f"{3:032x}", f"{2:032x}"]
 
 
+def test_summarize_training_prioritizes_review_queue_by_ev_loss() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 1.2},
+                ]
+            },
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 6, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 0.2},
+                ]
+            },
+        ),
+        reviewed_job(
+            "3" * 32,
+            "river",
+            "fold",
+            "call",
+            datetime(2026, 7, 7, tzinfo=timezone.utc),
+        ),
+    ]
+
+    progress = summarize_training(jobs, review_limit=2, review_order="ev_loss")
+    complete_queue = summarize_training(jobs, review_limit=3, review_order="ev_loss")
+
+    assert progress.needs_review_hands == 3
+    assert [hand.job_id for hand in progress.recent_hands] == [
+        "3" * 32,
+        "2" * 32,
+        "1" * 32,
+    ]
+    assert [hand.job_id for hand in progress.review_queue] == [
+        "1" * 32,
+        "2" * 32,
+    ]
+    assert [hand.ev_loss_bb for hand in progress.review_queue] == [1.2, 0.2]
+    assert [hand.job_id for hand in complete_queue.review_queue] == [
+        "1" * 32,
+        "2" * 32,
+        "3" * 32,
+    ]
+    assert complete_queue.review_queue[2].ev_loss_bb is None
+
+
 def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> None:
     completed_at = datetime(2026, 7, 10, tzinfo=timezone.utc)
     jobs = [

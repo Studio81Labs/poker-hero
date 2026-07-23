@@ -11,6 +11,7 @@ Street = Literal["preflop", "flop", "turn", "river"]
 FacingAction = Literal["bet", "raise"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
+TrainingReviewOrder = Literal["recent", "ev_loss"]
 
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 SUIT_BY_CODE = {

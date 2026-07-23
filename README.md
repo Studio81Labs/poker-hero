@@ -119,7 +119,8 @@ When a user locks an answer before revealing guidance, training progress tracks
 action and exact-line accuracy. Solver responses with complete candidate EV
 metadata also report the selected line's EV loss in BB plus aggregate and
 street-level averages; providers without comparable EVs remain ungraded for
-that metric.
+that metric. The needs-review queue can stay newest-first or prioritize the
+highest available EV losses while retaining ungraded hands afterward.
 
 ### Offline Parser Benchmarks
 

@@ -119,9 +119,12 @@ without changing its action-policy outcome. A grade also requires the provider's
 recommended line and at least one distinct valid alternative, preventing a
 partial candidate payload from claiming zero loss. Hands processed only by
 automation are excluded because they have no player answer to evaluate. A
-separate bounded queue returns the newest
-unsupported actions and sizing differences so the frontend can review them
-without hiding older differences behind supported lines.
+separate bounded queue returns unsupported actions and sizing differences so the
+frontend can review them without hiding older differences behind supported
+lines. It defaults to newest-first order. An explicit EV-loss order ranks
+graded hands by descending loss, breaks ties by recency, and keeps ungraded
+hands afterward in recent-first order. Ordering happens before the queue limit
+so an older costly mistake remains discoverable.
 Completing a review persists a timestamp on the job and removes it from the
 pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.

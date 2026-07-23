@@ -35,6 +35,7 @@ from app.models import (
     TrainingDecision,
     TrainingDecisionRequest,
     TrainingProgress,
+    TrainingReviewOrder,
 )
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
@@ -333,8 +334,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return store.save(job)
 
     @app.get("/api/training/progress", response_model=TrainingProgress)
-    def get_training_progress() -> TrainingProgress:
-        return summarize_training(store.list())
+    def get_training_progress(
+        review_order: TrainingReviewOrder = "recent",
+    ) -> TrainingProgress:
+        return summarize_training(store.list(), review_order=review_order)
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
     def get_benchmark_overview() -> BenchmarkOverview:

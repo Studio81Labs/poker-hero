@@ -263,7 +263,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     status_code=409,
                     detail="A completed decision comparison is required before review",
                 )
-            if training_outcome(job) == "match":
+            if training_outcome(job) in {"match", "mixed"}:
                 raise HTTPException(
                     status_code=409,
                     detail="Exact matches do not need review",
@@ -282,7 +282,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     status_code=409,
                     detail="A completed decision comparison is required before reopening review",
                 )
-            if training_outcome(job) == "match":
+            if training_outcome(job) in {"match", "mixed"}:
                 raise HTTPException(
                     status_code=409,
                     detail="Exact matches do not need review",

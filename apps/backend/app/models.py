@@ -10,6 +10,7 @@ Suit = Literal["clubs", "diamonds", "hearts", "spades"]
 Street = Literal["preflop", "flop", "turn", "river"]
 FacingAction = Literal["bet", "raise"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
+TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 SUIT_BY_CODE = {
@@ -220,7 +221,7 @@ class TrainingRecentHand(BaseModel):
     decision_sizing: float | None = Field(default=None, ge=0)
     recommended_action: RecommendationAction
     recommended_sizing: float | None = Field(default=None, ge=0)
-    outcome: Literal["match", "same_action", "different"]
+    outcome: TrainingOutcome
     recorded_at: datetime
     reviewed_at: datetime | None = None
 

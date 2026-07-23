@@ -667,6 +667,49 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(4);
   });
 
+  it("accepts an exact alternate line from a meaningful solver mix", async () => {
+    const trainingDecision = {
+      action: "raise" as const,
+      sizing: 8,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const mixedRecommendation: RecommendationResult = {
+      action: "call",
+      sizing: null,
+      confidence: 0.87,
+      explanation: "Call most often and mix in a raise.",
+      raw: {
+        provider: "local_solver",
+        engine: "postflop_solver",
+        candidates: [
+          { action: "call", sizing: null, ev: 2.75, frequency: 0.84 },
+          { action: "raise", sizing: 8, ev: 2.74, frequency: 0.16 },
+        ],
+      },
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), training_decision: trainingDecision }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...recommendedJob(),
+        training_decision: trainingDecision,
+        recommendation: mixedRecommendation,
+      }));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
+    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "8");
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    expect(within(comparison).getByText("Solver-supported mix")).toBeInTheDocument();
+    expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+  });
+
   it("marks a differing training decision reviewed", async () => {
     const trainingDecision = {
       action: "call" as const,
@@ -799,6 +842,17 @@ describe("App", () => {
       recorded_at: "2026-07-20T13:00:00Z",
       reviewed_at: null,
     };
+    const mixedHand = {
+      ...exactHand,
+      job_id: "mixed-job",
+      original_filename: "mixed.png",
+      decision_action: "raise" as const,
+      decision_sizing: 8,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "mixed" as const,
+      recorded_at: "2026-07-20T12:30:00Z",
+    };
     const reviewQueue = [{
       job_id: "review-job",
       original_filename: "review.png",
@@ -816,32 +870,32 @@ describe("App", () => {
       original_filename: "size.png",
       street: "river" as const,
       hero_cards: canonicalState().hero_cards,
-      decision_action: "bet" as const,
-      decision_sizing: 5,
-      recommended_action: "bet" as const,
-      recommended_sizing: 6,
-      outcome: "same_action" as const,
+      decision_action: "raise" as const,
+      decision_sizing: 9,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "mixed_action" as const,
       recorded_at: "2026-07-20T11:00:00Z",
       reviewed_at: null,
     }];
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
-        reviewed_hands: 3,
-        action_matches: 2,
-        exact_matches: 1,
+        reviewed_hands: 4,
+        action_matches: 3,
+        exact_matches: 2,
         different_actions: 1,
         needs_review_hands: 2,
-        action_accuracy: 2 / 3,
-        exact_accuracy: 1 / 3,
+        action_accuracy: 3 / 4,
+        exact_accuracy: 2 / 4,
         street_summaries: [{
           street: "flop",
-          reviewed_hands: 3,
-          action_matches: 2,
-          exact_matches: 1,
-          action_accuracy: 2 / 3,
-          exact_accuracy: 1 / 3,
+          reviewed_hands: 4,
+          action_matches: 3,
+          exact_matches: 2,
+          action_accuracy: 3 / 4,
+          exact_accuracy: 2 / 4,
         }],
-        recent_hands: [exactHand],
+        recent_hands: [exactHand, mixedHand],
         review_queue: reviewQueue,
       }))
       .mockResolvedValueOnce(jsonResponse(reviewedJob));
@@ -852,12 +906,13 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
     const summary = await within(dialog).findByLabelText("Training progress summary");
-    expect(summary).toHaveTextContent("67%");
-    expect(within(summary).getByText("33%")).toBeInTheDocument();
-    expect(within(dialog).getByRole("row", { name: /flop 3 67% 33%/i })).toBeInTheDocument();
+    expect(summary).toHaveTextContent("75%");
+    expect(within(summary).getByText("50%")).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /flop 4 75% 50%/i })).toBeInTheDocument();
     expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Exact match")).toBeInTheDocument();
+    expect(within(dialog).getByText("Supported mix")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
 
     await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
@@ -865,7 +920,7 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", { name: "Needs review 2" })).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).queryByRole("button", { name: "Open exact.png training review" })).not.toBeInTheDocument();
     expect(within(dialog).getByText("Different action")).toBeInTheDocument();
-    expect(within(dialog).getByText("Same action")).toBeInTheDocument();
+    expect(within(dialog).getByText("Supported action")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Review next" }));
 

@@ -60,6 +60,7 @@ const CODE_BY_SUIT: Record<Suit, string> = {
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
 const RANKS = new Set<string>(RANK_VALUES);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
+const MIN_SUPPORTED_FREQUENCY = 0.05;
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -534,17 +535,81 @@ function trainingDecisionComparison(
   sizing: number | null,
   recommendation: RecommendationResult,
 ): { label: string; tone: "match" | "partial" | "different" } {
-  if (action !== recommendation.action) {
-    return { label: "Different action", tone: "different" };
+  if (trainingLineMatches(action, sizing, recommendation.action, recommendation.sizing)) {
+    return { label: "Matched solver", tone: "match" };
   }
-  if (sizing === null || recommendation.sizing === null) {
-    return sizing === recommendation.sizing
-      ? { label: "Matched solver", tone: "match" }
-      : { label: "Same action", tone: "partial" };
+  const policySupport = recommendationPolicySupport(action, sizing, recommendation);
+  if (policySupport === "line") {
+    return { label: "Solver-supported mix", tone: "match" };
   }
-  return Math.abs(sizing - recommendation.sizing) < 0.01
-    ? { label: "Matched solver", tone: "match" }
-    : { label: "Same action, different size", tone: "partial" };
+  if (action === recommendation.action) {
+    return { label: "Same action, different size", tone: "partial" };
+  }
+  if (policySupport === "action") {
+    return { label: "Solver-supported action, different size", tone: "partial" };
+  }
+  return { label: "Different action", tone: "different" };
+}
+
+function recommendationPolicySupport(
+  action: RecommendationAction,
+  sizing: number | null,
+  recommendation: RecommendationResult,
+): "line" | "action" | null {
+  const candidates = Array.isArray(recommendation.raw.candidates)
+    ? recommendation.raw.candidates
+    : [];
+  let actionSupported = false;
+  for (const candidate of candidates) {
+    const record = metadataRecord(candidate);
+    if (!record || record.action !== action) {
+      continue;
+    }
+    const frequency = metadataRatio(record.frequency);
+    if (frequency === null || frequency < MIN_SUPPORTED_FREQUENCY) {
+      continue;
+    }
+    const candidateSizing = policyCandidateSizing(action, record.sizing);
+    if (!candidateSizing.valid) {
+      continue;
+    }
+    actionSupported = true;
+    if (trainingSizingMatches(sizing, candidateSizing.value)) {
+      return "line";
+    }
+  }
+  return actionSupported ? "action" : null;
+}
+
+function policyCandidateSizing(
+  action: RecommendationAction,
+  value: unknown,
+): { valid: boolean; value: number | null } {
+  if (action === "bet" || action === "raise") {
+    const sizing = metadataNumber(value);
+    return sizing !== null && sizing >= 0
+      ? { valid: true, value: sizing }
+      : { valid: false, value: null };
+  }
+  return value === null
+    ? { valid: true, value: null }
+    : { valid: false, value: null };
+}
+
+function trainingLineMatches(
+  leftAction: RecommendationAction,
+  leftSizing: number | null,
+  rightAction: RecommendationAction,
+  rightSizing: number | null,
+): boolean {
+  return leftAction === rightAction && trainingSizingMatches(leftSizing, rightSizing);
+}
+
+function trainingSizingMatches(left: number | null, right: number | null): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return Math.abs(left - right) < 0.01;
 }
 
 function parseTrainingSizing(
@@ -576,8 +641,14 @@ function trainingOutcomeLabel(outcome: TrainingOutcome): string {
   if (outcome === "match") {
     return "Exact match";
   }
+  if (outcome === "mixed") {
+    return "Supported mix";
+  }
   if (outcome === "same_action") {
     return "Same action";
+  }
+  if (outcome === "mixed_action") {
+    return "Supported action";
   }
   return "Different action";
 }
@@ -2806,7 +2877,7 @@ export default function App() {
                               </em>
                               <Eye size={15} aria-hidden="true" />
                             </button>
-                            {hand.reviewed_at && hand.outcome !== "match" ? (
+                            {hand.reviewed_at && hand.outcome !== "match" && hand.outcome !== "mixed" ? (
                               <button
                                 className="recent-training-reopen"
                                 type="button"

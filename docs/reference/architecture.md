@@ -104,11 +104,16 @@ solver result from being recorded afterward as a supposed pre-reveal answer.
 Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
-The training progress endpoint derives action and exact-line accuracy, street
-breakdowns, and recent review links from persisted jobs. Hands processed only by
-automation are excluded because they have no player answer to evaluate. A
-separate bounded queue returns the newest action and sizing differences so the
-frontend can review them without hiding older differences behind exact matches.
+The training progress endpoint derives action and exact-line policy accuracy,
+street breakdowns, and recent review links from persisted jobs. The headline
+recommendation is always supported. Alternate provider candidates are supported
+only when their action/sizing metadata is valid and modeled frequency is at
+least 5%, which filters numerical strategy noise. An exact alternate line is
+recorded as a supported mix; an alternate action with different sizing remains
+reviewable. Hands processed only by automation are excluded because they have no
+player answer to evaluate. A separate bounded queue returns the newest
+unsupported actions and sizing differences so the frontend can review them
+without hiding older differences behind supported lines.
 Completing a review persists a timestamp on the job and removes it from the
 pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.

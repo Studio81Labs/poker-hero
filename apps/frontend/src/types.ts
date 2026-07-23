@@ -92,6 +92,7 @@ export interface TrainingProgress {
   average_ev_loss_bb: number | null;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
+  review_street_counts?: Partial<Record<Street, number>>;
   review_queue_hands: number;
   review_queue: TrainingRecentHand[];
 }

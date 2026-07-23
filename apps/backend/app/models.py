@@ -242,6 +242,7 @@ class TrainingProgress(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
+    review_street_counts: dict[Street, int] = Field(default_factory=dict)
     review_queue_hands: int = Field(default=0, ge=0)
     review_queue: list[TrainingRecentHand] = Field(default_factory=list)
 

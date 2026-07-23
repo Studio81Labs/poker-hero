@@ -195,6 +195,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["recent_hands"][0]["job_id"] == job_id
     assert progress["recent_hands"][0]["outcome"] == "match"
     assert progress["recent_hands"][0]["ev_loss_bb"] is None
+    assert progress["review_street_counts"] == {}
     assert progress["review_queue_hands"] == 0
     assert progress["review_queue"] == []
 

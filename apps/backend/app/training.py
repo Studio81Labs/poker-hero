@@ -88,6 +88,10 @@ def summarize_training(
         if outcomes[job.id] not in {"match", "mixed"}
         and job.training_reviewed_at is None
     ]
+    review_street_counts: dict[Street, int] = defaultdict(int)
+    for job in pending_review_jobs:
+        if job.approved_state is not None and job.approved_state.street is not None:
+            review_street_counts[job.approved_state.street] += 1
     filtered_review_jobs = [
         job
         for job in pending_review_jobs
@@ -123,6 +127,7 @@ def summarize_training(
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         street_summaries=street_summaries,
         recent_hands=recent_hands,
+        review_street_counts=dict(review_street_counts),
         review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,
     )

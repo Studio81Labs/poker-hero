@@ -122,7 +122,9 @@ street-level averages; providers without comparable EVs remain ungraded for
 that metric. The needs-review queue can stay newest-first or prioritize the
 highest available EV losses while retaining ungraded hands afterward. It can
 also focus on one street; filtering happens before ordering and the bounded
-queue limit.
+queue limit. Training progress suggests an actionable focus street from the
+pending queue, preferring the highest graded average EV loss and otherwise the
+lowest action accuracy.
 
 ### Offline Parser Benchmarks
 

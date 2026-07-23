@@ -59,6 +59,8 @@ export interface TrainingStreetSummary {
   exact_matches: number;
   action_accuracy: number;
   exact_accuracy: number;
+  ev_compared_hands: number;
+  average_ev_loss_bb: number | null;
 }
 
 export interface TrainingRecentHand {
@@ -73,6 +75,7 @@ export interface TrainingRecentHand {
   outcome: TrainingOutcome;
   recorded_at: string;
   reviewed_at: string | null;
+  ev_loss_bb: number | null;
 }
 
 export interface TrainingProgress {
@@ -83,6 +86,8 @@ export interface TrainingProgress {
   needs_review_hands: number;
   action_accuracy: number;
   exact_accuracy: number;
+  ev_compared_hands: number;
+  average_ev_loss_bb: number | null;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   review_queue: TrainingRecentHand[];

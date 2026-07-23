@@ -260,6 +260,102 @@ def test_summarize_training_scores_meaningful_solver_mixes() -> None:
     assert [hand.job_id for hand in progress.review_queue] == ["a" * 32]
 
 
+def test_summarize_training_reports_available_candidate_ev_loss() -> None:
+    jobs = [
+        reviewed_job(
+            "d" * 32,
+            "flop",
+            "call",
+            "raise",
+            datetime(2026, 7, 13, tzinfo=timezone.utc),
+            recommended_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 2.7},
+                    {"action": "raise", "sizing": 8, "ev": 2.82},
+                ]
+            },
+        ),
+        reviewed_job(
+            "e" * 32,
+            "flop",
+            "raise",
+            "raise",
+            datetime(2026, 7, 14, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommended_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "ev": 2.8},
+                    {"action": "raise", "sizing": 8, "ev": 2.82},
+                ]
+            },
+        ),
+        reviewed_job(
+            "f" * 32,
+            "turn",
+            "bet",
+            "bet",
+            datetime(2026, 7, 15, tzinfo=timezone.utc),
+            decision_sizing=6,
+            recommended_sizing=6,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "check", "sizing": None, "ev": 1.4},
+                    {"action": "bet", "sizing": 5, "ev": 1.5},
+                ]
+            },
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.ev_compared_hands == 2
+    assert progress.average_ev_loss_bb == pytest.approx(0.06)
+    assert progress.recent_hands[1].ev_loss_bb == 0
+    assert progress.recent_hands[2].ev_loss_bb == pytest.approx(0.12)
+    assert progress.recent_hands[0].ev_loss_bb is None
+    assert progress.street_summaries[0].ev_compared_hands == 2
+    assert progress.street_summaries[0].average_ev_loss_bb == pytest.approx(0.06)
+    assert progress.street_summaries[1].ev_compared_hands == 0
+    assert progress.street_summaries[1].average_ev_loss_bb is None
+
+
+def test_summarize_training_rejects_malformed_candidate_ev_metadata() -> None:
+    jobs = [
+        reviewed_job(
+            f"{index + 16:032x}",
+            "river",
+            "call",
+            "raise",
+            datetime(2026, 7, 16 + index, tzinfo=timezone.utc),
+            recommended_sizing=8,
+            recommendation_raw={"candidates": candidates},
+        )
+        for index, candidates in enumerate(
+            [
+                [{"action": "call", "sizing": None, "ev": "2.4"}],
+                [{"action": "call", "ev": 2.4}],
+                [{"action": "call", "sizing": 0, "ev": 2.4}],
+                [{"action": "unknown", "sizing": None, "ev": 2.4}],
+                [{"action": "call", "sizing": None, "ev": float("nan")}],
+                [{"action": "call", "sizing": None, "ev": 2.4}],
+                [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 2.4},
+                ],
+            ]
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.ev_compared_hands == 0
+    assert progress.average_ev_loss_bb is None
+    assert all(hand.ev_loss_bb is None for hand in progress.recent_hands)
+
+
 def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> None:
     jobs = [
         reviewed_job(
@@ -312,6 +408,8 @@ def test_summarize_training_handles_empty_history() -> None:
     assert progress.needs_review_hands == 0
     assert progress.action_accuracy == 0
     assert progress.exact_accuracy == 0
+    assert progress.ev_compared_hands == 0
+    assert progress.average_ev_loss_bb is None
     assert progress.street_summaries == []
     assert progress.recent_hands == []
     assert progress.review_queue == []

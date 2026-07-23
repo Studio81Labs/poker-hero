@@ -707,6 +707,7 @@ describe("App", () => {
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Solver-supported mix")).toBeInTheDocument();
+    expect(within(comparison).getByText("0.01 BB EV loss")).toBeInTheDocument();
     expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
   });
 
@@ -841,6 +842,7 @@ describe("App", () => {
       outcome: "match" as const,
       recorded_at: "2026-07-20T13:00:00Z",
       reviewed_at: null,
+      ev_loss_bb: 0,
     };
     const mixedHand = {
       ...exactHand,
@@ -852,6 +854,7 @@ describe("App", () => {
       recommended_sizing: null,
       outcome: "mixed" as const,
       recorded_at: "2026-07-20T12:30:00Z",
+      ev_loss_bb: 0.01,
     };
     const reviewQueue = [{
       job_id: "review-job",
@@ -865,6 +868,7 @@ describe("App", () => {
       outcome: "different" as const,
       recorded_at: "2026-07-20T12:00:00Z",
       reviewed_at: null,
+      ev_loss_bb: 0.12,
     }, {
       job_id: "size-job",
       original_filename: "size.png",
@@ -877,6 +881,7 @@ describe("App", () => {
       outcome: "mixed_action" as const,
       recorded_at: "2026-07-20T11:00:00Z",
       reviewed_at: null,
+      ev_loss_bb: null,
     }];
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
@@ -887,6 +892,8 @@ describe("App", () => {
         needs_review_hands: 2,
         action_accuracy: 3 / 4,
         exact_accuracy: 2 / 4,
+        ev_compared_hands: 3,
+        average_ev_loss_bb: 0.043333,
         street_summaries: [{
           street: "flop",
           reviewed_hands: 4,
@@ -894,6 +901,8 @@ describe("App", () => {
           exact_matches: 2,
           action_accuracy: 3 / 4,
           exact_accuracy: 2 / 4,
+          ev_compared_hands: 2,
+          average_ev_loss_bb: 0.005,
         }],
         recent_hands: [exactHand, mixedHand],
         review_queue: reviewQueue,
@@ -908,9 +917,11 @@ describe("App", () => {
     const summary = await within(dialog).findByLabelText("Training progress summary");
     expect(summary).toHaveTextContent("75%");
     expect(within(summary).getByText("50%")).toBeInTheDocument();
-    expect(within(dialog).getByRole("row", { name: /flop 4 75% 50%/i })).toBeInTheDocument();
+    expect(within(summary).getByText("0.043 BB")).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /flop 4 75% 50% 0.005 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();
+    expect(within(dialog).getByText("EV loss: 0.01 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Exact match")).toBeInTheDocument();
     expect(within(dialog).getByText("Supported mix")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");

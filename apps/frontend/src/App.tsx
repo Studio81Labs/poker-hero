@@ -530,25 +530,96 @@ function trainingDecisionLabel(action: RecommendationAction, sizing: number | nu
   return sizing === null ? actionLabel : `${actionLabel} ${formatCandidateValue(sizing)} BB`;
 }
 
+function formatEvLossBb(value: number): string {
+  return `${formatCandidateValue(value)} BB`;
+}
+
 function trainingDecisionComparison(
   action: RecommendationAction,
   sizing: number | null,
   recommendation: RecommendationResult,
-): { label: string; tone: "match" | "partial" | "different" } {
+): { label: string; tone: "match" | "partial" | "different"; evLossBb: number | null } {
+  const evLossBb = recommendationEvLossBb(action, sizing, recommendation);
   if (trainingLineMatches(action, sizing, recommendation.action, recommendation.sizing)) {
-    return { label: "Matched solver", tone: "match" };
+    return { label: "Matched solver", tone: "match", evLossBb };
   }
   const policySupport = recommendationPolicySupport(action, sizing, recommendation);
   if (policySupport === "line") {
-    return { label: "Solver-supported mix", tone: "match" };
+    return { label: "Solver-supported mix", tone: "match", evLossBb };
   }
   if (action === recommendation.action) {
-    return { label: "Same action, different size", tone: "partial" };
+    return { label: "Same action, different size", tone: "partial", evLossBb };
   }
   if (policySupport === "action") {
-    return { label: "Solver-supported action, different size", tone: "partial" };
+    return { label: "Solver-supported action, different size", tone: "partial", evLossBb };
   }
-  return { label: "Different action", tone: "different" };
+  return { label: "Different action", tone: "different", evLossBb };
+}
+
+function recommendationEvLossBb(
+  action: RecommendationAction,
+  sizing: number | null,
+  recommendation: RecommendationResult,
+): number | null {
+  const candidates = Array.isArray(recommendation.raw.candidates)
+    ? recommendation.raw.candidates
+    : [];
+  let bestEv: number | null = null;
+  let decisionEv: number | null = null;
+  let recommendationLineFound = false;
+  const validLines: { action: RecommendationAction; sizing: number | null }[] = [];
+  for (const candidate of candidates) {
+    const record = metadataRecord(candidate);
+    const candidateAction = recommendationAction(record?.action);
+    if (
+      !record
+      || !candidateAction
+      || !Object.prototype.hasOwnProperty.call(record, "sizing")
+    ) {
+      continue;
+    }
+    const candidateSizing = policyCandidateSizing(candidateAction, record.sizing);
+    const ev = metadataNumber(record.ev);
+    if (!candidateSizing.valid || ev === null) {
+      continue;
+    }
+    if (!validLines.some((line) => trainingLineMatches(
+      line.action,
+      line.sizing,
+      candidateAction,
+      candidateSizing.value,
+    ))) {
+      validLines.push({ action: candidateAction, sizing: candidateSizing.value });
+    }
+    bestEv = bestEv === null ? ev : Math.max(bestEv, ev);
+    if (trainingLineMatches(
+      recommendation.action,
+      recommendation.sizing,
+      candidateAction,
+      candidateSizing.value,
+    )) {
+      recommendationLineFound = true;
+    }
+    if (trainingLineMatches(action, sizing, candidateAction, candidateSizing.value)) {
+      decisionEv = decisionEv === null ? ev : Math.max(decisionEv, ev);
+    }
+  }
+  if (
+    bestEv === null
+    || decisionEv === null
+    || !recommendationLineFound
+    || validLines.length < 2
+  ) {
+    return null;
+  }
+  return Number(Math.max(0, bestEv - decisionEv).toFixed(6));
+}
+
+function recommendationAction(value: unknown): RecommendationAction | null {
+  if (value === "fold" || value === "check" || value === "call" || value === "bet" || value === "raise") {
+    return value;
+  }
+  return null;
 }
 
 function recommendationPolicySupport(
@@ -2492,6 +2563,11 @@ export default function App() {
                     </span>
                     <div className="training-comparison-result">
                       <em className={decisionComparison.tone}>{decisionComparison.label}</em>
+                      {decisionComparison.evLossBb !== null ? (
+                        <small className="training-comparison-ev">
+                          {formatEvLossBb(decisionComparison.evLossBb)} EV loss
+                        </small>
+                      ) : null}
                       {decisionComparison.tone !== "match" ? (
                         job?.training_reviewed_at ? (
                           <div className="training-review-complete">
@@ -2784,7 +2860,10 @@ export default function App() {
                 <div className="training-progress-empty">Reading reviewed decisions...</div>
               ) : trainingProgress && trainingProgress.reviewed_hands > 0 ? (
                 <>
-                  <div className="training-progress-summary" aria-label="Training progress summary">
+                  <div
+                    className={`training-progress-summary${trainingProgress.ev_compared_hands > 0 ? " has-ev" : ""}`}
+                    aria-label="Training progress summary"
+                  >
                     <div>
                       <strong>{trainingProgress.reviewed_hands}</strong>
                       <span>reviewed</span>
@@ -2797,6 +2876,12 @@ export default function App() {
                       <strong>{benchmarkPercent(trainingProgress.exact_accuracy)}</strong>
                       <span>exact line</span>
                     </div>
+                    {trainingProgress.ev_compared_hands > 0 && trainingProgress.average_ev_loss_bb !== null ? (
+                      <div>
+                        <strong>{formatEvLossBb(trainingProgress.average_ev_loss_bb)}</strong>
+                        <span>avg EV loss</span>
+                      </div>
+                    ) : null}
                     <div>
                       <strong className={trainingProgress.needs_review_hands > 0 ? "needs-review" : ""}>
                         {trainingProgress.needs_review_hands}
@@ -2814,6 +2899,7 @@ export default function App() {
                           <th>Hands</th>
                           <th>Action</th>
                           <th>Exact</th>
+                          <th>Avg EV loss</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2823,6 +2909,11 @@ export default function App() {
                             <td>{summary.reviewed_hands}</td>
                             <td>{benchmarkPercent(summary.action_accuracy)}</td>
                             <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                            <td>
+                              {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
+                                ? formatEvLossBb(summary.average_ev_loss_bb)
+                                : "—"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -2871,6 +2962,11 @@ export default function App() {
                               <span className="recent-training-lines">
                                 <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
                                 <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
+                                {typeof hand.ev_loss_bb === "number" ? (
+                                  <small className="recent-training-ev">
+                                    EV loss: {formatEvLossBb(hand.ev_loss_bb)}
+                                  </small>
+                                ) : null}
                               </span>
                               <em className={hand.reviewed_at ? "reviewed" : hand.outcome}>
                                 {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}

@@ -233,6 +233,14 @@ function metadataString(value: unknown, maxLength = 320): string | null {
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
 }
 
+function metadataExactString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized === "" ? null : normalized;
+}
+
 function metadataLabel(value: unknown): string | null {
   const normalized = metadataString(value, 40)?.replace(/_/g, " ").toLowerCase();
   if (!normalized) {
@@ -415,8 +423,8 @@ function recommendationEvidenceFromRaw(
     }
 
     const rawRanges = metadataRecord(raw.ranges);
-    const oopRange = metadataString(rawRanges?.oop, 240);
-    const ipRange = metadataString(rawRanges?.ip, 240);
+    const oopRange = metadataExactString(rawRanges?.oop);
+    const ipRange = metadataExactString(rawRanges?.ip);
     if (oopRange) {
       ranges.push({ label: "OOP", value: oopRange });
     }

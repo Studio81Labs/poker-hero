@@ -1018,6 +1018,7 @@ describe("App", () => {
   });
 
   it("shows postflop tree assumptions and expandable ranges", async () => {
+    const longOopRange = `${"AA,".repeat(90)}AKs`;
     const postflopJob: JobRecord = {
       ...recommendedJob(),
       id: "postflop-solver-job",
@@ -1041,7 +1042,7 @@ describe("App", () => {
             target_exploitability_ratio: 0.01,
           },
           ranges: {
-            oop: "66+,A8s+,A5s-A4s,AJo+",
+            oop: longOopRange,
             ip: "QQ-22,AQs-A2s,ATo+",
           },
           exploitability: { bb: 0.12 },
@@ -1076,7 +1077,7 @@ describe("App", () => {
     expect(modeledRanges).not.toHaveAttribute("open");
     await user.click(within(modeledRanges).getByText("Modeled ranges"));
     expect(modeledRanges).toHaveAttribute("open");
-    expect(within(modeledRanges).getByText("66+,A8s+,A5s-A4s,AJo+")).toBeVisible();
+    expect(within(modeledRanges).getByText(longOopRange)).toBeVisible();
     expect(within(modeledRanges).getByText("QQ-22,AQs-A2s,ATo+")).toBeVisible();
   });
 

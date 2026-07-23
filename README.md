@@ -124,7 +124,9 @@ highest available EV losses while retaining ungraded hands afterward. It can
 also focus on one street; filtering happens before ordering and the bounded
 queue limit. Training progress suggests an actionable focus street from the
 pending queue, preferring the highest graded average EV loss and otherwise the
-lowest action accuracy.
+lowest action accuracy. It also compares equal recent and previous windows,
+capped at ten hands each, so action, exact-line, and available EV-loss movement
+is visible without letting a larger period skew the trend.
 
 ### Offline Parser Benchmarks
 

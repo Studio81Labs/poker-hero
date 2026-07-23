@@ -14,11 +14,13 @@ from app.models import (
     TrainingRecentHand,
     TrainingReviewOrder,
     TrainingStreetSummary,
+    TrainingTrend,
 )
 
 
 SIZING_MATCH_TOLERANCE = 0.01
 MIN_SUPPORTED_FREQUENCY = 0.05
+MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 PolicySupport = Literal["line", "action"]
 
@@ -78,6 +80,7 @@ def summarize_training(
         )
 
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
+    trend = _training_trend(newest_first, outcomes, ev_losses)
     recent_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
@@ -125,6 +128,7 @@ def summarize_training(
         exact_accuracy=exact_matches / reviewed_hands if reviewed_hands else 0,
         ev_compared_hands=len(comparable_ev_losses),
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
+        trend=trend,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         review_street_counts=dict(review_street_counts),
@@ -285,6 +289,90 @@ def _review_ev_priority(
         ev_loss_bb if ev_loss_bb is not None else 0,
         _training_recorded_at(job),
     )
+
+
+def _training_trend(
+    newest_first: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    ev_losses: dict[str, float | None],
+) -> TrainingTrend | None:
+    window_hands = min(MAX_TREND_WINDOW, len(newest_first) // 2)
+    if window_hands == 0:
+        return None
+
+    recent_jobs = newest_first[:window_hands]
+    previous_jobs = newest_first[window_hands : window_hands * 2]
+    recent_action_accuracy = _window_accuracy(
+        recent_jobs,
+        outcomes,
+        exact=False,
+    )
+    previous_action_accuracy = _window_accuracy(
+        previous_jobs,
+        outcomes,
+        exact=False,
+    )
+    recent_exact_accuracy = _window_accuracy(
+        recent_jobs,
+        outcomes,
+        exact=True,
+    )
+    previous_exact_accuracy = _window_accuracy(
+        previous_jobs,
+        outcomes,
+        exact=True,
+    )
+    recent_ev_losses = [
+        loss
+        for job in recent_jobs
+        if (loss := ev_losses[job.id]) is not None
+    ]
+    previous_ev_losses = [
+        loss
+        for job in previous_jobs
+        if (loss := ev_losses[job.id]) is not None
+    ]
+    recent_average_ev_loss = _average_ev_loss(recent_ev_losses)
+    previous_average_ev_loss = _average_ev_loss(previous_ev_losses)
+    ev_loss_delta = (
+        round(recent_average_ev_loss - previous_average_ev_loss, 6)
+        if recent_average_ev_loss is not None
+        and previous_average_ev_loss is not None
+        else None
+    )
+    return TrainingTrend(
+        window_hands=window_hands,
+        recent_action_accuracy=recent_action_accuracy,
+        previous_action_accuracy=previous_action_accuracy,
+        action_accuracy_delta=round(
+            recent_action_accuracy - previous_action_accuracy,
+            6,
+        ),
+        recent_exact_accuracy=recent_exact_accuracy,
+        previous_exact_accuracy=previous_exact_accuracy,
+        exact_accuracy_delta=round(
+            recent_exact_accuracy - previous_exact_accuracy,
+            6,
+        ),
+        recent_ev_compared_hands=len(recent_ev_losses),
+        previous_ev_compared_hands=len(previous_ev_losses),
+        recent_average_ev_loss_bb=recent_average_ev_loss,
+        previous_average_ev_loss_bb=previous_average_ev_loss,
+        average_ev_loss_delta_bb=ev_loss_delta,
+    )
+
+
+def _window_accuracy(
+    jobs: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    *,
+    exact: bool,
+) -> float:
+    if exact:
+        matches = sum(outcomes[job.id] in {"match", "mixed"} for job in jobs)
+    else:
+        matches = sum(outcomes[job.id] != "different" for job in jobs)
+    return matches / len(jobs)
 
 
 def _average_ev_loss(losses: list[float]) -> float | None:

@@ -539,6 +539,29 @@ function formatEvLossBb(value: number): string {
   return `${formatCandidateValue(value)} BB`;
 }
 
+function formatAccuracyDelta(value: number): string {
+  const points = Math.round(value * 100);
+  return `${points > 0 ? "+" : ""}${points} pts`;
+}
+
+function formatEvLossDeltaBb(value: number): string {
+  return `${value > 0 ? "+" : ""}${formatCandidateValue(value)} BB`;
+}
+
+function trainingTrendTone(
+  delta: number,
+  lowerIsBetter = false,
+): "improving" | "declining" | "neutral" {
+  const improvement = lowerIsBetter ? -delta : delta;
+  if (improvement > 0) {
+    return "improving";
+  }
+  if (improvement < 0) {
+    return "declining";
+  }
+  return "neutral";
+}
+
 function trainingDecisionComparison(
   action: RecommendationAction,
   sizing: number | null,
@@ -3011,6 +3034,48 @@ export default function App() {
                       <span>needs review</span>
                     </div>
                   </div>
+
+                  {trainingProgress.trend ? (
+                    <section className="training-progress-section training-trend-section" aria-labelledby="training-trend-title">
+                      <div className="training-section-heading training-trend-heading">
+                        <h3 id="training-trend-title">Recent trend</h3>
+                        <span>
+                          Last {trainingProgress.trend.window_hands} vs previous {trainingProgress.trend.window_hands}
+                        </span>
+                      </div>
+                      <div
+                        className={`training-trend-grid${trainingProgress.trend.average_ev_loss_delta_bb !== null ? " has-ev" : ""}`}
+                      >
+                        <div>
+                          <span>Action match</span>
+                          <strong>{benchmarkPercent(trainingProgress.trend.recent_action_accuracy)}</strong>
+                          <em className={trainingTrendTone(trainingProgress.trend.action_accuracy_delta)}>
+                            {formatAccuracyDelta(trainingProgress.trend.action_accuracy_delta)}
+                          </em>
+                        </div>
+                        <div>
+                          <span>Exact line</span>
+                          <strong>{benchmarkPercent(trainingProgress.trend.recent_exact_accuracy)}</strong>
+                          <em className={trainingTrendTone(trainingProgress.trend.exact_accuracy_delta)}>
+                            {formatAccuracyDelta(trainingProgress.trend.exact_accuracy_delta)}
+                          </em>
+                        </div>
+                        {trainingProgress.trend.average_ev_loss_delta_bb !== null
+                          && trainingProgress.trend.recent_average_ev_loss_bb !== null ? (
+                            <div>
+                              <span>Avg EV loss</span>
+                              <strong>{formatEvLossBb(trainingProgress.trend.recent_average_ev_loss_bb)}</strong>
+                              <em className={trainingTrendTone(
+                                trainingProgress.trend.average_ev_loss_delta_bb,
+                                true,
+                              )}>
+                                {formatEvLossDeltaBb(trainingProgress.trend.average_ev_loss_delta_bb)}
+                              </em>
+                            </div>
+                          ) : null}
+                      </div>
+                    </section>
+                  ) : null}
 
                   <section className="training-progress-section" aria-labelledby="training-streets-title">
                     <div className="training-section-heading">

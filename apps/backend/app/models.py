@@ -230,6 +230,21 @@ class TrainingRecentHand(BaseModel):
     ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
+class TrainingTrend(BaseModel):
+    window_hands: int = Field(ge=1)
+    recent_action_accuracy: float = Field(ge=0, le=1)
+    previous_action_accuracy: float = Field(ge=0, le=1)
+    action_accuracy_delta: float = Field(ge=-1, le=1)
+    recent_exact_accuracy: float = Field(ge=0, le=1)
+    previous_exact_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy_delta: float = Field(ge=-1, le=1)
+    recent_ev_compared_hands: int = Field(default=0, ge=0)
+    previous_ev_compared_hands: int = Field(default=0, ge=0)
+    recent_average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    previous_average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    average_ev_loss_delta_bb: float | None = None
+
+
 class TrainingProgress(BaseModel):
     reviewed_hands: int = Field(ge=0)
     action_matches: int = Field(ge=0)
@@ -240,6 +255,7 @@ class TrainingProgress(BaseModel):
     exact_accuracy: float = Field(ge=0, le=1)
     ev_compared_hands: int = Field(default=0, ge=0)
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    trend: TrainingTrend | None = None
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_street_counts: dict[Street, int] = Field(default_factory=dict)

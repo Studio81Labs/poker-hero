@@ -105,9 +105,13 @@ Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 The training progress endpoint derives action and exact-line policy accuracy,
-street breakdowns, optional EV-loss grading, and recent review links from
-persisted jobs. The headline
-recommendation is always supported. Alternate provider candidates are supported
+street breakdowns, optional EV-loss grading, equal-window recent trends, and
+recent review links from persisted jobs. Trend windows use the newest and
+immediately preceding reviewed hands, have the same size, and are capped at ten
+hands each. Action and exact-line deltas are available once two reviewed hands
+exist. The EV-loss delta is available only when both windows contain at least
+one comparable EV grade. The headline recommendation is always supported.
+Alternate provider candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is
 recorded as a supported mix; an alternate action with different sizing remains

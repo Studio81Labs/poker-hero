@@ -976,6 +976,20 @@ describe("App", () => {
       exact_accuracy: 0,
       ev_compared_hands: 2,
       average_ev_loss_bb: 0.8,
+      trend: {
+        window_hands: 1,
+        recent_action_accuracy: 0,
+        previous_action_accuracy: 0,
+        action_accuracy_delta: 0,
+        recent_exact_accuracy: 0,
+        previous_exact_accuracy: 0,
+        exact_accuracy_delta: 0,
+        recent_ev_compared_hands: 1,
+        previous_ev_compared_hands: 1,
+        recent_average_ev_loss_bb: 0.2,
+        previous_average_ev_loss_bb: 1.4,
+        average_ev_loss_delta_bb: -1.2,
+      },
       street_summaries: [{
         street: "flop" as const,
         reviewed_hands: 1,
@@ -1027,6 +1041,10 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Training progress" }));
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const trend = within(dialog).getByRole("region", { name: "Recent trend" });
+    expect(within(trend).getByText("Last 1 vs previous 1")).toBeInTheDocument();
+    expect(within(trend).getByText("0.2 BB")).toBeInTheDocument();
+    expect(within(trend).getByText("-1.2 BB")).toHaveClass("improving");
     await user.click(within(dialog).getByRole("button", { name: /Focus turn reviews/ }));
 
     expect(within(dialog).getByText("Updating review queue...")).toBeInTheDocument();
@@ -1088,6 +1106,20 @@ describe("App", () => {
       exact_accuracy: 1 / 3,
       ev_compared_hands: 0,
       average_ev_loss_bb: null,
+      trend: {
+        window_hands: 1,
+        recent_action_accuracy: 1,
+        previous_action_accuracy: 0,
+        action_accuracy_delta: 1,
+        recent_exact_accuracy: 1,
+        previous_exact_accuracy: 0,
+        exact_accuracy_delta: 1,
+        recent_ev_compared_hands: 0,
+        previous_ev_compared_hands: 0,
+        recent_average_ev_loss_bb: null,
+        previous_average_ev_loss_bb: null,
+        average_ev_loss_delta_bb: null,
+      },
       street_summaries: [{
         street: "flop",
         reviewed_hands: 2,
@@ -1117,10 +1149,13 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Training progress" }));
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const trend = within(dialog).getByRole("region", { name: "Recent trend" });
 
     expect(within(dialog).getByRole("button", {
       name: "Focus flop reviews: Lowest action match: 0%",
     })).toBeInTheDocument();
+    expect(within(trend).getAllByText("+100 pts")[0]).toHaveClass("improving");
+    expect(within(trend).queryByText("Avg EV loss")).not.toBeInTheDocument();
   });
 
   it("reopens a completed review from recent training decisions", async () => {

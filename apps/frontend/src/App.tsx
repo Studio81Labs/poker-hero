@@ -3049,7 +3049,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => void reviewTrainingHand(nextReviewHand.job_id)}
-                  disabled={trainingReviewJobId !== null || busy}
+                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                 >
                   <Eye size={14} aria-hidden="true" />
                   {trainingReviewOrder === "ev_loss" && typeof nextReviewHand.ev_loss_bb === "number"

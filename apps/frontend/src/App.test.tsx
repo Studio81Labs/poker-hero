@@ -983,6 +983,7 @@ describe("App", () => {
       ...recentProgress,
       review_queue: [highHand, lowHand],
     };
+    const pendingOrder = deferredResponse();
     const highJob = {
       ...recommendedJob(),
       id: "high-job",
@@ -995,7 +996,7 @@ describe("App", () => {
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(recentProgress))
-      .mockResolvedValueOnce(jsonResponse(impactProgress))
+      .mockReturnValueOnce(pendingOrder.promise)
       .mockResolvedValueOnce(jsonResponse(highJob));
     render(<App />);
     const user = userEvent.setup();
@@ -1005,13 +1006,16 @@ describe("App", () => {
     await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
     await user.selectOptions(within(dialog).getByLabelText("Review order"), "ev_loss");
 
-    expect(await within(dialog).findByRole("button", { name: "Review highest loss" })).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Review order")).toHaveValue("ev_loss");
+    const reviewHighestLoss = within(dialog).getByRole("button", { name: "Review highest loss" });
+    expect(reviewHighestLoss).toBeDisabled();
     expect(fetchMock().mock.calls[1][0]).toBe(
       "http://localhost:8000/api/training/progress?review_order=ev_loss",
     );
 
-    await user.click(within(dialog).getByRole("button", { name: "Review highest loss" }));
+    pendingOrder.resolve(jsonResponse(impactProgress));
+    await waitFor(() => expect(reviewHighestLoss).toBeEnabled());
+    expect(within(dialog).getByLabelText("Review order")).toHaveValue("ev_loss");
+    await user.click(reviewHighestLoss);
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Training progress" })).not.toBeInTheDocument());
     expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(

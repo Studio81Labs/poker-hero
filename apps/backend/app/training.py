@@ -28,6 +28,7 @@ def summarize_training(
     recent_limit: int = 8,
     review_limit: int = 24,
     review_order: TrainingReviewOrder = "recent",
+    review_street: Street | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -87,14 +88,23 @@ def summarize_training(
         if outcomes[job.id] not in {"match", "mixed"}
         and job.training_reviewed_at is None
     ]
+    filtered_review_jobs = [
+        job
+        for job in pending_review_jobs
+        if review_street is None
+        or (
+            job.approved_state is not None
+            and job.approved_state.street == review_street
+        )
+    ]
     if review_order == "ev_loss":
-        pending_review_jobs.sort(
+        filtered_review_jobs.sort(
             key=lambda job: _review_ev_priority(job, ev_losses[job.id]),
             reverse=True,
         )
     review_queue = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
-        for job in pending_review_jobs[: max(0, review_limit)]
+        for job in filtered_review_jobs[: max(0, review_limit)]
     ]
     needs_review_hands = sum(
         outcomes[job.id] not in {"match", "mixed"}
@@ -113,6 +123,7 @@ def summarize_training(
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         street_summaries=street_summaries,
         recent_hands=recent_hands,
+        review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,
     )
 

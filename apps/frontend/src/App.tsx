@@ -42,6 +42,7 @@ import type {
   TrainingOutcome,
   TrainingProgress,
   TrainingReviewOrder,
+  TrainingReviewStreet,
 } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
@@ -725,6 +726,35 @@ function trainingOutcomeLabel(outcome: TrainingOutcome): string {
   return "Different action";
 }
 
+function trainingReviewQueueStatus(
+  progress: TrainingProgress | null,
+  view: TrainingProgressView,
+  loading: boolean,
+  order: TrainingReviewOrder,
+  street: TrainingReviewStreet,
+): string {
+  if (view !== "review") {
+    return "Automation-only hands are not scored.";
+  }
+  if (loading) {
+    return "Updating review queue...";
+  }
+  if (!progress) {
+    return "No pending review hands.";
+  }
+
+  const matchingHands = progress.review_queue_hands ?? progress.review_queue.length;
+  const scope = street === "all" ? "across all streets" : `on ${street}`;
+  if (matchingHands > progress.review_queue.length) {
+    const orderLabel = order === "ev_loss" ? "highest-loss" : "newest";
+    return `Showing ${progress.review_queue.length} ${orderLabel} of ${matchingHands} review hands ${scope}.`;
+  }
+  if (matchingHands > 0) {
+    return `${matchingHands} pending review hand${matchingHands === 1 ? "" : "s"} ${scope}.`;
+  }
+  return `No pending review hands ${scope}.`;
+}
+
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
   return {
     id: report.id,
@@ -1246,6 +1276,7 @@ export default function App() {
   const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
   const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
   const [trainingReviewOrder, setTrainingReviewOrder] = useState<TrainingReviewOrder>("recent");
+  const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
@@ -1361,6 +1392,13 @@ export default function App() {
     ? trainingProgress?.review_queue ?? []
     : trainingProgress?.recent_hands ?? [];
   const nextReviewHand = trainingProgress?.review_queue[0] ?? null;
+  const reviewQueueStatus = trainingReviewQueueStatus(
+    trainingProgress,
+    trainingProgressView,
+    trainingProgressLoading,
+    trainingReviewOrder,
+    trainingReviewStreet,
+  );
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1834,7 +1872,7 @@ export default function App() {
       const reopenedJob = await reopenTrainingReview(jobId);
       setJobs((current) => current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)));
       updateHistoryJob(reopenedJob);
-      setTrainingProgress(await getTrainingProgress(trainingReviewOrder));
+      setTrainingProgress(await getTrainingProgress(trainingReviewOrder, trainingReviewStreet));
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
@@ -1893,6 +1931,7 @@ export default function App() {
     setTrainingProgress(null);
     setTrainingProgressView("recent");
     setTrainingReviewOrder("recent");
+    setTrainingReviewStreet("all");
     setTrainingProgressLoading(true);
     setError(null);
     void getTrainingProgress()
@@ -1901,19 +1940,28 @@ export default function App() {
       .finally(() => setTrainingProgressLoading(false));
   }
 
-  async function updateTrainingReviewOrder(reviewOrder: TrainingReviewOrder) {
-    if (reviewOrder === trainingReviewOrder || trainingProgressLoading) {
+  async function updateTrainingReviewQueue(
+    reviewOrder: TrainingReviewOrder,
+    reviewStreet: TrainingReviewStreet,
+  ) {
+    if (
+      (reviewOrder === trainingReviewOrder && reviewStreet === trainingReviewStreet)
+      || trainingProgressLoading
+    ) {
       return;
     }
     const previousOrder = trainingReviewOrder;
+    const previousStreet = trainingReviewStreet;
     setTrainingReviewOrder(reviewOrder);
+    setTrainingReviewStreet(reviewStreet);
     setTrainingProgressLoading(true);
     setError(null);
     try {
-      setTrainingProgress(await getTrainingProgress(reviewOrder));
+      setTrainingProgress(await getTrainingProgress(reviewOrder, reviewStreet));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
-      setError(messageFromError(trainingError, "Could not reorder training reviews"));
+      setTrainingReviewStreet(previousStreet);
+      setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
       setTrainingProgressLoading(false);
     }
@@ -2948,20 +2996,41 @@ export default function App() {
                       </h3>
                       <div className="training-review-controls">
                         {trainingProgressView === "review" ? (
-                          <label className="training-review-order">
-                            <span>Order</span>
-                            <select
-                              aria-label="Review order"
-                              value={trainingReviewOrder}
-                              onChange={(event) => void updateTrainingReviewOrder(
-                                event.target.value as TrainingReviewOrder,
-                              )}
-                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                            >
-                              <option value="recent">Newest</option>
-                              <option value="ev_loss">EV loss</option>
-                            </select>
-                          </label>
+                          <>
+                            <label className="training-review-order">
+                              <span>Order</span>
+                              <select
+                                aria-label="Review order"
+                                value={trainingReviewOrder}
+                                onChange={(event) => void updateTrainingReviewQueue(
+                                  event.target.value as TrainingReviewOrder,
+                                  trainingReviewStreet,
+                                )}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              >
+                                <option value="recent">Newest</option>
+                                <option value="ev_loss">EV loss</option>
+                              </select>
+                            </label>
+                            <label className="training-review-order">
+                              <span>Street</span>
+                              <select
+                                aria-label="Review street"
+                                value={trainingReviewStreet}
+                                onChange={(event) => void updateTrainingReviewQueue(
+                                  trainingReviewOrder,
+                                  event.target.value as TrainingReviewStreet,
+                                )}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              >
+                                <option value="all">All</option>
+                                <option value="preflop">Preflop</option>
+                                <option value="flop">Flop</option>
+                                <option value="turn">Turn</option>
+                                <option value="river">River</option>
+                              </select>
+                            </label>
+                          </>
                         ) : null}
                         <div className="training-view-switch" role="group" aria-label="Training decision view">
                           <button
@@ -3040,11 +3109,7 @@ export default function App() {
             </div>
 
             <div className="automation-dialog-footer training-progress-footer">
-              <span>
-                {trainingProgress && trainingProgress.needs_review_hands > trainingProgress.review_queue.length
-                  ? `Showing ${trainingProgress.review_queue.length} ${trainingReviewOrder === "ev_loss" ? "highest-loss" : "newest"} of ${trainingProgress.needs_review_hands} review hands.`
-                  : "Automation-only hands are not scored."}
-              </span>
+              <span>{reviewQueueStatus}</span>
               {nextReviewHand ? (
                 <button
                   type="button"

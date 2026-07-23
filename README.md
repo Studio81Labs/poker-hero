@@ -120,7 +120,9 @@ action and exact-line accuracy. Solver responses with complete candidate EV
 metadata also report the selected line's EV loss in BB plus aggregate and
 street-level averages; providers without comparable EVs remain ungraded for
 that metric. The needs-review queue can stay newest-first or prioritize the
-highest available EV losses while retaining ungraded hands afterward.
+highest available EV losses while retaining ungraded hands afterward. It can
+also focus on one street; filtering happens before ordering and the bounded
+queue limit.
 
 ### Offline Parser Benchmarks
 

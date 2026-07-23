@@ -210,6 +210,8 @@ class TrainingStreetSummary(BaseModel):
     exact_matches: int = Field(ge=0)
     action_accuracy: float = Field(ge=0, le=1)
     exact_accuracy: float = Field(ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
 class TrainingRecentHand(BaseModel):
@@ -224,6 +226,7 @@ class TrainingRecentHand(BaseModel):
     outcome: TrainingOutcome
     recorded_at: datetime
     reviewed_at: datetime | None = None
+    ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
 class TrainingProgress(BaseModel):
@@ -234,6 +237,8 @@ class TrainingProgress(BaseModel):
     needs_review_hands: int = Field(ge=0)
     action_accuracy: float = Field(ge=0, le=1)
     exact_accuracy: float = Field(ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_queue: list[TrainingRecentHand] = Field(default_factory=list)

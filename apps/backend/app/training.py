@@ -33,6 +33,10 @@ def summarize_training(
         if job.training_decision is not None and job.recommendation is not None
     ]
     outcomes = {job.id: training_outcome(job) for job in reviewed}
+    ev_losses = {job.id: training_ev_loss_bb(job) for job in reviewed}
+    comparable_ev_losses = [
+        loss for loss in ev_losses.values() if loss is not None
+    ]
     action_matches = sum(outcome != "different" for outcome in outcomes.values())
     exact_matches = sum(outcome in {"match", "mixed"} for outcome in outcomes.values())
     reviewed_hands = len(reviewed)
@@ -52,6 +56,11 @@ def summarize_training(
             outcomes[job.id] in {"match", "mixed"} for job in street_jobs
         )
         street_total = len(street_jobs)
+        street_ev_losses = [
+            loss
+            for job in street_jobs
+            if (loss := ev_losses[job.id]) is not None
+        ]
         street_summaries.append(
             TrainingStreetSummary(
                 street=street,
@@ -60,16 +69,18 @@ def summarize_training(
                 exact_matches=street_exact_matches,
                 action_accuracy=street_action_matches / street_total,
                 exact_accuracy=street_exact_matches / street_total,
+                ev_compared_hands=len(street_ev_losses),
+                average_ev_loss_bb=_average_ev_loss(street_ev_losses),
             )
         )
 
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     recent_hands = [
-        _recent_hand(job, outcomes[job.id])
+        _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
     ]
     review_queue = [
-        _recent_hand(job, outcomes[job.id])
+        _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first
         if outcomes[job.id] not in {"match", "mixed"}
         and job.training_reviewed_at is None
@@ -87,6 +98,8 @@ def summarize_training(
         needs_review_hands=needs_review_hands,
         action_accuracy=action_matches / reviewed_hands if reviewed_hands else 0,
         exact_accuracy=exact_matches / reviewed_hands if reviewed_hands else 0,
+        ev_compared_hands=len(comparable_ev_losses),
+        average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         review_queue=review_queue,
@@ -114,6 +127,55 @@ def training_outcome(job: JobRecord) -> TrainingOutcome:
     if policy_support == "action":
         return "mixed_action"
     return "different"
+
+
+def training_ev_loss_bb(job: JobRecord) -> float | None:
+    decision = job.training_decision
+    recommendation = job.recommendation
+    if decision is None or recommendation is None:
+        raise ValueError("Training comparison requires a decision and recommendation")
+    candidates = recommendation.raw.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+
+    best_ev: float | None = None
+    decision_ev: float | None = None
+    recommendation_line_found = False
+    valid_lines: set[tuple[str, float | None]] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        action = candidate.get("action")
+        if action not in {"fold", "check", "call", "bet", "raise"}:
+            continue
+        if "sizing" not in candidate:
+            continue
+        sizing = _candidate_sizing(action, candidate.get("sizing"))
+        if sizing is _INVALID_SIZING:
+            continue
+        ev = _finite_number(candidate.get("ev"))
+        if ev is None:
+            continue
+        valid_lines.add((action, sizing))
+        best_ev = ev if best_ev is None else max(best_ev, ev)
+        if _line_matches(
+            recommendation.action,
+            recommendation.sizing,
+            action,
+            sizing,
+        ):
+            recommendation_line_found = True
+        if _line_matches(decision.action, decision.sizing, action, sizing):
+            decision_ev = ev if decision_ev is None else max(decision_ev, ev)
+
+    if (
+        best_ev is None
+        or decision_ev is None
+        or not recommendation_line_found
+        or len(valid_lines) < 2
+    ):
+        return None
+    return round(max(0.0, best_ev - decision_ev), 6)
 
 
 def _policy_support(
@@ -187,7 +249,15 @@ def _training_recorded_at(job: JobRecord) -> datetime:
     return job.training_decision.recorded_at
 
 
-def _recent_hand(job: JobRecord, outcome: TrainingOutcome) -> TrainingRecentHand:
+def _average_ev_loss(losses: list[float]) -> float | None:
+    return round(sum(losses) / len(losses), 6) if losses else None
+
+
+def _recent_hand(
+    job: JobRecord,
+    outcome: TrainingOutcome,
+    ev_loss_bb: float | None,
+) -> TrainingRecentHand:
     decision = job.training_decision
     recommendation = job.recommendation
     if decision is None or recommendation is None:
@@ -204,4 +274,5 @@ def _recent_hand(job: JobRecord, outcome: TrainingOutcome) -> TrainingRecentHand
         outcome=outcome,
         recorded_at=decision.recorded_at,
         reviewed_at=job.training_reviewed_at,
+        ev_loss_bb=ev_loss_bb,
     )

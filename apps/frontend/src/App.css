@@ -1270,6 +1270,12 @@ button:disabled {
   justify-items: end;
 }
 
+.training-comparison-ev {
+  color: #d7d3d3;
+  font-size: 9px;
+  font-weight: 700;
+}
+
 .training-comparison-result > button,
 .training-review-complete span,
 .training-review-complete button {
@@ -1798,6 +1804,10 @@ button:disabled {
   padding: 16px 0;
 }
 
+.training-progress-summary.has-ev {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .training-progress-summary > div {
   border-left: 1px solid var(--line-soft);
   padding: 0 14px;
@@ -1986,6 +1996,11 @@ button:disabled {
 
 .recent-training-lines small:first-child {
   color: var(--text);
+  font-weight: 700;
+}
+
+.recent-training-lines .recent-training-ev {
+  color: #27725b;
   font-weight: 700;
 }
 
@@ -2611,12 +2626,18 @@ button:disabled {
     row-gap: 14px;
   }
 
-  .training-progress-summary {
+  .training-progress-summary,
+  .training-progress-summary.has-ev {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 14px;
   }
 
   .training-progress-summary > div:nth-child(3) {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .training-progress-summary.has-ev > div:nth-child(5) {
     border-left: 0;
     padding-left: 0;
   }

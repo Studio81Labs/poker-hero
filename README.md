@@ -115,6 +115,12 @@ the requested engine and routing or fallback reason in `raw` metadata. Set
 and run the range/EV engine directly. Select `external_solver` at the provider
 boundary for a future licensed service.
 
+When a user locks an answer before revealing guidance, training progress tracks
+action and exact-line accuracy. Solver responses with complete candidate EV
+metadata also report the selected line's EV loss in BB plus aggregate and
+street-level averages; providers without comparable EVs remain ungraded for
+that metric.
+
 ### Offline Parser Benchmarks
 
 Export approved ground-truth hands from the Parser benchmark dialog, then run

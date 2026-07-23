@@ -55,9 +55,11 @@ correction, automation controls, pre-reveal training decisions, recommendations,
 decision-evidence presentation, aggregate training progress, and history. It
 defensively normalizes optional provider metadata such as equity, candidate
 EVs/frequencies, exploitability, preflop stack/range/sizing policy, and fallback
-context; providers remain free to omit those fields. In production it uses
-same-origin `/api/*`; `worker.js` forwards those requests to `BACKEND_URL` and
-serves all other routes from Worker Static Assets.
+context. Supported postflop results also expose bounded tree/history metadata
+and keep exact configured OOP/IP ranges behind a collapsed disclosure; providers
+remain free to omit those fields. In production it uses same-origin `/api/*`;
+`worker.js` forwards those requests to `BACKEND_URL` and serves all other routes
+from Worker Static Assets.
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,

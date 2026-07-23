@@ -1437,6 +1437,40 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.recommendation-ranges {
+  border-bottom: 1px solid rgba(243, 242, 242, 0.12);
+  color: #d7d3d3;
+  padding: 6px 0;
+}
+
+.recommendation-ranges summary {
+  color: #aaa5a5;
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.recommendation-ranges dl {
+  display: grid;
+  gap: 7px;
+  margin: 7px 0 2px;
+}
+
+.recommendation-ranges dt {
+  color: var(--accent-soft);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.recommendation-ranges dd {
+  color: #d7d3d3;
+  font-size: 9px;
+  line-height: 1.35;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .recommendation-candidates {
   margin-top: 9px;
 }

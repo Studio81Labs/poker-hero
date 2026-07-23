@@ -62,8 +62,9 @@ The frontend is a browser control panel for:
 - Viewing the recommendation, sizing, confidence, and reasoning.
 - Optionally locking the player's own action and sizing before revealing guidance.
 - Comparing a locked decision with the recommendation during post-hand review.
-- Reviewing aggregate action and exact-line accuracy by street across locked
-  answers.
+- Reviewing aggregate action and exact-line policy accuracy by street across
+  locked answers, including meaningful mixed-strategy alternatives when the
+  provider exposes frequencies.
 - Filtering recent decisions to a bounded needs-review queue for action or
   sizing differences and reopening the persisted hand.
 - Marking a revisited action or sizing difference reviewed without changing the
@@ -174,11 +175,13 @@ frequencies.
 7. Before revealing guidance, the user may lock their own action and optional sizing as a training answer.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
-10. When a training answer exists, the UI compares it with the recommendation.
+10. When a training answer exists, the UI compares it with the recommendation
+    and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with
     street-level results and recent-hand review links.
-12. Non-exact comparisons appear in a separate bounded queue so they can be
-    reviewed without labeling solver guidance as unquestionable ground truth.
+12. Unsupported actions and supported actions with a sizing difference appear
+    in a separate bounded queue so they can be reviewed without labeling solver
+    guidance as unquestionable ground truth.
 13. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
 14. A completed review may be reopened, returning the unchanged comparison to
@@ -283,6 +286,8 @@ Recommendation tests:
 
 - Use the mock provider for stable UI/backend tests.
 - Validate provider request/response contracts.
+- Treat an alternate candidate as policy-supported only when it has valid action,
+  sizing, and frequency metadata and at least 5% modeled frequency.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:
@@ -311,7 +316,7 @@ Poker Hero is successful when:
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
 - A user can optionally record their intended play before reveal and compare it with the recommendation afterward.
 - A user can track action and exact-line accuracy across reviewed hands and
-  reopen recent decisions.
+  reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
 - A user can complete that review so it leaves the pending queue without

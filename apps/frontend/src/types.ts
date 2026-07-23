@@ -50,7 +50,7 @@ export interface TrainingDecision {
   recorded_at: string;
 }
 
-export type TrainingOutcome = "match" | "same_action" | "different";
+export type TrainingOutcome = "match" | "mixed" | "same_action" | "mixed_action" | "different";
 
 export interface TrainingStreetSummary {
   street: Street;

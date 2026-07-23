@@ -22,6 +22,7 @@ def reviewed_job(
     recorded_at: datetime,
     decision_sizing: float | None = None,
     recommended_sizing: float | None = None,
+    recommendation_raw: dict[str, object] | None = None,
     training_reviewed_at: datetime | None = None,
 ) -> JobRecord:
     return JobRecord(
@@ -46,6 +47,7 @@ def reviewed_job(
             sizing=recommended_sizing,
             confidence=0.8,
             explanation="Test recommendation",
+            raw=recommendation_raw or {},
         ),
         training_reviewed_at=training_reviewed_at,
     )
@@ -211,6 +213,80 @@ def test_summarize_training_applies_sizing_tolerance() -> None:
     assert progress.exact_matches == 1
     assert [hand.outcome for hand in progress.recent_hands] == ["same_action", "match"]
     assert [hand.job_id for hand in progress.review_queue] == ["6" * 32]
+
+
+def test_summarize_training_scores_meaningful_solver_mixes() -> None:
+    jobs = [
+        reviewed_job(
+            "9" * 32,
+            "turn",
+            "raise",
+            "call",
+            datetime(2026, 7, 9, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "frequency": 0.8},
+                    {"action": "raise", "sizing": 8, "frequency": 0.2},
+                ]
+            },
+        ),
+        reviewed_job(
+            "a" * 32,
+            "river",
+            "raise",
+            "call",
+            datetime(2026, 7, 10, tzinfo=timezone.utc),
+            decision_sizing=9,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "frequency": 0.8},
+                    {"action": "raise", "sizing": 8, "frequency": 0.2},
+                ]
+            },
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 2
+    assert progress.exact_matches == 1
+    assert progress.different_actions == 0
+    assert progress.needs_review_hands == 1
+    assert [hand.outcome for hand in progress.recent_hands] == [
+        "mixed_action",
+        "mixed",
+    ]
+    assert [hand.job_id for hand in progress.review_queue] == ["a" * 32]
+
+
+def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> None:
+    jobs = [
+        reviewed_job(
+            "b" * 32,
+            "flop",
+            "raise",
+            "call",
+            datetime(2026, 7, 11, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "raise", "sizing": 8, "frequency": 0.049},
+                    {"action": "raise", "sizing": 8, "frequency": "20%"},
+                    {"action": "raise", "sizing": None, "frequency": 0.2},
+                    {"action": "raise", "sizing": 8, "frequency": True},
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 0
+    assert progress.exact_matches == 0
+    assert progress.different_actions == 1
+    assert progress.needs_review_hands == 1
+    assert progress.recent_hands[0].outcome == "different"
 
 
 def test_summarize_training_handles_empty_history() -> None:

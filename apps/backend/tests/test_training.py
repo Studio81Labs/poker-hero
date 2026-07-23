@@ -97,6 +97,11 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert progress.needs_review_hands == 2
     assert progress.action_accuracy == pytest.approx(2 / 3)
     assert progress.exact_accuracy == pytest.approx(1 / 3)
+    assert progress.trend is not None
+    assert progress.trend.window_hands == 1
+    assert progress.trend.action_accuracy_delta == -1
+    assert progress.trend.exact_accuracy_delta == 0
+    assert progress.trend.average_ev_loss_delta_bb is None
     assert [summary.street for summary in progress.street_summaries] == [
         "preflop",
         "flop",
@@ -134,6 +139,42 @@ def test_summarize_training_limits_recent_hands() -> None:
     assert progress.reviewed_hands == 4
     assert len(progress.recent_hands) == 2
     assert progress.recent_hands[0].job_id == f"{3:032x}"
+
+
+def test_summarize_training_compares_equal_recent_windows() -> None:
+    candidates = {
+        "candidates": [
+            {"action": "fold", "sizing": None, "ev": 0.0},
+            {"action": "call", "sizing": None, "ev": 1.0},
+        ]
+    }
+    jobs = [
+        reviewed_job(
+            f"{index:032x}",
+            "flop",
+            "fold" if index < 2 else "call",
+            "call",
+            datetime(2026, 7, index + 1, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+        )
+        for index in range(4)
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.trend is not None
+    assert progress.trend.window_hands == 2
+    assert progress.trend.recent_action_accuracy == 1
+    assert progress.trend.previous_action_accuracy == 0
+    assert progress.trend.action_accuracy_delta == 1
+    assert progress.trend.recent_exact_accuracy == 1
+    assert progress.trend.previous_exact_accuracy == 0
+    assert progress.trend.exact_accuracy_delta == 1
+    assert progress.trend.recent_ev_compared_hands == 2
+    assert progress.trend.previous_ev_compared_hands == 2
+    assert progress.trend.recent_average_ev_loss_bb == 0
+    assert progress.trend.previous_average_ev_loss_bb == 1
+    assert progress.trend.average_ev_loss_delta_bb == -1
 
 
 def test_summarize_training_limits_review_queue_independently() -> None:

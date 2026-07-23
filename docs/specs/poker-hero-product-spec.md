@@ -67,6 +67,8 @@ The frontend is a browser control panel for:
   provider exposes frequencies.
 - Reviewing average EV loss by street and per-hand EV loss when the provider
   exposes a complete numeric candidate line in big blinds.
+- Comparing equal recent and previous windows for action accuracy, exact-line
+  accuracy, and available EV-loss movement.
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by street, ordering it by recency or available EV
   loss, and reopening the persisted hand.
@@ -183,7 +185,8 @@ frequencies.
 10. When a training answer exists, the UI compares it with the recommendation
     and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with
-    street-level results, optional EV-loss grading, and recent-hand review links.
+    street-level results, optional EV-loss grading, recent-hand review links,
+    and equal-window recent trends capped at ten hands per period.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and prioritize the highest available EV
@@ -333,6 +336,8 @@ Poker Hero is successful when:
   reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can see per-hand and average EV loss for decisions that have comparable
   candidate EV metadata without excluding ungraded hands from other statistics.
+- A user can compare recent action, exact-line, and available EV-loss results
+  against an equally sized preceding period.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
 - A user can reorder pending reviews by EV loss so the highest-cost comparable

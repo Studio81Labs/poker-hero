@@ -80,6 +80,21 @@ export interface TrainingRecentHand {
   ev_loss_bb: number | null;
 }
 
+export interface TrainingTrend {
+  window_hands: number;
+  recent_action_accuracy: number;
+  previous_action_accuracy: number;
+  action_accuracy_delta: number;
+  recent_exact_accuracy: number;
+  previous_exact_accuracy: number;
+  exact_accuracy_delta: number;
+  recent_ev_compared_hands: number;
+  previous_ev_compared_hands: number;
+  recent_average_ev_loss_bb: number | null;
+  previous_average_ev_loss_bb: number | null;
+  average_ev_loss_delta_bb: number | null;
+}
+
 export interface TrainingProgress {
   reviewed_hands: number;
   action_matches: number;
@@ -90,6 +105,7 @@ export interface TrainingProgress {
   exact_accuracy: number;
   ev_compared_hands: number;
   average_ev_loss_bb: number | null;
+  trend?: TrainingTrend | null;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   review_street_counts?: Partial<Record<Street, number>>;

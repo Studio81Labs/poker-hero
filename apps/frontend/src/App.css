@@ -1932,6 +1932,57 @@ button:disabled {
   color: var(--accent);
 }
 
+.training-differences-heading > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.training-differences-list {
+  display: grid;
+  gap: 6px;
+}
+
+.training-difference {
+  align-items: center;
+  background: rgba(32, 30, 29, 0.035);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(92px, auto);
+  min-height: 35px;
+  padding: 7px 9px;
+}
+
+.training-difference-actions {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+
+.training-difference-actions strong {
+  font-size: 11px;
+}
+
+.training-difference-actions svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.training-difference > span {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.training-difference > em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  text-align: right;
+}
+
 .training-street-table {
   border-collapse: collapse;
   font-size: 11px;
@@ -2752,6 +2803,16 @@ button:disabled {
   .training-progress-summary.has-ev > div:nth-child(5) {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .training-difference {
+    gap: 4px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .training-difference > em {
+    grid-column: 1 / -1;
+    text-align: left;
   }
 
   .recent-training-open {

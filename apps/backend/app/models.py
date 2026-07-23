@@ -245,6 +245,14 @@ class TrainingTrend(BaseModel):
     average_ev_loss_delta_bb: float | None = None
 
 
+class TrainingActionDifference(BaseModel):
+    decision_action: RecommendationAction
+    recommended_action: RecommendationAction
+    hands: int = Field(ge=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
+
+
 class TrainingProgress(BaseModel):
     reviewed_hands: int = Field(ge=0)
     action_matches: int = Field(ge=0)
@@ -256,6 +264,7 @@ class TrainingProgress(BaseModel):
     ev_compared_hands: int = Field(default=0, ge=0)
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
     trend: TrainingTrend | None = None
+    action_differences: list[TrainingActionDifference] = Field(default_factory=list)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_street_counts: dict[Street, int] = Field(default_factory=dict)

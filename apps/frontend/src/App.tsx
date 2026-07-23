@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -3073,6 +3073,40 @@ export default function App() {
                               </em>
                             </div>
                           ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {(trainingProgress.action_differences?.length ?? 0) > 0 ? (
+                    <section
+                      className="training-progress-section training-differences-section"
+                      aria-labelledby="training-differences-title"
+                    >
+                      <div className="training-section-heading training-differences-heading">
+                        <h3 id="training-differences-title">Common differences</h3>
+                        <span>Unsupported action choices</span>
+                      </div>
+                      <div className="training-differences-list">
+                        {trainingProgress.action_differences?.slice(0, 3).map((difference) => (
+                          <div
+                            key={`${difference.decision_action}-${difference.recommended_action}`}
+                            className="training-difference"
+                          >
+                            <div className="training-difference-actions">
+                              <strong>{trainingDecisionLabel(difference.decision_action, null)}</strong>
+                              <ArrowRight size={13} aria-hidden="true" />
+                              <strong>{trainingDecisionLabel(difference.recommended_action, null)}</strong>
+                            </div>
+                            <span>
+                              {difference.hands} {difference.hands === 1 ? "hand" : "hands"}
+                            </span>
+                            <em>
+                              {difference.ev_compared_hands > 0 && difference.average_ev_loss_bb !== null
+                                ? `${formatEvLossBb(difference.average_ev_loss_bb)} avg loss`
+                                : "EV ungraded"}
+                            </em>
+                          </div>
+                        ))}
                       </div>
                     </section>
                   ) : null}

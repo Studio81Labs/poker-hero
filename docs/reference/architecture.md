@@ -110,8 +110,13 @@ recent review links from persisted jobs. Trend windows use the newest and
 immediately preceding reviewed hands, have the same size, and are capped at ten
 hands each. Action and exact-line deltas are available once two reviewed hands
 exist. The EV-loss delta is available only when both windows contain at least
-one comparable EV grade. The headline recommendation is always supported.
-Alternate provider candidates are supported
+one comparable EV grade. Unsupported action choices are also grouped by the
+player's action and the headline recommendation, ordered by frequency and then
+available average EV loss. Solver-supported mixed actions and same-action
+sizing differences are excluded so the summary does not overstate mistakes.
+Patterns retain their full hand count while averaging EV over only the hands
+with comparable candidate grades. The headline recommendation is always
+supported. Alternate provider candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is
 recorded as a supported mix; an alternate action with different sizing remains

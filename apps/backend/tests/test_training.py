@@ -102,6 +102,10 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert progress.trend.action_accuracy_delta == -1
     assert progress.trend.exact_accuracy_delta == 0
     assert progress.trend.average_ev_loss_delta_bb is None
+    assert len(progress.action_differences) == 1
+    assert progress.action_differences[0].decision_action == "fold"
+    assert progress.action_differences[0].recommended_action == "call"
+    assert progress.action_differences[0].hands == 1
     assert [summary.street for summary in progress.street_summaries] == [
         "preflop",
         "flop",
@@ -175,6 +179,95 @@ def test_summarize_training_compares_equal_recent_windows() -> None:
     assert progress.trend.recent_average_ev_loss_bb == 0
     assert progress.trend.previous_average_ev_loss_bb == 1
     assert progress.trend.average_ev_loss_delta_bb == -1
+
+
+def test_summarize_training_groups_and_orders_action_differences() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 1.2},
+                ]
+            },
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+        ),
+        reviewed_job(
+            "3" * 32,
+            "river",
+            "raise",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            decision_sizing=4,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "raise", "sizing": 4, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 2.0},
+                ]
+            },
+        ),
+        reviewed_job(
+            "4" * 32,
+            "river",
+            "check",
+            "bet",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+            recommended_sizing=3,
+        ),
+        reviewed_job(
+            "5" * 32,
+            "river",
+            "raise",
+            "call",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            decision_sizing=4,
+            recommendation_raw={
+                "candidates": [
+                    {
+                        "action": "raise",
+                        "sizing": 4,
+                        "frequency": 0.2,
+                    },
+                    {
+                        "action": "call",
+                        "sizing": None,
+                        "frequency": 0.8,
+                    },
+                ]
+            },
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert [
+        (
+            difference.decision_action,
+            difference.recommended_action,
+            difference.hands,
+        )
+        for difference in progress.action_differences
+    ] == [
+        ("fold", "call", 2),
+        ("raise", "call", 1),
+        ("check", "bet", 1),
+    ]
+    fold_to_call = progress.action_differences[0]
+    assert fold_to_call.ev_compared_hands == 1
+    assert fold_to_call.average_ev_loss_bb == 1.2
+    assert progress.action_differences[1].average_ev_loss_bb == 2
+    assert progress.action_differences[2].average_ev_loss_bb is None
 
 
 def test_summarize_training_limits_review_queue_independently() -> None:

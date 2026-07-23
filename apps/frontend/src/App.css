@@ -1399,6 +1399,44 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.recommendation-context {
+  border-bottom: 1px solid rgba(243, 242, 242, 0.12);
+  border-top: 1px solid rgba(243, 242, 242, 0.12);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 9px 0 0;
+}
+
+.recommendation-metrics + .recommendation-context {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.recommendation-context > div {
+  min-width: 0;
+  padding: 6px 8px 6px 0;
+}
+
+.recommendation-context > div:nth-child(even) {
+  border-left: 1px solid rgba(243, 242, 242, 0.12);
+  padding-left: 8px;
+}
+
+.recommendation-context dt {
+  color: #aaa5a5;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.recommendation-context dd {
+  color: #d7d3d3;
+  font-size: 9px;
+  line-height: 1.35;
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .recommendation-candidates {
   margin-top: 9px;
 }

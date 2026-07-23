@@ -47,6 +47,10 @@ const recommendationWithEvidence: RecommendationResult = {
     equity: { equity: 0.61 },
     realized_equity: 0.55,
     required_equity: 0.2,
+    stack_depth_policy: 42,
+    effective_stack: -1,
+    opening_raise_size: "2.5",
+    continue_fraction: 4,
     candidates: [
       { action: "fold", sizing: null, ev: 0 },
       { action: "call", sizing: null, ev: 3.1 },
@@ -1009,6 +1013,7 @@ describe("App", () => {
     expect(chosen).toHaveTextContent("7.5 BB");
     expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
+    expect(within(evidence).queryByLabelText("Chart context")).not.toBeInTheDocument();
   });
 
   it("labels position-aware chart evidence without exposing its internal id", async () => {
@@ -1029,6 +1034,11 @@ describe("App", () => {
           routing_reason: "the hand is preflop",
           hand_top_fraction: 0.28,
           policy_fraction: 0.45,
+          stack_depth_policy: "standard",
+          effective_stack: 100,
+          base_open_fraction: 0.45,
+          open_fraction: 0.45,
+          target_open_size: 2.5,
           candidates: [
             { action: "fold", sizing: null, frequency: 0 },
             { action: "call", sizing: null, frequency: 0 },
@@ -1051,8 +1061,65 @@ describe("App", () => {
     expect(within(evidence).getByText("Postflop solver route")).toBeInTheDocument();
     expect(within(evidence).queryByText("preflop_chart_v1")).not.toBeInTheDocument();
     expect(within(evidence).getByText("28%")).toBeInTheDocument();
-    expect(within(evidence).getByText("45%")).toBeInTheDocument();
+    expect(within(evidence).getAllByText("45%")).toHaveLength(2);
     expect(within(evidence).getByText("100% frequency")).toBeInTheDocument();
+    const chartContext = within(evidence).getByLabelText("Chart context");
+    expect(within(chartContext).getByText("Standard · 100 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Opening range")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Open target")).toBeInTheDocument();
+    expect(within(chartContext).getByText("2.5 BB")).toBeInTheDocument();
+  });
+
+  it("shows stack-aware facing-open chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "facing-open-chart-job",
+      original_filename: "facing-open.png",
+      image_filename: "facing-open.png",
+      recommendation: {
+        action: "raise",
+        sizing: 3.6,
+        confidence: 0.78,
+        explanation: "The preflop chart recommends the stack-aware reraise line.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.1243,
+          policy_fraction: 0.156,
+          stack_depth_policy: "short",
+          effective_stack: 20,
+          opener_position: "button",
+          base_opener_open_fraction: 0.45,
+          opener_open_fraction: 0.405,
+          opening_raise_size: 2.5,
+          open_size_policy: "standard",
+          continue_fraction: 0.36,
+          reraise_fraction: 0.156,
+          maximum_reraise_total: 3.6,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0.1 },
+            { action: "call", sizing: null, frequency: 0.35 },
+            { action: "raise", sizing: 3.6, frequency: 0.55 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Chart context");
+    expect(within(chartContext).getByText("Short · 20 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Button · 40.5% modeled (base 45%)")).toBeInTheDocument();
+    expect(within(chartContext).getByText("2.5 BB · Standard")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 36% · Reraise 15.6%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("3.6 BB")).toBeInTheDocument();
   });
 
   it("displays backend upload errors as queue attention items", async () => {

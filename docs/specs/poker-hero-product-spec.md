@@ -70,6 +70,8 @@ The frontend is a browser control panel for:
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by street, ordering it by recency or available EV
   loss, and reopening the persisted hand.
+- Opening a suggested focus street directly from progress when that street
+  still has pending reviews.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
 - Reopening a completed review when it still needs attention.
@@ -187,12 +189,15 @@ frequencies.
     focus the queue on one street and prioritize the highest available EV
     losses; filtering happens before ordering and limiting, and ungraded hands
     remain available after graded ones.
-13. The user may mark a revisited difference reviewed, which removes it from the
+13. Progress may suggest a street that still has pending reviews, preferring
+    the highest average EV loss when comparable grades exist and otherwise the
+    lowest action accuracy.
+14. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
-14. A completed review may be reopened, returning the unchanged comparison to
+15. A completed review may be reopened, returning the unchanged comparison to
     the pending queue.
-15. The UI retains completed items in processing until the user clears them into history.
-16. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+16. The UI retains completed items in processing until the user clears them into history.
+17. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -334,6 +339,8 @@ Poker Hero is successful when:
   decisions are reviewed first without hiding ungraded hands.
 - A user can focus pending reviews on one street without changing global
   accuracy or hiding the total number of reviews still pending.
+- A user can open an actionable suggested focus street from progress without
+  manually comparing the street summary and pending queue.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
 - A user can reopen a completed review without changing the locked answer or

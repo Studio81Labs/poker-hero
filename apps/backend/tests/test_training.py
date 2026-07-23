@@ -112,6 +112,7 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
         "same_action",
         "match",
     ]
+    assert progress.review_street_counts == {"flop": 1, "turn": 1}
     assert progress.review_queue_hands == 2
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
 
@@ -266,6 +267,7 @@ def test_summarize_training_filters_review_street_before_ordering_and_limit() ->
     )
 
     assert progress.needs_review_hands == 3
+    assert progress.review_street_counts == {"flop": 2, "turn": 1}
     assert progress.review_queue_hands == 2
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32]
     assert [hand.job_id for hand in progress.recent_hands] == [

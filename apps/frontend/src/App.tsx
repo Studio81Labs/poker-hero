@@ -87,6 +87,9 @@ type TrainingActionOption = "" | RecommendationAction;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type TrainingProgressView = "recent" | "review";
+type TrainingFocus = { street: Street; reason: string };
+
+const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
 
 type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
   monitorTypeSurfaces?: "include" | "exclude";
@@ -755,6 +758,50 @@ function trainingReviewQueueStatus(
   return `No pending review hands ${scope}.`;
 }
 
+function suggestedTrainingFocus(progress: TrainingProgress): TrainingFocus | null {
+  const counts = progress.review_street_counts ?? {};
+  const candidates = progress.street_summaries.filter(
+    (summary) => (counts[summary.street] ?? 0) > 0,
+  );
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const evCandidates = candidates.filter(
+    (summary) => summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null,
+  );
+  const usesEvLoss = evCandidates.length > 0;
+  const ranked = [...(usesEvLoss ? evCandidates : candidates)].sort((left, right) => {
+    if (usesEvLoss) {
+      const evDifference = (right.average_ev_loss_bb ?? 0) - (left.average_ev_loss_bb ?? 0);
+      if (evDifference !== 0) {
+        return evDifference;
+      }
+    } else {
+      const accuracyDifference = left.action_accuracy - right.action_accuracy;
+      if (accuracyDifference !== 0) {
+        return accuracyDifference;
+      }
+    }
+
+    const pendingDifference = (counts[right.street] ?? 0) - (counts[left.street] ?? 0);
+    if (pendingDifference !== 0) {
+      return pendingDifference;
+    }
+    return TRAINING_STREET_ORDER.indexOf(left.street) - TRAINING_STREET_ORDER.indexOf(right.street);
+  });
+  const focus = ranked[0];
+  if (!focus) {
+    return null;
+  }
+  return {
+    street: focus.street,
+    reason: usesEvLoss && focus.average_ev_loss_bb !== null
+      ? `Highest average EV loss: ${formatEvLossBb(focus.average_ev_loss_bb)}`
+      : `Lowest action match: ${benchmarkPercent(focus.action_accuracy)}`,
+  };
+}
+
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
   return {
     id: report.id,
@@ -1399,6 +1446,7 @@ export default function App() {
     trainingReviewOrder,
     trainingReviewStreet,
   );
+  const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -1965,6 +2013,11 @@ export default function App() {
     } finally {
       setTrainingProgressLoading(false);
     }
+  }
+
+  async function focusTrainingReviewStreet(street: Street) {
+    setTrainingProgressView("review");
+    await updateTrainingReviewQueue(trainingReviewOrder, street);
   }
 
   async function reviewTrainingHand(jobId: string) {
@@ -2960,7 +3013,22 @@ export default function App() {
                   </div>
 
                   <section className="training-progress-section" aria-labelledby="training-streets-title">
-                    <h3 id="training-streets-title">By street</h3>
+                    <div className="training-section-heading">
+                      <h3 id="training-streets-title">By street</h3>
+                      {trainingProgressView === "recent" && trainingFocus ? (
+                        <button
+                          type="button"
+                          className="training-focus-action"
+                          onClick={() => void focusTrainingReviewStreet(trainingFocus.street)}
+                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                          title={trainingFocus.reason}
+                          aria-label={`Focus ${trainingFocus.street} reviews: ${trainingFocus.reason}`}
+                        >
+                          <Target size={13} aria-hidden="true" />
+                          Focus {trainingFocus.street}
+                        </button>
+                      ) : null}
+                    </div>
                     <table className="training-street-table">
                       <thead>
                         <tr>

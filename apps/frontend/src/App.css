@@ -1851,6 +1851,32 @@ button:disabled {
   margin: 0 0 9px;
 }
 
+.training-section-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.training-progress-section .training-section-heading h3 {
+  margin: 0;
+}
+
+.training-focus-action {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 6px;
+  min-height: 29px;
+  padding: 0 9px;
+  text-transform: capitalize;
+}
+
 .training-street-table {
   border-collapse: collapse;
   font-size: 11px;

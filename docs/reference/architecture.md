@@ -129,6 +129,10 @@ An optional street filter is applied before that ordering and limit. The
 response keeps the global pending-review count separate from the number of
 hands matching the active filter, so a focused queue does not misrepresent
 overall progress.
+Pending counts are also returned per street. The frontend uses only streets
+with pending work when suggesting a focus: highest average EV loss wins when
+comparable EV grades exist, otherwise the lowest action accuracy wins. Pending
+volume and canonical street order provide deterministic tie-breakers.
 Completing a review persists a timestamp on the job and removes it from the
 pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.

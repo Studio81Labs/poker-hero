@@ -70,7 +70,8 @@ The frontend is a browser control panel for:
   historical comparison result.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
-  action EVs or frequencies, solver quality, and fallback context.
+  action EVs or frequencies, solver quality, preflop chart policy context, and
+  fallback context.
 - Seeing parser/provider errors and retrying when possible.
 - Moving completed items into an autosaved history.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
@@ -317,8 +318,9 @@ Poker Hero is successful when:
   changing recorded accuracy.
 - A user can reopen a completed review without changing the locked answer or
   recommendation.
-- Solver-backed recommendations expose available decision evidence and disclose
-  when a configured engine used a fallback.
+- Solver-backed recommendations expose available decision evidence, including
+  preflop chart policy context, and disclose when a configured engine used a
+  fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.

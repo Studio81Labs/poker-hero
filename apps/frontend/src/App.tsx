@@ -134,6 +134,11 @@ interface RecommendationEvidenceMetric {
   unit: "percent" | "bb";
 }
 
+interface RecommendationEvidenceDetail {
+  label: string;
+  value: string;
+}
+
 interface RecommendationEvidenceCandidate {
   action: string;
   sizing: number | null;
@@ -147,6 +152,7 @@ interface RecommendationEvidence {
   fallbackReason: string | null;
   routed: boolean;
   metrics: RecommendationEvidenceMetric[];
+  details: RecommendationEvidenceDetail[];
   candidates: RecommendationEvidenceCandidate[];
 }
 
@@ -226,6 +232,26 @@ function metadataString(value: unknown, maxLength = 320): string | null {
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
 }
 
+function metadataLabel(value: unknown): string | null {
+  const normalized = metadataString(value, 40)?.replace(/_/g, " ").toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized === "utg") {
+    return "UTG";
+  }
+  return `${normalized.slice(0, 1).toUpperCase()}${normalized.slice(1)}`;
+}
+
+function formatEvidenceRatio(value: number): string {
+  const percent = Number((value * 100).toFixed(1));
+  return `${percent}%`;
+}
+
+function formatEvidenceBb(value: number): string {
+  return `${Number(value.toFixed(2))} BB`;
+}
+
 function recommendationEvidenceFromRaw(
   raw: Record<string, unknown>,
   recommendation: RecommendationResult,
@@ -239,6 +265,7 @@ function recommendationEvidenceFromRaw(
   const handTopFraction = metadataRatio(raw.hand_top_fraction);
   const policyFraction = metadataRatio(raw.policy_fraction);
   const metrics: RecommendationEvidenceMetric[] = [];
+  const details: RecommendationEvidenceDetail[] = [];
 
   if (rangeEquity !== null) {
     metrics.push({ label: "Range equity", value: rangeEquity, unit: "percent" });
@@ -257,6 +284,71 @@ function recommendationEvidenceFromRaw(
   }
   if (policyFraction !== null) {
     metrics.push({ label: "Chart range", value: policyFraction, unit: "percent" });
+  }
+
+  const stackPolicy = metadataLabel(raw.stack_depth_policy);
+  const effectiveStack = metadataNumber(raw.effective_stack);
+  if (stackPolicy && effectiveStack !== null && effectiveStack >= 0) {
+    details.push({ label: "Stack depth", value: `${stackPolicy} · ${formatEvidenceBb(effectiveStack)}` });
+  }
+
+  const openerPosition = metadataLabel(raw.opener_position);
+  const openerOpenFraction = metadataRatio(raw.opener_open_fraction);
+  const baseOpenerOpenFraction = metadataRatio(raw.base_opener_open_fraction);
+  if (openerPosition) {
+    let openerValue = openerPosition;
+    if (openerOpenFraction !== null) {
+      openerValue += ` · ${formatEvidenceRatio(openerOpenFraction)} modeled`;
+      if (
+        baseOpenerOpenFraction !== null
+        && Math.abs(baseOpenerOpenFraction - openerOpenFraction) >= 0.0005
+      ) {
+        openerValue += ` (base ${formatEvidenceRatio(baseOpenerOpenFraction)})`;
+      }
+    }
+    details.push({ label: "Opener", value: openerValue });
+  }
+
+  const openingRaiseSize = metadataNumber(raw.opening_raise_size);
+  const openSizePolicy = metadataLabel(raw.open_size_policy);
+  if (openingRaiseSize !== null && openingRaiseSize >= 0) {
+    details.push({
+      label: "Opening size",
+      value: `${formatEvidenceBb(openingRaiseSize)}${openSizePolicy ? ` · ${openSizePolicy}` : ""}`,
+    });
+  }
+
+  const continueFraction = metadataRatio(raw.continue_fraction);
+  const reraiseFraction = metadataRatio(raw.reraise_fraction);
+  if (continueFraction !== null || reraiseFraction !== null) {
+    const responseParts: string[] = [];
+    if (continueFraction !== null) {
+      responseParts.push(`Continue ${formatEvidenceRatio(continueFraction)}`);
+    }
+    if (reraiseFraction !== null) {
+      responseParts.push(`Reraise ${formatEvidenceRatio(reraiseFraction)}`);
+    }
+    details.push({ label: "Response range", value: responseParts.join(" · ") });
+  }
+
+  const openFraction = metadataRatio(raw.open_fraction);
+  const baseOpenFraction = metadataRatio(raw.base_open_fraction);
+  if (openFraction !== null) {
+    let openValue = formatEvidenceRatio(openFraction);
+    if (baseOpenFraction !== null && Math.abs(baseOpenFraction - openFraction) >= 0.0005) {
+      openValue += ` (base ${formatEvidenceRatio(baseOpenFraction)})`;
+    }
+    details.push({ label: "Opening range", value: openValue });
+  }
+
+  const targetOpenSize = metadataNumber(raw.target_open_size);
+  if (targetOpenSize !== null && targetOpenSize >= 0) {
+    details.push({ label: "Open target", value: formatEvidenceBb(targetOpenSize) });
+  }
+
+  const maximumReraiseTotal = metadataNumber(raw.maximum_reraise_total);
+  if (maximumReraiseTotal !== null && maximumReraiseTotal >= 0) {
+    details.push({ label: "All-in cap", value: formatEvidenceBb(maximumReraiseTotal) });
   }
 
   const sortedCandidates = (Array.isArray(raw.candidates) ? raw.candidates : [])
@@ -299,7 +391,7 @@ function recommendationEvidenceFromRaw(
   const fallbackFrom = metadataString(raw.requested_engine, 80);
   const routingReason = metadataString(raw.routing_reason);
   const fallbackReason = routingReason ?? metadataString(raw.fallback_reason);
-  if (metrics.length === 0 && candidates.length === 0 && !fallbackReason) {
+  if (metrics.length === 0 && details.length === 0 && candidates.length === 0 && !fallbackReason) {
     return null;
   }
   return {
@@ -308,6 +400,7 @@ function recommendationEvidenceFromRaw(
     fallbackReason,
     routed: routingReason !== null,
     metrics,
+    details,
     candidates,
   };
 }
@@ -2286,6 +2379,16 @@ export default function App() {
                           </div>
                         ))}
                       </div>
+                    ) : null}
+                    {decisionEvidence.details.length > 0 ? (
+                      <dl className="recommendation-context" aria-label="Chart context">
+                        {decisionEvidence.details.map((detail) => (
+                          <div key={detail.label}>
+                            <dt>{detail.label}</dt>
+                            <dd>{detail.value}</dd>
+                          </div>
+                        ))}
+                      </dl>
                     ) : null}
                     {decisionEvidence.candidates.length > 0 ? (
                       <div className="recommendation-candidates" role="list" aria-label="Compared actions">

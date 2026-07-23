@@ -32,6 +32,7 @@ from app.models import (
     CanonicalState,
     JobRecord,
     RecommendationRequest,
+    Street,
     TrainingDecision,
     TrainingDecisionRequest,
     TrainingProgress,
@@ -336,8 +337,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/training/progress", response_model=TrainingProgress)
     def get_training_progress(
         review_order: TrainingReviewOrder = "recent",
+        review_street: Street | None = None,
     ) -> TrainingProgress:
-        return summarize_training(store.list(), review_order=review_order)
+        return summarize_training(
+            store.list(),
+            review_order=review_order,
+            review_street=review_street,
+        )
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
     def get_benchmark_overview() -> BenchmarkOverview:

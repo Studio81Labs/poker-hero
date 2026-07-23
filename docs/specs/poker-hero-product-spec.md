@@ -68,8 +68,8 @@ The frontend is a browser control panel for:
 - Reviewing average EV loss by street and per-hand EV loss when the provider
   exposes a complete numeric candidate line in big blinds.
 - Filtering decisions to a bounded needs-review queue for action or sizing
-  differences, ordering it by recency or available EV loss, and reopening the
-  persisted hand.
+  differences, focusing it by street, ordering it by recency or available EV
+  loss, and reopening the persisted hand.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
 - Reopening a completed review when it still needs attention.
@@ -184,8 +184,9 @@ frequencies.
     street-level results, optional EV-loss grading, and recent-hand review links.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
-    instead prioritize the highest available EV losses; ungraded hands remain
-    available after graded ones.
+    focus the queue on one street and prioritize the highest available EV
+    losses; filtering happens before ordering and limiting, and ungraded hands
+    remain available after graded ones.
 13. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
 14. A completed review may be reopened, returning the unchanged comparison to
@@ -331,6 +332,8 @@ Poker Hero is successful when:
   hand needing review.
 - A user can reorder pending reviews by EV loss so the highest-cost comparable
   decisions are reviewed first without hiding ungraded hands.
+- A user can focus pending reviews on one street without changing global
+  accuracy or hiding the total number of reviews still pending.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
 - A user can reopen a completed review without changing the locked answer or

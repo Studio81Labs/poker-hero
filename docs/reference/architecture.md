@@ -125,6 +125,10 @@ lines. It defaults to newest-first order. An explicit EV-loss order ranks
 graded hands by descending loss, breaks ties by recency, and keeps ungraded
 hands afterward in recent-first order. Ordering happens before the queue limit
 so an older costly mistake remains discoverable.
+An optional street filter is applied before that ordering and limit. The
+response keeps the global pending-review count separate from the number of
+hands matching the active filter, so a focused queue does not misrepresent
+overall progress.
 Completing a review persists a timestamp on the job and removes it from the
 pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.

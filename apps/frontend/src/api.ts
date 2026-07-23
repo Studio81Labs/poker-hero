@@ -8,6 +8,7 @@ import type {
   SystemInfo,
   TrainingProgress,
   TrainingReviewOrder,
+  TrainingReviewStreet,
 } from "./types";
 
 const API_BASE_URL =
@@ -113,8 +114,16 @@ export async function reopenTrainingReview(jobId: string): Promise<JobRecord> {
 
 export async function getTrainingProgress(
   reviewOrder: TrainingReviewOrder = "recent",
+  reviewStreet: TrainingReviewStreet = "all",
 ): Promise<TrainingProgress> {
-  const query = reviewOrder === "recent" ? "" : `?review_order=${reviewOrder}`;
+  const search = new URLSearchParams();
+  if (reviewOrder !== "recent") {
+    search.set("review_order", reviewOrder);
+  }
+  if (reviewStreet !== "all") {
+    search.set("review_street", reviewStreet);
+  }
+  const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {
     credentials: "include",
   });

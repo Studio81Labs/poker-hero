@@ -112,6 +112,7 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
         "same_action",
         "match",
     ]
+    assert progress.review_queue_hands == 2
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
 
 
@@ -150,6 +151,7 @@ def test_summarize_training_limits_review_queue_independently() -> None:
     progress = summarize_training(jobs, recent_limit=1, review_limit=2)
 
     assert progress.needs_review_hands == 4
+    assert progress.review_queue_hands == 4
     assert len(progress.recent_hands) == 1
     assert [hand.job_id for hand in progress.review_queue] == [f"{3:032x}", f"{2:032x}"]
 
@@ -213,6 +215,66 @@ def test_summarize_training_prioritizes_review_queue_by_ev_loss() -> None:
     assert complete_queue.review_queue[2].ev_loss_bb is None
 
 
+def test_summarize_training_filters_review_street_before_ordering_and_limit() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 0.4},
+                ]
+            },
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 7, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 2.0},
+                ]
+            },
+        ),
+        reviewed_job(
+            "3" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 6, tzinfo=timezone.utc),
+            recommendation_raw={
+                "candidates": [
+                    {"action": "fold", "sizing": None, "ev": 0.0},
+                    {"action": "call", "sizing": None, "ev": 0.8},
+                ]
+            },
+        ),
+    ]
+
+    progress = summarize_training(
+        jobs,
+        review_limit=1,
+        review_order="ev_loss",
+        review_street="flop",
+    )
+
+    assert progress.needs_review_hands == 3
+    assert progress.review_queue_hands == 2
+    assert [hand.job_id for hand in progress.review_queue] == ["3" * 32]
+    assert [hand.job_id for hand in progress.recent_hands] == [
+        "2" * 32,
+        "3" * 32,
+        "1" * 32,
+    ]
+
+
 def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> None:
     completed_at = datetime(2026, 7, 10, tzinfo=timezone.utc)
     jobs = [
@@ -240,6 +302,7 @@ def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> N
 
     assert progress.reviewed_hands == 2
     assert progress.needs_review_hands == 1
+    assert progress.review_queue_hands == 1
     assert [hand.job_id for hand in progress.review_queue] == ["8" * 32]
     assert progress.recent_hands[1].reviewed_at == completed_at
 

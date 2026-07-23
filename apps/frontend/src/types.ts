@@ -52,6 +52,7 @@ export interface TrainingDecision {
 
 export type TrainingOutcome = "match" | "mixed" | "same_action" | "mixed_action" | "different";
 export type TrainingReviewOrder = "recent" | "ev_loss";
+export type TrainingReviewStreet = "all" | Street;
 
 export interface TrainingStreetSummary {
   street: Street;
@@ -91,6 +92,7 @@ export interface TrainingProgress {
   average_ev_loss_bb: number | null;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
+  review_queue_hands: number;
   review_queue: TrainingRecentHand[];
 }
 

@@ -195,17 +195,22 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["recent_hands"][0]["job_id"] == job_id
     assert progress["recent_hands"][0]["outcome"] == "match"
     assert progress["recent_hands"][0]["ev_loss_bb"] is None
+    assert progress["review_queue_hands"] == 0
     assert progress["review_queue"] == []
 
 
-def test_training_progress_validates_review_order(tmp_path: Path) -> None:
+def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
-    impact = client.get("/api/training/progress?review_order=ev_loss")
-    invalid = client.get("/api/training/progress?review_order=unknown")
+    filtered = client.get(
+        "/api/training/progress?review_order=ev_loss&review_street=flop"
+    )
+    invalid_order = client.get("/api/training/progress?review_order=unknown")
+    invalid_street = client.get("/api/training/progress?review_street=showdown")
 
-    assert impact.status_code == 200
-    assert invalid.status_code == 422
+    assert filtered.status_code == 200
+    assert invalid_order.status_code == 422
+    assert invalid_street.status_code == 422
 
 
 def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_path: Path) -> None:

@@ -204,6 +204,18 @@ class TrainingDecision(TrainingDecisionRequest):
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class TrainingReviewRequest(BaseModel):
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def normalize_note(cls, value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        return stripped or None
+
+
 class TrainingStreetSummary(BaseModel):
     street: Street
     reviewed_hands: int = Field(ge=0)
@@ -227,6 +239,7 @@ class TrainingRecentHand(BaseModel):
     outcome: TrainingOutcome
     recorded_at: datetime
     reviewed_at: datetime | None = None
+    review_note: str | None = None
     ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
@@ -287,6 +300,7 @@ class JobRecord(BaseModel):
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
     training_reviewed_at: datetime | None = None
+    training_review_note: str | None = None
     benchmark_included: bool = False
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

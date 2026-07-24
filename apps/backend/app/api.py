@@ -38,6 +38,7 @@ from app.models import (
     TrainingDecisionRequest,
     TrainingProgress,
     TrainingReviewOrder,
+    TrainingReviewRequest,
 )
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
@@ -174,6 +175,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_decision = None
             job.recommendation = None
             job.training_reviewed_at = None
+            job.training_review_note = None
             job.status = "approved"
             job.error = None
             return store.save(job)
@@ -201,6 +203,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 sizing=decision.sizing,
             )
             job.training_reviewed_at = None
+            job.training_review_note = None
             job.status = "approved"
             job.error = None
             return store.save(job)
@@ -253,12 +256,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             current = current_recommendation_target(job_id, approved_state)
             current.recommendation = result
             current.training_reviewed_at = None
+            current.training_review_note = None
             current.status = "recommended"
             current.error = None
             return store.save(current)
 
     @app.put("/api/jobs/{job_id}/training-review", response_model=JobRecord)
-    def complete_training_review(job_id: str) -> JobRecord:
+    def complete_training_review(
+        job_id: str,
+        review: TrainingReviewRequest | None = None,
+    ) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
             if job.training_decision is None or job.recommendation is None:
@@ -271,8 +278,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     status_code=409,
                     detail="Exact matches do not need review",
                 )
+            changed = False
             if job.training_reviewed_at is None:
                 job.training_reviewed_at = datetime.now(timezone.utc)
+                changed = True
+            if review is not None and job.training_review_note != review.note:
+                job.training_review_note = review.note
+                changed = True
+            if changed:
                 return store.save(job)
             return job
 

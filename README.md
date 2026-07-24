@@ -133,7 +133,10 @@ study. A pattern with pending work can open a review queue scoped to that exact
 action pair; street and EV-loss ordering remain available within the focused
 queue. Completing a hand opened from that queue reloads the same filters and
 opens the next matching hand, then returns to the empty queue when the session
-is complete.
+is complete. A review can include a short lesson note. Notes stay attached to
+the hand in progress history and return to the editor when a review is reopened.
+Changing the approved state, training answer, or recommendation clears the note
+because the comparison it described is no longer current.
 
 ### Offline Parser Benchmarks
 

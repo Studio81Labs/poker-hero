@@ -94,7 +94,8 @@ selection API prevents the app from producing a dataset that import rejects.
 5. The configured provider returns an educational action, sizing, confidence, and reasoning.
 6. The UI compares a locked training decision with the recommendation when one exists.
 7. Completed decision/recommendation pairs contribute to the on-demand training progress summary.
-8. A non-exact comparison can be marked reviewed after the user revisits its evidence.
+8. A non-exact comparison can be marked reviewed with an optional lesson note
+   after the user revisits its evidence.
 9. A hand opened from the needs-review queue advances to the next hand matching
    the same action, street, and ordering filters after its review is persisted.
 10. Completed queue items remain in processing until explicitly cleared into history.
@@ -148,11 +149,13 @@ Pending counts are also returned per street. The frontend uses only streets
 with pending work when suggesting a focus: highest average EV loss wins when
 comparable EV grades exist, otherwise the lowest action accuracy wins. Pending
 volume and canonical street order provide deterministic tie-breakers.
-Completing a review persists a timestamp on the job and removes it from the
-pending queue without changing historical accuracy. Re-approval or a fresh
-recommendation clears that marker because the comparison inputs have changed.
-Deleting the review marker explicitly reopens the same comparison and returns
-it to the pending queue without changing the recorded decision or recommendation.
+Completing a review persists a timestamp and optional normalized lesson note on
+the job, then removes it from the pending queue without changing historical
+accuracy. The progress projections include the note for later study.
+Re-approval, a changed training decision, or a fresh recommendation clears both
+the marker and note because the comparison inputs have changed. Deleting only
+the review marker explicitly reopens the same comparison and returns it to the
+pending queue while retaining the note for editing.
 The frontend treats a hand opened from that queue as a review session. After
 persisting its review marker, it reloads the progress endpoint with the current
 action-pair, street, and order parameters and opens the first remaining hand.

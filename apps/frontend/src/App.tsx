@@ -64,6 +64,7 @@ const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T
 const RANKS = new Set<string>(RANK_VALUES);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
+const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -1306,6 +1307,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     training_decision: null,
     recommendation: null,
     training_reviewed_at: null,
+    training_review_note: null,
     benchmark_included: false,
     error: message,
     created_at: timestamp,
@@ -1340,6 +1342,7 @@ export default function App() {
   const [approvedStateKey, setApprovedStateKey] = useState<string | null>(null);
   const [trainingAction, setTrainingAction] = useState<TrainingActionOption>("");
   const [trainingSizing, setTrainingSizing] = useState("");
+  const [trainingReviewNote, setTrainingReviewNote] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("live");
   const [shareMode, setShareMode] = useState<ShareMode>("window");
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -1543,6 +1546,10 @@ export default function App() {
         : String(job.training_decision.sizing),
     );
   }, [currentStateApproved, job?.id, job?.training_decision?.action, job?.training_decision?.sizing]);
+
+  useEffect(() => {
+    setTrainingReviewNote(job?.training_review_note ?? "");
+  }, [job?.id, job?.training_review_note]);
 
   useEffect(() => {
     if (job && validation.error) {
@@ -1926,7 +1933,10 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const reviewedJob = await completeTrainingReview(job.id);
+      const reviewedJob = await completeTrainingReview(
+        job.id,
+        trainingReviewNote.trim() || null,
+      );
       replaceJob(reviewedJob);
       updateHistoryJob(reviewedJob);
       if (!continueReviewQueue) {
@@ -2813,6 +2823,34 @@ export default function App() {
                     </div>
                   </div>
                 ) : null}
+                {activeTrainingDecision
+                  && decisionComparison
+                  && decisionComparison.tone !== "match" ? (
+                    job?.training_reviewed_at ? (
+                      job.training_review_note ? (
+                        <div className="training-review-note-saved" aria-label="Saved training review note">
+                          <strong>Review note</strong>
+                          <span>{job.training_review_note}</span>
+                        </div>
+                      ) : null
+                    ) : (
+                      <label className="training-review-note">
+                        <span>
+                          Review note
+                          <small>{trainingReviewNote.length}/{MAX_TRAINING_REVIEW_NOTE_LENGTH}</small>
+                        </span>
+                        <textarea
+                          aria-label="Training review note"
+                          value={trainingReviewNote}
+                          onChange={(event) => setTrainingReviewNote(event.target.value)}
+                          maxLength={MAX_TRAINING_REVIEW_NOTE_LENGTH}
+                          rows={2}
+                          placeholder="What will you remember next time?"
+                          disabled={busy}
+                        />
+                      </label>
+                    )
+                  ) : null}
                 <p>{activeRecommendation.explanation}</p>
                 {decisionEvidence ? (
                   <div className="recommendation-evidence" aria-label="Decision evidence">
@@ -3357,6 +3395,11 @@ export default function App() {
                                 {typeof hand.ev_loss_bb === "number" ? (
                                   <small className="recent-training-ev">
                                     EV loss: {formatEvLossBb(hand.ev_loss_bb)}
+                                  </small>
+                                ) : null}
+                                {hand.review_note ? (
+                                  <small className="recent-training-note">
+                                    Note: {hand.review_note}
                                   </small>
                                 ) : null}
                               </span>

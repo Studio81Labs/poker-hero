@@ -97,9 +97,14 @@ export async function recordTrainingDecision(
   return readJson<JobRecord>(response);
 }
 
-export async function completeTrainingReview(jobId: string): Promise<JobRecord> {
+export async function completeTrainingReview(
+  jobId: string,
+  note: string | null,
+): Promise<JobRecord> {
   const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/training-review`, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
     credentials: "include",
   });
   return readJson<JobRecord>(response);

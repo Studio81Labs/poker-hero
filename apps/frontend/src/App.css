@@ -1311,6 +1311,60 @@ button:disabled {
   color: #d7d3d3;
 }
 
+.training-review-note,
+.training-review-note-saved {
+  border-top: 1px solid rgba(243, 242, 242, 0.14);
+  display: grid;
+  gap: 5px;
+  padding: 8px 12px;
+}
+
+.training-review-note > span {
+  align-items: center;
+  color: #d7d3d3;
+  display: flex;
+  font-size: 8px;
+  font-weight: 800;
+  justify-content: space-between;
+  text-transform: uppercase;
+}
+
+.training-review-note > span small {
+  color: #aaa5a5;
+  font-size: 8px;
+}
+
+.training-review-note textarea {
+  background: rgba(243, 242, 242, 0.08);
+  border: 1px solid rgba(243, 242, 242, 0.24);
+  border-radius: 0;
+  color: var(--bg);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.35;
+  min-height: 42px;
+  padding: 6px 7px;
+  resize: vertical;
+  width: 100%;
+}
+
+.training-review-note textarea::placeholder {
+  color: #aaa5a5;
+}
+
+.training-review-note-saved strong {
+  color: #aaa5a5;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.training-review-note-saved span {
+  color: #d7d3d3;
+  font-size: 10px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .recommendation p {
   border-top: 1px solid rgba(243, 242, 242, 0.14);
   color: #d7d3d3;
@@ -2218,6 +2272,10 @@ button:disabled {
 .recent-training-lines .recent-training-ev {
   color: #27725b;
   font-weight: 700;
+}
+
+.recent-training-lines .recent-training-note {
+  color: #604b16;
 }
 
 .recent-training-list em {

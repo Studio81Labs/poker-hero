@@ -100,6 +100,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     training_decision: null,
     recommendation: null,
     training_reviewed_at: null,
+    training_review_note: null,
     benchmark_included: false,
     error: null,
     created_at: "2026-07-10T00:00:00Z",
@@ -722,10 +723,12 @@ describe("App", () => {
     const completedReviewJob = {
       ...revealedJob,
       training_reviewed_at: "2026-07-20T12:05:00Z",
+      training_review_note: "Call needs less equity than the raise.",
     };
     const reopenedReviewJob = {
       ...revealedJob,
       training_reviewed_at: null,
+      training_review_note: "Call needs less equity than the raise.",
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
@@ -743,18 +746,31 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
     const comparison = await screen.findByLabelText("Training decision comparison");
+    await user.type(
+      screen.getByLabelText("Training review note"),
+      "Call needs less equity than the raise.",
+    );
     await user.click(within(comparison).getByRole("button", { name: "Mark reviewed" }));
 
     expect(await within(comparison).findByText("Reviewed")).toBeInTheDocument();
     expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Saved training review note")).toHaveTextContent(
+      "Call needs less equity than the raise.",
+    );
     expect(await screen.findByText("Training review completed")).toBeInTheDocument();
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[4][1]).toMatchObject({ method: "PUT" });
+    expect(fetchMock().mock.calls[4][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ note: "Call needs less equity than the raise." }),
+    });
 
     await user.click(within(comparison).getByRole("button", { name: "Reopen review" }));
 
     expect(await within(comparison).findByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
     expect(within(comparison).queryByText("Reviewed")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Training review note")).toHaveValue(
+      "Call needs less equity than the raise.",
+    );
     expect(await screen.findByText("Training review reopened")).toBeInTheDocument();
     expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
     expect(fetchMock().mock.calls[5][1]).toMatchObject({ method: "DELETE" });
@@ -833,6 +849,7 @@ describe("App", () => {
     const completedReviewedJob = {
       ...reviewedJob,
       training_reviewed_at: "2026-07-20T12:05:00Z",
+      training_review_note: "Prefer calling this raise size.",
     };
     const sizeJob = {
       ...recommendedJob(),
@@ -853,6 +870,7 @@ describe("App", () => {
     const completedSizeJob = {
       ...sizeJob,
       training_reviewed_at: "2026-07-20T12:06:00Z",
+      training_review_note: "Do not overfold the river.",
     };
     const exactHand = {
       job_id: "exact-job",
@@ -878,6 +896,7 @@ describe("App", () => {
       recommended_sizing: null,
       outcome: "mixed" as const,
       recorded_at: "2026-07-20T12:30:00Z",
+      review_note: "Prefer the lower-variance supported line.",
       ev_loss_bb: 0.01,
     };
     const reviewQueue = [{
@@ -974,6 +993,7 @@ describe("App", () => {
     expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("EV loss: 0.01 BB")).toBeInTheDocument();
+    expect(within(dialog).getByText("Note: Prefer the lower-variance supported line.")).toBeInTheDocument();
     expect(within(dialog).getByText("Exact match")).toBeInTheDocument();
     expect(within(dialog).getByText("Supported mix")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
@@ -998,20 +1018,30 @@ describe("App", () => {
     );
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/review-job");
 
-    await user.click(await screen.findByRole("button", { name: "Mark reviewed & next" }));
+    await user.type(
+      await screen.findByLabelText("Training review note"),
+      "Prefer calling this raise size.",
+    );
+    await user.click(screen.getByRole("button", { name: "Mark reviewed & next" }));
 
     await waitFor(() => expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
       "src",
       "http://localhost:8000/api/jobs/size-job/image",
     ));
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/review-job/training-review");
+    expect(fetchMock().mock.calls[3][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ note: "Prefer calling this raise size." }),
+    });
     expect(fetchMock().mock.calls[4][0]).toBe(
       "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
     );
     expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/size-job");
     expect(await screen.findByText("Training review completed. Next hand ready")).toBeInTheDocument();
+    expect(screen.getByLabelText("Training review note")).toHaveValue("");
 
-    await user.click(await screen.findByRole("button", { name: "Mark reviewed & next" }));
+    await user.type(screen.getByLabelText("Training review note"), "Do not overfold the river.");
+    await user.click(screen.getByRole("button", { name: "Mark reviewed & next" }));
 
     const completedDialog = await screen.findByRole("dialog", { name: "Training progress" });
     expect(within(completedDialog).getByRole("button", { name: "Needs review 0" })).toHaveAttribute(
@@ -1021,6 +1051,10 @@ describe("App", () => {
     expect(within(completedDialog).getByText("No action or sizing differences need review.")).toBeInTheDocument();
     expect(await screen.findByText("Review queue completed")).toBeInTheDocument();
     expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/size-job/training-review");
+    expect(fetchMock().mock.calls[6][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ note: "Do not overfold the river." }),
+    });
     expect(fetchMock().mock.calls[7][0]).toBe(
       "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
     );

@@ -113,6 +113,8 @@ street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also groups rated decisions by low,
 medium, or high pre-reveal certainty so accuracy and available EV loss can be
 calibrated without excluding legacy or unrated hands from overall progress.
+Each rated summary also exposes its global pending-review count so the frontend
+can open that certainty queue without deriving counts from the bounded response.
 Trend windows use the newest and
 immediately preceding reviewed hands, have the same size, and are capped at ten
 hands each. Action and exact-line deltas are available once two reviewed hands

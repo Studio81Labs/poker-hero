@@ -181,10 +181,12 @@ def test_summarize_training_calibrates_self_rated_certainty() -> None:
     ]
     low, high = progress.certainty_summaries
     assert low.hands == 1
+    assert low.needs_review_hands == 0
     assert low.action_accuracy == 1
     assert low.exact_accuracy == 1
     assert low.average_ev_loss_bb == 0
     assert high.hands == 2
+    assert high.needs_review_hands == 1
     assert high.action_accuracy == 0.5
     assert high.exact_accuracy == 0.5
     assert high.ev_compared_hands == 2

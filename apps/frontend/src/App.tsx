@@ -2168,6 +2168,11 @@ export default function App() {
     await updateTrainingReviewQueue(trainingReviewOrder, street, null, "all");
   }
 
+  async function focusTrainingReviewCertainty(certainty: TrainingCertainty) {
+    setTrainingProgressView("review");
+    await updateTrainingReviewQueue(trainingReviewOrder, "all", null, certainty);
+  }
+
   async function focusTrainingActionDifference(
     difference: TrainingReviewDifference,
   ) {
@@ -3284,6 +3289,7 @@ export default function App() {
                             <th>Action</th>
                             <th>Exact</th>
                             <th>Avg EV loss</th>
+                            <th>Review</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3297,6 +3303,21 @@ export default function App() {
                                 {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
                                   ? formatEvLossBb(summary.average_ev_loss_bb)
                                   : "—"}
+                              </td>
+                              <td>
+                                {(summary.needs_review_hands ?? 0) > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="training-certainty-review"
+                                    onClick={() => void focusTrainingReviewCertainty(summary.certainty)}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={`Review ${summary.certainty} certainty differences (${summary.needs_review_hands})`}
+                                    title={`Review ${summary.certainty}-certainty differences`}
+                                  >
+                                    <Target size={12} aria-hidden="true" />
+                                    {summary.needs_review_hands}
+                                  </button>
+                                ) : "—"}
                               </td>
                             </tr>
                           ))}

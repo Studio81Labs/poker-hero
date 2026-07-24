@@ -74,6 +74,7 @@ export interface TrainingCertaintySummary {
   hands: number;
   action_matches: number;
   exact_matches: number;
+  needs_review_hands?: number;
   action_accuracy: number;
   exact_accuracy: number;
   ev_compared_hands: number;

@@ -197,6 +197,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
             "hands": 1,
             "action_matches": 1,
             "exact_matches": 1,
+            "needs_review_hands": 0,
             "action_accuracy": 1.0,
             "exact_accuracy": 1.0,
             "ev_compared_hands": 0,

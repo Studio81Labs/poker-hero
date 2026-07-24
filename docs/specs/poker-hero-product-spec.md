@@ -74,6 +74,8 @@ The frontend is a browser control panel for:
   low, medium, and high pre-reveal certainty.
 - Opening unresolved differences for a rated certainty level directly from its
   calibration row.
+- Seeing legacy unrated totals and unresolved reviews without assigning
+  calibration accuracy or EV metrics to those hands.
 - Reviewing repeated unsupported action choices grouped by the player's action
   and the solver's headline action, with available average EV loss.
 - Opening a repeated action-difference pattern as a focused review queue while
@@ -381,6 +383,8 @@ Poker Hero is successful when:
   or isolate legacy unrated hands, without changing global progress.
 - A user can see unresolved counts for rated certainty levels and open one as a
   focused review queue directly from confidence calibration.
+- A user can see and open an unrated review backlog without representing those
+  legacy hands as a calibrated certainty level.
 - A user can open an actionable suggested focus street from progress without
   manually comparing the street summary and pending queue.
 - A user can complete that review so it leaves the pending queue without

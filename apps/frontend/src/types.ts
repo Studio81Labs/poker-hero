@@ -140,6 +140,8 @@ export interface TrainingProgress {
   trend?: TrainingTrend | null;
   action_differences?: TrainingActionDifference[];
   certainty_summaries?: TrainingCertaintySummary[];
+  unrated_hands?: number;
+  unrated_needs_review_hands?: number;
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   review_street_counts?: Partial<Record<Street, number>>;

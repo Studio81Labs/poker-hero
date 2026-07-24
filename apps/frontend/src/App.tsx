@@ -42,6 +42,7 @@ import type {
   TrainingCertainty,
   TrainingOutcome,
   TrainingProgress,
+  TrainingReviewCertainty,
   TrainingReviewCertaintyFilter,
   TrainingReviewDifference,
   TrainingReviewOrder,
@@ -2168,7 +2169,7 @@ export default function App() {
     await updateTrainingReviewQueue(trainingReviewOrder, street, null, "all");
   }
 
-  async function focusTrainingReviewCertainty(certainty: TrainingCertainty) {
+  async function focusTrainingReviewCertainty(certainty: TrainingReviewCertainty) {
     setTrainingProgressView("review");
     await updateTrainingReviewQueue(trainingReviewOrder, "all", null, certainty);
   }
@@ -3272,7 +3273,8 @@ export default function App() {
                     </section>
                   ) : null}
 
-                  {(trainingProgress.certainty_summaries?.length ?? 0) > 0 ? (
+                  {(trainingProgress.certainty_summaries?.length ?? 0) > 0
+                    || (trainingProgress.unrated_hands ?? 0) > 0 ? (
                     <section
                       className="training-progress-section training-certainty-section"
                       aria-labelledby="training-certainty-title"
@@ -3321,6 +3323,30 @@ export default function App() {
                               </td>
                             </tr>
                           ))}
+                          {(trainingProgress.unrated_hands ?? 0) > 0 ? (
+                            <tr className="training-unrated-row">
+                              <th>Unrated</th>
+                              <td>{trainingProgress.unrated_hands}</td>
+                              <td>—</td>
+                              <td>—</td>
+                              <td>—</td>
+                              <td>
+                                {(trainingProgress.unrated_needs_review_hands ?? 0) > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="training-certainty-review"
+                                    onClick={() => void focusTrainingReviewCertainty("unrated")}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={`Review unrated differences (${trainingProgress.unrated_needs_review_hands})`}
+                                    title="Review unrated differences"
+                                  >
+                                    <Target size={12} aria-hidden="true" />
+                                    {trainingProgress.unrated_needs_review_hands}
+                                  </button>
+                                ) : "—"}
+                              </td>
+                            </tr>
+                          ) : null}
                         </tbody>
                       </table>
                     </section>

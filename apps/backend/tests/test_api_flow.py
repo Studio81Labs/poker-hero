@@ -204,6 +204,8 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
             "average_ev_loss_bb": None,
         }
     ]
+    assert progress["unrated_hands"] == 0
+    assert progress["unrated_needs_review_hands"] == 0
     assert progress["recent_hands"][0]["decision_certainty"] == "medium"
     assert progress["action_matches"] == 1
     assert progress["exact_matches"] == 1

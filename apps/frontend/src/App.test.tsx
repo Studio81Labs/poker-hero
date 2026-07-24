@@ -1341,6 +1341,66 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("surfaces legacy unrated hands without treating them as calibrated", async () => {
+    const unratedHand = {
+      job_id: "unrated-job",
+      original_filename: "unrated.png",
+      street: "river" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      decision_certainty: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
+    const progress = {
+      reviewed_hands: 1,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 1,
+      needs_review_hands: 1,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 0,
+      average_ev_loss_bb: null,
+      certainty_summaries: [],
+      unrated_hands: 1,
+      unrated_needs_review_hands: 1,
+      street_summaries: [],
+      recent_hands: [unratedHand],
+      review_queue_hands: 1,
+      review_queue: [unratedHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(dialog).getByRole("row", {
+      name: "Unrated 1 — — — 1",
+    })).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Review unrated differences (1)",
+    }));
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_certainty=unrated",
+    );
+    expect(await within(dialog).findByLabelText("Review certainty")).toHaveValue("unrated");
+    expect(within(dialog).getByText(
+      "1 pending review hand across all streets without a certainty rating.",
+    )).toBeInTheDocument();
+  });
+
   it("filters and continues training reviews by decision certainty", async () => {
     const highHand = {
       job_id: "high-certainty-job",

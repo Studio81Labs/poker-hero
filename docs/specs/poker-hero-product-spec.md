@@ -76,6 +76,8 @@ The frontend is a browser control panel for:
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by street, ordering it by recency or available EV
   loss, and reopening the persisted hand.
+- Continuing through hands in the active filtered review queue after each
+  completed review, then returning to the queue when no matching hands remain.
 - Opening a suggested focus street directly from progress when that street
   still has pending reviews.
 - Marking a revisited action or sizing difference reviewed without changing the
@@ -204,10 +206,13 @@ frequencies.
     exact player-action and solver-action pair.
 15. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
-16. A completed review may be reopened, returning the unchanged comparison to
+16. When that hand was opened from the review queue, the UI reloads the same
+    action-pair, street, and order filters and opens the next matching hand. An
+    exhausted queue returns to its empty review view.
+17. A completed review may be reopened, returning the unchanged comparison to
     the pending queue.
-17. The UI retains completed items in processing until the user clears them into history.
-18. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+18. The UI retains completed items in processing until the user clears them into history.
+19. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -359,6 +364,8 @@ Poker Hero is successful when:
   manually comparing the street summary and pending queue.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
+- A user can continue to the next hand under the same review filters without
+  reopening progress after every completed review.
 - A user can reopen a completed review without changing the locked answer or
   recommendation.
 - Solver-backed recommendations expose available decision evidence, including

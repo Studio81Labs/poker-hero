@@ -95,8 +95,10 @@ selection API prevents the app from producing a dataset that import rejects.
 6. The UI compares a locked training decision with the recommendation when one exists.
 7. Completed decision/recommendation pairs contribute to the on-demand training progress summary.
 8. A non-exact comparison can be marked reviewed after the user revisits its evidence.
-9. Completed queue items remain in processing until explicitly cleared into history.
-10. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+9. A hand opened from the needs-review queue advances to the next hand matching
+   the same action, street, and ordering filters after its review is persisted.
+10. Completed queue items remain in processing until explicitly cleared into history.
+11. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
 approved state that does not yet have a recommendation, preventing a revealed
@@ -151,6 +153,11 @@ pending queue without changing historical accuracy. Re-approval or a fresh
 recommendation clears that marker because the comparison inputs have changed.
 Deleting the review marker explicitly reopens the same comparison and returns
 it to the pending queue without changing the recorded decision or recommendation.
+The frontend treats a hand opened from that queue as a review session. After
+persisting its review marker, it reloads the progress endpoint with the current
+action-pair, street, and order parameters and opens the first remaining hand.
+An exhausted session returns to the filtered empty queue; a continuation error
+does not roll back or misreport the review that already completed.
 
 Batch items are isolated. A parser or recommendation failure affects that item
 only and leaves other queue items free to continue.

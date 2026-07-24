@@ -131,7 +131,9 @@ action choices are grouped by the player's action and the solver's headline
 action, with available average EV loss, to make repeated differences easier to
 study. A pattern with pending work can open a review queue scoped to that exact
 action pair; street and EV-loss ordering remain available within the focused
-queue.
+queue. Completing a hand opened from that queue reloads the same filters and
+opens the next matching hand, then returns to the empty queue when the session
+is complete.
 
 ### Offline Parser Benchmarks
 

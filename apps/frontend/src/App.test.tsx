@@ -817,7 +817,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
-  it("filters training progress to hands needing review and opens the next one", async () => {
+  it("continues through the filtered training review queue", async () => {
     const trainingDecision = {
       action: "call" as const,
       sizing: null,
@@ -829,6 +829,30 @@ describe("App", () => {
       original_filename: "review.png",
       image_filename: "original.png",
       training_decision: trainingDecision,
+    };
+    const completedReviewedJob = {
+      ...reviewedJob,
+      training_reviewed_at: "2026-07-20T12:05:00Z",
+    };
+    const sizeJob = {
+      ...recommendedJob(),
+      id: "size-job",
+      original_filename: "size.png",
+      image_filename: "original.png",
+      training_decision: {
+        action: "fold" as const,
+        sizing: null,
+        recorded_at: "2026-07-20T11:00:00Z",
+      },
+      recommendation: {
+        ...recommendation,
+        action: "call" as const,
+        sizing: null,
+      },
+    };
+    const completedSizeJob = {
+      ...sizeJob,
+      training_reviewed_at: "2026-07-20T12:06:00Z",
     };
     const exactHand = {
       job_id: "exact-job",
@@ -874,40 +898,68 @@ describe("App", () => {
       original_filename: "size.png",
       street: "river" as const,
       hero_cards: canonicalState().hero_cards,
-      decision_action: "raise" as const,
-      decision_sizing: 9,
+      decision_action: "fold" as const,
+      decision_sizing: null,
       recommended_action: "call" as const,
       recommended_sizing: null,
-      outcome: "mixed_action" as const,
+      outcome: "different" as const,
       recorded_at: "2026-07-20T11:00:00Z",
       reviewed_at: null,
       ev_loss_bb: null,
     }];
-    fetchMock()
-      .mockResolvedValueOnce(jsonResponse({
+    const progress = {
+      reviewed_hands: 4,
+      action_matches: 3,
+      exact_matches: 2,
+      different_actions: 1,
+      needs_review_hands: 2,
+      action_accuracy: 3 / 4,
+      exact_accuracy: 2 / 4,
+      ev_compared_hands: 3,
+      average_ev_loss_bb: 0.043333,
+      action_differences: [{
+        decision_action: "fold" as const,
+        recommended_action: "call" as const,
+        hands: 2,
+        needs_review_hands: 2,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }],
+      street_summaries: [{
+        street: "flop" as const,
         reviewed_hands: 4,
         action_matches: 3,
         exact_matches: 2,
-        different_actions: 1,
-        needs_review_hands: 2,
         action_accuracy: 3 / 4,
         exact_accuracy: 2 / 4,
-        ev_compared_hands: 3,
-        average_ev_loss_bb: 0.043333,
-        street_summaries: [{
-          street: "flop",
-          reviewed_hands: 4,
-          action_matches: 3,
-          exact_matches: 2,
-          action_accuracy: 3 / 4,
-          exact_accuracy: 2 / 4,
-          ev_compared_hands: 2,
-          average_ev_loss_bb: 0.005,
-        }],
-        recent_hands: [exactHand, mixedHand],
-        review_queue: reviewQueue,
-      }))
-      .mockResolvedValueOnce(jsonResponse(reviewedJob));
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.005,
+      }],
+      recent_hands: [exactHand, mixedHand],
+      review_queue_hands: 2,
+      review_queue: reviewQueue,
+    };
+    const nextProgress = {
+      ...progress,
+      needs_review_hands: 1,
+      review_queue_hands: 1,
+      review_queue: [reviewQueue[1]],
+    };
+    const completedProgress = {
+      ...progress,
+      needs_review_hands: 0,
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(reviewedJob))
+      .mockResolvedValueOnce(jsonResponse(completedReviewedJob))
+      .mockResolvedValueOnce(jsonResponse(nextProgress))
+      .mockResolvedValueOnce(jsonResponse(sizeJob))
+      .mockResolvedValueOnce(jsonResponse(completedSizeJob))
+      .mockResolvedValueOnce(jsonResponse(completedProgress));
     render(<App />);
     const user = userEvent.setup();
 
@@ -926,12 +978,16 @@ describe("App", () => {
     expect(within(dialog).getByText("Supported mix")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
 
-    await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
+    await user.click(within(dialog).getByRole("button", {
+      name: "Review Fold to Call differences",
+    }));
 
     expect(within(dialog).getByRole("button", { name: "Needs review 2" })).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).queryByRole("button", { name: "Open exact.png training review" })).not.toBeInTheDocument();
-    expect(within(dialog).getByText("Different action")).toBeInTheDocument();
-    expect(within(dialog).getByText("Supported action")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("Different action")).toHaveLength(2);
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
+    );
 
     await user.click(within(dialog).getByRole("button", { name: "Review next" }));
 
@@ -940,7 +996,34 @@ describe("App", () => {
       "src",
       "http://localhost:8000/api/jobs/review-job/image",
     );
-    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/review-job");
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/review-job");
+
+    await user.click(await screen.findByRole("button", { name: "Mark reviewed & next" }));
+
+    await waitFor(() => expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
+      "src",
+      "http://localhost:8000/api/jobs/size-job/image",
+    ));
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/review-job/training-review");
+    expect(fetchMock().mock.calls[4][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
+    );
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/size-job");
+    expect(await screen.findByText("Training review completed. Next hand ready")).toBeInTheDocument();
+
+    await user.click(await screen.findByRole("button", { name: "Mark reviewed & next" }));
+
+    const completedDialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(completedDialog).getByRole("button", { name: "Needs review 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(completedDialog).getByText("No action or sizing differences need review.")).toBeInTheDocument();
+    expect(await screen.findByText("Review queue completed")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/size-job/training-review");
+    expect(fetchMock().mock.calls[7][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
+    );
   });
 
   it("suggests a focus street and orders its reviews by EV loss", async () => {

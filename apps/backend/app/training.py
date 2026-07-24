@@ -1,4 +1,5 @@
 import math
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Literal
@@ -333,10 +334,10 @@ def build_training_lessons_markdown(
                 f"## {hero_cards} - {street}",
                 "",
                 f"- Reviewed: `{_markdown_timestamp(reviewed_at)}`",
-                f"- Source: `{_markdown_inline(job.original_filename)}`",
+                f"- Source: {_markdown_code_span(job.original_filename)}",
                 f"- Board: {board_cards}",
                 *(
-                    [f"- Position: `{_markdown_inline(state.hero_position)}`"]
+                    [f"- Position: {_markdown_code_span(state.hero_position)}"]
                     if state is not None and state.hero_position
                     else []
                 ),
@@ -383,13 +384,15 @@ def _markdown_timestamp(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
 
 
-def _markdown_inline(value: str) -> str:
-    return (
-        value.replace("\\", "\\\\")
-        .replace("`", "\\`")
-        .replace("\r", " ")
-        .replace("\n", " ")
+def _markdown_code_span(value: str) -> str:
+    normalized = value.replace("\r", " ").replace("\n", " ")
+    longest_run = max(
+        (len(match.group()) for match in re.finditer(r"`+", normalized)),
+        default=0,
     )
+    delimiter = "`" * (longest_run + 1)
+    padding = " " if normalized.startswith("`") or normalized.endswith("`") else ""
+    return f"{delimiter}{padding}{normalized}{padding}{delimiter}"
 
 
 def _markdown_quote(value: str) -> list[str]:

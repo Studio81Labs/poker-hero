@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -771,13 +771,28 @@ function trainingReviewQueueStatus(
   street: TrainingReviewStreet,
   difference: TrainingReviewDifference | null,
   certainty: TrainingReviewCertaintyFilter,
+  lessonStreet: TrainingReviewStreet,
+  lessonQuery: string,
 ): string {
   if (view === "lessons") {
     if (loading) {
       return "Reading saved lessons...";
     }
     const lessonCount = progress?.lesson_count ?? progress?.lesson_hands?.length ?? 0;
+    const lessonMatchingHands = progress?.lesson_matching_hands
+      ?? progress?.lesson_hands?.length
+      ?? 0;
     const visibleLessons = progress?.lesson_hands?.length ?? 0;
+    const filtersActive = lessonStreet !== "all" || lessonQuery.length > 0;
+    if (filtersActive) {
+      if (lessonMatchingHands > visibleLessons) {
+        return `Showing ${visibleLessons} newest of ${lessonMatchingHands} matching lessons.`;
+      }
+      if (lessonMatchingHands > 0) {
+        return `${lessonMatchingHands} lesson note${lessonMatchingHands === 1 ? "" : "s"} ${lessonMatchingHands === 1 ? "matches" : "match"} these filters.`;
+      }
+      return "No saved lesson notes match these filters.";
+    }
     if (lessonCount > visibleLessons) {
       return `Showing ${visibleLessons} newest of ${lessonCount} saved lesson notes.`;
     }
@@ -1389,6 +1404,9 @@ export default function App() {
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
   const [trainingReviewCertainty, setTrainingReviewCertainty] = useState<TrainingReviewCertaintyFilter>("all");
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
+  const [trainingLessonStreet, setTrainingLessonStreet] = useState<TrainingReviewStreet>("all");
+  const [trainingLessonSearch, setTrainingLessonSearch] = useState("");
+  const [trainingLessonQuery, setTrainingLessonQuery] = useState("");
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [trainingReviewQueueJobId, setTrainingReviewQueueJobId] = useState<string | null>(null);
@@ -1517,6 +1535,8 @@ export default function App() {
     trainingReviewStreet,
     trainingReviewDifference,
     trainingReviewCertainty,
+    trainingLessonStreet,
+    trainingLessonQuery,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -2007,6 +2027,8 @@ export default function App() {
           trainingReviewStreet,
           trainingReviewDifference,
           trainingReviewCertainty,
+          trainingLessonStreet,
+          trainingLessonQuery,
         );
         setTrainingProgress(progress);
         const nextHand = progress.review_queue[0] ?? null;
@@ -2104,6 +2126,8 @@ export default function App() {
         trainingReviewStreet,
         trainingReviewDifference,
         trainingReviewCertainty,
+        trainingLessonStreet,
+        trainingLessonQuery,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2167,6 +2191,9 @@ export default function App() {
     setTrainingReviewStreet("all");
     setTrainingReviewCertainty("all");
     setTrainingReviewDifference(null);
+    setTrainingLessonStreet("all");
+    setTrainingLessonSearch("");
+    setTrainingLessonQuery("");
     setTrainingProgressLoading(true);
     setError(null);
     void getTrainingProgress()
@@ -2209,6 +2236,8 @@ export default function App() {
         reviewStreet,
         reviewDifference,
         reviewCertainty,
+        trainingLessonStreet,
+        trainingLessonQuery,
       ));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
@@ -2216,6 +2245,42 @@ export default function App() {
       setTrainingReviewCertainty(previousCertainty);
       setTrainingReviewDifference(previousDifference);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
+    } finally {
+      setTrainingProgressLoading(false);
+    }
+  }
+
+  async function updateTrainingLessonFilters(
+    lessonStreet: TrainingReviewStreet,
+    lessonSearch: string = trainingLessonSearch,
+  ) {
+    const lessonQuery = lessonSearch.trim();
+    if (
+      (
+        lessonStreet === trainingLessonStreet
+        && lessonQuery === trainingLessonQuery
+      )
+      || trainingProgressLoading
+    ) {
+      return;
+    }
+    const previousStreet = trainingLessonStreet;
+    setTrainingLessonStreet(lessonStreet);
+    setTrainingProgressLoading(true);
+    setError(null);
+    try {
+      setTrainingProgress(await getTrainingProgress(
+        trainingReviewOrder,
+        trainingReviewStreet,
+        trainingReviewDifference,
+        trainingReviewCertainty,
+        lessonStreet,
+        lessonQuery,
+      ));
+      setTrainingLessonQuery(lessonQuery);
+    } catch (trainingError) {
+      setTrainingLessonStreet(previousStreet);
+      setError(messageFromError(trainingError, "Could not filter saved lessons"));
     } finally {
       setTrainingProgressLoading(false);
     }
@@ -3635,6 +3700,62 @@ export default function App() {
                             </label>
                           </>
                         ) : null}
+                        {trainingProgressView === "lessons" ? (
+                          <>
+                            <form
+                              className="training-lesson-search"
+                              role="search"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void updateTrainingLessonFilters(
+                                  trainingLessonStreet,
+                                  trainingLessonSearch,
+                                );
+                              }}
+                            >
+                              <input
+                                type="search"
+                                aria-label="Search saved lesson notes"
+                                placeholder="Search notes"
+                                maxLength={120}
+                                value={trainingLessonSearch}
+                                onChange={(event) => setTrainingLessonSearch(event.target.value)}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              />
+                              <button
+                                type="submit"
+                                aria-label="Apply lesson search"
+                                title="Search lesson notes"
+                                disabled={
+                                  trainingProgressLoading
+                                  || trainingReviewJobId !== null
+                                  || busy
+                                  || trainingLessonSearch.trim() === trainingLessonQuery
+                                }
+                              >
+                                <Search size={13} aria-hidden="true" />
+                              </button>
+                            </form>
+                            <label className="training-review-order">
+                              <span>Street</span>
+                              <select
+                                aria-label="Lesson street"
+                                value={trainingLessonStreet}
+                                onChange={(event) => void updateTrainingLessonFilters(
+                                  event.target.value as TrainingReviewStreet,
+                                  trainingLessonSearch,
+                                )}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              >
+                                <option value="all">All</option>
+                                <option value="preflop">Preflop</option>
+                                <option value="flop">Flop</option>
+                                <option value="turn">Turn</option>
+                                <option value="river">River</option>
+                              </select>
+                            </label>
+                          </>
+                        ) : null}
                         <div className="training-view-switch" role="group" aria-label="Training decision view">
                           <button
                             type="button"
@@ -3748,7 +3869,9 @@ export default function App() {
                     ) : (
                       <div className="training-review-empty">
                         {trainingProgressView === "lessons"
-                          ? "No saved lesson notes yet."
+                          ? trainingLessonStreet !== "all" || trainingLessonQuery
+                            ? "No saved lesson notes match these filters."
+                            : "No saved lesson notes yet."
                           : trainingProgressView === "review"
                             ? "No action or sizing differences need review."
                             : "No recent training decisions."}

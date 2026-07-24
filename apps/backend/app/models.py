@@ -301,6 +301,7 @@ class TrainingProgress(BaseModel):
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     lesson_count: int = Field(default=0, ge=0)
+    lesson_matching_hands: int = Field(default=0, ge=0)
     lesson_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_street_counts: dict[Street, int] = Field(default_factory=dict)
     review_queue_hands: int = Field(default=0, ge=0)

@@ -147,6 +147,8 @@ the hand in progress history and return to the editor when a review is reopened.
 Completed notes also appear in a dedicated Lessons view, ordered by review time
 and kept independently from the shorter recent-decisions list. A completed
 lesson note can be edited or removed in place without reopening the review.
+The Lessons view can filter the full saved set by street and case-insensitive
+note text before applying its bounded newest-first display limit.
 Changing the approved state, training answer, or recommendation clears the note
 because the comparison it described is no longer current.
 

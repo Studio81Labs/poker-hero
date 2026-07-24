@@ -96,6 +96,8 @@ The frontend is a browser control panel for:
   independent from the shorter recent-decisions list.
 - Editing or removing a completed lesson note without reopening the review or
   returning it to the pending queue.
+- Filtering the full saved lesson set by street and case-insensitive note text
+  while keeping total and matching counts distinct.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
@@ -228,8 +230,10 @@ frequencies.
     matching hand. An exhausted queue returns to its empty review view.
 17. A completed review may be reopened, returning the unchanged comparison and
     its editable lesson note to the pending queue.
-18. The UI retains completed items in processing until the user clears them into history.
-19. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+18. Saved lessons may be filtered by street and note text before the bounded
+    newest-first lesson list is returned.
+19. The UI retains completed items in processing until the user clears them into history.
+20. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.

@@ -259,9 +259,30 @@ def test_summarize_training_lists_completed_lesson_notes_by_review_time() -> Non
     progress = summarize_training(jobs, recent_limit=1, lesson_limit=1)
 
     assert progress.lesson_count == 2
+    assert progress.lesson_matching_hands == 2
     assert len(progress.lesson_hands) == 1
     assert progress.lesson_hands[0].job_id == "2" * 32
     assert progress.lesson_hands[0].review_note == "Check blockers before folding."
+
+    filtered = summarize_training(
+        jobs,
+        lesson_street="turn",
+        lesson_query="BLOCKERS",
+    )
+
+    assert filtered.lesson_count == 2
+    assert filtered.lesson_matching_hands == 1
+    assert [hand.job_id for hand in filtered.lesson_hands] == ["2" * 32]
+
+    unmatched = summarize_training(
+        jobs,
+        lesson_street="flop",
+        lesson_query="blockers",
+    )
+
+    assert unmatched.lesson_count == 2
+    assert unmatched.lesson_matching_hands == 0
+    assert unmatched.lesson_hands == []
 
 
 def test_summarize_training_compares_equal_recent_windows() -> None:

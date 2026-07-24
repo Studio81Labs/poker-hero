@@ -126,6 +126,8 @@ export async function getTrainingProgress(
   reviewStreet: TrainingReviewStreet = "all",
   reviewDifference: TrainingReviewDifference | null = null,
   reviewCertainty: TrainingReviewCertaintyFilter = "all",
+  lessonStreet: TrainingReviewStreet = "all",
+  lessonQuery = "",
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -140,6 +142,12 @@ export async function getTrainingProgress(
   if (reviewDifference) {
     search.set("review_decision_action", reviewDifference.decision_action);
     search.set("review_recommended_action", reviewDifference.recommended_action);
+  }
+  if (lessonStreet !== "all") {
+    search.set("lesson_street", lessonStreet);
+  }
+  if (lessonQuery.trim()) {
+    search.set("lesson_query", lessonQuery.trim());
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

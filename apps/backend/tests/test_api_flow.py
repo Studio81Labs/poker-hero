@@ -224,6 +224,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["recent_hands"][0]["outcome"] == "match"
     assert progress["recent_hands"][0]["ev_loss_bb"] is None
     assert progress["lesson_count"] == 0
+    assert progress["lesson_matching_hands"] == 0
     assert progress["lesson_hands"] == []
     assert progress["review_street_counts"] == {}
     assert progress["review_queue_hands"] == 0
@@ -246,6 +247,12 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     invalid_certainty = client.get(
         "/api/training/progress?review_certainty=very_sure"
     )
+    invalid_lesson_street = client.get(
+        "/api/training/progress?lesson_street=showdown"
+    )
+    oversized_lesson_query = client.get(
+        f"/api/training/progress?lesson_query={'x' * 121}"
+    )
     incomplete_difference = client.get(
         "/api/training/progress?review_decision_action=fold"
     )
@@ -259,6 +266,8 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert invalid_order.status_code == 422
     assert invalid_street.status_code == 422
     assert invalid_certainty.status_code == 422
+    assert invalid_lesson_street.status_code == 422
+    assert oversized_lesson_query.status_code == 422
     assert incomplete_difference.status_code == 422
     assert incomplete_difference.json()["detail"] == (
         "review_decision_action and review_recommended_action "
@@ -293,6 +302,12 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
         json={"note": "Review blockers before raising."},
     )
     after_update = client.get("/api/training/progress").json()
+    filtered_lesson = client.get(
+        "/api/training/progress?lesson_street=flop&lesson_query=BLOCKERS"
+    ).json()
+    unmatched_lesson = client.get(
+        "/api/training/progress?lesson_street=turn&lesson_query=blockers"
+    ).json()
     reopened = client.delete(f"/api/jobs/{job_id}/training-review")
     repeated_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
     after_reopen = client.get("/api/training/progress").json()
@@ -330,6 +345,12 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     assert after_update["lesson_hands"][0]["review_note"] == (
         "Review blockers before raising."
     )
+    assert filtered_lesson["lesson_count"] == 1
+    assert filtered_lesson["lesson_matching_hands"] == 1
+    assert filtered_lesson["lesson_hands"][0]["job_id"] == job_id
+    assert unmatched_lesson["lesson_count"] == 1
+    assert unmatched_lesson["lesson_matching_hands"] == 0
+    assert unmatched_lesson["lesson_hands"] == []
     assert reopened.status_code == 200
     assert reopened.json()["training_reviewed_at"] is None
     assert reopened.json()["training_review_note"] == "Review blockers before raising."

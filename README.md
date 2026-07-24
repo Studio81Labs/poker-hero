@@ -131,7 +131,9 @@ lowest action accuracy. Reviews can also be scoped to low, medium, or high
 self-rated certainty, or to legacy hands with no rating; certainty combines
 with street and action-pattern filters before ordering and limiting. Rated
 calibration rows show their unresolved count and can open that certainty queue
-directly. Progress also compares equal recent and previous windows,
+directly. Legacy hands appear in a separate Unrated row with no fabricated
+accuracy or EV metrics and the same review shortcut. Progress also compares
+equal recent and previous windows,
 capped at ten hands each, so action, exact-line, and available EV-loss movement
 is visible without letting a larger period skew the trend. Common unsupported
 action choices are grouped by the player's action and the solver's headline

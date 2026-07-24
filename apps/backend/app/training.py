@@ -128,6 +128,18 @@ def summarize_training(
             )
         )
 
+    unrated_jobs = [
+        job
+        for job in reviewed
+        if job.training_decision is not None
+        and job.training_decision.certainty is None
+    ]
+    unrated_needs_review_hands = sum(
+        outcomes[job.id] not in {"match", "mixed"}
+        and job.training_reviewed_at is None
+        for job in unrated_jobs
+    )
+
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     trend = _training_trend(newest_first, outcomes, ev_losses)
     action_differences = _action_differences(reviewed, outcomes, ev_losses)
@@ -209,6 +221,8 @@ def summarize_training(
         trend=trend,
         action_differences=action_differences,
         certainty_summaries=certainty_summaries,
+        unrated_hands=len(unrated_jobs),
+        unrated_needs_review_hands=unrated_needs_review_hands,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         review_street_counts=dict(review_street_counts),

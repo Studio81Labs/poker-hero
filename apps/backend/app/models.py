@@ -296,6 +296,8 @@ class TrainingProgress(BaseModel):
     trend: TrainingTrend | None = None
     action_differences: list[TrainingActionDifference] = Field(default_factory=list)
     certainty_summaries: list[TrainingCertaintySummary] = Field(default_factory=list)
+    unrated_hands: int = Field(default=0, ge=0)
+    unrated_needs_review_hands: int = Field(default=0, ge=0)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_street_counts: dict[Street, int] = Field(default_factory=dict)

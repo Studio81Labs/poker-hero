@@ -191,6 +191,8 @@ def test_summarize_training_calibrates_self_rated_certainty() -> None:
     assert high.exact_accuracy == 0.5
     assert high.ev_compared_hands == 2
     assert high.average_ev_loss_bb == 0.5
+    assert progress.unrated_hands == 1
+    assert progress.unrated_needs_review_hands == 0
     assert progress.recent_hands[0].decision_certainty is None
     assert progress.recent_hands[1].decision_certainty == "high"
 
@@ -571,6 +573,8 @@ def test_summarize_training_filters_pending_reviews_by_certainty() -> None:
     assert unrated.review_queue_hands == 1
     assert [hand.job_id for hand in unrated.review_queue] == ["3" * 32]
     assert unrated.review_queue[0].decision_certainty is None
+    assert unrated.unrated_hands == 1
+    assert unrated.unrated_needs_review_hands == 1
 
 
 def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> None:

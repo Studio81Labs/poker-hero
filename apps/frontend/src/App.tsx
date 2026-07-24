@@ -1356,6 +1356,7 @@ export default function App() {
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
+  const [trainingReviewQueueJobId, setTrainingReviewQueueJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
   const [benchmarkOverview, setBenchmarkOverview] = useState<BenchmarkOverview | null>(null);
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
@@ -1567,6 +1568,16 @@ export default function App() {
   function replaceJob(updatedJob: JobRecord) {
     setJobs((current) => current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)));
     setActiveJobId(updatedJob.id);
+  }
+
+  function upsertAndActivateJob(nextJob: JobRecord) {
+    setJobs((current) => {
+      const existing = current.some((candidate) => candidate.id === nextJob.id);
+      return existing
+        ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
+        : [nextJob, ...current];
+    });
+    activateJob(nextJob);
   }
 
   function updateHistoryJob(updatedJob: JobRecord) {
@@ -1911,13 +1922,45 @@ export default function App() {
       return;
     }
 
+    const continueReviewQueue = trainingReviewQueueJobId === job.id;
     setBusy(true);
     setError(null);
     try {
       const reviewedJob = await completeTrainingReview(job.id);
       replaceJob(reviewedJob);
       updateHistoryJob(reviewedJob);
-      toast.success("Training review completed");
+      if (!continueReviewQueue) {
+        toast.success("Training review completed");
+        return;
+      }
+
+      try {
+        const progress = await getTrainingProgress(
+          trainingReviewOrder,
+          trainingReviewStreet,
+          trainingReviewDifference,
+        );
+        setTrainingProgress(progress);
+        const nextHand = progress.review_queue[0] ?? null;
+        if (!nextHand) {
+          setTrainingReviewQueueJobId(null);
+          setTrainingProgressView("review");
+          setTrainingDialogOpen(true);
+          toast.success("Review queue completed");
+          return;
+        }
+
+        const nextJob = await getJob(nextHand.job_id);
+        upsertAndActivateJob(nextJob);
+        setTrainingReviewQueueJobId(nextJob.id);
+        toast.success("Training review completed. Next hand ready");
+      } catch (continueError) {
+        setTrainingReviewQueueJobId(null);
+        setError(messageFromError(
+          continueError,
+          "Review completed, but the next training hand could not be loaded",
+        ));
+      }
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
@@ -2010,6 +2053,7 @@ export default function App() {
   }
 
   function openTrainingDialog() {
+    setTrainingReviewQueueJobId(null);
     setTrainingDialogOpen(true);
     setTrainingProgress(null);
     setTrainingProgressView("recent");
@@ -2081,13 +2125,12 @@ export default function App() {
     setError(null);
     try {
       const reviewJob = await getJob(jobId);
-      setJobs((current) => {
-        const existing = current.some((candidate) => candidate.id === reviewJob.id);
-        return existing
-          ? current.map((candidate) => (candidate.id === reviewJob.id ? reviewJob : candidate))
-          : [reviewJob, ...current];
-      });
-      activateJob(reviewJob);
+      upsertAndActivateJob(reviewJob);
+      setTrainingReviewQueueJobId(
+        trainingProgress?.review_queue.some((hand) => hand.job_id === reviewJob.id)
+          ? reviewJob.id
+          : null,
+      );
       setTrainingDialogOpen(false);
     } catch (trainingError) {
       setError(messageFromError(trainingError, "Could not open training hand"));
@@ -2761,7 +2804,9 @@ export default function App() {
                         ) : (
                           <button type="button" onClick={onCompleteTrainingReview} disabled={busy}>
                             <Check size={12} aria-hidden="true" />
-                            Mark reviewed
+                            {trainingReviewQueueJobId === job?.id
+                              ? "Mark reviewed & next"
+                              : "Mark reviewed"}
                           </button>
                         )
                       ) : null}

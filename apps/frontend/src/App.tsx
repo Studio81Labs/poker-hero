@@ -93,7 +93,7 @@ type TrainingActionOption = "" | RecommendationAction;
 type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
-type TrainingProgressView = "recent" | "review";
+type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
@@ -772,6 +772,20 @@ function trainingReviewQueueStatus(
   difference: TrainingReviewDifference | null,
   certainty: TrainingReviewCertaintyFilter,
 ): string {
+  if (view === "lessons") {
+    if (loading) {
+      return "Reading saved lessons...";
+    }
+    const lessonCount = progress?.lesson_count ?? progress?.lesson_hands?.length ?? 0;
+    const visibleLessons = progress?.lesson_hands?.length ?? 0;
+    if (lessonCount > visibleLessons) {
+      return `Showing ${visibleLessons} newest of ${lessonCount} saved lesson notes.`;
+    }
+    if (lessonCount > 0) {
+      return `${lessonCount} saved lesson note${lessonCount === 1 ? "" : "s"}.`;
+    }
+    return "No saved lesson notes yet.";
+  }
   if (view !== "review") {
     return "Automation-only hands are not scored.";
   }
@@ -1488,8 +1502,12 @@ export default function App() {
   );
   const visibleTrainingHands = trainingProgressView === "review"
     ? trainingProgress?.review_queue ?? []
-    : trainingProgress?.recent_hands ?? [];
-  const nextReviewHand = trainingProgress?.review_queue[0] ?? null;
+    : trainingProgressView === "lessons"
+      ? trainingProgress?.lesson_hands ?? []
+      : trainingProgress?.recent_hands ?? [];
+  const nextReviewHand = trainingProgressView === "lessons"
+    ? null
+    : trainingProgress?.review_queue[0] ?? null;
   const reviewQueueStatus = trainingReviewQueueStatus(
     trainingProgress,
     trainingProgressView,
@@ -2181,14 +2199,15 @@ export default function App() {
     await updateTrainingReviewQueue(trainingReviewOrder, "all", difference, "all");
   }
 
-  async function reviewTrainingHand(jobId: string) {
+  async function reviewTrainingHand(jobId: string, continueReviewQueue = false) {
     setTrainingReviewJobId(jobId);
     setError(null);
     try {
       const reviewJob = await getJob(jobId);
       upsertAndActivateJob(reviewJob);
       setTrainingReviewQueueJobId(
-        trainingProgress?.review_queue.some((hand) => hand.job_id === reviewJob.id)
+        continueReviewQueue
+        && trainingProgress?.review_queue.some((hand) => hand.job_id === reviewJob.id)
           ? reviewJob.id
           : null,
       );
@@ -3451,7 +3470,11 @@ export default function App() {
                   <section className="training-progress-section recent-training-section" aria-labelledby="training-hands-title">
                     <div className="training-review-heading">
                       <h3 id="training-hands-title">
-                        {trainingProgressView === "review" ? "Needs review" : "Recent decisions"}
+                        {trainingProgressView === "review"
+                          ? "Needs review"
+                          : trainingProgressView === "lessons"
+                            ? "Saved lessons"
+                            : "Recent decisions"}
                       </h3>
                       <div className="training-review-controls">
                         {trainingProgressView === "review" ? (
@@ -3528,6 +3551,14 @@ export default function App() {
                           >
                             Needs review {trainingProgress.needs_review_hands}
                           </button>
+                          <button
+                            type="button"
+                            className={trainingProgressView === "lessons" ? "active" : ""}
+                            onClick={() => setTrainingProgressView("lessons")}
+                            aria-pressed={trainingProgressView === "lessons"}
+                          >
+                            Lessons {trainingProgress.lesson_count ?? trainingProgress.lesson_hands?.length ?? 0}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -3560,7 +3591,10 @@ export default function App() {
                             <button
                               className="recent-training-open"
                               type="button"
-                              onClick={() => void reviewTrainingHand(hand.job_id)}
+                              onClick={() => void reviewTrainingHand(
+                                hand.job_id,
+                                trainingProgressView === "review",
+                              )}
                               disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                               aria-label={`Open ${hand.original_filename} training review`}
                             >
@@ -3592,7 +3626,10 @@ export default function App() {
                               </em>
                               <Eye size={15} aria-hidden="true" />
                             </button>
-                            {hand.reviewed_at && hand.outcome !== "match" && hand.outcome !== "mixed" ? (
+                            {trainingProgressView !== "lessons"
+                              && hand.reviewed_at
+                              && hand.outcome !== "match"
+                              && hand.outcome !== "mixed" ? (
                               <button
                                 className="recent-training-reopen"
                                 type="button"
@@ -3608,7 +3645,13 @@ export default function App() {
                         ))}
                       </div>
                     ) : (
-                      <div className="training-review-empty">No action or sizing differences need review.</div>
+                      <div className="training-review-empty">
+                        {trainingProgressView === "lessons"
+                          ? "No saved lesson notes yet."
+                          : trainingProgressView === "review"
+                            ? "No action or sizing differences need review."
+                            : "No recent training decisions."}
+                      </div>
                     )}
                   </section>
                 </>
@@ -3624,7 +3667,7 @@ export default function App() {
               {nextReviewHand ? (
                 <button
                   type="button"
-                  onClick={() => void reviewTrainingHand(nextReviewHand.job_id)}
+                  onClick={() => void reviewTrainingHand(nextReviewHand.job_id, true)}
                   disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                 >
                   <Eye size={14} aria-hidden="true" />

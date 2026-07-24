@@ -25,6 +25,7 @@ def reviewed_job(
     recommended_sizing: float | None = None,
     recommendation_raw: dict[str, object] | None = None,
     training_reviewed_at: datetime | None = None,
+    training_review_note: str | None = None,
     decision_certainty: TrainingCertainty | None = None,
 ) -> JobRecord:
     return JobRecord(
@@ -53,6 +54,7 @@ def reviewed_job(
             raw=recommendation_raw or {},
         ),
         training_reviewed_at=training_reviewed_at,
+        training_review_note=training_review_note,
     )
 
 
@@ -214,6 +216,52 @@ def test_summarize_training_limits_recent_hands() -> None:
     assert progress.reviewed_hands == 4
     assert len(progress.recent_hands) == 2
     assert progress.recent_hands[0].job_id == f"{3:032x}"
+
+
+def test_summarize_training_lists_completed_lesson_notes_by_review_time() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            training_reviewed_at=datetime(2026, 7, 10, tzinfo=timezone.utc),
+            training_review_note="Respect the call price.",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "raise",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            training_reviewed_at=datetime(2026, 7, 12, tzinfo=timezone.utc),
+            training_review_note="Check blockers before folding.",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "river",
+            "call",
+            "raise",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            training_review_note="This reopened note is still being revised.",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+            training_reviewed_at=datetime(2026, 7, 13, tzinfo=timezone.utc),
+        ),
+    ]
+
+    progress = summarize_training(jobs, recent_limit=1, lesson_limit=1)
+
+    assert progress.lesson_count == 2
+    assert len(progress.lesson_hands) == 1
+    assert progress.lesson_hands[0].job_id == "2" * 32
+    assert progress.lesson_hands[0].review_note == "Check blockers before folding."
 
 
 def test_summarize_training_compares_equal_recent_windows() -> None:

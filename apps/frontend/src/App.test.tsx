@@ -1650,6 +1650,111 @@ describe("App", () => {
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
+  it("keeps completed review notes available in a dedicated lessons view", async () => {
+    const recentHand = {
+      job_id: "recent-job",
+      original_filename: "recent.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
+    const lessonHand = {
+      job_id: "lesson-job",
+      original_filename: "lesson.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-19T12:00:00Z",
+      reviewed_at: "2026-07-20T14:00:00Z",
+      review_note: "Count the bluff combinations before folding.",
+      ev_loss_bb: null,
+    };
+    const olderLessonHand = {
+      ...lessonHand,
+      job_id: "older-lesson-job",
+      original_filename: "older-lesson.png",
+      recorded_at: "2026-07-18T12:00:00Z",
+      reviewed_at: "2026-07-19T14:00:00Z",
+      review_note: "Use the pot odds before choosing a line.",
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 1,
+      exact_matches: 1,
+      different_actions: 2,
+      needs_review_hands: 0,
+      action_accuracy: 1 / 3,
+      exact_accuracy: 1 / 3,
+      ev_compared_hands: 0,
+      average_ev_loss_bb: null,
+      street_summaries: [],
+      recent_hands: [recentHand],
+      lesson_count: 2,
+      lesson_hands: [lessonHand, olderLessonHand],
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    const lessonJob = {
+      ...recommendedJob(),
+      id: "lesson-job",
+      original_filename: "lesson.png",
+      training_decision: {
+        action: "fold" as const,
+        sizing: null,
+        certainty: "high" as const,
+        recorded_at: lessonHand.recorded_at,
+      },
+      training_reviewed_at: lessonHand.reviewed_at,
+      training_review_note: lessonHand.review_note,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(lessonJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", { name: "Lessons 2" }));
+
+    expect(within(dialog).getByRole("heading", { name: "Saved lessons" })).toBeInTheDocument();
+    expect(within(dialog).getByText("2 saved lesson notes.")).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "Note: Count the bluff combinations before folding.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "Note: Use the pot odds before choosing a line.",
+    )).toBeInTheDocument();
+    expect(within(dialog).queryByText("recent.png")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", {
+      name: "Reopen lesson.png training review",
+    })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Open lesson.png training review",
+    }));
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/jobs/lesson-job",
+    );
+    expect(await screen.findByLabelText("Saved training review note")).toHaveTextContent(
+      "Count the bluff combinations before folding.",
+    );
+    expect(screen.getByRole("button", { name: "Reopen review" })).toBeInTheDocument();
+  });
+
   it("loads saved history and reopens a reviewed hand", async () => {
     const savedState = canonicalState({
       hero_cards: [

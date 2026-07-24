@@ -99,8 +99,10 @@ selection API prevents the app from producing a dataset that import rejects.
    after the user revisits its evidence.
 9. A hand opened from the needs-review queue advances to the next hand matching
    the same action, street, and ordering filters after its review is persisted.
-10. Completed queue items remain in processing until explicitly cleared into history.
-11. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
+10. Completed reviews with notes remain available in a bounded newest-first
+    Lessons list without returning them to the pending queue.
+11. Completed queue items remain in processing until explicitly cleared into history.
+12. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
 approved state that does not yet have a recommendation, preventing a revealed
@@ -110,7 +112,9 @@ section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
-recent review links from persisted jobs. It also groups rated decisions by low,
+recent review links from persisted jobs. Completed notes have their own global
+count and bounded list ordered by review time, independent from both the recent
+and pending-review limits. The endpoint also groups rated decisions by low,
 medium, or high pre-reveal certainty so accuracy and available EV loss can be
 calibrated without excluding legacy or unrated hands from overall progress.
 Each rated summary also exposes its global pending-review count so the frontend

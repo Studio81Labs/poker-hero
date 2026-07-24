@@ -34,6 +34,7 @@ TrainingActionDifferenceFilter = tuple[RecommendationAction, RecommendationActio
 def summarize_training(
     jobs: list[JobRecord],
     recent_limit: int = 8,
+    lesson_limit: int = 24,
     review_limit: int = 24,
     review_order: TrainingReviewOrder = "recent",
     review_street: Street | None = None,
@@ -147,6 +148,20 @@ def summarize_training(
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
     ]
+    lesson_jobs = sorted(
+        (
+            job
+            for job in reviewed
+            if job.training_reviewed_at is not None
+            and job.training_review_note is not None
+        ),
+        key=lambda job: job.training_reviewed_at,
+        reverse=True,
+    )
+    lesson_hands = [
+        _recent_hand(job, outcomes[job.id], ev_losses[job.id])
+        for job in lesson_jobs[: max(0, lesson_limit)]
+    ]
     pending_review_jobs = [
         job
         for job in newest_first
@@ -225,6 +240,8 @@ def summarize_training(
         unrated_needs_review_hands=unrated_needs_review_hands,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
+        lesson_count=len(lesson_jobs),
+        lesson_hands=lesson_hands,
         review_street_counts=dict(review_street_counts),
         review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,

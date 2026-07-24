@@ -223,6 +223,8 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert progress["recent_hands"][0]["job_id"] == job_id
     assert progress["recent_hands"][0]["outcome"] == "match"
     assert progress["recent_hands"][0]["ev_loss_bb"] is None
+    assert progress["lesson_count"] == 0
+    assert progress["lesson_hands"] == []
     assert progress["review_street_counts"] == {}
     assert progress["review_queue_hands"] == 0
     assert progress["review_queue"] == []
@@ -314,10 +316,18 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     assert after_review["recent_hands"][0]["review_note"] == (
         "Watch the call price and blockers."
     )
+    assert after_review["lesson_count"] == 1
+    assert after_review["lesson_hands"][0]["job_id"] == job_id
+    assert after_review["lesson_hands"][0]["review_note"] == (
+        "Watch the call price and blockers."
+    )
     assert updated.status_code == 200
     assert updated.json()["training_reviewed_at"] == response.json()["training_reviewed_at"]
     assert updated.json()["training_review_note"] == "Review blockers before raising."
     assert after_update["recent_hands"][0]["review_note"] == (
+        "Review blockers before raising."
+    )
+    assert after_update["lesson_hands"][0]["review_note"] == (
         "Review blockers before raising."
     )
     assert reopened.status_code == 200
@@ -339,6 +349,8 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     assert after_reopen["recent_hands"][0]["review_note"] == (
         "Review blockers before raising."
     )
+    assert after_reopen["lesson_count"] == 0
+    assert after_reopen["lesson_hands"] == []
     assert FileJobStore(tmp_path).get(job_id).training_reviewed_at is None
 
 

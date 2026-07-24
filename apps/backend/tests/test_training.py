@@ -531,6 +531,46 @@ def test_summarize_training_filters_review_street_before_ordering_and_limit() ->
     ]
 
 
+def test_summarize_training_filters_pending_reviews_by_certainty() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            decision_certainty="high",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 6, tzinfo=timezone.utc),
+            decision_certainty="low",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "river",
+            "fold",
+            "call",
+            datetime(2026, 7, 7, tzinfo=timezone.utc),
+        ),
+    ]
+
+    high = summarize_training(jobs, review_certainty="high")
+    unrated = summarize_training(jobs, review_certainty="unrated")
+
+    assert high.needs_review_hands == 3
+    assert high.review_queue_hands == 1
+    assert [hand.job_id for hand in high.review_queue] == ["1" * 32]
+    assert high.review_queue[0].decision_certainty == "high"
+    assert unrated.needs_review_hands == 3
+    assert unrated.review_queue_hands == 1
+    assert [hand.job_id for hand in unrated.review_queue] == ["3" * 32]
+    assert unrated.review_queue[0].decision_certainty is None
+
+
 def test_summarize_training_excludes_completed_reviews_from_pending_queue() -> None:
     completed_at = datetime(2026, 7, 10, tzinfo=timezone.utc)
     jobs = [

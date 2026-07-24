@@ -13,6 +13,7 @@ RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
 TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 TrainingReviewOrder = Literal["recent", "ev_loss"]
+TrainingReviewCertainty = Literal["low", "medium", "high", "unrated"]
 
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 SUIT_BY_CODE = {

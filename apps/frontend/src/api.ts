@@ -8,6 +8,7 @@ import type {
   SystemInfo,
   TrainingCertainty,
   TrainingProgress,
+  TrainingReviewCertaintyFilter,
   TrainingReviewDifference,
   TrainingReviewOrder,
   TrainingReviewStreet,
@@ -124,6 +125,7 @@ export async function getTrainingProgress(
   reviewOrder: TrainingReviewOrder = "recent",
   reviewStreet: TrainingReviewStreet = "all",
   reviewDifference: TrainingReviewDifference | null = null,
+  reviewCertainty: TrainingReviewCertaintyFilter = "all",
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -131,6 +133,9 @@ export async function getTrainingProgress(
   }
   if (reviewStreet !== "all") {
     search.set("review_street", reviewStreet);
+  }
+  if (reviewCertainty !== "all") {
+    search.set("review_certainty", reviewCertainty);
   }
   if (reviewDifference) {
     search.set("review_decision_action", reviewDifference.decision_action);

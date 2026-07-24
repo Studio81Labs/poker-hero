@@ -127,7 +127,10 @@ highest available EV losses while retaining ungraded hands afterward. It can
 also focus on one street; filtering happens before ordering and the bounded
 queue limit. Training progress suggests an actionable focus street from the
 pending queue, preferring the highest graded average EV loss and otherwise the
-lowest action accuracy. It also compares equal recent and previous windows,
+lowest action accuracy. Reviews can also be scoped to low, medium, or high
+self-rated certainty, or to legacy hands with no rating; certainty combines
+with street and action-pattern filters before ordering and limiting. It also
+compares equal recent and previous windows,
 capped at ten hands each, so action, exact-line, and available EV-loss movement
 is visible without letting a larger period skew the trend. Common unsupported
 action choices are grouped by the player's action and the solver's headline

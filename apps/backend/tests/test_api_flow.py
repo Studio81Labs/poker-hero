@@ -232,11 +232,15 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "/api/training/progress"
         "?review_order=ev_loss"
         "&review_street=flop"
+        "&review_certainty=high"
         "&review_decision_action=fold"
         "&review_recommended_action=call"
     )
     invalid_order = client.get("/api/training/progress?review_order=unknown")
     invalid_street = client.get("/api/training/progress?review_street=showdown")
+    invalid_certainty = client.get(
+        "/api/training/progress?review_certainty=very_sure"
+    )
     incomplete_difference = client.get(
         "/api/training/progress?review_decision_action=fold"
     )
@@ -249,6 +253,7 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert filtered.status_code == 200
     assert invalid_order.status_code == 422
     assert invalid_street.status_code == 422
+    assert invalid_certainty.status_code == 422
     assert incomplete_difference.status_code == 422
     assert incomplete_difference.json()["detail"] == (
         "review_decision_action and review_recommended_action "

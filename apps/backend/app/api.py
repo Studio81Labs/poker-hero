@@ -201,6 +201,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_decision = TrainingDecision(
                 action=decision.action,
                 sizing=decision.sizing,
+                certainty=decision.certainty,
             )
             job.training_reviewed_at = None
             job.training_review_note = None

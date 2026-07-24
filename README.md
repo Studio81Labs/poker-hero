@@ -116,8 +116,11 @@ and run the range/EV engine directly. Select `external_solver` at the provider
 boundary for a future licensed service.
 
 When a user locks an answer before revealing guidance, training progress tracks
-action and exact-line accuracy. Solver responses with complete candidate EV
-metadata also report the selected line's EV loss in BB plus aggregate and
+action and exact-line accuracy. The answer may include a low, medium, or high
+self-rated certainty, allowing progress to compare accuracy and available EV
+loss by how sure the player felt before reveal. Unrated hands remain in overall
+progress and are excluded only from certainty calibration. Solver responses
+with complete candidate EV metadata also report the selected line's EV loss in BB plus aggregate and
 street-level averages; providers without comparable EVs remain ungraded for
 that metric. The needs-review queue can stay newest-first or prioritize the
 highest available EV losses while retaining ungraded hands afterward. It can

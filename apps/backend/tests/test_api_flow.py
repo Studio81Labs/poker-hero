@@ -162,15 +162,18 @@ def test_records_training_decision_before_recommendation(tmp_path: Path) -> None
 
     response = client.put(
         f"/api/jobs/{job_id}/decision",
-        json={"action": "raise", "sizing": 7.5},
+        json={"action": "raise", "sizing": 7.5, "certainty": "high"},
     )
 
     assert response.status_code == 200
     decision = response.json()["training_decision"]
     assert decision["action"] == "raise"
     assert decision["sizing"] == 7.5
+    assert decision["certainty"] == "high"
     assert decision["recorded_at"]
-    assert FileJobStore(tmp_path).get(job_id).training_decision.action == "raise"
+    persisted = FileJobStore(tmp_path).get(job_id).training_decision
+    assert persisted.action == "raise"
+    assert persisted.certainty == "high"
 
 
 def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) -> None:
@@ -179,7 +182,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     approve_job(client, job_id)
     client.put(
         f"/api/jobs/{job_id}/decision",
-        json={"action": "call", "sizing": None},
+        json={"action": "call", "sizing": None, "certainty": "medium"},
     )
     client.post(f"/api/jobs/{job_id}/recommend")
 
@@ -188,6 +191,19 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
     assert response.status_code == 200
     progress = response.json()
     assert progress["reviewed_hands"] == 1
+    assert progress["certainty_summaries"] == [
+        {
+            "certainty": "medium",
+            "hands": 1,
+            "action_matches": 1,
+            "exact_matches": 1,
+            "action_accuracy": 1.0,
+            "exact_accuracy": 1.0,
+            "ev_compared_hands": 0,
+            "average_ev_loss_bb": None,
+        }
+    ]
+    assert progress["recent_hands"][0]["decision_certainty"] == "medium"
     assert progress["action_matches"] == 1
     assert progress["exact_matches"] == 1
     assert progress["different_actions"] == 0
@@ -414,6 +430,20 @@ def test_training_decision_rejects_sizing_for_non_wager_action(tmp_path: Path) -
     response = client.put(
         f"/api/jobs/{job_id}/decision",
         json={"action": "call", "sizing": 2.5},
+    )
+
+    assert response.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
+def test_training_decision_rejects_unknown_certainty(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "call", "sizing": None, "certainty": "certain"},
     )
 
     assert response.status_code == 422

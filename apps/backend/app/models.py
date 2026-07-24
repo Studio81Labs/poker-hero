@@ -10,6 +10,7 @@ Suit = Literal["clubs", "diamonds", "hearts", "spades"]
 Street = Literal["preflop", "flop", "turn", "river"]
 FacingAction = Literal["bet", "raise"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
+TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 TrainingReviewOrder = Literal["recent", "ev_loss"]
 
@@ -192,6 +193,7 @@ class RecommendationResult(BaseModel):
 class TrainingDecisionRequest(BaseModel):
     action: RecommendationAction
     sizing: float | None = Field(default=None, ge=0)
+    certainty: TrainingCertainty | None = None
 
     @model_validator(mode="after")
     def validate_sizing(self) -> Self:
@@ -227,6 +229,17 @@ class TrainingStreetSummary(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
+class TrainingCertaintySummary(BaseModel):
+    certainty: TrainingCertainty
+    hands: int = Field(ge=1)
+    action_matches: int = Field(ge=0)
+    exact_matches: int = Field(ge=0)
+    action_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy: float = Field(ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
+
+
 class TrainingRecentHand(BaseModel):
     job_id: str
     original_filename: str
@@ -234,6 +247,7 @@ class TrainingRecentHand(BaseModel):
     hero_cards: list[Card] = Field(default_factory=list)
     decision_action: RecommendationAction
     decision_sizing: float | None = Field(default=None, ge=0)
+    decision_certainty: TrainingCertainty | None = None
     recommended_action: RecommendationAction
     recommended_sizing: float | None = Field(default=None, ge=0)
     outcome: TrainingOutcome
@@ -279,6 +293,7 @@ class TrainingProgress(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
     trend: TrainingTrend | None = None
     action_differences: list[TrainingActionDifference] = Field(default_factory=list)
+    certainty_summaries: list[TrainingCertaintySummary] = Field(default_factory=list)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     review_street_counts: dict[Street, int] = Field(default_factory=dict)

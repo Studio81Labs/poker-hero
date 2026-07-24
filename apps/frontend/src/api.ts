@@ -6,6 +6,7 @@ import type {
   JobRecord,
   RecommendationAction,
   SystemInfo,
+  TrainingCertainty,
   TrainingProgress,
   TrainingReviewDifference,
   TrainingReviewOrder,
@@ -87,11 +88,12 @@ export async function recordTrainingDecision(
   jobId: string,
   action: RecommendationAction,
   sizing: number | null,
+  certainty: TrainingCertainty | null,
 ): Promise<JobRecord> {
   const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/decision`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, sizing }),
+    body: JSON.stringify({ action, sizing, certainty }),
     credentials: "include",
   });
   return readJson<JobRecord>(response);

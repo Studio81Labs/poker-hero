@@ -631,6 +631,7 @@ describe("App", () => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 7.5,
+      certainty: "high" as const,
       recorded_at: "2026-07-20T12:00:00Z",
     };
     const decisionJob = { ...approvedJob(), training_decision: trainingDecision };
@@ -650,19 +651,22 @@ describe("App", () => {
     const decisionPanel = await screen.findByLabelText("Your training decision");
     await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
     await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "7.5");
+    await user.click(within(decisionPanel).getByRole("button", { name: "high" }));
     await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
 
     expect(await within(decisionPanel).findByText("Answer locked")).toBeInTheDocument();
+    expect(within(decisionPanel).getByText("Saved before reveal")).toBeInTheDocument();
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
     expect(fetchMock().mock.calls[2][1]).toMatchObject({
       method: "PUT",
-      body: JSON.stringify({ action: "raise", sizing: 7.5 }),
+      body: JSON.stringify({ action: "raise", sizing: 7.5, certainty: "high" }),
     });
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Raise 7.5 BB")).toBeInTheDocument();
+    expect(within(comparison).getByText("High certainty")).toBeInTheDocument();
     expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
     expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(4);
@@ -780,6 +784,7 @@ describe("App", () => {
     const trainingDecision = {
       action: "call" as const,
       sizing: null,
+      certainty: "medium" as const,
       recorded_at: "2026-07-20T12:00:00Z",
     };
     fetchMock()
@@ -793,12 +798,18 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Approve state" }));
     const decisionPanel = await screen.findByLabelText("Your training decision");
     await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Call")).toBeInTheDocument();
+    expect(within(comparison).getByText("Medium certainty")).toBeInTheDocument();
     expect(within(comparison).getByText("Different action")).toBeInTheDocument();
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
+    expect(fetchMock().mock.calls[2][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ action: "call", sizing: null, certainty: "medium" }),
+    });
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
@@ -816,6 +827,7 @@ describe("App", () => {
     const originalDecisionPanel = await screen.findByLabelText("Your training decision");
     await user.click(within(originalDecisionPanel).getByRole("button", { name: "call" }));
     expect(within(originalDecisionPanel).getByRole("button", { name: "call" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(originalDecisionPanel).getByText("Ready to lock")).toBeInTheDocument();
 
     const potInput = screen.getByLabelText(/Pot/);
     await user.clear(potInput);
@@ -884,6 +896,7 @@ describe("App", () => {
       outcome: "match" as const,
       recorded_at: "2026-07-20T13:00:00Z",
       reviewed_at: null,
+      decision_certainty: "low" as const,
       ev_loss_bb: 0,
     };
     const mixedHand = {
@@ -896,6 +909,7 @@ describe("App", () => {
       recommended_sizing: null,
       outcome: "mixed" as const,
       recorded_at: "2026-07-20T12:30:00Z",
+      decision_certainty: "high" as const,
       review_note: "Prefer the lower-variance supported line.",
       ev_loss_bb: 0.01,
     };
@@ -936,6 +950,25 @@ describe("App", () => {
       exact_accuracy: 2 / 4,
       ev_compared_hands: 3,
       average_ev_loss_bb: 0.043333,
+      certainty_summaries: [{
+        certainty: "low" as const,
+        hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0,
+      }, {
+        certainty: "high" as const,
+        hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0.01,
+      }],
       action_differences: [{
         decision_action: "fold" as const,
         recommended_action: "call" as const,
@@ -989,6 +1022,8 @@ describe("App", () => {
     expect(summary).toHaveTextContent("75%");
     expect(within(summary).getByText("50%")).toBeInTheDocument();
     expect(within(summary).getByText("0.043 BB")).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /low 1 100% 100% 0 BB/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /high 1 100% 100% 0.01 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /flop 4 75% 50% 0.005 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();

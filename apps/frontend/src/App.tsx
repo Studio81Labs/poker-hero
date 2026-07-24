@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -1373,6 +1373,7 @@ export default function App() {
   const [trainingSizing, setTrainingSizing] = useState("");
   const [trainingCertainty, setTrainingCertainty] = useState<TrainingCertaintyOption>("");
   const [trainingReviewNote, setTrainingReviewNote] = useState("");
+  const [trainingReviewNoteEditing, setTrainingReviewNoteEditing] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>("live");
   const [shareMode, setShareMode] = useState<ShareMode>("window");
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
@@ -1593,7 +1594,8 @@ export default function App() {
 
   useEffect(() => {
     setTrainingReviewNote(job?.training_review_note ?? "");
-  }, [job?.id, job?.training_review_note]);
+    setTrainingReviewNoteEditing(false);
+  }, [job?.id, job?.training_review_note, job?.training_reviewed_at]);
 
   useEffect(() => {
     if (job && validation.error) {
@@ -2048,6 +2050,43 @@ export default function App() {
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startTrainingReviewNoteEdit() {
+    setTrainingReviewNote(job?.training_review_note ?? "");
+    setTrainingReviewNoteEditing(true);
+  }
+
+  function cancelTrainingReviewNoteEdit() {
+    setTrainingReviewNote(job?.training_review_note ?? "");
+    setTrainingReviewNoteEditing(false);
+  }
+
+  async function onUpdateTrainingReviewNote() {
+    if (
+      !job
+      || !activeTrainingDecision
+      || !activeRecommendation
+      || decisionComparison?.tone === "match"
+      || !job.training_reviewed_at
+    ) {
+      return;
+    }
+
+    const note = trainingReviewNote.trim() || null;
+    setBusy(true);
+    setError(null);
+    try {
+      const updatedJob = await completeTrainingReview(job.id, note);
+      replaceJob(updatedJob);
+      updateHistoryJob(updatedJob);
+      setTrainingReviewNoteEditing(false);
+      toast.success(note ? "Lesson note updated" : "Lesson note removed");
+    } catch (reviewError) {
+      setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
       setBusy(false);
     }
@@ -2905,7 +2944,11 @@ export default function App() {
                               <Check size={12} aria-hidden="true" />
                               Reviewed
                             </span>
-                            <button type="button" onClick={onReopenTrainingReview} disabled={busy}>
+                            <button
+                              type="button"
+                              onClick={onReopenTrainingReview}
+                              disabled={busy || trainingReviewNoteEditing}
+                            >
                               <RefreshCcw size={11} aria-hidden="true" />
                               Reopen review
                             </button>
@@ -2926,12 +2969,70 @@ export default function App() {
                   && decisionComparison
                   && decisionComparison.tone !== "match" ? (
                     job?.training_reviewed_at ? (
-                      job.training_review_note ? (
+                      trainingReviewNoteEditing ? (
+                        <label className="training-review-note">
+                          <span>
+                            Lesson note
+                            <small>{trainingReviewNote.length}/{MAX_TRAINING_REVIEW_NOTE_LENGTH}</small>
+                          </span>
+                          <textarea
+                            aria-label="Edit training review note"
+                            value={trainingReviewNote}
+                            onChange={(event) => setTrainingReviewNote(event.target.value)}
+                            maxLength={MAX_TRAINING_REVIEW_NOTE_LENGTH}
+                            rows={2}
+                            placeholder="What will you remember next time?"
+                            disabled={busy}
+                          />
+                          <span className="training-review-note-actions">
+                            <button
+                              type="button"
+                              onClick={cancelTrainingReviewNoteEdit}
+                              disabled={busy}
+                            >
+                              <X size={11} aria-hidden="true" />
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void onUpdateTrainingReviewNote()}
+                              disabled={
+                                busy
+                                || (trainingReviewNote.trim() || null) === job.training_review_note
+                              }
+                            >
+                              <Check size={11} aria-hidden="true" />
+                              Save note
+                            </button>
+                          </span>
+                        </label>
+                      ) : job.training_review_note ? (
                         <div className="training-review-note-saved" aria-label="Saved training review note">
-                          <strong>Review note</strong>
+                          <div>
+                            <strong>Review note</strong>
+                            <button
+                              type="button"
+                              onClick={startTrainingReviewNoteEdit}
+                              disabled={busy}
+                              aria-label="Edit training review note"
+                              title="Edit lesson note"
+                            >
+                              <Pencil size={11} aria-hidden="true" />
+                            </button>
+                          </div>
                           <span>{job.training_review_note}</span>
                         </div>
-                      ) : null
+                      ) : (
+                        <button
+                          type="button"
+                          className="training-review-note-add"
+                          onClick={startTrainingReviewNoteEdit}
+                          disabled={busy}
+                        >
+                          <Pencil size={11} aria-hidden="true" />
+                          Add lesson note
+                        </button>
+                      )
                     ) : (
                       <label className="training-review-note">
                         <span>

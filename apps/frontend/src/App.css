@@ -1394,6 +1394,39 @@ button:disabled {
   color: #aaa5a5;
 }
 
+.training-review-note > .training-review-note-actions {
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.training-review-note-actions button,
+.training-review-note-saved button,
+.training-review-note-add {
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgba(243, 242, 242, 0.24);
+  color: #d7d3d3;
+  display: inline-flex;
+  font-size: 8px;
+  font-weight: 800;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 7px;
+}
+
+.training-review-note-actions button:hover:not(:disabled),
+.training-review-note-saved button:hover:not(:disabled),
+.training-review-note-add:hover:not(:disabled) {
+  border-color: var(--accent-soft);
+  color: var(--bg);
+}
+
+.training-review-note-saved > div {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
 .training-review-note-saved strong {
   color: #aaa5a5;
   font-size: 8px;
@@ -1405,6 +1438,14 @@ button:disabled {
   font-size: 10px;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.training-review-note-add {
+  border-left: 0;
+  border-right: 0;
+  justify-content: flex-start;
+  padding: 7px 12px;
+  width: 100%;
 }
 
 .recommendation p {

@@ -94,6 +94,8 @@ The frontend is a browser control panel for:
   history or when reopening that review.
 - Revisiting completed lesson notes in a dedicated newest-first view that is
   independent from the shorter recent-decisions list.
+- Editing or removing a completed lesson note without reopening the review or
+  returning it to the pending queue.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
@@ -399,6 +401,8 @@ Poker Hero is successful when:
   history, and edit it after reopening the unchanged comparison.
 - A user can browse completed lesson notes after their hands leave the recent
   decisions window without reopening or re-queuing those reviews.
+- A user can correct or remove a completed lesson note while preserving the
+  hand's reviewed status.
 - Solver-backed recommendations expose available decision evidence, including
   preflop chart policy context and postflop tree/range assumptions, and disclose
   when a configured engine used a fallback.

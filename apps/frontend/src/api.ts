@@ -128,6 +128,7 @@ export async function getTrainingProgress(
   reviewCertainty: TrainingReviewCertaintyFilter = "all",
   lessonStreet: TrainingReviewStreet = "all",
   lessonQuery = "",
+  lessonOrder: TrainingReviewOrder = "recent",
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -142,6 +143,9 @@ export async function getTrainingProgress(
   if (reviewDifference) {
     search.set("review_decision_action", reviewDifference.decision_action);
     search.set("review_recommended_action", reviewDifference.recommended_action);
+  }
+  if (lessonOrder !== "recent") {
+    search.set("lesson_order", lessonOrder);
   }
   if (lessonStreet !== "all") {
     search.set("lesson_street", lessonStreet);
@@ -159,8 +163,12 @@ export async function getTrainingProgress(
 export function trainingLessonsExportUrl(
   lessonStreet: TrainingReviewStreet = "all",
   lessonQuery = "",
+  lessonOrder: TrainingReviewOrder = "recent",
 ): string {
   const search = new URLSearchParams();
+  if (lessonOrder !== "recent") {
+    search.set("lesson_order", lessonOrder);
+  }
   if (lessonStreet !== "all") {
     search.set("lesson_street", lessonStreet);
   }

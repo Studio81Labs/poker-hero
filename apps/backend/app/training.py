@@ -1,4 +1,5 @@
 import math
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Literal
@@ -29,6 +30,37 @@ STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 CERTAINTY_ORDER: tuple[TrainingCertainty, ...] = ("low", "medium", "high")
 PolicySupport = Literal["line", "action"]
 TrainingActionDifferenceFilter = tuple[RecommendationAction, RecommendationAction]
+
+
+def training_lesson_jobs(
+    jobs: list[JobRecord],
+    lesson_street: Street | None = None,
+    lesson_query: str | None = None,
+) -> list[JobRecord]:
+    normalized_query = lesson_query.strip().casefold() if lesson_query else None
+    return sorted(
+        (
+            job
+            for job in jobs
+            if job.training_decision is not None
+            and job.recommendation is not None
+            and job.training_reviewed_at is not None
+            and job.training_review_note is not None
+            and (
+                lesson_street is None
+                or (
+                    job.approved_state is not None
+                    and job.approved_state.street == lesson_street
+                )
+            )
+            and (
+                not normalized_query
+                or normalized_query in job.training_review_note.casefold()
+            )
+        ),
+        key=lambda job: job.training_reviewed_at,
+        reverse=True,
+    )
 
 
 def summarize_training(
@@ -150,35 +182,12 @@ def summarize_training(
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
     ]
-    lesson_jobs = sorted(
-        (
-            job
-            for job in reviewed
-            if job.training_reviewed_at is not None
-            and job.training_review_note is not None
-        ),
-        key=lambda job: job.training_reviewed_at,
-        reverse=True,
+    lesson_jobs = training_lesson_jobs(reviewed)
+    filtered_lesson_jobs = training_lesson_jobs(
+        reviewed,
+        lesson_street=lesson_street,
+        lesson_query=lesson_query,
     )
-    normalized_lesson_query = lesson_query.strip().casefold() if lesson_query else None
-    filtered_lesson_jobs = [
-        job
-        for job in lesson_jobs
-        if (
-            lesson_street is None
-            or (
-                job.approved_state is not None
-                and job.approved_state.street == lesson_street
-            )
-        )
-        and (
-            not normalized_lesson_query
-            or (
-                job.training_review_note is not None
-                and normalized_lesson_query in job.training_review_note.casefold()
-            )
-        )
-    ]
     lesson_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in filtered_lesson_jobs[: max(0, lesson_limit)]
@@ -268,6 +277,126 @@ def summarize_training(
         review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,
     )
+
+
+def build_training_lessons_markdown(
+    jobs: list[JobRecord],
+    lesson_street: Street | None = None,
+    lesson_query: str | None = None,
+) -> tuple[str, int]:
+    lesson_jobs = training_lesson_jobs(
+        jobs,
+        lesson_street=lesson_street,
+        lesson_query=lesson_query,
+    )
+    lesson_count = len(lesson_jobs)
+    lines = [
+        "# Poker Hero Lessons",
+        "",
+        f"{lesson_count} saved lesson note{'s' if lesson_count != 1 else ''}.",
+        "",
+    ]
+    for job in lesson_jobs:
+        state = job.approved_state
+        decision = job.training_decision
+        recommendation = job.recommendation
+        reviewed_at = job.training_reviewed_at
+        note = job.training_review_note
+        if (
+            decision is None
+            or recommendation is None
+            or reviewed_at is None
+            or note is None
+        ):
+            continue
+
+        hero_cards = (
+            " ".join(card.code for card in state.hero_cards)
+            if state is not None
+            else ""
+        ) or "Unknown cards"
+        street = (
+            state.street.title()
+            if state is not None and state.street
+            else "Unknown street"
+        )
+        board_cards = (
+            " ".join(card.code for card in state.board_cards)
+            if state is not None
+            else ""
+        ) or (
+            "Preflop"
+            if state is not None and state.street == "preflop"
+            else "Not recorded"
+        )
+        lines.extend(
+            [
+                f"## {hero_cards} - {street}",
+                "",
+                f"- Reviewed: `{_markdown_timestamp(reviewed_at)}`",
+                f"- Source: {_markdown_code_span(job.original_filename)}",
+                f"- Board: {board_cards}",
+                *(
+                    [f"- Position: {_markdown_code_span(state.hero_position)}"]
+                    if state is not None and state.hero_position
+                    else []
+                ),
+                *(
+                    [f"- Pot: {state.pot_size:g} BB"]
+                    if state is not None and state.pot_size is not None
+                    else []
+                ),
+                *(
+                    [f"- To call: {state.current_bet:g} BB"]
+                    if state is not None
+                    and state.current_bet is not None
+                    and state.current_bet > 0
+                    else []
+                ),
+                *(
+                    [f"- Effective stack: {state.effective_stack:g} BB"]
+                    if state is not None and state.effective_stack is not None
+                    else []
+                ),
+                f"- You: {_training_line(decision.action, decision.sizing)}",
+                f"- Solver: {_training_line(recommendation.action, recommendation.sizing)}",
+                (
+                    f"- Certainty: {decision.certainty.title()}"
+                    if decision.certainty
+                    else "- Certainty: Unrated"
+                ),
+            ]
+        )
+        ev_loss = training_ev_loss_bb(job)
+        if ev_loss is not None:
+            lines.append(f"- EV loss: {ev_loss:g} BB")
+        lines.extend(["", "### Lesson", "", *_markdown_quote(note), ""])
+
+    return "\n".join(lines).rstrip() + "\n", lesson_count
+
+
+def _training_line(action: RecommendationAction, sizing: float | None) -> str:
+    label = action.title()
+    return f"{label} {sizing:g} BB" if sizing is not None else label
+
+
+def _markdown_timestamp(value: datetime) -> str:
+    return value.isoformat().replace("+00:00", "Z")
+
+
+def _markdown_code_span(value: str) -> str:
+    normalized = value.replace("\r", " ").replace("\n", " ")
+    longest_run = max(
+        (len(match.group()) for match in re.finditer(r"`+", normalized)),
+        default=0,
+    )
+    delimiter = "`" * (longest_run + 1)
+    padding = " " if normalized.startswith("`") or normalized.endswith("`") else ""
+    return f"{delimiter}{padding}{normalized}{padding}{delimiter}"
+
+
+def _markdown_quote(value: str) -> list[str]:
+    return [f"> {line}" if line else ">" for line in value.splitlines() or [""]]
 
 
 def training_outcome(job: JobRecord) -> TrainingOutcome:

@@ -2492,6 +2492,37 @@ button:disabled {
   margin-left: 0;
 }
 
+.training-lessons-export {
+  align-items: center;
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 6px;
+  justify-content: center;
+  margin-left: auto;
+  min-height: 34px;
+  padding: 0 10px;
+  text-decoration: none;
+}
+
+.training-lessons-export:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.training-lessons-export.disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.training-lessons-export + .secondary-button {
+  margin-left: 0;
+}
+
 .training-progress-empty {
   align-items: center;
   color: var(--muted);
@@ -3119,6 +3150,11 @@ button:disabled {
   }
 
   .training-progress-footer > button {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .training-lessons-export {
     margin-left: 0;
     width: 100%;
   }

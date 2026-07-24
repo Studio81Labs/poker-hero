@@ -56,7 +56,11 @@ from app.storage import (
     FileJobStore,
     JobNotFoundError,
 )
-from app.training import summarize_training, training_outcome
+from app.training import (
+    build_training_lessons_markdown,
+    summarize_training,
+    training_outcome,
+)
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
@@ -382,6 +386,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_action_difference=review_action_difference,
             lesson_street=lesson_street,
             lesson_query=lesson_query,
+        )
+
+    @app.get("/api/training/lessons/export")
+    def export_training_lessons(
+        lesson_street: Street | None = None,
+        lesson_query: str | None = Query(default=None, max_length=120),
+    ) -> StreamingResponse:
+        document, lesson_count = build_training_lessons_markdown(
+            store.list(),
+            lesson_street=lesson_street,
+            lesson_query=lesson_query,
+        )
+        if lesson_count == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="No saved lesson notes match the selected filters",
+            )
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return StreamingResponse(
+            iter([document]),
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="poker-hero-lessons-{timestamp}.md"'
+                )
+            },
         )
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)

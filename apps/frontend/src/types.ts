@@ -145,6 +145,7 @@ export interface TrainingProgress {
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   lesson_count?: number;
+  lesson_matching_hands?: number;
   lesson_hands?: TrainingRecentHand[];
   review_street_counts?: Partial<Record<Street, number>>;
   review_queue_hands: number;

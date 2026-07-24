@@ -1742,9 +1742,15 @@ describe("App", () => {
       street_summaries: [],
       recent_hands: [recentHand],
       lesson_count: 2,
+      lesson_matching_hands: 2,
       lesson_hands: [lessonHand, olderLessonHand],
       review_queue_hands: 0,
       review_queue: [],
+    };
+    const turnProgress = {
+      ...progress,
+      lesson_matching_hands: 1,
+      lesson_hands: [lessonHand],
     };
     const lessonJob = {
       ...recommendedJob(),
@@ -1761,6 +1767,8 @@ describe("App", () => {
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(turnProgress))
+      .mockResolvedValueOnce(jsonResponse(turnProgress))
       .mockResolvedValueOnce(jsonResponse(lessonJob));
     render(<App />);
     const user = userEvent.setup();
@@ -1782,11 +1790,31 @@ describe("App", () => {
       name: "Reopen lesson.png training review",
     })).not.toBeInTheDocument();
 
+    await user.selectOptions(within(dialog).getByLabelText("Lesson street"), "turn");
+
+    await waitFor(() => expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?lesson_street=turn",
+    ));
+    expect(within(dialog).getByText("1 lesson note matches these filters.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(
+      "Note: Use the pot odds before choosing a line.",
+    )).not.toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText("Search saved lesson notes"), "bluff");
+    await user.click(within(dialog).getByRole("button", { name: "Apply lesson search" }));
+
+    await waitFor(() => expect(fetchMock().mock.calls[2][0]).toBe(
+      "http://localhost:8000/api/training/progress?lesson_street=turn&lesson_query=bluff",
+    ));
+    expect(within(dialog).getByText(
+      "Note: Count the bluff combinations before folding.",
+    )).toBeInTheDocument();
+
     await user.click(within(dialog).getByRole("button", {
       name: "Open lesson.png training review",
     }));
 
-    expect(fetchMock().mock.calls[1][0]).toBe(
+    expect(fetchMock().mock.calls[3][0]).toBe(
       "http://localhost:8000/api/jobs/lesson-job",
     );
     expect(await screen.findByLabelText("Saved training review note")).toHaveTextContent(

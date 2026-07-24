@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from threading import Lock
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, status
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -357,6 +357,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         review_certainty: TrainingReviewCertainty | None = None,
         review_decision_action: RecommendationAction | None = None,
         review_recommended_action: RecommendationAction | None = None,
+        lesson_street: Street | None = None,
+        lesson_query: str | None = Query(default=None, max_length=120),
     ) -> TrainingProgress:
         if (review_decision_action is None) != (review_recommended_action is None):
             raise HTTPException(
@@ -378,6 +380,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_street=review_street,
             review_certainty=review_certainty,
             review_action_difference=review_action_difference,
+            lesson_street=lesson_street,
+            lesson_query=lesson_query,
         )
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)

@@ -40,6 +40,8 @@ def summarize_training(
     review_street: Street | None = None,
     review_certainty: TrainingReviewCertainty | None = None,
     review_action_difference: TrainingActionDifferenceFilter | None = None,
+    lesson_street: Street | None = None,
+    lesson_query: str | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -158,9 +160,28 @@ def summarize_training(
         key=lambda job: job.training_reviewed_at,
         reverse=True,
     )
+    normalized_lesson_query = lesson_query.strip().casefold() if lesson_query else None
+    filtered_lesson_jobs = [
+        job
+        for job in lesson_jobs
+        if (
+            lesson_street is None
+            or (
+                job.approved_state is not None
+                and job.approved_state.street == lesson_street
+            )
+        )
+        and (
+            not normalized_lesson_query
+            or (
+                job.training_review_note is not None
+                and normalized_lesson_query in job.training_review_note.casefold()
+            )
+        )
+    ]
     lesson_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
-        for job in lesson_jobs[: max(0, lesson_limit)]
+        for job in filtered_lesson_jobs[: max(0, lesson_limit)]
     ]
     pending_review_jobs = [
         job
@@ -241,6 +262,7 @@ def summarize_training(
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         lesson_count=len(lesson_jobs),
+        lesson_matching_hands=len(filtered_lesson_jobs),
         lesson_hands=lesson_hands,
         review_street_counts=dict(review_street_counts),
         review_queue_hands=len(filtered_review_jobs),

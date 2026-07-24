@@ -1270,6 +1270,77 @@ describe("App", () => {
     expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/high-job");
   });
 
+  it("opens pending reviews from a certainty calibration row", async () => {
+    const highHand = {
+      job_id: "high-certainty-job",
+      original_filename: "high-certainty.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      decision_certainty: "high" as const,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 0.8,
+    };
+    const progress = {
+      reviewed_hands: 1,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 1,
+      needs_review_hands: 1,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 1,
+      average_ev_loss_bb: 0.8,
+      certainty_summaries: [{
+        certainty: "high" as const,
+        hands: 1,
+        action_matches: 0,
+        exact_matches: 0,
+        needs_review_hands: 1,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0.8,
+      }],
+      street_summaries: [],
+      recent_hands: [highHand],
+      review_queue_hands: 1,
+      review_queue: [highHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const shortcut = within(dialog).getByRole("button", {
+      name: "Review high certainty differences (1)",
+    });
+    expect(shortcut).toBeEnabled();
+
+    await user.click(shortcut);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_certainty=high",
+    );
+    expect(await within(dialog).findByLabelText("Review certainty")).toHaveValue("high");
+    expect(within(dialog).getByRole("button", { name: "Needs review 1" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(dialog).getByText(
+      "1 pending review hand across all streets with high certainty.",
+    )).toBeInTheDocument();
+  });
+
   it("filters and continues training reviews by decision certainty", async () => {
     const highHand = {
       job_id: "high-certainty-job",

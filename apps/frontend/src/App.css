@@ -2174,6 +2174,25 @@ button:disabled {
   padding-right: 0;
 }
 
+.training-certainty-review {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 800;
+  gap: 4px;
+  height: 24px;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.training-certainty-review:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .recent-training-section {
   padding-bottom: 4px;
 }

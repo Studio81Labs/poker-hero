@@ -103,6 +103,11 @@ def summarize_training(
         certainty_exact_matches = sum(
             outcomes[job.id] in {"match", "mixed"} for job in certainty_jobs
         )
+        certainty_needs_review = sum(
+            outcomes[job.id] not in {"match", "mixed"}
+            and job.training_reviewed_at is None
+            for job in certainty_jobs
+        )
         certainty_ev_losses = [
             loss
             for job in certainty_jobs
@@ -115,6 +120,7 @@ def summarize_training(
                 hands=certainty_total,
                 action_matches=certainty_action_matches,
                 exact_matches=certainty_exact_matches,
+                needs_review_hands=certainty_needs_review,
                 action_accuracy=certainty_action_matches / certainty_total,
                 exact_accuracy=certainty_exact_matches / certainty_total,
                 ev_compared_hands=len(certainty_ev_losses),

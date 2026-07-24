@@ -235,6 +235,7 @@ class TrainingCertaintySummary(BaseModel):
     hands: int = Field(ge=1)
     action_matches: int = Field(ge=0)
     exact_matches: int = Field(ge=0)
+    needs_review_hands: int = Field(default=0, ge=0)
     action_accuracy: float = Field(ge=0, le=1)
     exact_accuracy: float = Field(ge=0, le=1)
     ev_compared_hands: int = Field(default=0, ge=0)

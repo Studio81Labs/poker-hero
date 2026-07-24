@@ -90,7 +90,8 @@ selection API prevents the app from producing a dataset that import rejects.
 1. A capture or upload creates an independent job.
 2. The configured parser returns detected state, confidence, warnings, and raw metadata.
 3. The user or automation approves a canonical state when requirements are met.
-4. The user may lock an action and optional sizing before revealing provider output.
+4. The user may lock an action, optional sizing, and optional self-rated
+   certainty before revealing provider output.
 5. The configured provider returns an educational action, sizing, confidence, and reasoning.
 6. The UI compares a locked training decision with the recommendation when one exists.
 7. Completed decision/recommendation pairs contribute to the on-demand training progress summary.
@@ -109,7 +110,10 @@ section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
-recent review links from persisted jobs. Trend windows use the newest and
+recent review links from persisted jobs. It also groups rated decisions by low,
+medium, or high pre-reveal certainty so accuracy and available EV loss can be
+calibrated without excluding legacy or unrated hands from overall progress.
+Trend windows use the newest and
 immediately preceding reviewed hands, have the same size, and are capped at ten
 hands each. Action and exact-line deltas are available once two reviewed hands
 exist. The EV-loss delta is available only when both windows contain at least

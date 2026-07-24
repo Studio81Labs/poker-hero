@@ -60,7 +60,8 @@ The frontend is a browser control panel for:
 - Correcting detected fields.
 - Approving the final hand state.
 - Viewing the recommendation, sizing, confidence, and reasoning.
-- Optionally locking the player's own action and sizing before revealing guidance.
+- Optionally locking the player's own action, sizing, and self-rated certainty
+  before revealing guidance.
 - Comparing a locked decision with the recommendation during post-hand review.
 - Reviewing aggregate action and exact-line policy accuracy by street across
   locked answers, including meaningful mixed-strategy alternatives when the
@@ -69,6 +70,8 @@ The frontend is a browser control panel for:
   exposes a complete numeric candidate line in big blinds.
 - Comparing equal recent and previous windows for action accuracy, exact-line
   accuracy, and available EV-loss movement.
+- Comparing action accuracy, exact-line accuracy, and available EV loss across
+  low, medium, and high pre-reveal certainty.
 - Reviewing repeated unsupported action choices grouped by the player's action
   and the solver's headline action, with available average EV loss.
 - Opening a repeated action-difference pattern as a focused review queue while
@@ -187,7 +190,8 @@ frequencies.
 4. Each parser result includes structured detected state and field confidence.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
-7. Before revealing guidance, the user may lock their own action and optional sizing as a training answer.
+7. Before revealing guidance, the user may lock their own action, optional
+   sizing, and optional low, medium, or high certainty as a training answer.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
 10. When a training answer exists, the UI compares it with the recommendation
@@ -195,7 +199,8 @@ frequencies.
 11. Completed comparisons contribute to an aggregate progress view with
     street-level results, optional EV-loss grading, recent-hand review links,
     equal-window recent trends capped at ten hands per period, and common
-    unsupported action differences.
+    unsupported action differences. Rated hands also contribute to certainty
+    calibration; unrated hands remain in every other aggregate.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and prioritize the highest available EV
@@ -274,6 +279,8 @@ Required behavior:
 - Missing or low-confidence required fields block recommendation until corrected.
 - Parser and provider raw responses are stored for debugging.
 - A training answer cannot be added or changed after recommendation output is revealed.
+- Self-rated certainty is captured before reveal and never changes provider
+  routing, recommendation output, or whether the hand counts in overall progress.
 - Re-approval, a changed training answer, or a new recommendation clears any
   completed training-review marker and lesson note.
 - Parser or provider failures are recoverable in the UI.
@@ -348,6 +355,9 @@ Poker Hero is successful when:
 - The recommendation provider is selected by configuration.
 - The app shows a recommended action, optional sizing, confidence, and reasoning.
 - A user can optionally record their intended play before reveal and compare it with the recommendation afterward.
+- A user can optionally rate how sure they are before reveal and compare
+  accuracy and available EV loss across certainty levels without excluding
+  unrated hands from overall progress.
 - A user can track action and exact-line accuracy across reviewed hands and
   reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can see per-hand and average EV loss for decisions that have comparable

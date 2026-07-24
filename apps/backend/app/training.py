@@ -9,6 +9,8 @@ from app.models import (
     RecommendationResult,
     Street,
     TrainingActionDifference,
+    TrainingCertainty,
+    TrainingCertaintySummary,
     TrainingDecision,
     TrainingOutcome,
     TrainingProgress,
@@ -23,6 +25,7 @@ SIZING_MATCH_TOLERANCE = 0.01
 MIN_SUPPORTED_FREQUENCY = 0.05
 MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
+CERTAINTY_ORDER: tuple[TrainingCertainty, ...] = ("low", "medium", "high")
 PolicySupport = Literal["line", "action"]
 TrainingActionDifferenceFilter = tuple[RecommendationAction, RecommendationAction]
 
@@ -79,6 +82,41 @@ def summarize_training(
                 exact_accuracy=street_exact_matches / street_total,
                 ev_compared_hands=len(street_ev_losses),
                 average_ev_loss_bb=_average_ev_loss(street_ev_losses),
+            )
+        )
+
+    certainty_summaries = []
+    for certainty in CERTAINTY_ORDER:
+        certainty_jobs = [
+            job
+            for job in reviewed
+            if job.training_decision is not None
+            and job.training_decision.certainty == certainty
+        ]
+        if not certainty_jobs:
+            continue
+        certainty_action_matches = sum(
+            outcomes[job.id] != "different" for job in certainty_jobs
+        )
+        certainty_exact_matches = sum(
+            outcomes[job.id] in {"match", "mixed"} for job in certainty_jobs
+        )
+        certainty_ev_losses = [
+            loss
+            for job in certainty_jobs
+            if (loss := ev_losses[job.id]) is not None
+        ]
+        certainty_total = len(certainty_jobs)
+        certainty_summaries.append(
+            TrainingCertaintySummary(
+                certainty=certainty,
+                hands=certainty_total,
+                action_matches=certainty_action_matches,
+                exact_matches=certainty_exact_matches,
+                action_accuracy=certainty_action_matches / certainty_total,
+                exact_accuracy=certainty_exact_matches / certainty_total,
+                ev_compared_hands=len(certainty_ev_losses),
+                average_ev_loss_bb=_average_ev_loss(certainty_ev_losses),
             )
         )
 
@@ -149,6 +187,7 @@ def summarize_training(
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         trend=trend,
         action_differences=action_differences,
+        certainty_summaries=certainty_summaries,
         street_summaries=street_summaries,
         recent_hands=recent_hands,
         review_street_counts=dict(review_street_counts),
@@ -465,6 +504,7 @@ def _recent_hand(
         hero_cards=job.approved_state.hero_cards if job.approved_state else [],
         decision_action=decision.action,
         decision_sizing=decision.sizing,
+        decision_certainty=decision.certainty,
         recommended_action=recommendation.action,
         recommended_sizing=recommendation.sizing,
         outcome=outcome,

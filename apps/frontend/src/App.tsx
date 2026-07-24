@@ -39,6 +39,7 @@ import type {
   Street,
   Suit,
   SystemInfo,
+  TrainingCertainty,
   TrainingOutcome,
   TrainingProgress,
   TrainingReviewDifference,
@@ -63,6 +64,7 @@ const CODE_BY_SUIT: Record<Suit, string> = {
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
 const RANKS = new Set<string>(RANK_VALUES);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
+const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 
@@ -86,6 +88,7 @@ const EMPTY_STATE: CanonicalState = {
 type StreetOption = "" | Street;
 type FacingActionOption = "" | FacingAction;
 type TrainingActionOption = "" | RecommendationAction;
+type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type TrainingProgressView = "recent" | "review";
@@ -535,6 +538,10 @@ function candidateMatchesRecommendation(
 function trainingDecisionLabel(action: RecommendationAction, sizing: number | null): string {
   const actionLabel = `${action.slice(0, 1).toUpperCase()}${action.slice(1)}`;
   return sizing === null ? actionLabel : `${actionLabel} ${formatCandidateValue(sizing)} BB`;
+}
+
+function trainingCertaintyLabel(certainty: TrainingCertainty): string {
+  return `${certainty.slice(0, 1).toUpperCase()}${certainty.slice(1)}`;
 }
 
 function formatEvLossBb(value: number): string {
@@ -1342,6 +1349,7 @@ export default function App() {
   const [approvedStateKey, setApprovedStateKey] = useState<string | null>(null);
   const [trainingAction, setTrainingAction] = useState<TrainingActionOption>("");
   const [trainingSizing, setTrainingSizing] = useState("");
+  const [trainingCertainty, setTrainingCertainty] = useState<TrainingCertaintyOption>("");
   const [trainingReviewNote, setTrainingReviewNote] = useState("");
   const [inputMode, setInputMode] = useState<InputMode>("live");
   const [shareMode, setShareMode] = useState<ShareMode>("window");
@@ -1537,6 +1545,7 @@ export default function App() {
     if (!currentStateApproved) {
       setTrainingAction("");
       setTrainingSizing("");
+      setTrainingCertainty("");
       return;
     }
     setTrainingAction(job?.training_decision?.action ?? "");
@@ -1545,7 +1554,14 @@ export default function App() {
         ? ""
         : String(job.training_decision.sizing),
     );
-  }, [currentStateApproved, job?.id, job?.training_decision?.action, job?.training_decision?.sizing]);
+    setTrainingCertainty(job?.training_decision?.certainty ?? "");
+  }, [
+    currentStateApproved,
+    job?.id,
+    job?.training_decision?.action,
+    job?.training_decision?.certainty,
+    job?.training_decision?.sizing,
+  ]);
 
   useEffect(() => {
     setTrainingReviewNote(job?.training_review_note ?? "");
@@ -1889,9 +1905,15 @@ export default function App() {
         }
         const decisionChanged = !job.training_decision
           || job.training_decision.action !== trainingAction
-          || job.training_decision.sizing !== parsedSizing.sizing;
+          || job.training_decision.sizing !== parsedSizing.sizing
+          || (job.training_decision.certainty ?? null) !== (trainingCertainty || null);
         if (decisionChanged) {
-          replaceJob(await recordTrainingDecision(job.id, trainingAction, parsedSizing.sizing));
+          replaceJob(await recordTrainingDecision(
+            job.id,
+            trainingAction,
+            parsedSizing.sizing,
+            trainingCertainty || null,
+          ));
         }
       }
       applyRecommendedJob(await requestRecommendation(job.id));
@@ -1915,7 +1937,12 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      replaceJob(await recordTrainingDecision(job.id, trainingAction, parsedSizing.sizing));
+      replaceJob(await recordTrainingDecision(
+        job.id,
+        trainingAction,
+        parsedSizing.sizing,
+        trainingCertainty || null,
+      ));
       toast.success("Training answer locked");
     } catch (decisionError) {
       setError(messageFromError(decisionError, "Could not save your training answer"));
@@ -2747,6 +2774,25 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                <div className="training-certainty">
+                  <span>How sure?</span>
+                  <div role="group" aria-label="How sure are you?">
+                    {TRAINING_CERTAINTIES.map((certainty) => (
+                      <button
+                        key={certainty}
+                        type="button"
+                        className={trainingCertainty === certainty ? "active" : undefined}
+                        aria-pressed={trainingCertainty === certainty}
+                        onClick={() => setTrainingCertainty(
+                          trainingCertainty === certainty ? "" : certainty,
+                        )}
+                        disabled={busy}
+                      >
+                        {certainty}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="training-decision-footer">
                   {trainingAction === "bet" || trainingAction === "raise" ? (
                     <label>
@@ -2760,9 +2806,14 @@ export default function App() {
                         disabled={busy}
                       />
                     </label>
-                  ) : (
-                    <span className="training-decision-hint">No answer locked</span>
-                  )}
+                  ) : null}
+                  <span className="training-decision-hint">
+                    {activeTrainingDecision
+                      ? "Saved before reveal"
+                      : trainingAction
+                        ? "Ready to lock"
+                        : "No answer selected"}
+                  </span>
                   <button
                     type="button"
                     className="secondary-button"
@@ -2791,6 +2842,11 @@ export default function App() {
                     <span>
                       <small>Your answer</small>
                       <strong>{trainingDecisionLabel(activeTrainingDecision.action, activeTrainingDecision.sizing)}</strong>
+                      {activeTrainingDecision.certainty ? (
+                        <small className="training-comparison-certainty">
+                          {trainingCertaintyLabel(activeTrainingDecision.certainty)} certainty
+                        </small>
+                      ) : null}
                     </span>
                     <div className="training-comparison-result">
                       <em className={decisionComparison.tone}>{decisionComparison.label}</em>
@@ -3193,6 +3249,44 @@ export default function App() {
                     </section>
                   ) : null}
 
+                  {(trainingProgress.certainty_summaries?.length ?? 0) > 0 ? (
+                    <section
+                      className="training-progress-section training-certainty-section"
+                      aria-labelledby="training-certainty-title"
+                    >
+                      <div className="training-section-heading">
+                        <h3 id="training-certainty-title">Confidence calibration</h3>
+                        <span className="training-section-context">Self-rated before reveal</span>
+                      </div>
+                      <table className="training-street-table training-certainty-table">
+                        <thead>
+                          <tr>
+                            <th>Certainty</th>
+                            <th>Hands</th>
+                            <th>Action</th>
+                            <th>Exact</th>
+                            <th>Avg EV loss</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trainingProgress.certainty_summaries?.map((summary) => (
+                            <tr key={summary.certainty}>
+                              <th>{trainingCertaintyLabel(summary.certainty)}</th>
+                              <td>{summary.hands}</td>
+                              <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                              <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                              <td>
+                                {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
+                                  ? formatEvLossBb(summary.average_ev_loss_bb)
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  ) : null}
+
                   {(trainingProgress.action_differences?.length ?? 0) > 0 ? (
                     <section
                       className="training-progress-section training-differences-section"
@@ -3387,7 +3481,12 @@ export default function App() {
                             >
                               <span className="recent-training-hand">
                                 <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
-                                <small>{hand.street ?? "Unknown street"} · {hand.original_filename}</small>
+                                <small>
+                                  {hand.street ?? "Unknown street"} · {hand.original_filename}
+                                  {hand.decision_certainty
+                                    ? ` · ${trainingCertaintyLabel(hand.decision_certainty)} certainty`
+                                    : ""}
+                                </small>
                               </span>
                               <span className="recent-training-lines">
                                 <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>

@@ -1131,6 +1131,44 @@ button:disabled {
   color: #fff;
 }
 
+.training-certainty {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 7px;
+}
+
+.training-certainty > span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.training-certainty > div {
+  display: inline-flex;
+}
+
+.training-certainty button {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 8px;
+  min-height: 24px;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.training-certainty button + button {
+  border-left: 0;
+}
+
+.training-certainty button.active {
+  background: var(--text);
+  color: var(--bg);
+}
+
 .training-decision-footer {
   margin-top: 8px;
   min-height: 31px;
@@ -1240,6 +1278,10 @@ button:disabled {
 .training-comparison strong {
   color: var(--bg);
   font-size: 11px;
+}
+
+.training-comparison .training-comparison-certainty {
+  color: #d7d3d3;
 }
 
 .training-comparison em {
@@ -1916,6 +1958,13 @@ button:disabled {
 
 .training-progress-section .training-section-heading h3 {
   margin: 0;
+}
+
+.training-section-context {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .training-focus-action {

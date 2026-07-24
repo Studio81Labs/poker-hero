@@ -3,6 +3,7 @@ export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Street = "preflop" | "flop" | "turn" | "river";
 export type FacingAction = "bet" | "raise";
 export type RecommendationAction = "fold" | "check" | "call" | "bet" | "raise";
+export type TrainingCertainty = "low" | "medium" | "high";
 
 export interface Card {
   rank: Rank;
@@ -47,6 +48,7 @@ export interface RecommendationResult {
 export interface TrainingDecision {
   action: RecommendationAction;
   sizing: number | null;
+  certainty?: TrainingCertainty | null;
   recorded_at: string;
 }
 
@@ -65,6 +67,17 @@ export interface TrainingStreetSummary {
   average_ev_loss_bb: number | null;
 }
 
+export interface TrainingCertaintySummary {
+  certainty: TrainingCertainty;
+  hands: number;
+  action_matches: number;
+  exact_matches: number;
+  action_accuracy: number;
+  exact_accuracy: number;
+  ev_compared_hands: number;
+  average_ev_loss_bb: number | null;
+}
+
 export interface TrainingRecentHand {
   job_id: string;
   original_filename: string;
@@ -72,6 +85,7 @@ export interface TrainingRecentHand {
   hero_cards: Card[];
   decision_action: RecommendationAction;
   decision_sizing: number | null;
+  decision_certainty?: TrainingCertainty | null;
   recommended_action: RecommendationAction;
   recommended_sizing: number | null;
   outcome: TrainingOutcome;
@@ -122,6 +136,7 @@ export interface TrainingProgress {
   average_ev_loss_bb: number | null;
   trend?: TrainingTrend | null;
   action_differences?: TrainingActionDifference[];
+  certainty_summaries?: TrainingCertaintySummary[];
   street_summaries: TrainingStreetSummary[];
   recent_hands: TrainingRecentHand[];
   review_street_counts?: Partial<Record<Street, number>>;

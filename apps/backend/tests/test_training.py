@@ -9,6 +9,7 @@ from app.models import (
     RecommendationAction,
     RecommendationResult,
     Street,
+    TrainingCertainty,
     TrainingDecision,
 )
 from app.training import summarize_training
@@ -24,6 +25,7 @@ def reviewed_job(
     recommended_sizing: float | None = None,
     recommendation_raw: dict[str, object] | None = None,
     training_reviewed_at: datetime | None = None,
+    decision_certainty: TrainingCertainty | None = None,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -40,6 +42,7 @@ def reviewed_job(
         training_decision=TrainingDecision(
             action=decision_action,
             sizing=decision_sizing,
+            certainty=decision_certainty,
             recorded_at=recorded_at,
         ),
         recommendation=RecommendationResult(
@@ -124,6 +127,70 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert progress.review_street_counts == {"flop": 1, "turn": 1}
     assert progress.review_queue_hands == 2
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
+
+
+def test_summarize_training_calibrates_self_rated_certainty() -> None:
+    candidates = {
+        "candidates": [
+            {"action": "fold", "sizing": None, "ev": 0.0},
+            {"action": "call", "sizing": None, "ev": 1.0},
+        ]
+    }
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+            decision_certainty="low",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+            decision_certainty="high",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "river",
+            "call",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+            decision_certainty="high",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert [summary.certainty for summary in progress.certainty_summaries] == [
+        "low",
+        "high",
+    ]
+    low, high = progress.certainty_summaries
+    assert low.hands == 1
+    assert low.action_accuracy == 1
+    assert low.exact_accuracy == 1
+    assert low.average_ev_loss_bb == 0
+    assert high.hands == 2
+    assert high.action_accuracy == 0.5
+    assert high.exact_accuracy == 0.5
+    assert high.ev_compared_hands == 2
+    assert high.average_ev_loss_bb == 0.5
+    assert progress.recent_hands[0].decision_certainty is None
+    assert progress.recent_hands[1].decision_certainty == "high"
 
 
 def test_summarize_training_limits_recent_hands() -> None:

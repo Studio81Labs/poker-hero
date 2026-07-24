@@ -308,6 +308,12 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     unmatched_lesson = client.get(
         "/api/training/progress?lesson_street=turn&lesson_query=blockers"
     ).json()
+    exported_lesson = client.get(
+        "/api/training/lessons/export?lesson_street=flop&lesson_query=BLOCKERS"
+    )
+    unmatched_export = client.get(
+        "/api/training/lessons/export?lesson_street=turn&lesson_query=blockers"
+    )
     reopened = client.delete(f"/api/jobs/{job_id}/training-review")
     repeated_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
     after_reopen = client.get("/api/training/progress").json()
@@ -351,6 +357,18 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     assert unmatched_lesson["lesson_count"] == 1
     assert unmatched_lesson["lesson_matching_hands"] == 0
     assert unmatched_lesson["lesson_hands"] == []
+    assert exported_lesson.status_code == 200
+    assert exported_lesson.headers["content-type"].startswith("text/markdown")
+    assert "poker-hero-lessons-" in exported_lesson.headers["content-disposition"]
+    assert "## Ah Kd - Flop" in exported_lesson.text
+    assert "- Board: Qs Jc 2h" in exported_lesson.text
+    assert "- Position: `button`" in exported_lesson.text
+    assert "- Pot: 12.5 BB" in exported_lesson.text
+    assert "> Review blockers before raising." in exported_lesson.text
+    assert unmatched_export.status_code == 409
+    assert unmatched_export.json()["detail"] == (
+        "No saved lesson notes match the selected filters"
+    )
     assert reopened.status_code == 200
     assert reopened.json()["training_reviewed_at"] is None
     assert reopened.json()["training_review_note"] == "Review blockers before raising."

@@ -1809,6 +1809,14 @@ describe("App", () => {
     expect(within(dialog).getByText(
       "Note: Count the bluff combinations before folding.",
     )).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Export lessons" })).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/training/lessons/export?lesson_street=turn&lesson_query=bluff",
+    );
+    expect(within(dialog).getByRole("link", { name: "Export lessons" })).toHaveAttribute(
+      "download",
+      "poker-hero-lessons.md",
+    );
 
     await user.click(within(dialog).getByRole("button", {
       name: "Open lesson.png training review",

@@ -12,7 +12,7 @@ from app.models import (
     TrainingCertainty,
     TrainingDecision,
 )
-from app.training import summarize_training
+from app.training import build_training_lessons_markdown, summarize_training
 
 
 def reviewed_job(
@@ -283,6 +283,22 @@ def test_summarize_training_lists_completed_lesson_notes_by_review_time() -> Non
     assert unmatched.lesson_count == 2
     assert unmatched.lesson_matching_hands == 0
     assert unmatched.lesson_hands == []
+
+    document, exported_count = build_training_lessons_markdown(
+        jobs,
+        lesson_street="turn",
+        lesson_query="BLOCKERS",
+    )
+
+    assert exported_count == 1
+    assert document.startswith("# Poker Hero Lessons\n")
+    assert "1 saved lesson note." in document
+    assert "## Ah Kd - Turn" in document
+    assert "- Board: Not recorded" in document
+    assert "- You: Fold" in document
+    assert "- Solver: Raise" in document
+    assert "> Check blockers before folding." in document
+    assert "Respect the call price." not in document
 
 
 def test_summarize_training_compares_equal_recent_windows() -> None:

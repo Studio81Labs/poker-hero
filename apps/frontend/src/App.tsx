@@ -20,6 +20,7 @@ import {
   requestRecommendation,
   runParserBenchmark,
   setBenchmarkInclusion,
+  trainingLessonsExportUrl,
   uploadScreenshot,
 } from "./api";
 import type {
@@ -1524,6 +1525,13 @@ export default function App() {
     : trainingProgressView === "lessons"
       ? trainingProgress?.lesson_hands ?? []
       : trainingProgress?.recent_hands ?? [];
+  const matchingTrainingLessons = trainingProgress?.lesson_matching_hands
+    ?? trainingProgress?.lesson_hands?.length
+    ?? 0;
+  const trainingLessonsExportDisabled = matchingTrainingLessons === 0
+    || trainingProgressLoading
+    || trainingReviewJobId !== null
+    || busy;
   const nextReviewHand = trainingProgressView === "lessons"
     ? null
     : trainingProgress?.review_queue[0] ?? null;
@@ -3888,6 +3896,23 @@ export default function App() {
 
             <div className="automation-dialog-footer training-progress-footer">
               <span>{reviewQueueStatus}</span>
+              {trainingProgressView === "lessons" ? (
+                <a
+                  className={`training-lessons-export${trainingLessonsExportDisabled ? " disabled" : ""}`}
+                  href={trainingLessonsExportUrl(trainingLessonStreet, trainingLessonQuery)}
+                  download="poker-hero-lessons.md"
+                  aria-disabled={trainingLessonsExportDisabled}
+                  tabIndex={trainingLessonsExportDisabled ? -1 : undefined}
+                  onClick={(event) => {
+                    if (trainingLessonsExportDisabled) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  Export lessons
+                </a>
+              ) : null}
               {nextReviewHand ? (
                 <button
                   type="button"

@@ -148,7 +148,8 @@ Completed notes also appear in a dedicated Lessons view, ordered by review time
 and kept independently from the shorter recent-decisions list. A completed
 lesson note can be edited or removed in place without reopening the review.
 The Lessons view can filter the full saved set by street and case-insensitive
-note text before applying its bounded newest-first display limit.
+note text before applying its bounded newest-first display limit. The active
+study set can be downloaded as Markdown without the display limit.
 Changing the approved state, training answer, or recommendation clears the note
 because the comparison it described is no longer current.
 
@@ -231,6 +232,7 @@ for the runtime topology.
 - `DELETE /api/jobs/{job_id}/training-review`
 - `PUT /api/jobs/{job_id}/benchmark`
 - `GET /api/training/progress`
+- `GET /api/training/lessons/export`
 - `GET /api/benchmarks`
 - `GET /api/benchmarks/export`
 - `POST /api/benchmarks/import`

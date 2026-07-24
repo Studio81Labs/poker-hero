@@ -98,6 +98,8 @@ The frontend is a browser control panel for:
   returning it to the pending queue.
 - Filtering the full saved lesson set by street and case-insensitive note text
   while keeping total and matching counts distinct.
+- Downloading the active filtered lesson set as a complete Markdown study
+  document independently from the bounded on-screen list.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
@@ -120,6 +122,8 @@ The backend API:
 - Persists the latest benchmark report with case and field-level accuracy.
 - Derives training progress from completed decision/recommendation pairs without
   scoring automation-only hands.
+- Exports the full filtered completed-lesson set as a portable Markdown study
+  document.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
 - Routes recommendation requests to the configured provider.
 
@@ -232,8 +236,10 @@ frequencies.
     its editable lesson note to the pending queue.
 18. Saved lessons may be filtered by street and note text before the bounded
     newest-first lesson list is returned.
-19. The UI retains completed items in processing until the user clears them into history.
-20. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+19. The active lesson filters can produce a complete Markdown download without
+    applying the on-screen list limit.
+20. The UI retains completed items in processing until the user clears them into history.
+21. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -341,6 +347,8 @@ Recommendation tests:
   action, explicit sizing, and finite numeric EV metadata expressed in BB. The
   candidate set must include the recommended line and at least one distinct
   alternative.
+- Verify lesson exports use the same street/text selection as the Lessons view,
+  include every matching note, and reject an empty study set clearly.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:

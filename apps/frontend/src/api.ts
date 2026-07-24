@@ -156,6 +156,21 @@ export async function getTrainingProgress(
   return readJson<TrainingProgress>(response);
 }
 
+export function trainingLessonsExportUrl(
+  lessonStreet: TrainingReviewStreet = "all",
+  lessonQuery = "",
+): string {
+  const search = new URLSearchParams();
+  if (lessonStreet !== "all") {
+    search.set("lesson_street", lessonStreet);
+  }
+  if (lessonQuery.trim()) {
+    search.set("lesson_query", lessonQuery.trim());
+  }
+  const query = search.size > 0 ? `?${search.toString()}` : "";
+  return `${API_BASE_URL}/api/training/lessons/export${query}`;
+}
+
 export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
   const response = await fetch(`${API_BASE_URL}/api/benchmarks`, {
     credentials: "include",

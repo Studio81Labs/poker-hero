@@ -249,6 +249,7 @@ class TrainingActionDifference(BaseModel):
     decision_action: RecommendationAction
     recommended_action: RecommendationAction
     hands: int = Field(ge=1)
+    needs_review_hands: int = Field(default=0, ge=0)
     ev_compared_hands: int = Field(default=0, ge=0)
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
 

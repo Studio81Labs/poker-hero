@@ -7,6 +7,7 @@ import type {
   RecommendationAction,
   SystemInfo,
   TrainingProgress,
+  TrainingReviewDifference,
   TrainingReviewOrder,
   TrainingReviewStreet,
 } from "./types";
@@ -115,6 +116,7 @@ export async function reopenTrainingReview(jobId: string): Promise<JobRecord> {
 export async function getTrainingProgress(
   reviewOrder: TrainingReviewOrder = "recent",
   reviewStreet: TrainingReviewStreet = "all",
+  reviewDifference: TrainingReviewDifference | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -122,6 +124,10 @@ export async function getTrainingProgress(
   }
   if (reviewStreet !== "all") {
     search.set("review_street", reviewStreet);
+  }
+  if (reviewDifference) {
+    search.set("review_decision_action", reviewDifference.decision_action);
+    search.set("review_recommended_action", reviewDifference.recommended_action);
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

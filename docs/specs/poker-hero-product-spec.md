@@ -71,6 +71,8 @@ The frontend is a browser control panel for:
   accuracy, and available EV-loss movement.
 - Reviewing repeated unsupported action choices grouped by the player's action
   and the solver's headline action, with available average EV loss.
+- Opening a repeated action-difference pattern as a focused review queue while
+  retaining street and EV-loss ordering controls.
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by street, ordering it by recency or available EV
   loss, and reopening the persisted hand.
@@ -198,12 +200,14 @@ frequencies.
 13. Progress may suggest a street that still has pending reviews, preferring
     the highest average EV loss when comparable grades exist and otherwise the
     lowest action accuracy.
-14. The user may mark a revisited difference reviewed, which removes it from the
+14. A common unsupported action pattern may focus the review queue on that
+    exact player-action and solver-action pair.
+15. The user may mark a revisited difference reviewed, which removes it from the
     pending queue while preserving it in progress history.
-15. A completed review may be reopened, returning the unchanged comparison to
+16. A completed review may be reopened, returning the unchanged comparison to
     the pending queue.
-16. The UI retains completed items in processing until the user clears them into history.
-17. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+17. The UI retains completed items in processing until the user clears them into history.
+18. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -343,6 +347,8 @@ Poker Hero is successful when:
   against an equally sized preceding period.
 - A user can identify repeated unsupported action choices without treating
   solver-supported mixed actions or sizing-only differences as mistakes.
+- A user can open pending reviews for one repeated action pattern without
+  manually searching the broader queue.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
 - A user can reorder pending reviews by EV loss so the highest-cost comparable

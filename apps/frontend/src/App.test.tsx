@@ -980,6 +980,7 @@ describe("App", () => {
         decision_action: "fold" as const,
         recommended_action: "call" as const,
         hands: 2,
+        needs_review_hands: 2,
         ev_compared_hands: 2,
         average_ev_loss_bb: 0.8,
       }],
@@ -1040,6 +1041,8 @@ describe("App", () => {
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(recentProgress))
+      .mockResolvedValueOnce(jsonResponse(recentProgress))
+      .mockResolvedValueOnce(jsonResponse(recentProgress))
       .mockReturnValueOnce(pendingStreet.promise)
       .mockReturnValueOnce(pendingOrder.promise)
       .mockResolvedValueOnce(jsonResponse(highJob));
@@ -1057,12 +1060,34 @@ describe("App", () => {
     expect(within(differences).getByText("Call")).toBeInTheDocument();
     expect(within(differences).getByText("2 hands")).toBeInTheDocument();
     expect(within(differences).getByText("0.8 BB avg loss")).toBeInTheDocument();
+    await user.click(within(differences).getByRole("button", {
+      name: "Review Fold to Call differences",
+    }));
+    expect(await within(dialog).findByLabelText("Active action-difference filter")).toHaveTextContent(
+      "FoldCall",
+    );
+    expect(within(dialog).getByText(
+      "2 pending review hands for Fold to Call across all streets.",
+    )).toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=fold&review_recommended_action=call",
+    );
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Clear action-difference filter",
+    }));
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active action-difference filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+
+    await user.click(within(dialog).getByRole("button", { name: "Recent" }));
     await user.click(within(dialog).getByRole("button", { name: /Focus turn reviews/ }));
 
     expect(within(dialog).getByText("Updating review queue...")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Open low.png training review" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Open high.png training review" })).not.toBeInTheDocument();
-    expect(fetchMock().mock.calls[1][0]).toBe(
+    expect(fetchMock().mock.calls[3][0]).toBe(
       "http://localhost:8000/api/training/progress?review_street=turn",
     );
 
@@ -1076,7 +1101,7 @@ describe("App", () => {
     const reviewHighestLoss = within(dialog).getByRole("button", { name: "Review highest loss" });
     expect(reviewHighestLoss).toBeDisabled();
     expect(within(dialog).getByText("Updating review queue...")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[2][0]).toBe(
+    expect(fetchMock().mock.calls[4][0]).toBe(
       "http://localhost:8000/api/training/progress?review_order=ev_loss&review_street=turn",
     );
 
@@ -1090,7 +1115,7 @@ describe("App", () => {
       "src",
       "http://localhost:8000/api/jobs/high-job/image",
     );
-    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/high-job");
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/high-job");
   });
 
   it("falls back to action accuracy when suggesting an ungraded focus street", async () => {

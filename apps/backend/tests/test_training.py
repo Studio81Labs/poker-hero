@@ -202,6 +202,7 @@ def test_summarize_training_groups_and_orders_action_differences() -> None:
             "fold",
             "call",
             datetime(2026, 7, 2, tzinfo=timezone.utc),
+            training_reviewed_at=datetime(2026, 7, 6, tzinfo=timezone.utc),
         ),
         reviewed_job(
             "3" * 32,
@@ -250,6 +251,10 @@ def test_summarize_training_groups_and_orders_action_differences() -> None:
     ]
 
     progress = summarize_training(jobs)
+    raise_to_call = summarize_training(
+        jobs,
+        review_action_difference=("raise", "call"),
+    )
 
     assert [
         (
@@ -264,10 +269,58 @@ def test_summarize_training_groups_and_orders_action_differences() -> None:
         ("check", "bet", 1),
     ]
     fold_to_call = progress.action_differences[0]
+    assert fold_to_call.needs_review_hands == 1
     assert fold_to_call.ev_compared_hands == 1
     assert fold_to_call.average_ev_loss_bb == 1.2
     assert progress.action_differences[1].average_ev_loss_bb == 2
     assert progress.action_differences[2].average_ev_loss_bb is None
+    assert raise_to_call.review_queue_hands == 1
+    assert [hand.job_id for hand in raise_to_call.review_queue] == ["3" * 32]
+
+
+def test_summarize_training_prioritizes_pending_action_differences() -> None:
+    reviewed_at = datetime(2026, 7, 10, tzinfo=timezone.utc)
+    actions = [
+        ("fold", "call", reviewed_at),
+        ("fold", "call", reviewed_at),
+        ("fold", "call", reviewed_at),
+        ("check", "bet", reviewed_at),
+        ("check", "bet", reviewed_at),
+        ("call", "raise", reviewed_at),
+        ("bet", "raise", None),
+    ]
+    jobs = [
+        reviewed_job(
+            f"{index:032x}",
+            "flop",
+            decision_action,
+            recommended_action,
+            datetime(2026, 7, index, tzinfo=timezone.utc),
+            training_reviewed_at=training_reviewed_at,
+        )
+        for index, (
+            decision_action,
+            recommended_action,
+            training_reviewed_at,
+        ) in enumerate(actions, start=1)
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert [
+        (
+            difference.decision_action,
+            difference.recommended_action,
+            difference.hands,
+            difference.needs_review_hands,
+        )
+        for difference in progress.action_differences
+    ] == [
+        ("bet", "raise", 1, 1),
+        ("fold", "call", 3, 0),
+        ("check", "bet", 2, 0),
+        ("call", "raise", 1, 0),
+    ]
 
 
 def test_summarize_training_limits_review_queue_independently() -> None:

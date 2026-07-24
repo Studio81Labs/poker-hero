@@ -99,9 +99,15 @@ export interface TrainingActionDifference {
   decision_action: RecommendationAction;
   recommended_action: RecommendationAction;
   hands: number;
+  needs_review_hands: number;
   ev_compared_hands: number;
   average_ev_loss_bb: number | null;
 }
+
+export type TrainingReviewDifference = Pick<
+  TrainingActionDifference,
+  "decision_action" | "recommended_action"
+>;
 
 export interface TrainingProgress {
   reviewed_hands: number;

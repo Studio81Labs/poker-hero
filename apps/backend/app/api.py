@@ -31,6 +31,7 @@ from app.models import (
     BenchmarkSelectionRequest,
     CanonicalState,
     JobRecord,
+    RecommendationAction,
     RecommendationRequest,
     Street,
     TrainingDecision,
@@ -338,11 +339,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_training_progress(
         review_order: TrainingReviewOrder = "recent",
         review_street: Street | None = None,
+        review_decision_action: RecommendationAction | None = None,
+        review_recommended_action: RecommendationAction | None = None,
     ) -> TrainingProgress:
+        if (review_decision_action is None) != (review_recommended_action is None):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "review_decision_action and review_recommended_action "
+                    "must be provided together"
+                ),
+            )
+        review_action_difference = (
+            (review_decision_action, review_recommended_action)
+            if review_decision_action is not None
+            and review_recommended_action is not None
+            else None
+        )
         return summarize_training(
             store.list(),
             review_order=review_order,
             review_street=review_street,
+            review_action_difference=review_action_difference,
         )
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)

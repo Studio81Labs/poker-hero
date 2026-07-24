@@ -729,10 +729,18 @@ describe("App", () => {
       training_reviewed_at: "2026-07-20T12:05:00Z",
       training_review_note: "Call needs less equity than the raise.",
     };
+    const updatedReviewJob = {
+      ...completedReviewJob,
+      training_review_note: "Count the bluff combinations before raising.",
+    };
+    const clearedReviewJob = {
+      ...completedReviewJob,
+      training_review_note: null,
+    };
     const reopenedReviewJob = {
       ...revealedJob,
       training_reviewed_at: null,
-      training_review_note: "Call needs less equity than the raise.",
+      training_review_note: null,
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
@@ -740,6 +748,8 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse(decisionJob))
       .mockResolvedValueOnce(jsonResponse(revealedJob))
       .mockResolvedValueOnce(jsonResponse(completedReviewJob))
+      .mockResolvedValueOnce(jsonResponse(updatedReviewJob))
+      .mockResolvedValueOnce(jsonResponse(clearedReviewJob))
       .mockResolvedValueOnce(jsonResponse(reopenedReviewJob));
     render(<App />);
 
@@ -768,16 +778,46 @@ describe("App", () => {
       body: JSON.stringify({ note: "Call needs less equity than the raise." }),
     });
 
+    await user.click(screen.getByRole("button", { name: "Edit training review note" }));
+    const editNote = screen.getByLabelText("Edit training review note");
+    expect(within(comparison).getByRole("button", { name: "Reopen review" })).toBeDisabled();
+    await user.clear(editNote);
+    await user.type(editNote, "Count the bluff combinations before raising.");
+    await user.click(screen.getByRole("button", { name: "Save note" }));
+
+    expect(await screen.findByText("Lesson note updated")).toBeInTheDocument();
+    expect(screen.getByLabelText("Saved training review note")).toHaveTextContent(
+      "Count the bluff combinations before raising.",
+    );
+    expect(within(comparison).getByText("Reviewed")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[5][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ note: "Count the bluff combinations before raising." }),
+    });
+
+    await user.click(screen.getByRole("button", { name: "Edit training review note" }));
+    await user.clear(screen.getByLabelText("Edit training review note"));
+    await user.click(screen.getByRole("button", { name: "Save note" }));
+
+    expect(await screen.findByText("Lesson note removed")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Saved training review note")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add lesson note" })).toBeInTheDocument();
+    expect(within(comparison).getByText("Reviewed")).toBeInTheDocument();
+    expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[6][1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({ note: null }),
+    });
+
     await user.click(within(comparison).getByRole("button", { name: "Reopen review" }));
 
     expect(await within(comparison).findByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
     expect(within(comparison).queryByText("Reviewed")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Training review note")).toHaveValue(
-      "Call needs less equity than the raise.",
-    );
+    expect(screen.getByLabelText("Training review note")).toHaveValue("");
     expect(await screen.findByText("Training review reopened")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[5][1]).toMatchObject({ method: "DELETE" });
+    expect(fetchMock().mock.calls[7][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[7][1]).toMatchObject({ method: "DELETE" });
   });
 
   it("records a selected answer automatically when recommendation is requested", async () => {

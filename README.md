@@ -145,7 +145,8 @@ opens the next matching hand, then returns to the empty queue when the session
 is complete. A review can include a short lesson note. Notes stay attached to
 the hand in progress history and return to the editor when a review is reopened.
 Completed notes also appear in a dedicated Lessons view, ordered by review time
-and kept independently from the shorter recent-decisions list.
+and kept independently from the shorter recent-decisions list. A completed
+lesson note can be edited or removed in place without reopening the review.
 Changing the approved state, training answer, or recommendation clears the note
 because the comparison it described is no longer current.
 

@@ -206,14 +206,32 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
     filtered = client.get(
-        "/api/training/progress?review_order=ev_loss&review_street=flop"
+        "/api/training/progress"
+        "?review_order=ev_loss"
+        "&review_street=flop"
+        "&review_decision_action=fold"
+        "&review_recommended_action=call"
     )
     invalid_order = client.get("/api/training/progress?review_order=unknown")
     invalid_street = client.get("/api/training/progress?review_street=showdown")
+    incomplete_difference = client.get(
+        "/api/training/progress?review_decision_action=fold"
+    )
+    invalid_difference = client.get(
+        "/api/training/progress"
+        "?review_decision_action=jam"
+        "&review_recommended_action=call"
+    )
 
     assert filtered.status_code == 200
     assert invalid_order.status_code == 422
     assert invalid_street.status_code == 422
+    assert incomplete_difference.status_code == 422
+    assert incomplete_difference.json()["detail"] == (
+        "review_decision_action and review_recommended_action "
+        "must be provided together"
+    )
+    assert invalid_difference.status_code == 422
 
 
 def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_path: Path) -> None:

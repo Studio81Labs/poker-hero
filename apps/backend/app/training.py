@@ -24,6 +24,7 @@ MIN_SUPPORTED_FREQUENCY = 0.05
 MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 PolicySupport = Literal["line", "action"]
+TrainingActionDifferenceFilter = tuple[RecommendationAction, RecommendationAction]
 
 
 def summarize_training(
@@ -32,6 +33,7 @@ def summarize_training(
     review_limit: int = 24,
     review_order: TrainingReviewOrder = "recent",
     review_street: Street | None = None,
+    review_action_difference: TrainingActionDifferenceFilter | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -100,10 +102,25 @@ def summarize_training(
     filtered_review_jobs = [
         job
         for job in pending_review_jobs
-        if review_street is None
-        or (
-            job.approved_state is not None
-            and job.approved_state.street == review_street
+        if (
+            review_street is None
+            or (
+                job.approved_state is not None
+                and job.approved_state.street == review_street
+            )
+        )
+        and (
+            review_action_difference is None
+            or (
+                outcomes[job.id] == "different"
+                and job.training_decision is not None
+                and job.recommendation is not None
+                and (
+                    job.training_decision.action,
+                    job.recommendation.action,
+                )
+                == review_action_difference
+            )
         )
     ]
     if review_order == "ev_loss":
@@ -395,6 +412,9 @@ def _action_differences(
                 decision_action=decision_action,
                 recommended_action=recommended_action,
                 hands=len(jobs),
+                needs_review_hands=sum(
+                    job.training_reviewed_at is None for job in jobs
+                ),
                 ev_compared_hands=len(difference_ev_losses),
                 average_ev_loss_bb=_average_ev_loss(difference_ev_losses),
             )

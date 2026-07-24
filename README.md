@@ -129,7 +129,9 @@ capped at ten hands each, so action, exact-line, and available EV-loss movement
 is visible without letting a larger period skew the trend. Common unsupported
 action choices are grouped by the player's action and the solver's headline
 action, with available average EV loss, to make repeated differences easier to
-study.
+study. A pattern with pending work can open a review queue scoped to that exact
+action pair; street and EV-loss ordering remain available within the focused
+queue.
 
 ### Offline Parser Benchmarks
 

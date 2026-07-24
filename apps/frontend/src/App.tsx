@@ -41,6 +41,7 @@ import type {
   SystemInfo,
   TrainingOutcome,
   TrainingProgress,
+  TrainingReviewDifference,
   TrainingReviewOrder,
   TrainingReviewStreet,
 } from "./types";
@@ -758,6 +759,7 @@ function trainingReviewQueueStatus(
   loading: boolean,
   order: TrainingReviewOrder,
   street: TrainingReviewStreet,
+  difference: TrainingReviewDifference | null,
 ): string {
   if (view !== "review") {
     return "Automation-only hands are not scored.";
@@ -770,7 +772,11 @@ function trainingReviewQueueStatus(
   }
 
   const matchingHands = progress.review_queue_hands ?? progress.review_queue.length;
-  const scope = street === "all" ? "across all streets" : `on ${street}`;
+  const actionScope = difference
+    ? `for ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)}`
+    : null;
+  const streetScope = street === "all" ? "across all streets" : `on ${street}`;
+  const scope = [actionScope, streetScope].filter(Boolean).join(" ");
   if (matchingHands > progress.review_queue.length) {
     const orderLabel = order === "ev_loss" ? "highest-loss" : "newest";
     return `Showing ${progress.review_queue.length} ${orderLabel} of ${matchingHands} review hands ${scope}.`;
@@ -1347,6 +1353,7 @@ export default function App() {
   const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
   const [trainingReviewOrder, setTrainingReviewOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
+  const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
   const [benchmarkDialogOpen, setBenchmarkDialogOpen] = useState(false);
@@ -1468,6 +1475,7 @@ export default function App() {
     trainingProgressLoading,
     trainingReviewOrder,
     trainingReviewStreet,
+    trainingReviewDifference,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -1943,7 +1951,11 @@ export default function App() {
       const reopenedJob = await reopenTrainingReview(jobId);
       setJobs((current) => current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)));
       updateHistoryJob(reopenedJob);
-      setTrainingProgress(await getTrainingProgress(trainingReviewOrder, trainingReviewStreet));
+      setTrainingProgress(await getTrainingProgress(
+        trainingReviewOrder,
+        trainingReviewStreet,
+        trainingReviewDifference,
+      ));
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
@@ -2003,6 +2015,7 @@ export default function App() {
     setTrainingProgressView("recent");
     setTrainingReviewOrder("recent");
     setTrainingReviewStreet("all");
+    setTrainingReviewDifference(null);
     setTrainingProgressLoading(true);
     setError(null);
     void getTrainingProgress()
@@ -2014,24 +2027,37 @@ export default function App() {
   async function updateTrainingReviewQueue(
     reviewOrder: TrainingReviewOrder,
     reviewStreet: TrainingReviewStreet,
+    reviewDifference: TrainingReviewDifference | null = trainingReviewDifference,
   ) {
     if (
-      (reviewOrder === trainingReviewOrder && reviewStreet === trainingReviewStreet)
+      (
+        reviewOrder === trainingReviewOrder
+        && reviewStreet === trainingReviewStreet
+        && reviewDifference?.decision_action === trainingReviewDifference?.decision_action
+        && reviewDifference?.recommended_action === trainingReviewDifference?.recommended_action
+      )
       || trainingProgressLoading
     ) {
       return;
     }
     const previousOrder = trainingReviewOrder;
     const previousStreet = trainingReviewStreet;
+    const previousDifference = trainingReviewDifference;
     setTrainingReviewOrder(reviewOrder);
     setTrainingReviewStreet(reviewStreet);
+    setTrainingReviewDifference(reviewDifference);
     setTrainingProgressLoading(true);
     setError(null);
     try {
-      setTrainingProgress(await getTrainingProgress(reviewOrder, reviewStreet));
+      setTrainingProgress(await getTrainingProgress(
+        reviewOrder,
+        reviewStreet,
+        reviewDifference,
+      ));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
       setTrainingReviewStreet(previousStreet);
+      setTrainingReviewDifference(previousDifference);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2040,7 +2066,14 @@ export default function App() {
 
   async function focusTrainingReviewStreet(street: Street) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, street);
+    await updateTrainingReviewQueue(trainingReviewOrder, street, null);
+  }
+
+  async function focusTrainingActionDifference(
+    difference: TrainingReviewDifference,
+  ) {
+    setTrainingProgressView("review");
+    await updateTrainingReviewQueue(trainingReviewOrder, "all", difference);
   }
 
   async function reviewTrainingHand(jobId: string) {
@@ -3105,6 +3138,23 @@ export default function App() {
                                 ? `${formatEvLossBb(difference.average_ev_loss_bb)} avg loss`
                                 : "EV ungraded"}
                             </em>
+                            <button
+                              type="button"
+                              className="training-difference-review"
+                              onClick={() => void focusTrainingActionDifference(difference)}
+                              disabled={
+                                difference.needs_review_hands === 0
+                                || trainingProgressLoading
+                                || trainingReviewJobId !== null
+                                || busy
+                              }
+                              aria-label={`Review ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} differences`}
+                              title={difference.needs_review_hands > 0
+                                ? `${difference.needs_review_hands} pending review${difference.needs_review_hands === 1 ? "" : "s"}`
+                                : "No pending reviews"}
+                            >
+                              <Eye size={14} aria-hidden="true" />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -3219,6 +3269,28 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+                    {trainingProgressView === "review" && trainingReviewDifference ? (
+                      <div className="training-active-difference" aria-label="Active action-difference filter">
+                        <span>
+                          {trainingDecisionLabel(trainingReviewDifference.decision_action, null)}
+                          <ArrowRight size={12} aria-hidden="true" />
+                          {trainingDecisionLabel(trainingReviewDifference.recommended_action, null)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void updateTrainingReviewQueue(
+                            trainingReviewOrder,
+                            trainingReviewStreet,
+                            null,
+                          )}
+                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                          aria-label="Clear action-difference filter"
+                          title="Clear action-difference filter"
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
                     {visibleTrainingHands.length > 0 ? (
                       <div className="recent-training-list">
                         {visibleTrainingHands.map((hand) => (

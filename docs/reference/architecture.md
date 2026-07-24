@@ -115,7 +115,11 @@ player's action and the headline recommendation, ordered by frequency and then
 available average EV loss. Solver-supported mixed actions and same-action
 sizing differences are excluded so the summary does not overstate mistakes.
 Patterns retain their full hand count while averaging EV over only the hands
-with comparable candidate grades. The headline recommendation is always
+with comparable candidate grades, and expose a separate pending-review count.
+The review endpoint accepts player-action and headline-action filters only as a
+complete pair. That pair selects unsupported action outcomes before optional
+street filtering, ordering, and limiting, so solver-supported mixed actions are
+not pulled into a focused pattern queue. The headline recommendation is always
 supported. Alternate provider candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is

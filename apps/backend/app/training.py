@@ -422,6 +422,7 @@ def _action_differences(
     return sorted(
         summaries,
         key=lambda summary: (
+            summary.needs_review_hands == 0,
             -summary.hands,
             summary.average_ev_loss_bb is None,
             -(summary.average_ev_loss_bb or 0),

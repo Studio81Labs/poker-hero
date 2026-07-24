@@ -82,6 +82,8 @@ The frontend is a browser control panel for:
   still has pending reviews.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
+- Saving a short lesson note with a completed review and seeing it in progress
+  history or when reopening that review.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
@@ -204,13 +206,14 @@ frequencies.
     lowest action accuracy.
 14. A common unsupported action pattern may focus the review queue on that
     exact player-action and solver-action pair.
-15. The user may mark a revisited difference reviewed, which removes it from the
-    pending queue while preserving it in progress history.
+15. The user may mark a revisited difference reviewed with an optional lesson
+    note, which removes it from the pending queue while preserving both in
+    progress history.
 16. When that hand was opened from the review queue, the UI reloads the same
     action-pair, street, and order filters and opens the next matching hand. An
     exhausted queue returns to its empty review view.
-17. A completed review may be reopened, returning the unchanged comparison to
-    the pending queue.
+17. A completed review may be reopened, returning the unchanged comparison and
+    its editable lesson note to the pending queue.
 18. The UI retains completed items in processing until the user clears them into history.
 19. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
@@ -271,7 +274,8 @@ Required behavior:
 - Missing or low-confidence required fields block recommendation until corrected.
 - Parser and provider raw responses are stored for debugging.
 - A training answer cannot be added or changed after recommendation output is revealed.
-- Re-approval or a new recommendation clears any completed training-review marker.
+- Re-approval, a changed training answer, or a new recommendation clears any
+  completed training-review marker and lesson note.
 - Parser or provider failures are recoverable in the UI.
 - Batch failures are isolated and surfaced on the affected queue items.
 - Users can retry with the currently configured backend.
@@ -368,6 +372,8 @@ Poker Hero is successful when:
   reopening progress after every completed review.
 - A user can reopen a completed review without changing the locked answer or
   recommendation.
+- A user can save a short lesson note with a review, find it in progress
+  history, and edit it after reopening the unchanged comparison.
 - Solver-backed recommendations expose available decision evidence, including
   preflop chart policy context and postflop tree/range assumptions, and disclose
   when a configured engine used a fallback.

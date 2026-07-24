@@ -470,5 +470,6 @@ def _recent_hand(
         outcome=outcome,
         recorded_at=decision.recorded_at,
         reviewed_at=job.training_reviewed_at,
+        review_note=job.training_review_note,
         ev_loss_bb=ev_loss_bb,
     )

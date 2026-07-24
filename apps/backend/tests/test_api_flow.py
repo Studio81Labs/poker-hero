@@ -130,10 +130,16 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
         json={"action": "raise", "sizing": 7.5},
     )
     client.post(f"/api/jobs/{job_id}/recommend")
-    review = client.put(f"/api/jobs/{job_id}/training-review")
+    review = client.put(
+        f"/api/jobs/{job_id}/training-review",
+        json={"note": "Review the call price before choosing a raise."},
+    )
 
     assert review.status_code == 200
     assert review.json()["training_reviewed_at"]
+    assert review.json()["training_review_note"] == (
+        "Review the call price before choosing a raise."
+    )
 
     corrected_state = {**APPROVED_STATE, "pot_size": 18.0}
     response = approve_job(client, job_id, corrected_state)
@@ -145,6 +151,7 @@ def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     assert job["training_decision"] is None
     assert job["recommendation"] is None
     assert job["training_reviewed_at"] is None
+    assert job["training_review_note"] is None
     assert FileJobStore(tmp_path).get(job_id).recommendation is None
 
 
@@ -245,33 +252,69 @@ def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_
     client.post(f"/api/jobs/{job_id}/recommend")
 
     before_review = client.get("/api/training/progress").json()
-    response = client.put(f"/api/jobs/{job_id}/training-review")
+    too_long = client.put(
+        f"/api/jobs/{job_id}/training-review",
+        json={"note": "x" * 1001},
+    )
+    response = client.put(
+        f"/api/jobs/{job_id}/training-review",
+        json={"note": "  Watch the call price and blockers.  "},
+    )
     repeated = client.put(f"/api/jobs/{job_id}/training-review")
     after_review = client.get("/api/training/progress").json()
+    updated = client.put(
+        f"/api/jobs/{job_id}/training-review",
+        json={"note": "Review blockers before raising."},
+    )
+    after_update = client.get("/api/training/progress").json()
     reopened = client.delete(f"/api/jobs/{job_id}/training-review")
     repeated_reopen = client.delete(f"/api/jobs/{job_id}/training-review")
     after_reopen = client.get("/api/training/progress").json()
 
     assert before_review["needs_review_hands"] == 1
     assert before_review["review_queue"][0]["job_id"] == job_id
+    assert too_long.status_code == 422
     assert response.status_code == 200
     assert response.json()["training_reviewed_at"]
+    assert response.json()["training_review_note"] == (
+        "Watch the call price and blockers."
+    )
     assert repeated.status_code == 200
     assert repeated.json()["training_reviewed_at"] == response.json()["training_reviewed_at"]
+    assert repeated.json()["training_review_note"] == response.json()["training_review_note"]
     assert after_review["reviewed_hands"] == 1
     assert after_review["different_actions"] == 1
     assert after_review["needs_review_hands"] == 0
     assert after_review["review_queue"] == []
     assert after_review["recent_hands"][0]["reviewed_at"] == response.json()["training_reviewed_at"]
+    assert after_review["recent_hands"][0]["review_note"] == (
+        "Watch the call price and blockers."
+    )
+    assert updated.status_code == 200
+    assert updated.json()["training_reviewed_at"] == response.json()["training_reviewed_at"]
+    assert updated.json()["training_review_note"] == "Review blockers before raising."
+    assert after_update["recent_hands"][0]["review_note"] == (
+        "Review blockers before raising."
+    )
     assert reopened.status_code == 200
     assert reopened.json()["training_reviewed_at"] is None
+    assert reopened.json()["training_review_note"] == "Review blockers before raising."
     assert repeated_reopen.status_code == 200
     assert repeated_reopen.json()["training_reviewed_at"] is None
+    assert repeated_reopen.json()["training_review_note"] == (
+        "Review blockers before raising."
+    )
     assert after_reopen["reviewed_hands"] == 1
     assert after_reopen["different_actions"] == 1
     assert after_reopen["needs_review_hands"] == 1
     assert after_reopen["review_queue"][0]["job_id"] == job_id
+    assert after_reopen["review_queue"][0]["review_note"] == (
+        "Review blockers before raising."
+    )
     assert after_reopen["recent_hands"][0]["reviewed_at"] is None
+    assert after_reopen["recent_hands"][0]["review_note"] == (
+        "Review blockers before raising."
+    )
     assert FileJobStore(tmp_path).get(job_id).training_reviewed_at is None
 
 

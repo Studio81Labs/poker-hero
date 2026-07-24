@@ -77,6 +77,7 @@ export interface TrainingRecentHand {
   outcome: TrainingOutcome;
   recorded_at: string;
   reviewed_at: string | null;
+  review_note: string | null;
   ev_loss_bb: number | null;
 }
 
@@ -140,6 +141,7 @@ export interface JobRecord {
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
   training_reviewed_at: string | null;
+  training_review_note: string | null;
   benchmark_included: boolean;
   error: string | null;
   created_at: string;

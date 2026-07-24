@@ -1270,6 +1270,110 @@ describe("App", () => {
     expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/high-job");
   });
 
+  it("filters and continues training reviews by decision certainty", async () => {
+    const highHand = {
+      job_id: "high-certainty-job",
+      original_filename: "high-certainty.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      decision_certainty: "high" as const,
+      recommended_action: "raise" as const,
+      recommended_sizing: 7.5,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 1.1,
+    };
+    const unratedHand = {
+      ...highHand,
+      job_id: "unrated-job",
+      original_filename: "unrated.png",
+      decision_certainty: null,
+      recorded_at: "2026-07-20T12:00:00Z",
+      ev_loss_bb: 0.2,
+    };
+    const progress = {
+      reviewed_hands: 2,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 2,
+      needs_review_hands: 2,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 0.65,
+      street_summaries: [],
+      recent_hands: [highHand, unratedHand],
+      review_queue_hands: 2,
+      review_queue: [highHand, unratedHand],
+    };
+    const highProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [highHand],
+    };
+    const completedProgress = {
+      ...progress,
+      needs_review_hands: 1,
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    const highJob = recommendedJob();
+    highJob.id = highHand.job_id;
+    highJob.original_filename = highHand.original_filename;
+    highJob.training_decision = {
+      action: "fold",
+      sizing: null,
+      certainty: "high",
+      recorded_at: highHand.recorded_at,
+    };
+    const reviewedHighJob = {
+      ...highJob,
+      training_reviewed_at: "2026-07-20T14:00:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(highProgress))
+      .mockResolvedValueOnce(jsonResponse(highJob))
+      .mockResolvedValueOnce(jsonResponse(reviewedHighJob))
+      .mockResolvedValueOnce(jsonResponse(completedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", { name: "Needs review 2" }));
+    await user.selectOptions(within(dialog).getByLabelText("Review certainty"), "high");
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_certainty=high",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand across all streets with high certainty.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open high-certainty.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", {
+      name: "Open unrated.png training review",
+    })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Review next" }));
+    await user.click(await screen.findByRole("button", { name: "Mark reviewed & next" }));
+
+    const completedDialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(completedDialog).getByLabelText("Review certainty")).toHaveValue("high");
+    expect(within(completedDialog).getByText(
+      "No pending review hands across all streets with high certainty.",
+    )).toBeInTheDocument();
+    expect(fetchMock().mock.calls[4][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_certainty=high",
+    );
+  });
+
   it("falls back to action accuracy when suggesting an ungraded focus street", async () => {
     const hand = {
       job_id: "focus-job",

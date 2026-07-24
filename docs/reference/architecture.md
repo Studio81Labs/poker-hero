@@ -145,10 +145,12 @@ lines. It defaults to newest-first order. An explicit EV-loss order ranks
 graded hands by descending loss, breaks ties by recency, and keeps ungraded
 hands afterward in recent-first order. Ordering happens before the queue limit
 so an older costly mistake remains discoverable.
-An optional street filter is applied before that ordering and limit. The
-response keeps the global pending-review count separate from the number of
-hands matching the active filter, so a focused queue does not misrepresent
-overall progress.
+An optional street filter is applied before that ordering and limit. The review
+queue can also select low, medium, high, or unrated decisions. Certainty, street,
+and complete action-pair filters compose before ordering and limiting. The
+response keeps the global pending-review count separate from the number of hands
+matching the active filter, so a focused queue does not misrepresent overall
+progress.
 Pending counts are also returned per street. The frontend uses only streets
 with pending work when suggesting a focus: highest average EV loss wins when
 comparable EV grades exist, otherwise the lowest action accuracy wins. Pending
@@ -162,7 +164,8 @@ the review marker explicitly reopens the same comparison and returns it to the
 pending queue while retaining the note for editing.
 The frontend treats a hand opened from that queue as a review session. After
 persisting its review marker, it reloads the progress endpoint with the current
-action-pair, street, and order parameters and opens the first remaining hand.
+action-pair, street, certainty, and order parameters and opens the first
+remaining hand.
 An exhausted session returns to the filtered empty queue; a continuation error
 does not roll back or misreport the review that already completed.
 

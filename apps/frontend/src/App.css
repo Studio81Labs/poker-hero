@@ -2193,7 +2193,9 @@ button:disabled {
 .training-review-controls {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
 }
 
 .training-review-order {

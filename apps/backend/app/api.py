@@ -37,6 +37,7 @@ from app.models import (
     TrainingDecision,
     TrainingDecisionRequest,
     TrainingProgress,
+    TrainingReviewCertainty,
     TrainingReviewOrder,
     TrainingReviewRequest,
 )
@@ -353,6 +354,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_training_progress(
         review_order: TrainingReviewOrder = "recent",
         review_street: Street | None = None,
+        review_certainty: TrainingReviewCertainty | None = None,
         review_decision_action: RecommendationAction | None = None,
         review_recommended_action: RecommendationAction | None = None,
     ) -> TrainingProgress:
@@ -374,6 +376,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store.list(),
             review_order=review_order,
             review_street=review_street,
+            review_certainty=review_certainty,
             review_action_difference=review_action_difference,
         )
 

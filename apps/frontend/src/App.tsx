@@ -42,6 +42,7 @@ import type {
   TrainingCertainty,
   TrainingOutcome,
   TrainingProgress,
+  TrainingReviewCertaintyFilter,
   TrainingReviewDifference,
   TrainingReviewOrder,
   TrainingReviewStreet,
@@ -768,6 +769,7 @@ function trainingReviewQueueStatus(
   order: TrainingReviewOrder,
   street: TrainingReviewStreet,
   difference: TrainingReviewDifference | null,
+  certainty: TrainingReviewCertaintyFilter,
 ): string {
   if (view !== "review") {
     return "Automation-only hands are not scored.";
@@ -784,7 +786,12 @@ function trainingReviewQueueStatus(
     ? `for ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)}`
     : null;
   const streetScope = street === "all" ? "across all streets" : `on ${street}`;
-  const scope = [actionScope, streetScope].filter(Boolean).join(" ");
+  const certaintyScope = certainty === "all"
+    ? null
+    : certainty === "unrated"
+      ? "without a certainty rating"
+      : `with ${certainty} certainty`;
+  const scope = [actionScope, streetScope, certaintyScope].filter(Boolean).join(" ");
   if (matchingHands > progress.review_queue.length) {
     const orderLabel = order === "ev_loss" ? "highest-loss" : "newest";
     return `Showing ${progress.review_queue.length} ${orderLabel} of ${matchingHands} review hands ${scope}.`;
@@ -1364,6 +1371,7 @@ export default function App() {
   const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
   const [trainingReviewOrder, setTrainingReviewOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
+  const [trainingReviewCertainty, setTrainingReviewCertainty] = useState<TrainingReviewCertaintyFilter>("all");
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
   const [trainingProgressLoading, setTrainingProgressLoading] = useState(false);
   const [trainingReviewJobId, setTrainingReviewJobId] = useState<string | null>(null);
@@ -1488,6 +1496,7 @@ export default function App() {
     trainingReviewOrder,
     trainingReviewStreet,
     trainingReviewDifference,
+    trainingReviewCertainty,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -1976,6 +1985,7 @@ export default function App() {
           trainingReviewOrder,
           trainingReviewStreet,
           trainingReviewDifference,
+          trainingReviewCertainty,
         );
         setTrainingProgress(progress);
         const nextHand = progress.review_queue[0] ?? null;
@@ -2035,6 +2045,7 @@ export default function App() {
         trainingReviewOrder,
         trainingReviewStreet,
         trainingReviewDifference,
+        trainingReviewCertainty,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2096,6 +2107,7 @@ export default function App() {
     setTrainingProgressView("recent");
     setTrainingReviewOrder("recent");
     setTrainingReviewStreet("all");
+    setTrainingReviewCertainty("all");
     setTrainingReviewDifference(null);
     setTrainingProgressLoading(true);
     setError(null);
@@ -2109,11 +2121,13 @@ export default function App() {
     reviewOrder: TrainingReviewOrder,
     reviewStreet: TrainingReviewStreet,
     reviewDifference: TrainingReviewDifference | null = trainingReviewDifference,
+    reviewCertainty: TrainingReviewCertaintyFilter = trainingReviewCertainty,
   ) {
     if (
       (
         reviewOrder === trainingReviewOrder
         && reviewStreet === trainingReviewStreet
+        && reviewCertainty === trainingReviewCertainty
         && reviewDifference?.decision_action === trainingReviewDifference?.decision_action
         && reviewDifference?.recommended_action === trainingReviewDifference?.recommended_action
       )
@@ -2123,9 +2137,11 @@ export default function App() {
     }
     const previousOrder = trainingReviewOrder;
     const previousStreet = trainingReviewStreet;
+    const previousCertainty = trainingReviewCertainty;
     const previousDifference = trainingReviewDifference;
     setTrainingReviewOrder(reviewOrder);
     setTrainingReviewStreet(reviewStreet);
+    setTrainingReviewCertainty(reviewCertainty);
     setTrainingReviewDifference(reviewDifference);
     setTrainingProgressLoading(true);
     setError(null);
@@ -2134,10 +2150,12 @@ export default function App() {
         reviewOrder,
         reviewStreet,
         reviewDifference,
+        reviewCertainty,
       ));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
       setTrainingReviewStreet(previousStreet);
+      setTrainingReviewCertainty(previousCertainty);
       setTrainingReviewDifference(previousDifference);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
@@ -2147,14 +2165,14 @@ export default function App() {
 
   async function focusTrainingReviewStreet(street: Street) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, street, null);
+    await updateTrainingReviewQueue(trainingReviewOrder, street, null, "all");
   }
 
   async function focusTrainingActionDifference(
     difference: TrainingReviewDifference,
   ) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, "all", difference);
+    await updateTrainingReviewQueue(trainingReviewOrder, "all", difference, "all");
   }
 
   async function reviewTrainingHand(jobId: string) {
@@ -3422,6 +3440,26 @@ export default function App() {
                                 <option value="flop">Flop</option>
                                 <option value="turn">Turn</option>
                                 <option value="river">River</option>
+                              </select>
+                            </label>
+                            <label className="training-review-order">
+                              <span>Certainty</span>
+                              <select
+                                aria-label="Review certainty"
+                                value={trainingReviewCertainty}
+                                onChange={(event) => void updateTrainingReviewQueue(
+                                  trainingReviewOrder,
+                                  trainingReviewStreet,
+                                  trainingReviewDifference,
+                                  event.target.value as TrainingReviewCertaintyFilter,
+                                )}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              >
+                                <option value="all">All</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                                <option value="unrated">Unrated</option>
                               </select>
                             </label>
                           </>

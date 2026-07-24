@@ -15,6 +15,7 @@ from app.models import (
     TrainingOutcome,
     TrainingProgress,
     TrainingRecentHand,
+    TrainingReviewCertainty,
     TrainingReviewOrder,
     TrainingStreetSummary,
     TrainingTrend,
@@ -36,6 +37,7 @@ def summarize_training(
     review_limit: int = 24,
     review_order: TrainingReviewOrder = "recent",
     review_street: Street | None = None,
+    review_certainty: TrainingReviewCertainty | None = None,
     review_action_difference: TrainingActionDifferenceFilter | None = None,
 ) -> TrainingProgress:
     reviewed = [
@@ -145,6 +147,19 @@ def summarize_training(
             or (
                 job.approved_state is not None
                 and job.approved_state.street == review_street
+            )
+        )
+        and (
+            review_certainty is None
+            or (
+                job.training_decision is not None
+                and (
+                    (
+                        review_certainty == "unrated"
+                        and job.training_decision.certainty is None
+                    )
+                    or job.training_decision.certainty == review_certainty
+                )
             )
         )
         and (

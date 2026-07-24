@@ -77,8 +77,9 @@ The frontend is a browser control panel for:
 - Opening a repeated action-difference pattern as a focused review queue while
   retaining street and EV-loss ordering controls.
 - Filtering decisions to a bounded needs-review queue for action or sizing
-  differences, focusing it by street, ordering it by recency or available EV
-  loss, and reopening the persisted hand.
+  differences, focusing it by street and pre-reveal certainty, ordering it by
+  recency or available EV loss, and reopening the persisted hand. Legacy hands
+  without a certainty rating remain available through an unrated filter.
 - Continuing through hands in the active filtered review queue after each
   completed review, then returning to the queue when no matching hands remain.
 - Opening a suggested focus street directly from progress when that street
@@ -203,9 +204,9 @@ frequencies.
     calibration; unrated hands remain in every other aggregate.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
-    focus the queue on one street and prioritize the highest available EV
-    losses; filtering happens before ordering and limiting, and ungraded hands
-    remain available after graded ones.
+    focus the queue on one street and certainty rating and prioritize the
+    highest available EV losses; filters compose before ordering and limiting,
+    and ungraded hands remain available after graded ones.
 13. Progress may suggest a street that still has pending reviews, preferring
     the highest average EV loss when comparable grades exist and otherwise the
     lowest action accuracy.
@@ -215,8 +216,8 @@ frequencies.
     note, which removes it from the pending queue while preserving both in
     progress history.
 16. When that hand was opened from the review queue, the UI reloads the same
-    action-pair, street, and order filters and opens the next matching hand. An
-    exhausted queue returns to its empty review view.
+    action-pair, street, certainty, and order filters and opens the next
+    matching hand. An exhausted queue returns to its empty review view.
 17. A completed review may be reopened, returning the unchanged comparison and
     its editable lesson note to the pending queue.
 18. The UI retains completed items in processing until the user clears them into history.
@@ -374,6 +375,8 @@ Poker Hero is successful when:
   decisions are reviewed first without hiding ungraded hands.
 - A user can focus pending reviews on one street without changing global
   accuracy or hiding the total number of reviews still pending.
+- A user can focus pending reviews by low, medium, or high pre-reveal certainty,
+  or isolate legacy unrated hands, without changing global progress.
 - A user can open an actionable suggested focus street from progress without
   manually comparing the street summary and pending queue.
 - A user can complete that review so it leaves the pending queue without

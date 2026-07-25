@@ -98,8 +98,10 @@ The frontend is a browser control panel for:
   returning it to the pending queue.
 - Filtering the full saved lesson set by street and case-insensitive note text
   while keeping total and matching counts distinct.
+- Ordering the filtered lesson set by recency or highest available EV loss
+  before the bounded display limit, while retaining ungraded lessons afterward.
 - Downloading the active filtered lesson set as a complete Markdown study
-  document independently from the bounded on-screen list.
+  document in the selected order independently from the bounded on-screen list.
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
@@ -122,8 +124,8 @@ The backend API:
 - Persists the latest benchmark report with case and field-level accuracy.
 - Derives training progress from completed decision/recommendation pairs without
   scoring automation-only hands.
-- Exports the full filtered completed-lesson set as a portable Markdown study
-  document.
+- Exports the full filtered and ordered completed-lesson set as a portable
+  Markdown study document.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
 - Routes recommendation requests to the configured provider.
 
@@ -234,10 +236,11 @@ frequencies.
     matching hand. An exhausted queue returns to its empty review view.
 17. A completed review may be reopened, returning the unchanged comparison and
     its editable lesson note to the pending queue.
-18. Saved lessons may be filtered by street and note text before the bounded
-    newest-first lesson list is returned.
-19. The active lesson filters can produce a complete Markdown download without
-    applying the on-screen list limit.
+18. Saved lessons may be filtered by street and note text, then ordered by
+    recency or highest available EV loss before the bounded lesson list is
+    returned. Ungraded lessons remain available after graded lessons.
+19. The active lesson filters and order can produce a complete Markdown
+    download without applying the on-screen list limit.
 20. The UI retains completed items in processing until the user clears them into history.
 21. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
@@ -347,8 +350,9 @@ Recommendation tests:
   action, explicit sizing, and finite numeric EV metadata expressed in BB. The
   candidate set must include the recommended line and at least one distinct
   alternative.
-- Verify lesson exports use the same street/text selection as the Lessons view,
-  include every matching note, and reject an empty study set clearly.
+- Verify lesson exports use the same street/text selection and recency/EV-loss
+  order as the Lessons view, include every matching note, and reject an empty
+  study set clearly.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:
@@ -415,6 +419,8 @@ Poker Hero is successful when:
   decisions window without reopening or re-queuing those reviews.
 - A user can correct or remove a completed lesson note while preserving the
   hand's reviewed status.
+- A user can prioritize saved lessons by available EV loss without hiding
+  ungraded lessons or changing the active street/text selection.
 - Solver-backed recommendations expose available decision evidence, including
   preflop chart policy context and postflop tree/range assumptions, and disclose
   when a configured engine used a fallback.

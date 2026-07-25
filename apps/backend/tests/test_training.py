@@ -323,6 +323,75 @@ def test_training_lesson_export_uses_safe_code_span_delimiters() -> None:
     assert "\\`" not in document
 
 
+def test_training_lessons_can_prioritize_ev_loss_before_display_limit() -> None:
+    highest_loss = reviewed_job(
+        "1" * 32,
+        "flop",
+        "fold",
+        "call",
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        recommendation_raw={
+            "candidates": [
+                {"action": "fold", "sizing": None, "ev": -2.0},
+                {"action": "call", "sizing": None, "ev": 0.0},
+            ]
+        },
+        training_reviewed_at=datetime(2026, 7, 10, tzinfo=timezone.utc),
+        training_review_note="Study the highest-loss fold.",
+    )
+    lower_loss = reviewed_job(
+        "2" * 32,
+        "turn",
+        "fold",
+        "call",
+        datetime(2026, 7, 2, tzinfo=timezone.utc),
+        recommendation_raw={
+            "candidates": [
+                {"action": "fold", "sizing": None, "ev": -0.5},
+                {"action": "call", "sizing": None, "ev": 0.0},
+            ]
+        },
+        training_reviewed_at=datetime(2026, 7, 12, tzinfo=timezone.utc),
+        training_review_note="Study the lower-loss fold.",
+    )
+    ungraded = reviewed_job(
+        "3" * 32,
+        "river",
+        "fold",
+        "call",
+        datetime(2026, 7, 3, tzinfo=timezone.utc),
+        training_reviewed_at=datetime(2026, 7, 14, tzinfo=timezone.utc),
+        training_review_note="Keep ungraded lessons available.",
+    )
+    highest_loss.original_filename = "highest-loss.png"
+    lower_loss.original_filename = "lower-loss.png"
+    ungraded.original_filename = "ungraded.png"
+    jobs = [highest_loss, lower_loss, ungraded]
+
+    recent = summarize_training(jobs, lesson_limit=2)
+    prioritized = summarize_training(
+        jobs,
+        lesson_limit=2,
+        lesson_order="ev_loss",
+    )
+    document, exported_count = build_training_lessons_markdown(
+        jobs,
+        lesson_order="ev_loss",
+    )
+
+    assert [hand.job_id for hand in recent.lesson_hands] == [
+        ungraded.id,
+        lower_loss.id,
+    ]
+    assert [hand.job_id for hand in prioritized.lesson_hands] == [
+        highest_loss.id,
+        lower_loss.id,
+    ]
+    assert exported_count == 3
+    assert document.index("highest-loss.png") < document.index("lower-loss.png")
+    assert document.index("lower-loss.png") < document.index("ungraded.png")
+
+
 def test_summarize_training_compares_equal_recent_windows() -> None:
     candidates = {
         "candidates": [

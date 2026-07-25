@@ -36,31 +36,31 @@ def training_lesson_jobs(
     jobs: list[JobRecord],
     lesson_street: Street | None = None,
     lesson_query: str | None = None,
+    lesson_order: TrainingReviewOrder = "recent",
 ) -> list[JobRecord]:
     normalized_query = lesson_query.strip().casefold() if lesson_query else None
-    return sorted(
-        (
-            job
-            for job in jobs
-            if job.training_decision is not None
-            and job.recommendation is not None
-            and job.training_reviewed_at is not None
-            and job.training_review_note is not None
-            and (
-                lesson_street is None
-                or (
-                    job.approved_state is not None
-                    and job.approved_state.street == lesson_street
-                )
+    lesson_jobs = [
+        job
+        for job in jobs
+        if job.training_decision is not None
+        and job.recommendation is not None
+        and job.training_reviewed_at is not None
+        and job.training_review_note is not None
+        and (
+            lesson_street is None
+            or (
+                job.approved_state is not None
+                and job.approved_state.street == lesson_street
             )
-            and (
-                not normalized_query
-                or normalized_query in job.training_review_note.casefold()
-            )
-        ),
-        key=lambda job: job.training_reviewed_at,
-        reverse=True,
-    )
+        )
+        and (
+            not normalized_query
+            or normalized_query in job.training_review_note.casefold()
+        )
+    ]
+    if lesson_order == "ev_loss":
+        return sorted(lesson_jobs, key=_lesson_ev_priority, reverse=True)
+    return sorted(lesson_jobs, key=_lesson_reviewed_at, reverse=True)
 
 
 def summarize_training(
@@ -74,6 +74,7 @@ def summarize_training(
     review_action_difference: TrainingActionDifferenceFilter | None = None,
     lesson_street: Street | None = None,
     lesson_query: str | None = None,
+    lesson_order: TrainingReviewOrder = "recent",
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -187,6 +188,7 @@ def summarize_training(
         reviewed,
         lesson_street=lesson_street,
         lesson_query=lesson_query,
+        lesson_order=lesson_order,
     )
     lesson_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
@@ -283,11 +285,13 @@ def build_training_lessons_markdown(
     jobs: list[JobRecord],
     lesson_street: Street | None = None,
     lesson_query: str | None = None,
+    lesson_order: TrainingReviewOrder = "recent",
 ) -> tuple[str, int]:
     lesson_jobs = training_lesson_jobs(
         jobs,
         lesson_street=lesson_street,
         lesson_query=lesson_query,
+        lesson_order=lesson_order,
     )
     lesson_count = len(lesson_jobs)
     lines = [
@@ -540,6 +544,21 @@ def _training_recorded_at(job: JobRecord) -> datetime:
     if job.training_decision is None:
         raise ValueError("Training hand requires a decision")
     return job.training_decision.recorded_at
+
+
+def _lesson_reviewed_at(job: JobRecord) -> datetime:
+    if job.training_reviewed_at is None:
+        raise ValueError("Training lesson requires a review timestamp")
+    return job.training_reviewed_at
+
+
+def _lesson_ev_priority(job: JobRecord) -> tuple[bool, float, datetime]:
+    ev_loss_bb = training_ev_loss_bb(job)
+    return (
+        ev_loss_bb is not None,
+        ev_loss_bb if ev_loss_bb is not None else 0,
+        _lesson_reviewed_at(job),
+    )
 
 
 def _review_ev_priority(

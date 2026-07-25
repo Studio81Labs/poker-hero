@@ -241,8 +241,12 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "&review_certainty=high"
         "&review_decision_action=fold"
         "&review_recommended_action=call"
+        "&lesson_order=ev_loss"
     )
     invalid_order = client.get("/api/training/progress?review_order=unknown")
+    invalid_lesson_order = client.get(
+        "/api/training/progress?lesson_order=unknown"
+    )
     invalid_street = client.get("/api/training/progress?review_street=showdown")
     invalid_certainty = client.get(
         "/api/training/progress?review_certainty=very_sure"
@@ -264,6 +268,7 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
 
     assert filtered.status_code == 200
     assert invalid_order.status_code == 422
+    assert invalid_lesson_order.status_code == 422
     assert invalid_street.status_code == 422
     assert invalid_certainty.status_code == 422
     assert invalid_lesson_street.status_code == 422

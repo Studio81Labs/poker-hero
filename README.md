@@ -144,12 +144,14 @@ queue. Completing a hand opened from that queue reloads the same filters and
 opens the next matching hand, then returns to the empty queue when the session
 is complete. A review can include a short lesson note. Notes stay attached to
 the hand in progress history and return to the editor when a review is reopened.
-Completed notes also appear in a dedicated Lessons view, ordered by review time
-and kept independently from the shorter recent-decisions list. A completed
-lesson note can be edited or removed in place without reopening the review.
-The Lessons view can filter the full saved set by street and case-insensitive
-note text before applying its bounded newest-first display limit. The active
-study set can be downloaded as Markdown without the display limit.
+Completed notes also appear in a dedicated Lessons view, newest first by
+default and kept independently from the shorter recent-decisions list. A
+completed lesson note can be edited or removed in place without reopening the
+review. The Lessons view can filter the full saved set by street and
+case-insensitive note text, then order it by recency or highest available EV
+loss before applying its bounded display limit. Ungraded lessons remain after
+graded lessons in EV-loss order. The active study set can be downloaded as
+Markdown in the same order without the display limit.
 Changing the approved state, training answer, or recommendation clears the note
 because the comparison it described is no longer current.
 

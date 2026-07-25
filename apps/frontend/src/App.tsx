@@ -774,6 +774,7 @@ function trainingReviewQueueStatus(
   certainty: TrainingReviewCertaintyFilter,
   lessonStreet: TrainingReviewStreet,
   lessonQuery: string,
+  lessonOrder: TrainingReviewOrder,
 ): string {
   if (view === "lessons") {
     if (loading) {
@@ -785,9 +786,10 @@ function trainingReviewQueueStatus(
       ?? 0;
     const visibleLessons = progress?.lesson_hands?.length ?? 0;
     const filtersActive = lessonStreet !== "all" || lessonQuery.length > 0;
+    const orderLabel = lessonOrder === "ev_loss" ? "highest-loss" : "newest";
     if (filtersActive) {
       if (lessonMatchingHands > visibleLessons) {
-        return `Showing ${visibleLessons} newest of ${lessonMatchingHands} matching lessons.`;
+        return `Showing ${visibleLessons} ${orderLabel} of ${lessonMatchingHands} matching lessons.`;
       }
       if (lessonMatchingHands > 0) {
         return `${lessonMatchingHands} lesson note${lessonMatchingHands === 1 ? "" : "s"} ${lessonMatchingHands === 1 ? "matches" : "match"} these filters.`;
@@ -795,7 +797,7 @@ function trainingReviewQueueStatus(
       return "No saved lesson notes match these filters.";
     }
     if (lessonCount > visibleLessons) {
-      return `Showing ${visibleLessons} newest of ${lessonCount} saved lesson notes.`;
+      return `Showing ${visibleLessons} ${orderLabel} of ${lessonCount} saved lesson notes.`;
     }
     if (lessonCount > 0) {
       return `${lessonCount} saved lesson note${lessonCount === 1 ? "" : "s"}.`;
@@ -1405,6 +1407,7 @@ export default function App() {
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
   const [trainingReviewCertainty, setTrainingReviewCertainty] = useState<TrainingReviewCertaintyFilter>("all");
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
+  const [trainingLessonOrder, setTrainingLessonOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingLessonStreet, setTrainingLessonStreet] = useState<TrainingReviewStreet>("all");
   const [trainingLessonSearch, setTrainingLessonSearch] = useState("");
   const [trainingLessonQuery, setTrainingLessonQuery] = useState("");
@@ -1545,6 +1548,7 @@ export default function App() {
     trainingReviewCertainty,
     trainingLessonStreet,
     trainingLessonQuery,
+    trainingLessonOrder,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -2037,6 +2041,7 @@ export default function App() {
           trainingReviewCertainty,
           trainingLessonStreet,
           trainingLessonQuery,
+          trainingLessonOrder,
         );
         setTrainingProgress(progress);
         const nextHand = progress.review_queue[0] ?? null;
@@ -2136,6 +2141,7 @@ export default function App() {
         trainingReviewCertainty,
         trainingLessonStreet,
         trainingLessonQuery,
+        trainingLessonOrder,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2199,6 +2205,7 @@ export default function App() {
     setTrainingReviewStreet("all");
     setTrainingReviewCertainty("all");
     setTrainingReviewDifference(null);
+    setTrainingLessonOrder("recent");
     setTrainingLessonStreet("all");
     setTrainingLessonSearch("");
     setTrainingLessonQuery("");
@@ -2246,6 +2253,7 @@ export default function App() {
         reviewCertainty,
         trainingLessonStreet,
         trainingLessonQuery,
+        trainingLessonOrder,
       ));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
@@ -2261,18 +2269,22 @@ export default function App() {
   async function updateTrainingLessonFilters(
     lessonStreet: TrainingReviewStreet,
     lessonSearch: string = trainingLessonSearch,
+    lessonOrder: TrainingReviewOrder = trainingLessonOrder,
   ) {
     const lessonQuery = lessonSearch.trim();
     if (
       (
-        lessonStreet === trainingLessonStreet
+        lessonOrder === trainingLessonOrder
+        && lessonStreet === trainingLessonStreet
         && lessonQuery === trainingLessonQuery
       )
       || trainingProgressLoading
     ) {
       return;
     }
+    const previousOrder = trainingLessonOrder;
     const previousStreet = trainingLessonStreet;
+    setTrainingLessonOrder(lessonOrder);
     setTrainingLessonStreet(lessonStreet);
     setTrainingProgressLoading(true);
     setError(null);
@@ -2284,9 +2296,11 @@ export default function App() {
         trainingReviewCertainty,
         lessonStreet,
         lessonQuery,
+        lessonOrder,
       ));
       setTrainingLessonQuery(lessonQuery);
     } catch (trainingError) {
+      setTrainingLessonOrder(previousOrder);
       setTrainingLessonStreet(previousStreet);
       setError(messageFromError(trainingError, "Could not filter saved lessons"));
     } finally {
@@ -3745,6 +3759,22 @@ export default function App() {
                               </button>
                             </form>
                             <label className="training-review-order">
+                              <span>Order</span>
+                              <select
+                                aria-label="Lesson order"
+                                value={trainingLessonOrder}
+                                onChange={(event) => void updateTrainingLessonFilters(
+                                  trainingLessonStreet,
+                                  trainingLessonSearch,
+                                  event.target.value as TrainingReviewOrder,
+                                )}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              >
+                                <option value="recent">Newest</option>
+                                <option value="ev_loss">EV loss</option>
+                              </select>
+                            </label>
+                            <label className="training-review-order">
                               <span>Street</span>
                               <select
                                 aria-label="Lesson street"
@@ -3899,7 +3929,11 @@ export default function App() {
               {trainingProgressView === "lessons" ? (
                 <a
                   className={`training-lessons-export${trainingLessonsExportDisabled ? " disabled" : ""}`}
-                  href={trainingLessonsExportUrl(trainingLessonStreet, trainingLessonQuery)}
+                  href={trainingLessonsExportUrl(
+                    trainingLessonStreet,
+                    trainingLessonQuery,
+                    trainingLessonOrder,
+                  )}
                   download="poker-hero-lessons.md"
                   aria-disabled={trainingLessonsExportDisabled}
                   tabIndex={trainingLessonsExportDisabled ? -1 : undefined}

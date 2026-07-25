@@ -99,8 +99,10 @@ selection API prevents the app from producing a dataset that import rejects.
    after the user revisits its evidence.
 9. A hand opened from the needs-review queue advances to the next hand matching
    the same action, street, and ordering filters after its review is persisted.
-10. Completed reviews with notes remain available in a bounded newest-first
-    Lessons list without returning them to the pending queue.
+10. Completed reviews with notes remain available in a bounded Lessons list,
+    filterable by street/text and ordered by recency or available EV loss,
+    without returning them to the pending queue. The same complete selection
+    can be exported as Markdown.
 11. Completed queue items remain in processing until explicitly cleared into history.
 12. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
@@ -166,6 +168,11 @@ volume and canonical street order provide deterministic tie-breakers.
 Completing a review persists a timestamp and optional normalized lesson note on
 the job, then removes it from the pending queue without changing historical
 accuracy. The progress projections include the note for later study.
+The lesson selector applies street and case-insensitive note-text filters before
+ordering by review recency or available EV loss. EV-loss order keeps graded
+lessons highest first, uses review time for ties, and places ungraded lessons
+afterward in newest-first order. The UI applies its display limit only after
+that ordering; Markdown export uses the same selector without the limit.
 Re-approval, a changed training decision, or a fresh recommendation clears both
 the marker and note because the comparison inputs have changed. Deleting only
 the review marker explicitly reopens the same comparison and returns it to the

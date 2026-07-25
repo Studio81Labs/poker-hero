@@ -361,6 +361,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         review_certainty: TrainingReviewCertainty | None = None,
         review_decision_action: RecommendationAction | None = None,
         review_recommended_action: RecommendationAction | None = None,
+        lesson_order: TrainingReviewOrder = "recent",
         lesson_street: Street | None = None,
         lesson_query: str | None = Query(default=None, max_length=120),
     ) -> TrainingProgress:
@@ -386,10 +387,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_action_difference=review_action_difference,
             lesson_street=lesson_street,
             lesson_query=lesson_query,
+            lesson_order=lesson_order,
         )
 
     @app.get("/api/training/lessons/export")
     def export_training_lessons(
+        lesson_order: TrainingReviewOrder = "recent",
         lesson_street: Street | None = None,
         lesson_query: str | None = Query(default=None, max_length=120),
     ) -> StreamingResponse:
@@ -397,6 +400,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store.list(),
             lesson_street=lesson_street,
             lesson_query=lesson_query,
+            lesson_order=lesson_order,
         )
         if lesson_count == 0:
             raise HTTPException(

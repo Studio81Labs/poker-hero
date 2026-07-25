@@ -1719,7 +1719,7 @@ describe("App", () => {
       recorded_at: "2026-07-19T12:00:00Z",
       reviewed_at: "2026-07-20T14:00:00Z",
       review_note: "Count the bluff combinations before folding.",
-      ev_loss_bb: null,
+      ev_loss_bb: 0.5,
     };
     const olderLessonHand = {
       ...lessonHand,
@@ -1728,6 +1728,7 @@ describe("App", () => {
       recorded_at: "2026-07-18T12:00:00Z",
       reviewed_at: "2026-07-19T14:00:00Z",
       review_note: "Use the pot odds before choosing a line.",
+      ev_loss_bb: 2,
     };
     const progress = {
       reviewed_hands: 3,
@@ -1752,6 +1753,10 @@ describe("App", () => {
       lesson_matching_hands: 1,
       lesson_hands: [lessonHand],
     };
+    const evOrderedProgress = {
+      ...progress,
+      lesson_hands: [olderLessonHand, lessonHand],
+    };
     const lessonJob = {
       ...recommendedJob(),
       id: "lesson-job",
@@ -1767,6 +1772,7 @@ describe("App", () => {
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(evOrderedProgress))
       .mockResolvedValueOnce(jsonResponse(turnProgress))
       .mockResolvedValueOnce(jsonResponse(turnProgress))
       .mockResolvedValueOnce(jsonResponse(lessonJob));
@@ -1790,10 +1796,19 @@ describe("App", () => {
       name: "Reopen lesson.png training review",
     })).not.toBeInTheDocument();
 
-    await user.selectOptions(within(dialog).getByLabelText("Lesson street"), "turn");
+    await user.selectOptions(within(dialog).getByLabelText("Lesson order"), "ev_loss");
 
     await waitFor(() => expect(fetchMock().mock.calls[1][0]).toBe(
-      "http://localhost:8000/api/training/progress?lesson_street=turn",
+      "http://localhost:8000/api/training/progress?lesson_order=ev_loss",
+    ));
+    expect(within(dialog).getAllByRole("button", {
+      name: /Open .* training review/,
+    })[0]).toHaveAccessibleName("Open older-lesson.png training review");
+
+    await user.selectOptions(within(dialog).getByLabelText("Lesson street"), "turn");
+
+    await waitFor(() => expect(fetchMock().mock.calls[2][0]).toBe(
+      "http://localhost:8000/api/training/progress?lesson_order=ev_loss&lesson_street=turn",
     ));
     expect(within(dialog).getByText("1 lesson note matches these filters.")).toBeInTheDocument();
     expect(within(dialog).queryByText(
@@ -1803,15 +1818,15 @@ describe("App", () => {
     await user.type(within(dialog).getByLabelText("Search saved lesson notes"), "bluff");
     await user.click(within(dialog).getByRole("button", { name: "Apply lesson search" }));
 
-    await waitFor(() => expect(fetchMock().mock.calls[2][0]).toBe(
-      "http://localhost:8000/api/training/progress?lesson_street=turn&lesson_query=bluff",
+    await waitFor(() => expect(fetchMock().mock.calls[3][0]).toBe(
+      "http://localhost:8000/api/training/progress?lesson_order=ev_loss&lesson_street=turn&lesson_query=bluff",
     ));
     expect(within(dialog).getByText(
       "Note: Count the bluff combinations before folding.",
     )).toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "Export lessons" })).toHaveAttribute(
       "href",
-      "http://localhost:8000/api/training/lessons/export?lesson_street=turn&lesson_query=bluff",
+      "http://localhost:8000/api/training/lessons/export?lesson_order=ev_loss&lesson_street=turn&lesson_query=bluff",
     );
     expect(within(dialog).getByRole("link", { name: "Export lessons" })).toHaveAttribute(
       "download",
@@ -1822,7 +1837,7 @@ describe("App", () => {
       name: "Open lesson.png training review",
     }));
 
-    expect(fetchMock().mock.calls[3][0]).toBe(
+    expect(fetchMock().mock.calls[4][0]).toBe(
       "http://localhost:8000/api/jobs/lesson-job",
     );
     expect(await screen.findByLabelText("Saved training review note")).toHaveTextContent(

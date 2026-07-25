@@ -209,6 +209,18 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
         "postflop_solver",
         "preflop_chart_v1",
     ]
+    route_keys = {
+        route.engine: route.key
+        for route in coverage.routes
+    }
+    assert route_keys == {
+        engine: hashlib.sha256(engine.encode("utf-8")).hexdigest()
+        for engine in (
+            "local_ev_solver_v1",
+            "postflop_solver",
+            "preflop_chart_v1",
+        )
+    }
     assert coverage.routes[0].fallback_hands == 2
     assert coverage.routes[0].street_counts == {"flop": 1, "turn": 1}
     assert coverage.routes[1].fallback_hands == 0
@@ -232,6 +244,17 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert filtered.solver_coverage == coverage
     assert filtered.recent_matching_hands == 2
     assert [hand.job_id for hand in filtered.recent_hands] == ["4" * 32]
+
+    route_filtered = summarize_training(
+        jobs,
+        recent_limit=1,
+        solver_route_key=route_keys["postflop_solver"],
+    )
+
+    assert route_filtered.reviewed_hands == 6
+    assert route_filtered.solver_coverage == coverage
+    assert route_filtered.recent_matching_hands == 2
+    assert [hand.job_id for hand in route_filtered.recent_hands] == ["2" * 32]
 
 
 def test_summarize_training_calibrates_self_rated_certainty() -> None:

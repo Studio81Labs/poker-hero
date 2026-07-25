@@ -80,6 +80,7 @@ def summarize_training(
     lesson_query: str | None = None,
     lesson_order: TrainingReviewOrder = "recent",
     solver_fallback_key: str | None = None,
+    solver_route_key: str | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -188,10 +189,19 @@ def summarize_training(
     filtered_recent_jobs = [
         job
         for job in newest_first
-        if solver_fallback_key is None
-        or (
-            (fallback_reason := _solver_fallback_reason(job)) is not None
-            and _solver_fallback_key(fallback_reason) == solver_fallback_key
+        if (
+            solver_fallback_key is None
+            or (
+                (fallback_reason := _solver_fallback_reason(job)) is not None
+                and _solver_metadata_key(fallback_reason) == solver_fallback_key
+            )
+        )
+        and (
+            solver_route_key is None
+            or (
+                (engine := _solver_route_engine(job)) is not None
+                and _solver_metadata_key(engine) == solver_route_key
+            )
         )
     ]
     recent_hands = [
@@ -315,9 +325,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
         recommendation = job.recommendation
         if recommendation is None:
             continue
-        raw = recommendation.raw
-        engine_value = raw.get("engine")
-        engine = engine_value.strip() if isinstance(engine_value, str) else ""
+        engine = _solver_route_engine(job)
         fallback_reason = _solver_fallback_reason(job)
         street = (
             job.approved_state.street
@@ -325,7 +333,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
             else None
         )
 
-        if engine:
+        if engine is not None:
             tracked_hands += 1
             route_hands[engine] += 1
             if street is not None:
@@ -336,11 +344,12 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
             reason_hands[fallback_reason] += 1
             if street is not None:
                 reason_streets[fallback_reason][street] += 1
-            if engine:
+            if engine is not None:
                 route_fallback_hands[engine] += 1
 
     routes = [
         TrainingSolverRouteSummary(
+            key=_solver_metadata_key(engine),
             engine=engine,
             hands=hands,
             fallback_hands=route_fallback_hands[engine],
@@ -352,7 +361,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
 
     fallback_reasons = [
         TrainingSolverFallbackSummary(
-            key=_solver_fallback_key(reason),
+            key=_solver_metadata_key(reason),
             reason=reason,
             hands=hands,
             street_counts=dict(reason_streets[reason]),
@@ -385,8 +394,18 @@ def _solver_fallback_reason(job: JobRecord) -> str | None:
     return reason or None
 
 
-def _solver_fallback_key(reason: str) -> str:
-    return hashlib.sha256(reason.encode("utf-8")).hexdigest()
+def _solver_route_engine(job: JobRecord) -> str | None:
+    if job.recommendation is None:
+        return None
+    value = job.recommendation.raw.get("engine")
+    if not isinstance(value, str):
+        return None
+    engine = value.strip()
+    return engine or None
+
+
+def _solver_metadata_key(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def build_training_lessons_markdown(

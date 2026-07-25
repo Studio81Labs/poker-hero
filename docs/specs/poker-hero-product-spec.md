@@ -73,6 +73,8 @@ The frontend is a browser control panel for:
 - Inspecting which recommendation engines handled locked-answer comparisons,
   their street coverage, unattributed legacy hands, and recorded fallback
   frequency and reasons.
+- Opening the newest training hands for one recorded fallback reason without
+  changing global progress or the action/sizing review queue.
 - Comparing action accuracy, exact-line accuracy, and available EV loss across
   low, medium, and high pre-reveal certainty.
 - Opening unresolved differences for a rated certainty level directly from its
@@ -129,6 +131,8 @@ The backend API:
   scoring automation-only hands.
 - Aggregates recommendation-engine routes and true fallback metadata for those
   training comparisons without treating intentional provider routing as fallback.
+- Filters the bounded Recent decisions projection by a stable fallback-reason
+  key while leaving aggregate metrics and pending reviews unchanged.
 - Exports the full filtered and ordered completed-lesson set as a portable
   Markdown study document.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
@@ -225,31 +229,34 @@ frequencies.
     recommendation-engine coverage by street and recorded fallback reasons.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
-12. Unsupported actions and supported actions with a sizing difference appear
+12. Selecting a fallback reason shows its newest matching training hands in the
+    Recent decisions list. The request uses a stable reason key rather than raw
+    provider error text, and does not alter progress metrics or mistake queues.
+13. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and certainty rating and prioritize the
     highest available EV losses; filters compose before ordering and limiting,
     and ungraded hands remain available after graded ones.
-13. Progress may suggest a street that still has pending reviews, preferring
+14. Progress may suggest a street that still has pending reviews, preferring
     the highest average EV loss when comparable grades exist and otherwise the
     lowest action accuracy.
-14. A common unsupported action pattern may focus the review queue on that
+15. A common unsupported action pattern may focus the review queue on that
     exact player-action and solver-action pair.
-15. The user may mark a revisited difference reviewed with an optional lesson
+16. The user may mark a revisited difference reviewed with an optional lesson
     note, which removes it from the pending queue while preserving both in
     progress history.
-16. When that hand was opened from the review queue, the UI reloads the same
+17. When that hand was opened from the review queue, the UI reloads the same
     action-pair, street, certainty, and order filters and opens the next
     matching hand. An exhausted queue returns to its empty review view.
-17. A completed review may be reopened, returning the unchanged comparison and
+18. A completed review may be reopened, returning the unchanged comparison and
     its editable lesson note to the pending queue.
-18. Saved lessons may be filtered by street and note text, then ordered by
+19. Saved lessons may be filtered by street and note text, then ordered by
     recency or highest available EV loss before the bounded lesson list is
     returned. Ungraded lessons remain available after graded lessons.
-19. The active lesson filters and order can produce a complete Markdown
+20. The active lesson filters and order can produce a complete Markdown
     download without applying the on-screen list limit.
-20. The UI retains completed items in processing until the user clears them into history.
-21. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
+21. The UI retains completed items in processing until the user clears them into history.
+22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
 queue items.
@@ -363,6 +370,8 @@ Recommendation tests:
 - Verify engine coverage counts valid recommendation metadata, retains
   unattributed legacy hands, and counts `fallback_reason` but not intentional
   `routing_reason` metadata as fallback.
+- Verify fallback-reason keys are stable and filter only the bounded Recent
+  decisions projection while preserving global aggregates.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:
@@ -401,6 +410,8 @@ Poker Hero is successful when:
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street
   coverage, and where recommendation routing relied on a recorded fallback.
+- A user can open recent hands for one fallback reason and clear that filter
+  without changing the pending action/sizing review queue.
 - A user can identify repeated unsupported action choices without treating
   solver-supported mixed actions or sizing-only differences as mistakes.
 - A user can open pending reviews for one repeated action pattern without

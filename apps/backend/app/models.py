@@ -291,6 +291,7 @@ class TrainingSolverRouteSummary(BaseModel):
 
 
 class TrainingSolverFallbackSummary(BaseModel):
+    key: str = Field(pattern=r"^[0-9a-f]{64}$")
     reason: str
     hands: int = Field(ge=1)
     street_counts: dict[Street, int] = Field(default_factory=dict)
@@ -323,6 +324,7 @@ class TrainingProgress(BaseModel):
     unrated_hands: int = Field(default=0, ge=0)
     unrated_needs_review_hands: int = Field(default=0, ge=0)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
+    recent_matching_hands: int = Field(default=0, ge=0)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     lesson_count: int = Field(default=0, ge=0)
     lesson_matching_hands: int = Field(default=0, ge=0)

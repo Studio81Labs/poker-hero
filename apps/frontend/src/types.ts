@@ -130,6 +130,7 @@ export interface TrainingSolverRouteSummary {
 }
 
 export interface TrainingSolverFallbackSummary {
+  key: string;
   reason: string;
   hands: number;
   street_counts: Partial<Record<Street, number>>;
@@ -167,6 +168,7 @@ export interface TrainingProgress {
   unrated_hands?: number;
   unrated_needs_review_hands?: number;
   street_summaries: TrainingStreetSummary[];
+  recent_matching_hands?: number;
   recent_hands: TrainingRecentHand[];
   lesson_count?: number;
   lesson_matching_hands?: number;

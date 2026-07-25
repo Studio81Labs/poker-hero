@@ -265,6 +265,12 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "?review_decision_action=jam"
         "&review_recommended_action=call"
     )
+    invalid_solver_fallback = client.get(
+        "/api/training/progress?solver_fallback_key=not-a-hash"
+    )
+    valid_solver_fallback = client.get(
+        f"/api/training/progress?solver_fallback_key={'a' * 64}"
+    )
 
     assert filtered.status_code == 200
     assert invalid_order.status_code == 422
@@ -279,6 +285,8 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "must be provided together"
     )
     assert invalid_difference.status_code == 422
+    assert invalid_solver_fallback.status_code == 422
+    assert valid_solver_fallback.status_code == 200
 
 
 def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_path: Path) -> None:

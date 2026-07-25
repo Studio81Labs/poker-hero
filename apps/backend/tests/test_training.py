@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 
 import pytest
@@ -195,7 +196,8 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
         ),
     ]
 
-    coverage = summarize_training(jobs).solver_coverage
+    progress = summarize_training(jobs)
+    coverage = progress.solver_coverage
 
     assert coverage.total_hands == 6
     assert coverage.tracked_hands == 5
@@ -213,9 +215,23 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert coverage.routes[1].street_counts == {"flop": 1, "river": 1}
     assert coverage.routes[2].fallback_hands == 0
     assert len(coverage.fallback_reasons) == 1
+    fallback_key = hashlib.sha256(unsupported_reason.encode("utf-8")).hexdigest()
+    assert coverage.fallback_reasons[0].key == fallback_key
     assert coverage.fallback_reasons[0].reason == unsupported_reason
     assert coverage.fallback_reasons[0].hands == 2
     assert coverage.fallback_reasons[0].street_counts == {"flop": 1, "turn": 1}
+    assert progress.recent_matching_hands == 6
+
+    filtered = summarize_training(
+        jobs,
+        recent_limit=1,
+        solver_fallback_key=fallback_key,
+    )
+
+    assert filtered.reviewed_hands == 6
+    assert filtered.solver_coverage == coverage
+    assert filtered.recent_matching_hands == 2
+    assert [hand.job_id for hand in filtered.recent_hands] == ["4" * 32]
 
 
 def test_summarize_training_calibrates_self_rated_certainty() -> None:

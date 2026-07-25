@@ -1136,6 +1136,22 @@ describe("App", () => {
   });
 
   it("shows recommendation engine coverage and fallback reasons", async () => {
+    const fallbackKey = "a".repeat(64);
+    const fallbackHand = {
+      job_id: "fallback-job",
+      original_filename: "fallback.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
     const progress = {
       reviewed_hands: 6,
       action_matches: 5,
@@ -1169,17 +1185,27 @@ describe("App", () => {
           street_counts: { preflop: 1 },
         }],
         fallback_reasons: [{
+          key: fallbackKey,
           reason: "hero position must identify IP or OOP",
           hands: 2,
           street_counts: { flop: 1, turn: 1 },
         }],
       },
       street_summaries: [],
+      recent_matching_hands: 6,
       recent_hands: [],
       review_queue_hands: 0,
       review_queue: [],
     };
-    fetchMock().mockResolvedValueOnce(jsonResponse(progress));
+    const filteredProgress = {
+      ...progress,
+      recent_matching_hands: 2,
+      recent_hands: [fallbackHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(filteredProgress))
+      .mockResolvedValueOnce(jsonResponse(progress));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1199,7 +1225,33 @@ describe("App", () => {
     expect(within(dialog).getByRole("row", {
       name: "Preflop chart 1 20% P 1 —",
     })).toBeInTheDocument();
-    expect(within(dialog).getByText("hero position must identify IP or OOP")).toBeInTheDocument();
+    const showFallbackHands = within(dialog).getByRole("button", {
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP",
+    });
+    expect(showFallbackHands).toBeEnabled();
+
+    await user.click(showFallbackHands);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      `http://localhost:8000/api/training/progress?solver_fallback_key=${fallbackKey}`,
+    );
+    const activeFilter = await within(dialog).findByLabelText("Active solver-fallback filter");
+    expect(within(activeFilter).getByText("hero position must identify IP or OOP")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open fallback.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "Showing 1 newest of 2 fallback hands.",
+    )).toBeInTheDocument();
+
+    await user.click(within(activeFilter).getByRole("button", {
+      name: "Clear solver-fallback filter",
+    }));
+
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active solver-fallback filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
   it("shows entirely unattributed legacy recommendation coverage", async () => {

@@ -1,3 +1,4 @@
+import hashlib
 import math
 import re
 from collections import defaultdict
@@ -78,6 +79,7 @@ def summarize_training(
     lesson_street: Street | None = None,
     lesson_query: str | None = None,
     lesson_order: TrainingReviewOrder = "recent",
+    solver_fallback_key: str | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -183,9 +185,18 @@ def summarize_training(
     trend = _training_trend(newest_first, outcomes, ev_losses)
     action_differences = _action_differences(reviewed, outcomes, ev_losses)
     solver_coverage = _solver_coverage(reviewed)
+    filtered_recent_jobs = [
+        job
+        for job in newest_first
+        if solver_fallback_key is None
+        or (
+            (fallback_reason := _solver_fallback_reason(job)) is not None
+            and _solver_fallback_key(fallback_reason) == solver_fallback_key
+        )
+    ]
     recent_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
-        for job in newest_first[: max(0, recent_limit)]
+        for job in filtered_recent_jobs[: max(0, recent_limit)]
     ]
     lesson_jobs = training_lesson_jobs(reviewed)
     filtered_lesson_jobs = training_lesson_jobs(
@@ -276,6 +287,7 @@ def summarize_training(
         unrated_hands=len(unrated_jobs),
         unrated_needs_review_hands=unrated_needs_review_hands,
         street_summaries=street_summaries,
+        recent_matching_hands=len(filtered_recent_jobs),
         recent_hands=recent_hands,
         lesson_count=len(lesson_jobs),
         lesson_matching_hands=len(filtered_lesson_jobs),
@@ -306,10 +318,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
         raw = recommendation.raw
         engine_value = raw.get("engine")
         engine = engine_value.strip() if isinstance(engine_value, str) else ""
-        fallback_value = raw.get("fallback_reason")
-        fallback_reason = (
-            fallback_value.strip() if isinstance(fallback_value, str) else ""
-        )
+        fallback_reason = _solver_fallback_reason(job)
         street = (
             job.approved_state.street
             if job.approved_state is not None
@@ -322,7 +331,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
             if street is not None:
                 route_streets[engine][street] += 1
 
-        if fallback_reason:
+        if fallback_reason is not None:
             fallback_hands += 1
             reason_hands[fallback_reason] += 1
             if street is not None:
@@ -343,6 +352,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
 
     fallback_reasons = [
         TrainingSolverFallbackSummary(
+            key=_solver_fallback_key(reason),
             reason=reason,
             hands=hands,
             street_counts=dict(reason_streets[reason]),
@@ -363,6 +373,20 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
         routes=routes,
         fallback_reasons=fallback_reasons,
     )
+
+
+def _solver_fallback_reason(job: JobRecord) -> str | None:
+    if job.recommendation is None:
+        return None
+    value = job.recommendation.raw.get("fallback_reason")
+    if not isinstance(value, str):
+        return None
+    reason = value.strip()
+    return reason or None
+
+
+def _solver_fallback_key(reason: str) -> str:
+    return hashlib.sha256(reason.encode("utf-8")).hexdigest()
 
 
 def build_training_lessons_markdown(

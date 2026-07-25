@@ -364,6 +364,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lesson_order: TrainingReviewOrder = "recent",
         lesson_street: Street | None = None,
         lesson_query: str | None = Query(default=None, max_length=120),
+        solver_fallback_key: str | None = Query(
+            default=None,
+            pattern=r"^[0-9a-f]{64}$",
+        ),
     ) -> TrainingProgress:
         if (review_decision_action is None) != (review_recommended_action is None):
             raise HTTPException(
@@ -388,6 +392,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lesson_street=lesson_street,
             lesson_query=lesson_query,
             lesson_order=lesson_order,
+            solver_fallback_key=solver_fallback_key,
         )
 
     @app.get("/api/training/lessons/export")

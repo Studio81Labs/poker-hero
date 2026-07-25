@@ -129,6 +129,7 @@ export async function getTrainingProgress(
   lessonStreet: TrainingReviewStreet = "all",
   lessonQuery = "",
   lessonOrder: TrainingReviewOrder = "recent",
+  solverFallbackKey: string | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -152,6 +153,9 @@ export async function getTrainingProgress(
   }
   if (lessonQuery.trim()) {
     search.set("lesson_query", lessonQuery.trim());
+  }
+  if (solverFallbackKey) {
+    search.set("solver_fallback_key", solverFallbackKey);
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

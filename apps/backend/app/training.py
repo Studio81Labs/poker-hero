@@ -20,6 +20,7 @@ from app.models import (
     TrainingReviewCertainty,
     TrainingReviewOrder,
     TrainingSolverCoverage,
+    TrainingSolverCoverageTrend,
     TrainingSolverFallbackSummary,
     TrainingSolverRouteSummary,
     TrainingStreetSummary,
@@ -384,9 +385,56 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
         unattributed_hands=total_hands - tracked_hands,
         fallback_hands=fallback_hands,
         fallback_rate=fallback_hands / total_hands if total_hands else 0,
+        trend=_solver_coverage_trend(reviewed),
         routes=routes,
         fallback_reasons=fallback_reasons,
     )
+
+
+def _solver_coverage_trend(
+    reviewed: list[JobRecord],
+) -> TrainingSolverCoverageTrend | None:
+    newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
+    window_hands = min(MAX_TREND_WINDOW, len(newest_first) // 2)
+    if window_hands == 0:
+        return None
+
+    recent_jobs = newest_first[:window_hands]
+    previous_jobs = newest_first[window_hands : window_hands * 2]
+    recent_attribution_rate, recent_fallback_rate = _solver_window_rates(
+        recent_jobs
+    )
+    previous_attribution_rate, previous_fallback_rate = _solver_window_rates(
+        previous_jobs
+    )
+    return TrainingSolverCoverageTrend(
+        window_hands=window_hands,
+        recent_attribution_rate=recent_attribution_rate,
+        previous_attribution_rate=previous_attribution_rate,
+        attribution_rate_delta=round(
+            recent_attribution_rate - previous_attribution_rate,
+            6,
+        ),
+        recent_fallback_rate=recent_fallback_rate,
+        previous_fallback_rate=previous_fallback_rate,
+        fallback_rate_delta=round(
+            recent_fallback_rate - previous_fallback_rate,
+            6,
+        ),
+    )
+
+
+def _solver_window_rates(jobs: list[JobRecord]) -> tuple[float, float]:
+    total_hands = len(jobs)
+    attributed_hands = sum(
+        _solver_route_engine(job) is not None
+        for job in jobs
+    )
+    fallback_hands = sum(
+        _solver_fallback_reason(job) is not None
+        for job in jobs
+    )
+    return attributed_hands / total_hands, fallback_hands / total_hands
 
 
 def _solver_fallback_reason(job: JobRecord) -> str | None:

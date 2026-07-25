@@ -1199,6 +1199,15 @@ describe("App", () => {
         unattributed_hands: 1,
         fallback_hands: 2,
         fallback_rate: 1 / 3,
+        trend: {
+          window_hands: 2,
+          recent_attribution_rate: 0.75,
+          previous_attribution_rate: 1,
+          attribution_rate_delta: -0.25,
+          recent_fallback_rate: 0,
+          previous_fallback_rate: 0.5,
+          fallback_rate_delta: -0.5,
+        },
         routes: [{
           key: routeKey,
           engine: "local_ev_solver_v1",
@@ -1261,6 +1270,12 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
     expect(within(dialog).getByRole("heading", { name: "Solver coverage" })).toBeInTheDocument();
+    const solverTrend = within(dialog).getByLabelText("Solver coverage trend");
+    expect(within(solverTrend).getByText("Last 2 vs previous 2")).toBeInTheDocument();
+    expect(within(solverTrend).getByText("75%")).toBeInTheDocument();
+    expect(within(solverTrend).getByText("0%")).toBeInTheDocument();
+    expect(within(solverTrend).getByText("-25 pts")).toHaveClass("declining");
+    expect(within(solverTrend).getByText("-50 pts")).toHaveClass("improving");
     const showUnattributedHands = within(dialog).getByRole("button", {
       name: "Show 1 unattributed hand",
     });

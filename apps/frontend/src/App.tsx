@@ -3488,10 +3488,7 @@ export default function App() {
                   ) : null}
 
                   {trainingProgress.solver_coverage
-                    && (
-                      trainingProgress.solver_coverage.tracked_hands > 0
-                      || trainingProgress.solver_coverage.fallback_hands > 0
-                    ) ? (
+                    && trainingProgress.solver_coverage.total_hands > 0 ? (
                     <section
                       className="training-progress-section training-solver-section"
                       aria-labelledby="training-solver-title"
@@ -3499,8 +3496,9 @@ export default function App() {
                       <div className="training-section-heading">
                         <h3 id="training-solver-title">Solver coverage</h3>
                         <span className="training-section-context">
-                          {trainingProgress.solver_coverage.tracked_hands}
-                          /{trainingProgress.solver_coverage.total_hands} attributed
+                          {trainingProgress.solver_coverage.tracked_hands} attributed
+                          {" · "}
+                          {trainingProgress.solver_coverage.unattributed_hands} unattributed
                           {" · "}
                           {trainingProgress.solver_coverage.fallback_hands} fallback
                           {" ("}

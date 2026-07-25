@@ -1187,7 +1187,9 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
     expect(within(dialog).getByRole("heading", { name: "Solver coverage" })).toBeInTheDocument();
-    expect(within(dialog).getByText("5/6 attributed · 2 fallback (33%)")).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "5 attributed · 1 unattributed · 2 fallback (33%)",
+    )).toBeInTheDocument();
     expect(within(dialog).getByRole("row", {
       name: "Local EV solver 2 40% F 1 · T 1 2",
     })).toBeInTheDocument();
@@ -1198,6 +1200,44 @@ describe("App", () => {
       name: "Preflop chart 1 20% P 1 —",
     })).toBeInTheDocument();
     expect(within(dialog).getByText("hero position must identify IP or OOP")).toBeInTheDocument();
+  });
+
+  it("shows entirely unattributed legacy recommendation coverage", async () => {
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 2,
+      exact_matches: 2,
+      different_actions: 1,
+      needs_review_hands: 1,
+      action_accuracy: 2 / 3,
+      exact_accuracy: 2 / 3,
+      ev_compared_hands: 0,
+      average_ev_loss_bb: null,
+      solver_coverage: {
+        total_hands: 3,
+        tracked_hands: 0,
+        unattributed_hands: 3,
+        fallback_hands: 0,
+        fallback_rate: 0,
+        routes: [],
+        fallback_reasons: [],
+      },
+      street_summaries: [],
+      recent_hands: [],
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(dialog).getByRole("heading", { name: "Solver coverage" })).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "0 attributed · 3 unattributed · 0 fallback (0%)",
+    )).toBeInTheDocument();
   });
 
   it("suggests a focus street and orders its reviews by EV loss", async () => {

@@ -70,6 +70,9 @@ The frontend is a browser control panel for:
   exposes a complete numeric candidate line in big blinds.
 - Comparing equal recent and previous windows for action accuracy, exact-line
   accuracy, and available EV-loss movement.
+- Inspecting which recommendation engines handled locked-answer comparisons,
+  their street coverage, unattributed legacy hands, and recorded fallback
+  frequency and reasons.
 - Comparing action accuracy, exact-line accuracy, and available EV loss across
   low, medium, and high pre-reveal certainty.
 - Opening unresolved differences for a rated certainty level directly from its
@@ -124,6 +127,8 @@ The backend API:
 - Persists the latest benchmark report with case and field-level accuracy.
 - Derives training progress from completed decision/recommendation pairs without
   scoring automation-only hands.
+- Aggregates recommendation-engine routes and true fallback metadata for those
+  training comparisons without treating intentional provider routing as fallback.
 - Exports the full filtered and ordered completed-lesson set as a portable
   Markdown study document.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
@@ -216,8 +221,10 @@ frequencies.
 11. Completed comparisons contribute to an aggregate progress view with
     street-level results, optional EV-loss grading, recent-hand review links,
     equal-window recent trends capped at ten hands per period, and common
-    unsupported action differences. Rated hands also contribute to certainty
-    calibration; unrated hands remain in every other aggregate.
+    unsupported action differences. The same comparisons expose actual
+    recommendation-engine coverage by street and recorded fallback reasons.
+    Rated hands also contribute to certainty calibration; unrated hands remain
+    in every other aggregate.
 12. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and certainty rating and prioritize the
@@ -353,6 +360,9 @@ Recommendation tests:
 - Verify lesson exports use the same street/text selection and recency/EV-loss
   order as the Lessons view, include every matching note, and reject an empty
   study set clearly.
+- Verify engine coverage counts valid recommendation metadata, retains
+  unattributed legacy hands, and counts `fallback_reason` but not intentional
+  `routing_reason` metadata as fallback.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:
@@ -389,6 +399,8 @@ Poker Hero is successful when:
   candidate EV metadata without excluding ungraded hands from other statistics.
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
+- A user can see which engines handled reviewed decisions, their street
+  coverage, and where recommendation routing relied on a recorded fallback.
 - A user can identify repeated unsupported action choices without treating
   solver-supported mixed actions or sizing-only differences as mistakes.
 - A user can open pending reviews for one repeated action pattern without

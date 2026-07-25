@@ -120,10 +120,14 @@ action and exact-line accuracy. The answer may include a low, medium, or high
 self-rated certainty, allowing progress to compare accuracy and available EV
 loss by how sure the player felt before reveal. Unrated hands remain in overall
 progress and are excluded only from certainty calibration. Solver responses
-with complete candidate EV metadata also report the selected line's EV loss in BB plus aggregate and
-street-level averages; providers without comparable EVs remain ungraded for
-that metric. The needs-review queue can stay newest-first or prioritize the
-highest available EV losses while retaining ungraded hands afterward. It can
+also contribute engine coverage by street, including unattributed legacy hands
+and recorded fallback frequency and reasons. Intentional routing, such as using
+the preflop chart for a supported preflop hand, is not counted as fallback.
+Responses with complete candidate EV metadata also report the selected line's
+EV loss in BB plus aggregate and street-level averages; providers without
+comparable EVs remain ungraded for that metric. The needs-review queue can stay
+newest-first or prioritize the highest available EV losses while retaining
+ungraded hands afterward. It can
 also focus on one street; filtering happens before ordering and the bounded
 queue limit. Training progress suggests an actionable focus street from the
 pending queue, preferring the highest graded average EV loss and otherwise the

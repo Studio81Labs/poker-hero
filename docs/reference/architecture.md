@@ -114,11 +114,17 @@ section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
-recent review links from persisted jobs. Completed notes have their own global
-count and bounded list ordered by review time, independent from both the recent
-and pending-review limits. The endpoint also groups rated decisions by low,
-medium, or high pre-reveal certainty so accuracy and available EV loss can be
-calibrated without excluding legacy or unrated hands from overall progress.
+recent review links from persisted jobs. It also aggregates the recommendation
+`raw.engine` value for each compared hand, grouped by canonical street.
+Non-empty `fallback_reason` values count as fallback and are grouped for
+diagnostics; `routing_reason` records an intentional engine choice, such as the
+preflop chart route, and does not count as fallback. Older recommendations
+without an engine remain in the total as unattributed hands. Completed notes
+have their own global count and bounded list ordered by review time, independent
+from both the recent and pending-review limits. The endpoint also groups rated
+decisions by low, medium, or high pre-reveal certainty so accuracy and available
+EV loss can be calibrated without excluding legacy or unrated hands from
+overall progress.
 Each rated summary also exposes its global pending-review count so the frontend
 can open that certainty queue without deriving counts from the bounded response.
 Separate unrated total and pending counts keep legacy decisions discoverable

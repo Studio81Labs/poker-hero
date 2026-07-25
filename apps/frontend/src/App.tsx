@@ -748,6 +748,13 @@ function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function solverStreetCountsLabel(counts: Partial<Record<Street, number>>): string {
+  return TRAINING_STREET_ORDER
+    .filter((street) => (counts[street] ?? 0) > 0)
+    .map((street) => `${street.charAt(0).toUpperCase()} ${counts[street]}`)
+    .join(" · ");
+}
+
 function trainingOutcomeLabel(outcome: TrainingOutcome): string {
   if (outcome === "match") {
     return "Exact match";
@@ -3477,6 +3484,73 @@ export default function App() {
                             </div>
                           ) : null}
                       </div>
+                    </section>
+                  ) : null}
+
+                  {trainingProgress.solver_coverage
+                    && (
+                      trainingProgress.solver_coverage.tracked_hands > 0
+                      || trainingProgress.solver_coverage.fallback_hands > 0
+                    ) ? (
+                    <section
+                      className="training-progress-section training-solver-section"
+                      aria-labelledby="training-solver-title"
+                    >
+                      <div className="training-section-heading">
+                        <h3 id="training-solver-title">Solver coverage</h3>
+                        <span className="training-section-context">
+                          {trainingProgress.solver_coverage.tracked_hands}
+                          /{trainingProgress.solver_coverage.total_hands} attributed
+                          {" · "}
+                          {trainingProgress.solver_coverage.fallback_hands} fallback
+                          {" ("}
+                          {benchmarkPercent(trainingProgress.solver_coverage.fallback_rate)}
+                          )
+                        </span>
+                      </div>
+                      {trainingProgress.solver_coverage.routes.length > 0 ? (
+                        <table className="training-street-table training-solver-table">
+                          <thead>
+                            <tr>
+                              <th>Engine</th>
+                              <th>Hands</th>
+                              <th>Share</th>
+                              <th>Streets</th>
+                              <th>Fallback</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {trainingProgress.solver_coverage.routes.map((route) => (
+                              <tr key={route.engine}>
+                                <th>{providerLabel(route.engine)}</th>
+                                <td>{route.hands}</td>
+                                <td>
+                                  {benchmarkPercent(
+                                    route.hands
+                                      / Math.max(trainingProgress.solver_coverage!.tracked_hands, 1),
+                                  )}
+                                </td>
+                                <td className="training-solver-streets">
+                                  {solverStreetCountsLabel(route.street_counts) || "—"}
+                                </td>
+                                <td>{route.fallback_hands || "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : null}
+                      {trainingProgress.solver_coverage.fallback_reasons.length > 0 ? (
+                        <div className="training-solver-fallbacks">
+                          <h4>Fallback reasons</h4>
+                          {trainingProgress.solver_coverage.fallback_reasons.map((fallback) => (
+                            <div key={fallback.reason} className="training-solver-fallback">
+                              <span>{fallback.reason}</span>
+                              <em>{solverStreetCountsLabel(fallback.street_counts) || "—"}</em>
+                              <strong>{fallback.hands}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </section>
                   ) : null}
 

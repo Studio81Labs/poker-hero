@@ -283,6 +283,29 @@ class TrainingActionDifference(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
+class TrainingSolverRouteSummary(BaseModel):
+    engine: str
+    hands: int = Field(ge=1)
+    fallback_hands: int = Field(default=0, ge=0)
+    street_counts: dict[Street, int] = Field(default_factory=dict)
+
+
+class TrainingSolverFallbackSummary(BaseModel):
+    reason: str
+    hands: int = Field(ge=1)
+    street_counts: dict[Street, int] = Field(default_factory=dict)
+
+
+class TrainingSolverCoverage(BaseModel):
+    total_hands: int = Field(ge=0)
+    tracked_hands: int = Field(default=0, ge=0)
+    unattributed_hands: int = Field(default=0, ge=0)
+    fallback_hands: int = Field(default=0, ge=0)
+    fallback_rate: float = Field(default=0, ge=0, le=1)
+    routes: list[TrainingSolverRouteSummary] = Field(default_factory=list)
+    fallback_reasons: list[TrainingSolverFallbackSummary] = Field(default_factory=list)
+
+
 class TrainingProgress(BaseModel):
     reviewed_hands: int = Field(ge=0)
     action_matches: int = Field(ge=0)
@@ -295,6 +318,7 @@ class TrainingProgress(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
     trend: TrainingTrend | None = None
     action_differences: list[TrainingActionDifference] = Field(default_factory=list)
+    solver_coverage: TrainingSolverCoverage
     certainty_summaries: list[TrainingCertaintySummary] = Field(default_factory=list)
     unrated_hands: int = Field(default=0, ge=0)
     unrated_needs_review_hands: int = Field(default=0, ge=0)

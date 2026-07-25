@@ -18,6 +18,9 @@ from app.models import (
     TrainingRecentHand,
     TrainingReviewCertainty,
     TrainingReviewOrder,
+    TrainingSolverCoverage,
+    TrainingSolverFallbackSummary,
+    TrainingSolverRouteSummary,
     TrainingStreetSummary,
     TrainingTrend,
 )
@@ -179,6 +182,7 @@ def summarize_training(
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     trend = _training_trend(newest_first, outcomes, ev_losses)
     action_differences = _action_differences(reviewed, outcomes, ev_losses)
+    solver_coverage = _solver_coverage(reviewed)
     recent_hands = [
         _recent_hand(job, outcomes[job.id], ev_losses[job.id])
         for job in newest_first[: max(0, recent_limit)]
@@ -267,6 +271,7 @@ def summarize_training(
         average_ev_loss_bb=_average_ev_loss(comparable_ev_losses),
         trend=trend,
         action_differences=action_differences,
+        solver_coverage=solver_coverage,
         certainty_summaries=certainty_summaries,
         unrated_hands=len(unrated_jobs),
         unrated_needs_review_hands=unrated_needs_review_hands,
@@ -278,6 +283,85 @@ def summarize_training(
         review_street_counts=dict(review_street_counts),
         review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,
+    )
+
+
+def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
+    route_hands: dict[str, int] = defaultdict(int)
+    route_fallback_hands: dict[str, int] = defaultdict(int)
+    route_streets: dict[str, dict[Street, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    reason_hands: dict[str, int] = defaultdict(int)
+    reason_streets: dict[str, dict[Street, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
+    tracked_hands = 0
+    fallback_hands = 0
+
+    for job in reviewed:
+        recommendation = job.recommendation
+        if recommendation is None:
+            continue
+        raw = recommendation.raw
+        engine_value = raw.get("engine")
+        engine = engine_value.strip() if isinstance(engine_value, str) else ""
+        fallback_value = raw.get("fallback_reason")
+        fallback_reason = (
+            fallback_value.strip() if isinstance(fallback_value, str) else ""
+        )
+        street = (
+            job.approved_state.street
+            if job.approved_state is not None
+            else None
+        )
+
+        if engine:
+            tracked_hands += 1
+            route_hands[engine] += 1
+            if street is not None:
+                route_streets[engine][street] += 1
+
+        if fallback_reason:
+            fallback_hands += 1
+            reason_hands[fallback_reason] += 1
+            if street is not None:
+                reason_streets[fallback_reason][street] += 1
+            if engine:
+                route_fallback_hands[engine] += 1
+
+    routes = [
+        TrainingSolverRouteSummary(
+            engine=engine,
+            hands=hands,
+            fallback_hands=route_fallback_hands[engine],
+            street_counts=dict(route_streets[engine]),
+        )
+        for engine, hands in route_hands.items()
+    ]
+    routes.sort(key=lambda route: (-route.hands, -route.fallback_hands, route.engine))
+
+    fallback_reasons = [
+        TrainingSolverFallbackSummary(
+            reason=reason,
+            hands=hands,
+            street_counts=dict(reason_streets[reason]),
+        )
+        for reason, hands in reason_hands.items()
+    ]
+    fallback_reasons.sort(
+        key=lambda summary: (-summary.hands, summary.reason.casefold())
+    )
+
+    total_hands = len(reviewed)
+    return TrainingSolverCoverage(
+        total_hands=total_hands,
+        tracked_hands=tracked_hands,
+        unattributed_hands=total_hands - tracked_hands,
+        fallback_hands=fallback_hands,
+        fallback_rate=fallback_hands / total_hands if total_hands else 0,
+        routes=routes,
+        fallback_reasons=fallback_reasons,
     )
 
 

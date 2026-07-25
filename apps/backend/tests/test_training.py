@@ -204,6 +204,14 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert coverage.unattributed_hands == 1
     assert coverage.fallback_hands == 2
     assert coverage.fallback_rate == pytest.approx(1 / 3)
+    assert coverage.trend is not None
+    assert coverage.trend.window_hands == 3
+    assert coverage.trend.recent_attribution_rate == pytest.approx(2 / 3)
+    assert coverage.trend.previous_attribution_rate == 1
+    assert coverage.trend.attribution_rate_delta == pytest.approx(-1 / 3)
+    assert coverage.trend.recent_fallback_rate == pytest.approx(1 / 3)
+    assert coverage.trend.previous_fallback_rate == pytest.approx(1 / 3)
+    assert coverage.trend.fallback_rate_delta == 0
     assert [route.engine for route in coverage.routes] == [
         "local_ev_solver_v1",
         "postflop_solver",

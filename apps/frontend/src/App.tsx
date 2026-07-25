@@ -3606,6 +3606,46 @@ export default function App() {
                           )
                         </span>
                       </div>
+                      {trainingProgress.solver_coverage.trend ? (
+                        <div className="training-solver-trend" aria-label="Solver coverage trend">
+                          <span>
+                            Last {trainingProgress.solver_coverage.trend.window_hands}
+                            {" vs previous "}
+                            {trainingProgress.solver_coverage.trend.window_hands}
+                          </span>
+                          <div>
+                            <small>Attribution</small>
+                            <strong>
+                              {benchmarkPercent(
+                                trainingProgress.solver_coverage.trend.recent_attribution_rate,
+                              )}
+                            </strong>
+                            <em className={trainingTrendTone(
+                              trainingProgress.solver_coverage.trend.attribution_rate_delta,
+                            )}>
+                              {formatAccuracyDelta(
+                                trainingProgress.solver_coverage.trend.attribution_rate_delta,
+                              )}
+                            </em>
+                          </div>
+                          <div>
+                            <small>Fallback</small>
+                            <strong>
+                              {benchmarkPercent(
+                                trainingProgress.solver_coverage.trend.recent_fallback_rate,
+                              )}
+                            </strong>
+                            <em className={trainingTrendTone(
+                              trainingProgress.solver_coverage.trend.fallback_rate_delta,
+                              true,
+                            )}>
+                              {formatAccuracyDelta(
+                                trainingProgress.solver_coverage.trend.fallback_rate_delta,
+                              )}
+                            </em>
+                          </div>
+                        </div>
+                      ) : null}
                       {trainingProgress.solver_coverage.routes.length > 0 ? (
                         <table className="training-street-table training-solver-table">
                           <thead>

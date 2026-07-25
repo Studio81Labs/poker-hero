@@ -73,6 +73,8 @@ The frontend is a browser control panel for:
 - Inspecting which recommendation engines handled locked-answer comparisons,
   their street coverage, unattributed legacy hands, and recorded fallback
   frequency and reasons.
+- Comparing equal recent and previous windows for solver attribution and
+  recorded fallback rates.
 - Opening the newest training hands for one attributed engine, the unattributed
   legacy bucket, or a recorded fallback reason without changing global progress
   or the action/sizing review queue.
@@ -132,6 +134,8 @@ The backend API:
   scoring automation-only hands.
 - Aggregates recommendation-engine routes and true fallback metadata for those
   training comparisons without treating intentional provider routing as fallback.
+- Derives equal-window solver attribution and fallback trends, capped at ten
+  reviewed hands per period.
 - Filters the bounded Recent decisions projection by one stable engine-route
   key, fallback-reason key, or explicit unattributed selector while leaving
   aggregate metrics and pending reviews unchanged.
@@ -228,7 +232,8 @@ frequencies.
     street-level results, optional EV-loss grading, recent-hand review links,
     equal-window recent trends capped at ten hands per period, and common
     unsupported action differences. The same comparisons expose actual
-    recommendation-engine coverage by street and recorded fallback reasons.
+    recommendation-engine coverage by street, recorded fallback reasons, and
+    equal-window attribution/fallback trends.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
 12. Selecting an engine route, the unattributed legacy bucket, or a fallback
@@ -374,6 +379,8 @@ Recommendation tests:
 - Verify engine coverage counts valid recommendation metadata, retains
   unattributed legacy hands, and counts `fallback_reason` but not intentional
   `routing_reason` metadata as fallback.
+- Verify solver coverage trends compare equally sized recent and previous
+  windows and treat higher attribution and lower fallback rates as improvements.
 - Verify engine-route keys, fallback-reason keys, and the unattributed selector
   are mutually exclusive and filter only the bounded Recent decisions
   projection while preserving global aggregates.
@@ -415,6 +422,8 @@ Poker Hero is successful when:
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street
   coverage, and where recommendation routing relied on a recorded fallback.
+- A user can compare recent solver attribution and fallback rates with the
+  equally sized preceding period.
 - A user can open recent hands for one engine route, the unattributed legacy
   bucket, or a fallback reason and clear that filter without changing the
   pending action/sizing review queue.

@@ -298,12 +298,23 @@ class TrainingSolverFallbackSummary(BaseModel):
     street_counts: dict[Street, int] = Field(default_factory=dict)
 
 
+class TrainingSolverCoverageTrend(BaseModel):
+    window_hands: int = Field(ge=1)
+    recent_attribution_rate: float = Field(ge=0, le=1)
+    previous_attribution_rate: float = Field(ge=0, le=1)
+    attribution_rate_delta: float = Field(ge=-1, le=1)
+    recent_fallback_rate: float = Field(ge=0, le=1)
+    previous_fallback_rate: float = Field(ge=0, le=1)
+    fallback_rate_delta: float = Field(ge=-1, le=1)
+
+
 class TrainingSolverCoverage(BaseModel):
     total_hands: int = Field(ge=0)
     tracked_hands: int = Field(default=0, ge=0)
     unattributed_hands: int = Field(default=0, ge=0)
     fallback_hands: int = Field(default=0, ge=0)
     fallback_rate: float = Field(default=0, ge=0, le=1)
+    trend: TrainingSolverCoverageTrend | None = None
     routes: list[TrainingSolverRouteSummary] = Field(default_factory=list)
     fallback_reasons: list[TrainingSolverFallbackSummary] = Field(default_factory=list)
 

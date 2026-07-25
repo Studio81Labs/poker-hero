@@ -148,12 +148,23 @@ export type TrainingSolverFilter =
     label: string;
   };
 
+export interface TrainingSolverCoverageTrend {
+  window_hands: number;
+  recent_attribution_rate: number;
+  previous_attribution_rate: number;
+  attribution_rate_delta: number;
+  recent_fallback_rate: number;
+  previous_fallback_rate: number;
+  fallback_rate_delta: number;
+}
+
 export interface TrainingSolverCoverage {
   total_hands: number;
   tracked_hands: number;
   unattributed_hands: number;
   fallback_hands: number;
   fallback_rate: number;
+  trend?: TrainingSolverCoverageTrend | null;
   routes: TrainingSolverRouteSummary[];
   fallback_reasons: TrainingSolverFallbackSummary[];
 }

@@ -121,13 +121,15 @@ self-rated certainty, allowing progress to compare accuracy and available EV
 loss by how sure the player felt before reveal. Unrated hands remain in overall
 progress and are excluded only from certainty calibration. Solver responses
 also contribute engine coverage by street, including unattributed legacy hands
-and recorded fallback frequency and reasons. Intentional routing, such as using
-the preflop chart for a supported preflop hand, is not counted as fallback. An
-engine route, the unattributed legacy bucket, or a fallback reason can filter
-Recent decisions to its newest matching hands without changing global progress
-or the pending-review queue. Once two reviewed hands are available, coverage
-also compares equal recent and previous windows, showing whether engine
-attribution and recorded fallback use are moving in the desired direction.
+and recorded fallback frequency and reasons. Each attributed engine route also
+reports the player's action and exact-line accuracy plus average EV loss when
+candidate EVs are available. Intentional routing, such as using the preflop
+chart for a supported preflop hand, is not counted as fallback. An engine route,
+the unattributed legacy bucket, or a fallback reason can filter Recent decisions
+to its newest matching hands without changing global progress or the
+pending-review queue. Once two reviewed hands are available, coverage also
+compares equal recent and previous windows, showing whether engine attribution
+and recorded fallback use are moving in the desired direction.
 Responses with complete candidate EV metadata also report the selected line's
 EV loss in BB plus aggregate and street-level averages; providers without
 comparable EVs remain ungraded for that metric. The needs-review queue can stay

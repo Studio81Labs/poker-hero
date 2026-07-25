@@ -121,6 +121,9 @@ diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations
 without an engine remain in the total as unattributed hands. Each engine route
 and fallback summary includes a SHA-256 key derived from its normalized label.
+Attributed engine routes reuse the same mixed-strategy-aware outcome and EV-loss
+comparisons as global progress to report action accuracy, exact-line accuracy,
+and an average over only the route's EV-gradable hands.
 Solver coverage also compares equal recent and previous windows capped at ten
 hands each. It reports attribution and fallback rates separately so increased
 attribution and decreased fallback use are both presented as improvements.

@@ -3673,8 +3673,27 @@ export default function App() {
                                     aria-label={`Show ${route.hands} ${route.hands === 1 ? "hand" : "hands"} handled by ${providerLabel(route.engine)}`}
                                     title="Show training hands"
                                   >
-                                    <span>{providerLabel(route.engine)}</span>
+                                    <span className="training-solver-route-name">
+                                      {providerLabel(route.engine)}
+                                    </span>
                                     <Eye size={12} aria-hidden="true" />
+                                    {typeof route.action_accuracy === "number"
+                                      && typeof route.exact_accuracy === "number" ? (
+                                        <small className="training-solver-route-performance">
+                                          <span>
+                                            Action {benchmarkPercent(route.action_accuracy)}
+                                          </span>
+                                          <span>
+                                            Exact {benchmarkPercent(route.exact_accuracy)}
+                                          </span>
+                                          <span>
+                                            {(route.ev_compared_hands ?? 0) > 0
+                                              && typeof route.average_ev_loss_bb === "number"
+                                              ? `${formatEvLossBb(route.average_ev_loss_bb)} EV loss`
+                                              : "EV ungraded"}
+                                          </span>
+                                        </small>
+                                      ) : null}
                                   </button>
                                 </th>
                                 <td>{route.hands}</td>

@@ -154,13 +154,17 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
         reviewed_job(
             "3" * 32,
             "flop",
-            "call",
+            "fold",
             "call",
             datetime(2026, 7, 3, tzinfo=timezone.utc),
             recommendation_raw={
                 "engine": "local_ev_solver_v1",
                 "fallback_reason": unsupported_reason,
                 "requested_engine": "postflop_solver",
+                "candidates": [
+                    {"action": "call", "sizing": None, "ev": 0.2},
+                    {"action": "fold", "sizing": None, "ev": -0.2},
+                ],
             },
         ),
         reviewed_job(
@@ -230,8 +234,18 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
         )
     }
     assert coverage.routes[0].fallback_hands == 2
+    assert coverage.routes[0].action_matches == 1
+    assert coverage.routes[0].exact_matches == 1
+    assert coverage.routes[0].action_accuracy == 0.5
+    assert coverage.routes[0].exact_accuracy == 0.5
+    assert coverage.routes[0].ev_compared_hands == 1
+    assert coverage.routes[0].average_ev_loss_bb == 0.4
     assert coverage.routes[0].street_counts == {"flop": 1, "turn": 1}
     assert coverage.routes[1].fallback_hands == 0
+    assert coverage.routes[1].action_accuracy == 1
+    assert coverage.routes[1].exact_accuracy == 1
+    assert coverage.routes[1].ev_compared_hands == 0
+    assert coverage.routes[1].average_ev_loss_bb is None
     assert coverage.routes[1].street_counts == {"flop": 1, "river": 1}
     assert coverage.routes[2].fallback_hands == 0
     assert len(coverage.fallback_reasons) == 1

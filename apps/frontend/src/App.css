@@ -2080,17 +2080,43 @@ button:disabled {
   text-transform: none;
 }
 
+.training-solver-table tbody th:first-child {
+  width: 40%;
+}
+
 .training-solver-route {
   align-items: center;
   background: transparent;
   border: 0;
   color: inherit;
-  display: inline-flex;
+  display: grid;
   font: inherit;
   font-weight: inherit;
-  gap: 6px;
+  gap: 3px 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 0;
   text-align: left;
+  width: 100%;
+}
+
+.training-solver-route-name {
+  overflow-wrap: anywhere;
+}
+
+.training-solver-route-performance {
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 8px;
+  font-weight: 800;
+  gap: 2px 8px;
+  grid-column: 1 / 3;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.training-solver-route-performance span {
+  white-space: nowrap;
 }
 
 .training-solver-route:hover:not(:disabled) {
@@ -3276,6 +3302,14 @@ button:disabled {
   .training-solver-table th,
   .training-solver-table td {
     padding-inline: 5px;
+  }
+
+  .training-solver-table tbody th:first-child {
+    width: 38%;
+  }
+
+  .training-solver-route-performance {
+    gap: 2px 5px;
   }
 
   .training-solver-trend {

@@ -187,7 +187,7 @@ def summarize_training(
     newest_first = sorted(reviewed, key=_training_recorded_at, reverse=True)
     trend = _training_trend(newest_first, outcomes, ev_losses)
     action_differences = _action_differences(reviewed, outcomes, ev_losses)
-    solver_coverage = _solver_coverage(reviewed)
+    solver_coverage = _solver_coverage(reviewed, outcomes, ev_losses)
     filtered_recent_jobs = [
         job
         for job in newest_first
@@ -314,8 +314,12 @@ def summarize_training(
     )
 
 
-def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
-    route_hands: dict[str, int] = defaultdict(int)
+def _solver_coverage(
+    reviewed: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    ev_losses: dict[str, float | None],
+) -> TrainingSolverCoverage:
+    route_jobs: dict[str, list[JobRecord]] = defaultdict(list)
     route_fallback_hands: dict[str, int] = defaultdict(int)
     route_streets: dict[str, dict[Street, int]] = defaultdict(
         lambda: defaultdict(int)
@@ -341,7 +345,7 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
 
         if engine is not None:
             tracked_hands += 1
-            route_hands[engine] += 1
+            route_jobs[engine].append(job)
             if street is not None:
                 route_streets[engine][street] += 1
 
@@ -353,16 +357,36 @@ def _solver_coverage(reviewed: list[JobRecord]) -> TrainingSolverCoverage:
             if engine is not None:
                 route_fallback_hands[engine] += 1
 
-    routes = [
-        TrainingSolverRouteSummary(
-            key=_solver_metadata_key(engine),
-            engine=engine,
-            hands=hands,
-            fallback_hands=route_fallback_hands[engine],
-            street_counts=dict(route_streets[engine]),
+    routes = []
+    for engine, engine_jobs in route_jobs.items():
+        route_outcomes = [outcomes[job.id] for job in engine_jobs]
+        route_action_matches = sum(
+            outcome != "different" for outcome in route_outcomes
         )
-        for engine, hands in route_hands.items()
-    ]
+        route_exact_matches = sum(
+            outcome in {"match", "mixed"} for outcome in route_outcomes
+        )
+        route_ev_losses = [
+            loss
+            for job in engine_jobs
+            if (loss := ev_losses[job.id]) is not None
+        ]
+        route_hands = len(engine_jobs)
+        routes.append(
+            TrainingSolverRouteSummary(
+                key=_solver_metadata_key(engine),
+                engine=engine,
+                hands=route_hands,
+                fallback_hands=route_fallback_hands[engine],
+                action_matches=route_action_matches,
+                exact_matches=route_exact_matches,
+                action_accuracy=route_action_matches / route_hands,
+                exact_accuracy=route_exact_matches / route_hands,
+                ev_compared_hands=len(route_ev_losses),
+                average_ev_loss_bb=_average_ev_loss(route_ev_losses),
+                street_counts=dict(route_streets[engine]),
+            )
+        )
     routes.sort(key=lambda route: (-route.hands, -route.fallback_hands, route.engine))
 
     fallback_reasons = [

@@ -1213,18 +1213,36 @@ describe("App", () => {
           engine: "local_ev_solver_v1",
           hands: 2,
           fallback_hands: 2,
+          action_matches: 1,
+          exact_matches: 1,
+          action_accuracy: 0.5,
+          exact_accuracy: 0.5,
+          ev_compared_hands: 1,
+          average_ev_loss_bb: 0.4,
           street_counts: { flop: 1, turn: 1 },
         }, {
           key: "c".repeat(64),
           engine: "postflop_solver",
           hands: 2,
           fallback_hands: 0,
+          action_matches: 2,
+          exact_matches: 2,
+          action_accuracy: 1,
+          exact_accuracy: 1,
+          ev_compared_hands: 0,
+          average_ev_loss_bb: null,
           street_counts: { flop: 1, river: 1 },
         }, {
           key: "d".repeat(64),
           engine: "preflop_chart_v1",
           hands: 1,
           fallback_hands: 0,
+          action_matches: 1,
+          exact_matches: 1,
+          action_accuracy: 1,
+          exact_accuracy: 1,
+          ev_compared_hands: 0,
+          average_ev_loss_bb: null,
           street_counts: { preflop: 1 },
         }],
         fallback_reasons: [{
@@ -1284,9 +1302,14 @@ describe("App", () => {
       name: "Show 2 hands handled by Local EV solver",
     });
     expect(showEngineHands).toBeEnabled();
-    expect(within(dialog).getByRole("button", {
+    expect(within(showEngineHands).getByText("Action 50%")).toBeInTheDocument();
+    expect(within(showEngineHands).getByText("Exact 50%")).toBeInTheDocument();
+    expect(within(showEngineHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
+    const showPostflopHands = within(dialog).getByRole("button", {
       name: "Show 2 hands handled by Postflop solver",
-    })).toBeEnabled();
+    });
+    expect(showPostflopHands).toBeEnabled();
+    expect(within(showPostflopHands).getByText("EV ungraded")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", {
       name: "Show 1 hand handled by Preflop chart",
     })).toBeEnabled();

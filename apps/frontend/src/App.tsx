@@ -815,20 +815,30 @@ function trainingReviewQueueStatus(
   }
   if (view === "recent" && solverFilter) {
     if (loading) {
-      return solverFilter.kind === "route"
-        ? "Finding engine hands..."
-        : "Finding fallback hands...";
+      if (solverFilter.kind === "route") {
+        return "Finding engine hands...";
+      }
+      return solverFilter.kind === "fallback"
+        ? "Finding fallback hands..."
+        : "Finding unattributed hands...";
     }
     const matchingHands = progress?.recent_matching_hands
       ?? progress?.recent_hands.length
       ?? 0;
     const visibleHands = progress?.recent_hands.length ?? 0;
-    const kindLabel = solverFilter.kind === "route" ? "engine" : "fallback";
+    const kindLabel = solverFilter.kind === "route"
+      ? "engine"
+      : solverFilter.kind === "fallback"
+        ? "fallback"
+        : "unattributed";
     if (matchingHands > visibleHands) {
       return `Showing ${visibleHands} newest of ${matchingHands} ${kindLabel} hands.`;
     }
     if (solverFilter.kind === "route") {
       return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} handled by ${solverFilter.label}.`;
+    }
+    if (solverFilter.kind === "unattributed") {
+      return `${matchingHands} training hand${matchingHands === 1 ? " has" : "s have"} no engine attribution.`;
     }
     return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} used this fallback.`;
   }
@@ -2370,7 +2380,13 @@ export default function App() {
     if (
       (
         filter?.kind === trainingSolverFilter?.kind
-        && filter?.key === trainingSolverFilter?.key
+        && (
+          filter?.kind === "unattributed"
+          || (
+            trainingSolverFilter?.kind !== "unattributed"
+            && filter?.key === trainingSolverFilter?.key
+          )
+        )
       )
       || trainingProgressLoading
     ) {
@@ -3565,7 +3581,24 @@ export default function App() {
                         <span className="training-section-context">
                           {trainingProgress.solver_coverage.tracked_hands} attributed
                           {" · "}
-                          {trainingProgress.solver_coverage.unattributed_hands} unattributed
+                          {trainingProgress.solver_coverage.unattributed_hands > 0 ? (
+                            <button
+                              type="button"
+                              className="training-solver-unattributed"
+                              onClick={() => void updateTrainingSolverFilter({
+                                kind: "unattributed",
+                                label: "Unattributed recommendations",
+                              })}
+                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                              aria-label={`Show ${trainingProgress.solver_coverage.unattributed_hands} unattributed ${trainingProgress.solver_coverage.unattributed_hands === 1 ? "hand" : "hands"}`}
+                              title="Show training hands"
+                            >
+                              {trainingProgress.solver_coverage.unattributed_hands} unattributed
+                              <Eye size={11} aria-hidden="true" />
+                            </button>
+                          ) : (
+                            <>0 unattributed</>
+                          )}
                           {" · "}
                           {trainingProgress.solver_coverage.fallback_hands} fallback
                           {" ("}
@@ -4031,6 +4064,8 @@ export default function App() {
                         <span>
                           {trainingSolverFilter.kind === "fallback" ? (
                             <AlertTriangle size={12} aria-hidden="true" />
+                          ) : trainingSolverFilter.kind === "unattributed" ? (
+                            <Info size={12} aria-hidden="true" />
                           ) : (
                             <Target size={12} aria-hidden="true" />
                           )}
@@ -4118,7 +4153,9 @@ export default function App() {
                             : trainingSolverFilter
                               ? trainingSolverFilter.kind === "route"
                                 ? "No training hands were handled by this engine."
-                                : "No training hands use this fallback."
+                                : trainingSolverFilter.kind === "fallback"
+                                  ? "No training hands use this fallback."
+                                  : "No training hands are missing engine attribution."
                               : "No recent training decisions."}
                       </div>
                     )}

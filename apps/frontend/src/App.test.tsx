@@ -1135,7 +1135,7 @@ describe("App", () => {
     );
   });
 
-  it("shows recommendation engine coverage and fallback reasons", async () => {
+  it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);
     const routeHand = {
@@ -1164,6 +1164,21 @@ describe("App", () => {
       recommended_sizing: null,
       outcome: "match" as const,
       recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
+    const unattributedHand = {
+      job_id: "unattributed-job",
+      original_filename: "legacy.png",
+      street: "river" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "fold" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-19T13:00:00Z",
       reviewed_at: null,
       review_note: null,
       ev_loss_bb: null,
@@ -1226,11 +1241,18 @@ describe("App", () => {
       recent_matching_hands: 2,
       recent_hands: [routeHand],
     };
+    const unattributedFilteredProgress = {
+      ...progress,
+      recent_matching_hands: 1,
+      recent_hands: [unattributedHand],
+    };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(progress))
       .mockResolvedValueOnce(jsonResponse(routeFilteredProgress))
       .mockResolvedValueOnce(jsonResponse(progress))
       .mockResolvedValueOnce(jsonResponse(filteredProgress))
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(unattributedFilteredProgress))
       .mockResolvedValueOnce(jsonResponse(progress));
     render(<App />);
     const user = userEvent.setup();
@@ -1239,9 +1261,10 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
     expect(within(dialog).getByRole("heading", { name: "Solver coverage" })).toBeInTheDocument();
-    expect(within(dialog).getByText(
-      "5 attributed · 1 unattributed · 2 fallback (33%)",
-    )).toBeInTheDocument();
+    const showUnattributedHands = within(dialog).getByRole("button", {
+      name: "Show 1 unattributed hand",
+    });
+    expect(showUnattributedHands).toBeEnabled();
     const showEngineHands = within(dialog).getByRole("button", {
       name: "Show 2 hands handled by Local EV solver",
     });
@@ -1306,6 +1329,35 @@ describe("App", () => {
       within(dialog).queryByLabelText("Active solver filter"),
     ).not.toBeInTheDocument());
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
+
+    const refreshedUnattributedHands = within(dialog).getByRole("button", {
+      name: "Show 1 unattributed hand",
+    });
+    await waitFor(() => expect(refreshedUnattributedHands).toBeEnabled());
+    await user.click(refreshedUnattributedHands);
+
+    expect(fetchMock().mock.calls[5][0]).toBe(
+      "http://localhost:8000/api/training/progress?solver_unattributed=true",
+    );
+    const activeUnattributedFilter = await within(dialog).findByLabelText("Active solver filter");
+    expect(within(activeUnattributedFilter).getByText(
+      "Unattributed recommendations",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open legacy.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "1 training hand has no engine attribution.",
+    )).toBeInTheDocument();
+
+    await user.click(within(activeUnattributedFilter).getByRole("button", {
+      name: "Clear solver filter",
+    }));
+
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active solver filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
   it("shows entirely unattributed legacy recommendation coverage", async () => {
@@ -1341,9 +1393,9 @@ describe("App", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
     expect(within(dialog).getByRole("heading", { name: "Solver coverage" })).toBeInTheDocument();
-    expect(within(dialog).getByText(
-      "0 attributed · 3 unattributed · 0 fallback (0%)",
-    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Show 3 unattributed hands",
+    })).toBeEnabled();
   });
 
   it("suggests a focus street and orders its reviews by EV loss", async () => {

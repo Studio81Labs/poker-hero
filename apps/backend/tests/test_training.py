@@ -256,6 +256,19 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert route_filtered.recent_matching_hands == 2
     assert [hand.job_id for hand in route_filtered.recent_hands] == ["2" * 32]
 
+    unattributed_filtered = summarize_training(
+        jobs,
+        recent_limit=1,
+        solver_unattributed=True,
+    )
+
+    assert unattributed_filtered.reviewed_hands == 6
+    assert unattributed_filtered.solver_coverage == coverage
+    assert unattributed_filtered.recent_matching_hands == 1
+    assert [hand.job_id for hand in unattributed_filtered.recent_hands] == [
+        "6" * 32
+    ]
+
 
 def test_summarize_training_calibrates_self_rated_certainty() -> None:
     candidates = {

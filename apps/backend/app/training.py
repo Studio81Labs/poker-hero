@@ -81,6 +81,7 @@ def summarize_training(
     lesson_order: TrainingReviewOrder = "recent",
     solver_fallback_key: str | None = None,
     solver_route_key: str | None = None,
+    solver_unattributed: bool = False,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -202,6 +203,10 @@ def summarize_training(
                 (engine := _solver_route_engine(job)) is not None
                 and _solver_metadata_key(engine) == solver_route_key
             )
+        )
+        and (
+            not solver_unattributed
+            or _solver_route_engine(job) is None
         )
     ]
     recent_hands = [

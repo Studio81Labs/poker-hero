@@ -277,10 +277,21 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     valid_solver_route = client.get(
         f"/api/training/progress?solver_route_key={'b' * 64}"
     )
+    invalid_solver_unattributed = client.get(
+        "/api/training/progress?solver_unattributed=not-a-bool"
+    )
+    valid_solver_unattributed = client.get(
+        "/api/training/progress?solver_unattributed=true"
+    )
     conflicting_solver_filters = client.get(
         "/api/training/progress"
         f"?solver_fallback_key={'a' * 64}"
         f"&solver_route_key={'b' * 64}"
+    )
+    conflicting_unattributed_filter = client.get(
+        "/api/training/progress"
+        f"?solver_route_key={'b' * 64}"
+        "&solver_unattributed=true"
     )
 
     assert filtered.status_code == 200
@@ -300,9 +311,16 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert valid_solver_fallback.status_code == 200
     assert invalid_solver_route.status_code == 422
     assert valid_solver_route.status_code == 200
+    assert invalid_solver_unattributed.status_code == 422
+    assert valid_solver_unattributed.status_code == 200
     assert conflicting_solver_filters.status_code == 422
     assert conflicting_solver_filters.json()["detail"] == (
-        "solver_fallback_key and solver_route_key cannot be provided together"
+        "solver_fallback_key, solver_route_key, and solver_unattributed "
+        "are mutually exclusive"
+    )
+    assert conflicting_unattributed_filter.status_code == 422
+    assert conflicting_unattributed_filter.json()["detail"] == (
+        conflicting_solver_filters.json()["detail"]
     )
 
 

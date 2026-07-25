@@ -372,6 +372,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             default=None,
             pattern=r"^[0-9a-f]{64}$",
         ),
+        solver_unattributed: bool = False,
     ) -> TrainingProgress:
         if (review_decision_action is None) != (review_recommended_action is None):
             raise HTTPException(
@@ -381,12 +382,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "must be provided together"
                 ),
             )
-        if solver_fallback_key is not None and solver_route_key is not None:
+        solver_filter_count = sum((
+            solver_fallback_key is not None,
+            solver_route_key is not None,
+            solver_unattributed,
+        ))
+        if solver_filter_count > 1:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "solver_fallback_key and solver_route_key "
-                    "cannot be provided together"
+                    "solver_fallback_key, solver_route_key, and "
+                    "solver_unattributed are mutually exclusive"
                 ),
             )
         review_action_difference = (
@@ -406,6 +412,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lesson_order=lesson_order,
             solver_fallback_key=solver_fallback_key,
             solver_route_key=solver_route_key,
+            solver_unattributed=solver_unattributed,
         )
 
     @app.get("/api/training/lessons/export")

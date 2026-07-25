@@ -137,11 +137,16 @@ export interface TrainingSolverFallbackSummary {
   street_counts: Partial<Record<Street, number>>;
 }
 
-export interface TrainingSolverFilter {
-  kind: "route" | "fallback";
-  key: string;
-  label: string;
-}
+export type TrainingSolverFilter =
+  | {
+    kind: "route" | "fallback";
+    key: string;
+    label: string;
+  }
+  | {
+    kind: "unattributed";
+    label: string;
+  };
 
 export interface TrainingSolverCoverage {
   total_hands: number;

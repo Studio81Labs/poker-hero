@@ -73,9 +73,9 @@ The frontend is a browser control panel for:
 - Inspecting which recommendation engines handled locked-answer comparisons,
   their street coverage, unattributed legacy hands, and recorded fallback
   frequency and reasons.
-- Opening the newest training hands for one attributed engine or recorded
-  fallback reason without changing global progress or the action/sizing review
-  queue.
+- Opening the newest training hands for one attributed engine, the unattributed
+  legacy bucket, or a recorded fallback reason without changing global progress
+  or the action/sizing review queue.
 - Comparing action accuracy, exact-line accuracy, and available EV loss across
   low, medium, and high pre-reveal certainty.
 - Opening unresolved differences for a rated certainty level directly from its
@@ -132,9 +132,9 @@ The backend API:
   scoring automation-only hands.
 - Aggregates recommendation-engine routes and true fallback metadata for those
   training comparisons without treating intentional provider routing as fallback.
-- Filters the bounded Recent decisions projection by one stable engine-route or
-  fallback-reason key while leaving aggregate metrics and pending reviews
-  unchanged.
+- Filters the bounded Recent decisions projection by one stable engine-route
+  key, fallback-reason key, or explicit unattributed selector while leaving
+  aggregate metrics and pending reviews unchanged.
 - Exports the full filtered and ordered completed-lesson set as a portable
   Markdown study document.
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
@@ -231,10 +231,11 @@ frequencies.
     recommendation-engine coverage by street and recorded fallback reasons.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
-12. Selecting an engine route or fallback reason shows its newest matching
-    training hands in the Recent decisions list. The request uses one stable
-    metadata key rather than raw provider text, and does not alter progress
-    metrics or mistake queues.
+12. Selecting an engine route, the unattributed legacy bucket, or a fallback
+    reason shows its newest matching training hands in the Recent decisions
+    list. The request uses one stable metadata key or explicit unattributed
+    selector rather than raw provider text, and does not alter progress metrics
+    or mistake queues.
 13. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and certainty rating and prioritize the
@@ -373,9 +374,9 @@ Recommendation tests:
 - Verify engine coverage counts valid recommendation metadata, retains
   unattributed legacy hands, and counts `fallback_reason` but not intentional
   `routing_reason` metadata as fallback.
-- Verify engine-route and fallback-reason keys are stable, mutually exclusive,
-  and filter only the bounded Recent decisions projection while preserving
-  global aggregates.
+- Verify engine-route keys, fallback-reason keys, and the unattributed selector
+  are mutually exclusive and filter only the bounded Recent decisions
+  projection while preserving global aggregates.
 - Add integration tests for local and external providers when concrete engines/APIs are configured.
 
 End-to-end tests:
@@ -414,8 +415,9 @@ Poker Hero is successful when:
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street
   coverage, and where recommendation routing relied on a recorded fallback.
-- A user can open recent hands for one engine route or fallback reason and clear
-  that filter without changing the pending action/sizing review queue.
+- A user can open recent hands for one engine route, the unattributed legacy
+  bucket, or a fallback reason and clear that filter without changing the
+  pending action/sizing review queue.
 - A user can identify repeated unsupported action choices without treating
   solver-supported mixed actions or sizing-only differences as mistakes.
 - A user can open pending reviews for one repeated action pattern without

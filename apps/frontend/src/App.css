@@ -2102,6 +2102,23 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.training-solver-unattributed {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
+  font: inherit;
+  font-weight: inherit;
+  gap: 3px;
+  padding: 0;
+  text-transform: inherit;
+}
+
+.training-solver-unattributed:hover:not(:disabled) {
+  color: var(--accent);
+}
+
 .training-solver-streets {
   color: var(--muted);
   white-space: nowrap;

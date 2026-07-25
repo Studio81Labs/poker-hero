@@ -159,6 +159,8 @@ export async function getTrainingProgress(
     search.set("solver_fallback_key", solverFilter.key);
   } else if (solverFilter?.kind === "route") {
     search.set("solver_route_key", solverFilter.key);
+  } else if (solverFilter?.kind === "unattributed") {
+    search.set("solver_unattributed", "true");
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

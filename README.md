@@ -123,8 +123,9 @@ progress and are excluded only from certainty calibration. Solver responses
 also contribute engine coverage by street, including unattributed legacy hands
 and recorded fallback frequency and reasons. Intentional routing, such as using
 the preflop chart for a supported preflop hand, is not counted as fallback. An
-engine route or fallback reason can filter Recent decisions to its newest
-matching hands without changing global progress or the pending-review queue.
+engine route, the unattributed legacy bucket, or a fallback reason can filter
+Recent decisions to its newest matching hands without changing global progress
+or the pending-review queue.
 Responses with complete candidate EV metadata also report the selected line's
 EV loss in BB plus aggregate and street-level averages; providers without
 comparable EVs remain ungraded for that metric. The needs-review queue can stay

@@ -2080,6 +2080,28 @@ button:disabled {
   text-transform: none;
 }
 
+.training-solver-route {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
+  font: inherit;
+  font-weight: inherit;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+}
+
+.training-solver-route:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.training-solver-route svg {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
 .training-solver-streets {
   color: var(--muted);
   white-space: nowrap;
@@ -2136,7 +2158,7 @@ button:disabled {
   justify-self: end;
 }
 
-.training-active-fallback > span {
+.training-active-solver > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

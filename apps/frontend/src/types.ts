@@ -123,6 +123,7 @@ export interface TrainingActionDifference {
 }
 
 export interface TrainingSolverRouteSummary {
+  key: string;
   engine: string;
   hands: number;
   fallback_hands: number;
@@ -134,6 +135,12 @@ export interface TrainingSolverFallbackSummary {
   reason: string;
   hands: number;
   street_counts: Partial<Record<Street, number>>;
+}
+
+export interface TrainingSolverFilter {
+  kind: "route" | "fallback";
+  key: string;
+  label: string;
 }
 
 export interface TrainingSolverCoverage {

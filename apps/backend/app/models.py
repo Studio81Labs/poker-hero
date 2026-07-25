@@ -284,6 +284,7 @@ class TrainingActionDifference(BaseModel):
 
 
 class TrainingSolverRouteSummary(BaseModel):
+    key: str = Field(pattern=r"^[0-9a-f]{64}$")
     engine: str
     hands: int = Field(ge=1)
     fallback_hands: int = Field(default=0, ge=0)

@@ -48,7 +48,7 @@ import type {
   TrainingReviewDifference,
   TrainingReviewOrder,
   TrainingReviewStreet,
-  TrainingSolverFallbackSummary,
+  TrainingSolverFilter,
 } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
@@ -783,7 +783,7 @@ function trainingReviewQueueStatus(
   lessonStreet: TrainingReviewStreet,
   lessonQuery: string,
   lessonOrder: TrainingReviewOrder,
-  solverFallback: TrainingSolverFallbackSummary | null,
+  solverFilter: TrainingSolverFilter | null,
 ): string {
   if (view === "lessons") {
     if (loading) {
@@ -813,16 +813,22 @@ function trainingReviewQueueStatus(
     }
     return "No saved lesson notes yet.";
   }
-  if (view === "recent" && solverFallback) {
+  if (view === "recent" && solverFilter) {
     if (loading) {
-      return "Finding fallback hands...";
+      return solverFilter.kind === "route"
+        ? "Finding engine hands..."
+        : "Finding fallback hands...";
     }
     const matchingHands = progress?.recent_matching_hands
       ?? progress?.recent_hands.length
       ?? 0;
     const visibleHands = progress?.recent_hands.length ?? 0;
+    const kindLabel = solverFilter.kind === "route" ? "engine" : "fallback";
     if (matchingHands > visibleHands) {
-      return `Showing ${visibleHands} newest of ${matchingHands} fallback hands.`;
+      return `Showing ${visibleHands} newest of ${matchingHands} ${kindLabel} hands.`;
+    }
+    if (solverFilter.kind === "route") {
+      return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} handled by ${solverFilter.label}.`;
     }
     return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} used this fallback.`;
   }
@@ -1429,7 +1435,7 @@ export default function App() {
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
   const [trainingReviewCertainty, setTrainingReviewCertainty] = useState<TrainingReviewCertaintyFilter>("all");
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
-  const [trainingSolverFallback, setTrainingSolverFallback] = useState<TrainingSolverFallbackSummary | null>(null);
+  const [trainingSolverFilter, setTrainingSolverFilter] = useState<TrainingSolverFilter | null>(null);
   const [trainingLessonOrder, setTrainingLessonOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingLessonStreet, setTrainingLessonStreet] = useState<TrainingReviewStreet>("all");
   const [trainingLessonSearch, setTrainingLessonSearch] = useState("");
@@ -1559,7 +1565,7 @@ export default function App() {
     || trainingReviewJobId !== null
     || busy;
   const nextReviewHand = trainingProgressView === "lessons"
-    || (trainingProgressView === "recent" && trainingSolverFallback)
+    || (trainingProgressView === "recent" && trainingSolverFilter)
     ? null
     : trainingProgress?.review_queue[0] ?? null;
   const reviewQueueStatus = trainingReviewQueueStatus(
@@ -1573,7 +1579,7 @@ export default function App() {
     trainingLessonStreet,
     trainingLessonQuery,
     trainingLessonOrder,
-    trainingSolverFallback,
+    trainingSolverFilter,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -2167,7 +2173,7 @@ export default function App() {
         trainingLessonStreet,
         trainingLessonQuery,
         trainingLessonOrder,
-        trainingSolverFallback?.key ?? null,
+        trainingSolverFilter,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2231,7 +2237,7 @@ export default function App() {
     setTrainingReviewStreet("all");
     setTrainingReviewCertainty("all");
     setTrainingReviewDifference(null);
-    setTrainingSolverFallback(null);
+    setTrainingSolverFilter(null);
     setTrainingLessonOrder("recent");
     setTrainingLessonStreet("all");
     setTrainingLessonSearch("");
@@ -2257,7 +2263,7 @@ export default function App() {
         && reviewCertainty === trainingReviewCertainty
         && reviewDifference?.decision_action === trainingReviewDifference?.decision_action
         && reviewDifference?.recommended_action === trainingReviewDifference?.recommended_action
-        && trainingSolverFallback === null
+        && trainingSolverFilter === null
       )
       || trainingProgressLoading
     ) {
@@ -2267,12 +2273,12 @@ export default function App() {
     const previousStreet = trainingReviewStreet;
     const previousCertainty = trainingReviewCertainty;
     const previousDifference = trainingReviewDifference;
-    const previousFallback = trainingSolverFallback;
+    const previousSolverFilter = trainingSolverFilter;
     setTrainingReviewOrder(reviewOrder);
     setTrainingReviewStreet(reviewStreet);
     setTrainingReviewCertainty(reviewCertainty);
     setTrainingReviewDifference(reviewDifference);
-    setTrainingSolverFallback(null);
+    setTrainingSolverFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2290,7 +2296,7 @@ export default function App() {
       setTrainingReviewStreet(previousStreet);
       setTrainingReviewCertainty(previousCertainty);
       setTrainingReviewDifference(previousDifference);
-      setTrainingSolverFallback(previousFallback);
+      setTrainingSolverFilter(previousSolverFilter);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2328,7 +2334,7 @@ export default function App() {
         lessonStreet,
         lessonQuery,
         lessonOrder,
-        trainingSolverFallback?.key ?? null,
+        trainingSolverFilter,
       ));
       setTrainingLessonQuery(lessonQuery);
     } catch (trainingError) {
@@ -2357,15 +2363,21 @@ export default function App() {
     await updateTrainingReviewQueue(trainingReviewOrder, "all", difference, "all");
   }
 
-  async function updateTrainingSolverFallback(
-    fallback: TrainingSolverFallbackSummary | null,
+  async function updateTrainingSolverFilter(
+    filter: TrainingSolverFilter | null,
   ) {
     setTrainingProgressView("recent");
-    if (fallback?.key === trainingSolverFallback?.key || trainingProgressLoading) {
+    if (
+      (
+        filter?.kind === trainingSolverFilter?.kind
+        && filter?.key === trainingSolverFilter?.key
+      )
+      || trainingProgressLoading
+    ) {
       return;
     }
-    const previousFallback = trainingSolverFallback;
-    setTrainingSolverFallback(fallback);
+    const previousSolverFilter = trainingSolverFilter;
+    setTrainingSolverFilter(filter);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2377,11 +2389,11 @@ export default function App() {
         trainingLessonStreet,
         trainingLessonQuery,
         trainingLessonOrder,
-        fallback?.key ?? null,
+        filter,
       ));
     } catch (trainingError) {
-      setTrainingSolverFallback(previousFallback);
-      setError(messageFromError(trainingError, "Could not load fallback hands"));
+      setTrainingSolverFilter(previousSolverFilter);
+      setError(messageFromError(trainingError, "Could not load solver hands"));
     } finally {
       setTrainingProgressLoading(false);
     }
@@ -3574,8 +3586,24 @@ export default function App() {
                           </thead>
                           <tbody>
                             {trainingProgress.solver_coverage.routes.map((route) => (
-                              <tr key={route.engine}>
-                                <th>{providerLabel(route.engine)}</th>
+                              <tr key={route.key}>
+                                <th scope="row">
+                                  <button
+                                    type="button"
+                                    className="training-solver-route"
+                                    onClick={() => void updateTrainingSolverFilter({
+                                      kind: "route",
+                                      key: route.key,
+                                      label: providerLabel(route.engine),
+                                    })}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={`Show ${route.hands} ${route.hands === 1 ? "hand" : "hands"} handled by ${providerLabel(route.engine)}`}
+                                    title="Show training hands"
+                                  >
+                                    <span>{providerLabel(route.engine)}</span>
+                                    <Eye size={12} aria-hidden="true" />
+                                  </button>
+                                </th>
                                 <td>{route.hands}</td>
                                 <td>
                                   {benchmarkPercent(
@@ -3600,7 +3628,11 @@ export default function App() {
                               key={fallback.key}
                               type="button"
                               className="training-solver-fallback"
-                              onClick={() => void updateTrainingSolverFallback(fallback)}
+                              onClick={() => void updateTrainingSolverFilter({
+                                kind: "fallback",
+                                key: fallback.key,
+                                label: fallback.reason,
+                              })}
                               disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                               aria-label={`Show ${fallback.hands} ${fallback.hands === 1 ? "hand" : "hands"} using fallback: ${fallback.reason}`}
                               title="Show training hands"
@@ -3935,8 +3967,8 @@ export default function App() {
                             type="button"
                             className={trainingProgressView === "recent" ? "active" : ""}
                             onClick={() => {
-                              if (trainingSolverFallback) {
-                                void updateTrainingSolverFallback(null);
+                              if (trainingSolverFilter) {
+                                void updateTrainingSolverFilter(null);
                               } else {
                                 setTrainingProgressView("recent");
                               }
@@ -3950,7 +3982,7 @@ export default function App() {
                             className={trainingProgressView === "review" ? "active" : ""}
                             onClick={() => {
                               setTrainingProgressView("review");
-                              if (trainingSolverFallback) {
+                              if (trainingSolverFilter) {
                                 void updateTrainingReviewQueue(
                                   trainingReviewOrder,
                                   trainingReviewStreet,
@@ -3994,18 +4026,22 @@ export default function App() {
                         </button>
                       </div>
                     ) : null}
-                    {trainingProgressView === "recent" && trainingSolverFallback ? (
-                      <div className="training-active-difference training-active-fallback" aria-label="Active solver-fallback filter">
+                    {trainingProgressView === "recent" && trainingSolverFilter ? (
+                      <div className="training-active-difference training-active-solver" aria-label="Active solver filter">
                         <span>
-                          <AlertTriangle size={12} aria-hidden="true" />
-                          {trainingSolverFallback.reason}
+                          {trainingSolverFilter.kind === "fallback" ? (
+                            <AlertTriangle size={12} aria-hidden="true" />
+                          ) : (
+                            <Target size={12} aria-hidden="true" />
+                          )}
+                          {trainingSolverFilter.label}
                         </span>
                         <button
                           type="button"
-                          onClick={() => void updateTrainingSolverFallback(null)}
+                          onClick={() => void updateTrainingSolverFilter(null)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear solver-fallback filter"
-                          title="Clear solver-fallback filter"
+                          aria-label="Clear solver filter"
+                          title="Clear solver filter"
                         >
                           <X size={12} aria-hidden="true" />
                         </button>
@@ -4079,8 +4115,10 @@ export default function App() {
                             : "No saved lesson notes yet."
                           : trainingProgressView === "review"
                             ? "No action or sizing differences need review."
-                            : trainingSolverFallback
-                              ? "No training hands use this fallback."
+                            : trainingSolverFilter
+                              ? trainingSolverFilter.kind === "route"
+                                ? "No training hands were handled by this engine."
+                                : "No training hands use this fallback."
                               : "No recent training decisions."}
                       </div>
                     )}

@@ -1136,7 +1136,23 @@ describe("App", () => {
   });
 
   it("shows recommendation engine coverage and fallback reasons", async () => {
+    const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);
+    const routeHand = {
+      job_id: "route-job",
+      original_filename: "engine.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "check" as const,
+      decision_sizing: null,
+      recommended_action: "check" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-21T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
     const fallbackHand = {
       job_id: "fallback-job",
       original_filename: "fallback.png",
@@ -1169,16 +1185,19 @@ describe("App", () => {
         fallback_hands: 2,
         fallback_rate: 1 / 3,
         routes: [{
+          key: routeKey,
           engine: "local_ev_solver_v1",
           hands: 2,
           fallback_hands: 2,
           street_counts: { flop: 1, turn: 1 },
         }, {
+          key: "c".repeat(64),
           engine: "postflop_solver",
           hands: 2,
           fallback_hands: 0,
           street_counts: { flop: 1, river: 1 },
         }, {
+          key: "d".repeat(64),
           engine: "preflop_chart_v1",
           hands: 1,
           fallback_hands: 0,
@@ -1202,7 +1221,14 @@ describe("App", () => {
       recent_matching_hands: 2,
       recent_hands: [fallbackHand],
     };
+    const routeFilteredProgress = {
+      ...progress,
+      recent_matching_hands: 2,
+      recent_hands: [routeHand],
+    };
     fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(routeFilteredProgress))
       .mockResolvedValueOnce(jsonResponse(progress))
       .mockResolvedValueOnce(jsonResponse(filteredProgress))
       .mockResolvedValueOnce(jsonResponse(progress));
@@ -1216,26 +1242,54 @@ describe("App", () => {
     expect(within(dialog).getByText(
       "5 attributed · 1 unattributed · 2 fallback (33%)",
     )).toBeInTheDocument();
-    expect(within(dialog).getByRole("row", {
-      name: "Local EV solver 2 40% F 1 · T 1 2",
-    })).toBeInTheDocument();
-    expect(within(dialog).getByRole("row", {
-      name: "Postflop solver 2 40% F 1 · R 1 —",
-    })).toBeInTheDocument();
-    expect(within(dialog).getByRole("row", {
-      name: "Preflop chart 1 20% P 1 —",
-    })).toBeInTheDocument();
+    const showEngineHands = within(dialog).getByRole("button", {
+      name: "Show 2 hands handled by Local EV solver",
+    });
+    expect(showEngineHands).toBeEnabled();
+    expect(within(dialog).getByRole("button", {
+      name: "Show 2 hands handled by Postflop solver",
+    })).toBeEnabled();
+    expect(within(dialog).getByRole("button", {
+      name: "Show 1 hand handled by Preflop chart",
+    })).toBeEnabled();
     const showFallbackHands = within(dialog).getByRole("button", {
       name: "Show 2 hands using fallback: hero position must identify IP or OOP",
     });
     expect(showFallbackHands).toBeEnabled();
 
-    await user.click(showFallbackHands);
+    await user.click(showEngineHands);
 
     expect(fetchMock().mock.calls[1][0]).toBe(
+      `http://localhost:8000/api/training/progress?solver_route_key=${routeKey}`,
+    );
+    const activeRouteFilter = await within(dialog).findByLabelText("Active solver filter");
+    expect(within(activeRouteFilter).getByText("Local EV solver")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open engine.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "Showing 1 newest of 2 engine hands.",
+    )).toBeInTheDocument();
+
+    await user.click(within(activeRouteFilter).getByRole("button", {
+      name: "Clear solver filter",
+    }));
+
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active solver filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+
+    const refreshedFallbackHands = within(dialog).getByRole("button", {
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP",
+    });
+    await waitFor(() => expect(refreshedFallbackHands).toBeEnabled());
+    await user.click(refreshedFallbackHands);
+
+    expect(fetchMock().mock.calls[3][0]).toBe(
       `http://localhost:8000/api/training/progress?solver_fallback_key=${fallbackKey}`,
     );
-    const activeFilter = await within(dialog).findByLabelText("Active solver-fallback filter");
+    const activeFilter = await within(dialog).findByLabelText("Active solver filter");
     expect(within(activeFilter).getByText("hero position must identify IP or OOP")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", {
       name: "Open fallback.png training review",
@@ -1245,13 +1299,13 @@ describe("App", () => {
     )).toBeInTheDocument();
 
     await user.click(within(activeFilter).getByRole("button", {
-      name: "Clear solver-fallback filter",
+      name: "Clear solver filter",
     }));
 
     await waitFor(() => expect(
-      within(dialog).queryByLabelText("Active solver-fallback filter"),
+      within(dialog).queryByLabelText("Active solver filter"),
     ).not.toBeInTheDocument());
-    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
   it("shows entirely unattributed legacy recommendation coverage", async () => {

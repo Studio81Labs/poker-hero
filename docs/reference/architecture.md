@@ -119,11 +119,12 @@ recent review links from persisted jobs. It also aggregates the recommendation
 Non-empty `fallback_reason` values count as fallback and are grouped for
 diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations
-without an engine remain in the total as unattributed hands. Each fallback
-summary includes a SHA-256 key derived from its normalized reason. The progress
-endpoint accepts that fixed-length key to filter only the bounded Recent
-decisions projection, avoiding raw provider error text in query strings while
-leaving every aggregate and pending-review projection global. Completed notes
+without an engine remain in the total as unattributed hands. Each engine route
+and fallback summary includes a SHA-256 key derived from its normalized label.
+The progress endpoint accepts one of those fixed-length keys to filter only the
+bounded Recent decisions projection, avoiding raw provider metadata in query
+strings while leaving every aggregate and pending-review projection global.
+Route and fallback keys are mutually exclusive per request. Completed notes
 have their own global count and bounded list ordered by review time, independent
 from both the recent and pending-review limits. The endpoint also groups rated
 decisions by low, medium, or high pre-reveal certainty so accuracy and available

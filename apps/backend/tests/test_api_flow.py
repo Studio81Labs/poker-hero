@@ -271,6 +271,17 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     valid_solver_fallback = client.get(
         f"/api/training/progress?solver_fallback_key={'a' * 64}"
     )
+    invalid_solver_route = client.get(
+        "/api/training/progress?solver_route_key=not-a-hash"
+    )
+    valid_solver_route = client.get(
+        f"/api/training/progress?solver_route_key={'b' * 64}"
+    )
+    conflicting_solver_filters = client.get(
+        "/api/training/progress"
+        f"?solver_fallback_key={'a' * 64}"
+        f"&solver_route_key={'b' * 64}"
+    )
 
     assert filtered.status_code == 200
     assert invalid_order.status_code == 422
@@ -287,6 +298,12 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert invalid_difference.status_code == 422
     assert invalid_solver_fallback.status_code == 422
     assert valid_solver_fallback.status_code == 200
+    assert invalid_solver_route.status_code == 422
+    assert valid_solver_route.status_code == 200
+    assert conflicting_solver_filters.status_code == 422
+    assert conflicting_solver_filters.json()["detail"] == (
+        "solver_fallback_key and solver_route_key cannot be provided together"
+    )
 
 
 def test_completed_training_review_leaves_accuracy_and_clears_pending_queue(tmp_path: Path) -> None:

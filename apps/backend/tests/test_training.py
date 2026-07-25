@@ -131,6 +131,93 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
 
 
+def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
+    unsupported_reason = "hero position must identify IP or OOP"
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "check",
+            "check",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            recommendation_raw={"engine": "postflop_solver"},
+        ),
+        reviewed_job(
+            "2" * 32,
+            "river",
+            "fold",
+            "fold",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            recommendation_raw={"engine": "postflop_solver"},
+        ),
+        reviewed_job(
+            "3" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            recommendation_raw={
+                "engine": "local_ev_solver_v1",
+                "fallback_reason": unsupported_reason,
+                "requested_engine": "postflop_solver",
+            },
+        ),
+        reviewed_job(
+            "4" * 32,
+            "turn",
+            "call",
+            "call",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+            recommendation_raw={
+                "engine": "local_ev_solver_v1",
+                "fallback_reason": unsupported_reason,
+                "requested_engine": "postflop_solver",
+            },
+        ),
+        reviewed_job(
+            "5" * 32,
+            "preflop",
+            "raise",
+            "raise",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            recommendation_raw={
+                "engine": "preflop_chart_v1",
+                "routing_reason": "the hand is preflop",
+                "requested_engine": "postflop_solver",
+            },
+        ),
+        reviewed_job(
+            "6" * 32,
+            "flop",
+            "check",
+            "check",
+            datetime(2026, 7, 6, tzinfo=timezone.utc),
+        ),
+    ]
+
+    coverage = summarize_training(jobs).solver_coverage
+
+    assert coverage.total_hands == 6
+    assert coverage.tracked_hands == 5
+    assert coverage.unattributed_hands == 1
+    assert coverage.fallback_hands == 2
+    assert coverage.fallback_rate == pytest.approx(1 / 3)
+    assert [route.engine for route in coverage.routes] == [
+        "local_ev_solver_v1",
+        "postflop_solver",
+        "preflop_chart_v1",
+    ]
+    assert coverage.routes[0].fallback_hands == 2
+    assert coverage.routes[0].street_counts == {"flop": 1, "turn": 1}
+    assert coverage.routes[1].fallback_hands == 0
+    assert coverage.routes[1].street_counts == {"flop": 1, "river": 1}
+    assert coverage.routes[2].fallback_hands == 0
+    assert len(coverage.fallback_reasons) == 1
+    assert coverage.fallback_reasons[0].reason == unsupported_reason
+    assert coverage.fallback_reasons[0].hands == 2
+    assert coverage.fallback_reasons[0].street_counts == {"flop": 1, "turn": 1}
+
+
 def test_summarize_training_calibrates_self_rated_certainty() -> None:
     candidates = {
         "candidates": [
@@ -1010,6 +1097,9 @@ def test_summarize_training_handles_empty_history() -> None:
     assert progress.exact_accuracy == 0
     assert progress.ev_compared_hands == 0
     assert progress.average_ev_loss_bb is None
+    assert progress.solver_coverage.total_hands == 0
+    assert progress.solver_coverage.routes == []
+    assert progress.solver_coverage.fallback_reasons == []
     assert progress.street_summaries == []
     assert progress.recent_hands == []
     assert progress.review_queue == []

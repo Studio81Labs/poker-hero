@@ -122,6 +122,29 @@ export interface TrainingActionDifference {
   average_ev_loss_bb: number | null;
 }
 
+export interface TrainingSolverRouteSummary {
+  engine: string;
+  hands: number;
+  fallback_hands: number;
+  street_counts: Partial<Record<Street, number>>;
+}
+
+export interface TrainingSolverFallbackSummary {
+  reason: string;
+  hands: number;
+  street_counts: Partial<Record<Street, number>>;
+}
+
+export interface TrainingSolverCoverage {
+  total_hands: number;
+  tracked_hands: number;
+  unattributed_hands: number;
+  fallback_hands: number;
+  fallback_rate: number;
+  routes: TrainingSolverRouteSummary[];
+  fallback_reasons: TrainingSolverFallbackSummary[];
+}
+
 export type TrainingReviewDifference = Pick<
   TrainingActionDifference,
   "decision_action" | "recommended_action"
@@ -139,6 +162,7 @@ export interface TrainingProgress {
   average_ev_loss_bb: number | null;
   trend?: TrainingTrend | null;
   action_differences?: TrainingActionDifference[];
+  solver_coverage?: TrainingSolverCoverage;
   certainty_summaries?: TrainingCertaintySummary[];
   unrated_hands?: number;
   unrated_needs_review_hands?: number;

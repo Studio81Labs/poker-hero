@@ -134,6 +134,55 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
 
 
+def test_summarize_training_compares_equal_recent_street_windows() -> None:
+    candidates = {
+        "candidates": [
+            {"action": "fold", "sizing": None, "ev": 0.0},
+            {"action": "call", "sizing": None, "ev": 1.0},
+        ]
+    }
+    jobs = [
+        reviewed_job(
+            f"{index:032x}",
+            "flop",
+            "fold" if index < 2 else "call",
+            "call",
+            datetime(2026, 7, index + 1, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+        )
+        for index in range(4)
+    ]
+    jobs.append(
+        reviewed_job(
+            "f" * 32,
+            "turn",
+            "check",
+            "check",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+        )
+    )
+
+    progress = summarize_training(jobs)
+
+    flop = progress.street_summaries[0]
+    assert flop.street == "flop"
+    assert flop.trend is not None
+    assert flop.trend.window_hands == 2
+    assert flop.trend.recent_action_accuracy == 1
+    assert flop.trend.previous_action_accuracy == 0
+    assert flop.trend.action_accuracy_delta == 1
+    assert flop.trend.recent_exact_accuracy == 1
+    assert flop.trend.previous_exact_accuracy == 0
+    assert flop.trend.exact_accuracy_delta == 1
+    assert flop.trend.recent_ev_compared_hands == 2
+    assert flop.trend.previous_ev_compared_hands == 2
+    assert flop.trend.recent_average_ev_loss_bb == 0
+    assert flop.trend.previous_average_ev_loss_bb == 1
+    assert flop.trend.average_ev_loss_delta_bb == -1
+    assert progress.street_summaries[1].street == "turn"
+    assert progress.street_summaries[1].trend is None
+
+
 def test_summarize_training_reports_performance_by_normalized_position() -> None:
     ev_candidates = {
         "candidates": [

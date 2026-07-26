@@ -67,6 +67,7 @@ export interface TrainingStreetSummary {
   exact_accuracy: number;
   ev_compared_hands: number;
   average_ev_loss_bb: number | null;
+  trend?: TrainingTrend | null;
 }
 
 export interface TrainingPositionSummary {

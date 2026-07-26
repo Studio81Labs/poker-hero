@@ -980,6 +980,20 @@ describe("App", () => {
       reviewed_at: null,
       ev_loss_bb: null,
     }];
+    const streetTrend = {
+      window_hands: 2,
+      recent_action_accuracy: 0.75,
+      previous_action_accuracy: 0.5,
+      action_accuracy_delta: 0.25,
+      recent_exact_accuracy: 0.25,
+      previous_exact_accuracy: 0.75,
+      exact_accuracy_delta: -0.5,
+      recent_ev_compared_hands: 2,
+      previous_ev_compared_hands: 2,
+      recent_average_ev_loss_bb: 0.2,
+      previous_average_ev_loss_bb: 0.6,
+      average_ev_loss_delta_bb: -0.4,
+    };
     const progress = {
       reviewed_hands: 4,
       action_matches: 3,
@@ -1026,6 +1040,7 @@ describe("App", () => {
         exact_accuracy: 2 / 4,
         ev_compared_hands: 2,
         average_ev_loss_bb: 0.005,
+        trend: streetTrend,
       }],
       position_summaries: [{
         position: "BTN",
@@ -1087,6 +1102,12 @@ describe("App", () => {
     expect(within(dialog).getByRole("row", { name: /low 1 100% 100% 0 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /high 1 100% 100% 0.01 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /flop 4 75% 50% 0.005 BB/i })).toBeInTheDocument();
+    const renderedStreetTrend = within(dialog).getByLabelText(
+      "Last 2 hands vs previous 2: action accuracy change +25 percentage points, exact-line accuracy change -50 percentage points, average EV loss change -0.4 BB",
+    );
+    expect(within(renderedStreetTrend).getByText("+25 pts")).toHaveClass("improving");
+    expect(within(renderedStreetTrend).getByText("-50 pts")).toHaveClass("declining");
+    expect(within(renderedStreetTrend).getByText("-0.4 BB")).toHaveClass("improving");
     expect(within(dialog).getByRole("heading", { name: "By position" })).toBeInTheDocument();
     expect(within(dialog).getByText("1 unrecorded")).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /BTN 2 50% 50% 0.12 BB/i })).toBeInTheDocument();

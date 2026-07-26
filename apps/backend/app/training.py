@@ -162,6 +162,15 @@ def summarize_training(
                 exact_accuracy=street_exact_matches / street_total,
                 ev_compared_hands=len(street_ev_losses),
                 average_ev_loss_bb=_average_ev_loss(street_ev_losses),
+                trend=_training_trend(
+                    sorted(
+                        street_jobs,
+                        key=_training_recorded_at,
+                        reverse=True,
+                    ),
+                    outcomes,
+                    ev_losses,
+                ),
             )
         )
 

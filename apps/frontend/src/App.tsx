@@ -877,10 +877,24 @@ function performanceTrendAccessibleLabel(trend: TrainingTrend): string {
   return `${trainingTrendWindowLabel(trend)}: ${changes.join(", ")}`;
 }
 
-function PositionPerformanceTrend({ trend }: { trend: TrainingTrend }) {
+function PerformanceTrend({
+  trend,
+  hiddenFromAssistiveTechnology = false,
+}: {
+  trend: TrainingTrend;
+  hiddenFromAssistiveTechnology?: boolean;
+}) {
   const title = trainingTrendWindowLabel(trend);
   return (
-    <small className="training-position-trend" aria-hidden="true">
+    <small
+      className="training-summary-trend"
+      aria-hidden={hiddenFromAssistiveTechnology || undefined}
+      aria-label={
+        hiddenFromAssistiveTechnology
+          ? undefined
+          : performanceTrendAccessibleLabel(trend)
+      }
+    >
       <span>{title}</span>
       <strong>
         Action
@@ -4127,17 +4141,26 @@ export default function App() {
                       </thead>
                       <tbody>
                         {trainingProgress.street_summaries.map((summary) => (
-                          <tr key={summary.street}>
-                            <th>{summary.street}</th>
-                            <td>{summary.reviewed_hands}</td>
-                            <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                            <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                            <td>
-                              {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
-                                ? formatEvLossBb(summary.average_ev_loss_bb)
-                                : "—"}
-                            </td>
-                          </tr>
+                          <Fragment key={summary.street}>
+                            <tr className={summary.trend ? "has-trend" : undefined}>
+                              <th>{summary.street}</th>
+                              <td>{summary.reviewed_hands}</td>
+                              <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                              <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                              <td>
+                                {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
+                                  ? formatEvLossBb(summary.average_ev_loss_bb)
+                                  : "—"}
+                              </td>
+                            </tr>
+                            {summary.trend ? (
+                              <tr className="training-summary-trend-row">
+                                <td colSpan={5}>
+                                  <PerformanceTrend trend={summary.trend} />
+                                </td>
+                              </tr>
+                            ) : null}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
@@ -4218,9 +4241,12 @@ export default function App() {
                                   </td>
                                 </tr>
                                 {summary.trend ? (
-                                  <tr className="training-position-trend-row">
+                                  <tr className="training-summary-trend-row">
                                     <td colSpan={5}>
-                                      <PositionPerformanceTrend trend={summary.trend} />
+                                      <PerformanceTrend
+                                        trend={summary.trend}
+                                        hiddenFromAssistiveTechnology
+                                      />
                                     </td>
                                   </tr>
                                 ) : null}

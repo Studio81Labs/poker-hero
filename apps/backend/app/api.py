@@ -381,6 +381,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pattern=r".*\S.*",
         ),
         recent_unpositioned: bool = False,
+        recent_certainty: TrainingReviewCertainty | None = None,
     ) -> TrainingProgress:
         if (review_decision_action is None) != (review_recommended_action is None):
             raise HTTPException(
@@ -433,6 +434,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "are mutually exclusive"
                 ),
             )
+        if recent_certainty is not None and (
+            recent_street is not None
+            or position_filter_count > 0
+            or solver_filter_count > 0
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "certainty, street, position, and solver recent-hand "
+                    "filters are mutually exclusive"
+                ),
+            )
         review_action_difference = (
             (review_decision_action, review_recommended_action)
             if review_decision_action is not None
@@ -454,6 +467,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             recent_street=recent_street,
             recent_position=recent_position,
             recent_unpositioned=recent_unpositioned,
+            recent_certainty=recent_certainty,
         )
 
     @app.get("/api/training/lessons/export")

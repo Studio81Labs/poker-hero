@@ -412,6 +412,60 @@ def test_summarize_training_filters_recent_hands_by_street() -> None:
     assert progress.review_queue_hands == 1
 
 
+def test_summarize_training_filters_recent_hands_by_certainty() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            decision_certainty="high",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            decision_certainty="low",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            decision_certainty="high",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "river",
+            "check",
+            "check",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+        ),
+    ]
+
+    high_progress = summarize_training(
+        jobs,
+        recent_limit=1,
+        recent_certainty="high",
+    )
+    unrated_progress = summarize_training(
+        jobs,
+        recent_certainty="unrated",
+    )
+
+    assert high_progress.reviewed_hands == 4
+    assert high_progress.recent_matching_hands == 2
+    assert [hand.job_id for hand in high_progress.recent_hands] == ["3" * 32]
+    assert unrated_progress.recent_matching_hands == 1
+    assert [hand.job_id for hand in unrated_progress.recent_hands] == [
+        "4" * 32
+    ]
+
+
 def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     unsupported_reason = "hero position must identify IP or OOP"
     jobs = [

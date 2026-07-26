@@ -41,6 +41,7 @@ import type {
   Suit,
   SystemInfo,
   TrainingCertainty,
+  TrainingCertaintyFilter,
   TrainingOutcome,
   TrainingPositionFilter,
   TrainingProgress,
@@ -962,6 +963,7 @@ function trainingReviewQueueStatus(
   solverFilter: TrainingSolverFilter | null,
   positionFilter: TrainingPositionFilter | null,
   streetFilter: TrainingStreetFilter | null,
+  certaintyFilter: TrainingCertaintyFilter | null,
 ): string {
   if (view === "lessons") {
     if (loading) {
@@ -1050,6 +1052,24 @@ function trainingReviewQueueStatus(
       return `Showing ${visibleHands} newest of ${matchingHands} ${streetFilter.label} hands.`;
     }
     return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} played on ${streetFilter.label}.`;
+  }
+  if (view === "recent" && certaintyFilter) {
+    if (loading) {
+      return certaintyFilter.certainty === "unrated"
+        ? "Finding unrated hands..."
+        : `Finding ${certaintyFilter.label.toLowerCase()}-certainty hands...`;
+    }
+    const matchingHands = progress?.recent_matching_hands
+      ?? progress?.recent_hands.length
+      ?? 0;
+    const visibleHands = progress?.recent_hands.length ?? 0;
+    if (matchingHands > visibleHands) {
+      return `Showing ${visibleHands} newest of ${matchingHands} ${certaintyFilter.label} hands.`;
+    }
+    if (certaintyFilter.certainty === "unrated") {
+      return `${matchingHands} training hand${matchingHands === 1 ? " has" : "s have"} no certainty rating.`;
+    }
+    return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} rated ${certaintyFilter.label.toLowerCase()} certainty.`;
   }
   if (view !== "review") {
     return "Automation-only hands are not scored.";
@@ -1657,6 +1677,7 @@ export default function App() {
   const [trainingSolverFilter, setTrainingSolverFilter] = useState<TrainingSolverFilter | null>(null);
   const [trainingPositionFilter, setTrainingPositionFilter] = useState<TrainingPositionFilter | null>(null);
   const [trainingStreetFilter, setTrainingStreetFilter] = useState<TrainingStreetFilter | null>(null);
+  const [trainingCertaintyFilter, setTrainingCertaintyFilter] = useState<TrainingCertaintyFilter | null>(null);
   const [trainingLessonOrder, setTrainingLessonOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingLessonStreet, setTrainingLessonStreet] = useState<TrainingReviewStreet>("all");
   const [trainingLessonSearch, setTrainingLessonSearch] = useState("");
@@ -1788,7 +1809,12 @@ export default function App() {
   const nextReviewHand = trainingProgressView === "lessons"
     || (
       trainingProgressView === "recent"
-      && (trainingSolverFilter || trainingPositionFilter || trainingStreetFilter)
+      && (
+        trainingSolverFilter
+        || trainingPositionFilter
+        || trainingStreetFilter
+        || trainingCertaintyFilter
+      )
     )
     ? null
     : trainingProgress?.review_queue[0] ?? null;
@@ -1806,6 +1832,7 @@ export default function App() {
     trainingSolverFilter,
     trainingPositionFilter,
     trainingStreetFilter,
+    trainingCertaintyFilter,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -2402,6 +2429,7 @@ export default function App() {
         trainingSolverFilter,
         trainingPositionFilter,
         trainingStreetFilter,
+        trainingCertaintyFilter,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2468,6 +2496,7 @@ export default function App() {
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(null);
+    setTrainingCertaintyFilter(null);
     setTrainingLessonOrder("recent");
     setTrainingLessonStreet("all");
     setTrainingLessonSearch("");
@@ -2496,6 +2525,7 @@ export default function App() {
         && trainingSolverFilter === null
         && trainingPositionFilter === null
         && trainingStreetFilter === null
+        && trainingCertaintyFilter === null
       )
       || trainingProgressLoading
     ) {
@@ -2508,6 +2538,7 @@ export default function App() {
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
     const previousStreetFilter = trainingStreetFilter;
+    const previousCertaintyFilter = trainingCertaintyFilter;
     setTrainingReviewOrder(reviewOrder);
     setTrainingReviewStreet(reviewStreet);
     setTrainingReviewCertainty(reviewCertainty);
@@ -2515,6 +2546,7 @@ export default function App() {
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(null);
+    setTrainingCertaintyFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2535,6 +2567,7 @@ export default function App() {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
       setTrainingStreetFilter(previousStreetFilter);
+      setTrainingCertaintyFilter(previousCertaintyFilter);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2575,6 +2608,7 @@ export default function App() {
         trainingSolverFilter,
         trainingPositionFilter,
         trainingStreetFilter,
+        trainingCertaintyFilter,
       ));
       setTrainingLessonQuery(lessonQuery);
     } catch (trainingError) {
@@ -2625,9 +2659,11 @@ export default function App() {
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
     const previousStreetFilter = trainingStreetFilter;
+    const previousCertaintyFilter = trainingCertaintyFilter;
     setTrainingSolverFilter(filter);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(null);
+    setTrainingCertaintyFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2645,6 +2681,7 @@ export default function App() {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
       setTrainingStreetFilter(previousStreetFilter);
+      setTrainingCertaintyFilter(previousCertaintyFilter);
       setError(messageFromError(trainingError, "Could not load solver hands"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2673,9 +2710,11 @@ export default function App() {
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
     const previousStreetFilter = trainingStreetFilter;
+    const previousCertaintyFilter = trainingCertaintyFilter;
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(filter);
     setTrainingStreetFilter(null);
+    setTrainingCertaintyFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2694,6 +2733,7 @@ export default function App() {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
       setTrainingStreetFilter(previousStreetFilter);
+      setTrainingCertaintyFilter(previousCertaintyFilter);
       setError(messageFromError(trainingError, "Could not load position hands"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2713,9 +2753,11 @@ export default function App() {
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
     const previousStreetFilter = trainingStreetFilter;
+    const previousCertaintyFilter = trainingCertaintyFilter;
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(filter);
+    setTrainingCertaintyFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2735,7 +2777,53 @@ export default function App() {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
       setTrainingStreetFilter(previousStreetFilter);
+      setTrainingCertaintyFilter(previousCertaintyFilter);
       setError(messageFromError(trainingError, "Could not load street hands"));
+    } finally {
+      setTrainingProgressLoading(false);
+    }
+  }
+
+  async function updateTrainingCertaintyFilter(
+    filter: TrainingCertaintyFilter | null,
+  ) {
+    setTrainingProgressView("recent");
+    if (
+      filter?.certainty === trainingCertaintyFilter?.certainty
+      || trainingProgressLoading
+    ) {
+      return;
+    }
+    const previousSolverFilter = trainingSolverFilter;
+    const previousPositionFilter = trainingPositionFilter;
+    const previousStreetFilter = trainingStreetFilter;
+    const previousCertaintyFilter = trainingCertaintyFilter;
+    setTrainingSolverFilter(null);
+    setTrainingPositionFilter(null);
+    setTrainingStreetFilter(null);
+    setTrainingCertaintyFilter(filter);
+    setTrainingProgressLoading(true);
+    setError(null);
+    try {
+      setTrainingProgress(await getTrainingProgress(
+        trainingReviewOrder,
+        trainingReviewStreet,
+        trainingReviewDifference,
+        trainingReviewCertainty,
+        trainingLessonStreet,
+        trainingLessonQuery,
+        trainingLessonOrder,
+        null,
+        null,
+        null,
+        filter,
+      ));
+    } catch (trainingError) {
+      setTrainingSolverFilter(previousSolverFilter);
+      setTrainingPositionFilter(previousPositionFilter);
+      setTrainingStreetFilter(previousStreetFilter);
+      setTrainingCertaintyFilter(previousCertaintyFilter);
+      setError(messageFromError(trainingError, "Could not load certainty hands"));
     } finally {
       setTrainingProgressLoading(false);
     }
@@ -4082,7 +4170,27 @@ export default function App() {
                           {trainingProgress.certainty_summaries?.map((summary) => (
                             <Fragment key={summary.certainty}>
                               <tr className={summary.trend ? "has-trend" : undefined}>
-                                <th>{trainingCertaintyLabel(summary.certainty)}</th>
+                                <th scope="row">
+                                  <button
+                                    type="button"
+                                    className="training-summary-drilldown"
+                                    onClick={() => void updateTrainingCertaintyFilter({
+                                      certainty: summary.certainty,
+                                      label: trainingCertaintyLabel(summary.certainty),
+                                    })}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={[
+                                      `Show ${summary.hands} ${summary.hands === 1 ? "hand" : "hands"} rated ${summary.certainty} certainty`,
+                                      summary.trend
+                                        ? performanceTrendAccessibleLabel(summary.trend)
+                                        : null,
+                                    ].filter(Boolean).join(". ")}
+                                    title="Show training hands"
+                                  >
+                                    <span>{trainingCertaintyLabel(summary.certainty)}</span>
+                                    <Eye size={12} aria-hidden="true" />
+                                  </button>
+                                </th>
                                 <td>{summary.hands}</td>
                                 <td>{benchmarkPercent(summary.action_accuracy)}</td>
                                 <td>{benchmarkPercent(summary.exact_accuracy)}</td>
@@ -4118,7 +4226,22 @@ export default function App() {
                           ))}
                           {(trainingProgress.unrated_hands ?? 0) > 0 ? (
                             <tr className="training-unrated-row">
-                              <th>Unrated</th>
+                              <th scope="row">
+                                <button
+                                  type="button"
+                                  className="training-summary-drilldown"
+                                  onClick={() => void updateTrainingCertaintyFilter({
+                                    certainty: "unrated",
+                                    label: "Unrated",
+                                  })}
+                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                  aria-label={`Show ${trainingProgress.unrated_hands} unrated ${trainingProgress.unrated_hands === 1 ? "hand" : "hands"}`}
+                                  title="Show training hands"
+                                >
+                                  <span>Unrated</span>
+                                  <Eye size={12} aria-hidden="true" />
+                                </button>
+                              </th>
                               <td>{trainingProgress.unrated_hands}</td>
                               <td>—</td>
                               <td>—</td>
@@ -4507,6 +4630,8 @@ export default function App() {
                                 void updateTrainingPositionFilter(null);
                               } else if (trainingStreetFilter) {
                                 void updateTrainingStreetFilter(null);
+                              } else if (trainingCertaintyFilter) {
+                                void updateTrainingCertaintyFilter(null);
                               } else {
                                 setTrainingProgressView("recent");
                               }
@@ -4520,7 +4645,12 @@ export default function App() {
                             className={trainingProgressView === "review" ? "active" : ""}
                             onClick={() => {
                               setTrainingProgressView("review");
-                              if (trainingSolverFilter || trainingPositionFilter || trainingStreetFilter) {
+                              if (
+                                trainingSolverFilter
+                                || trainingPositionFilter
+                                || trainingStreetFilter
+                                || trainingCertaintyFilter
+                              ) {
                                 void updateTrainingReviewQueue(
                                   trainingReviewOrder,
                                   trainingReviewStreet,
@@ -4616,6 +4746,23 @@ export default function App() {
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear street filter"
                           title="Clear street filter"
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
+                    {trainingProgressView === "recent" && trainingCertaintyFilter ? (
+                      <div className="training-active-difference training-active-certainty" aria-label="Active certainty filter">
+                        <span>
+                          <Target size={12} aria-hidden="true" />
+                          {trainingCertaintyFilter.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void updateTrainingCertaintyFilter(null)}
+                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                          aria-label="Clear certainty filter"
+                          title="Clear certainty filter"
                         >
                           <X size={12} aria-hidden="true" />
                         </button>

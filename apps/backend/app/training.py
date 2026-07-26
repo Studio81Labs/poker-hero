@@ -118,6 +118,7 @@ def summarize_training(
     recent_street: Street | None = None,
     recent_position: str | None = None,
     recent_unpositioned: bool = False,
+    recent_certainty: TrainingReviewCertainty | None = None,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -287,6 +288,19 @@ def summarize_training(
         and (
             not recent_unpositioned
             or _training_position(job) is None
+        )
+        and (
+            recent_certainty is None
+            or (
+                job.training_decision is not None
+                and (
+                    (
+                        recent_certainty == "unrated"
+                        and job.training_decision.certainty is None
+                    )
+                    or job.training_decision.certainty == recent_certainty
+                )
+            )
         )
     ]
     recent_hands = [

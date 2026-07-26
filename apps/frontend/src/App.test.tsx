@@ -2007,6 +2007,128 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("drills into rated and unrated certainty hands", async () => {
+    const highHand = {
+      job_id: "high-certainty-job",
+      original_filename: "high-certainty.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      decision_certainty: "high" as const,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 0,
+    };
+    const unratedHand = {
+      ...highHand,
+      job_id: "unrated-job",
+      original_filename: "unrated.png",
+      decision_certainty: null,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 3,
+      exact_matches: 3,
+      different_actions: 0,
+      needs_review_hands: 0,
+      action_accuracy: 1,
+      exact_accuracy: 1,
+      ev_compared_hands: 3,
+      average_ev_loss_bb: 0,
+      certainty_summaries: [{
+        certainty: "high" as const,
+        hands: 2,
+        action_matches: 2,
+        exact_matches: 2,
+        needs_review_hands: 0,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0,
+      }],
+      unrated_hands: 1,
+      unrated_needs_review_hands: 0,
+      street_summaries: [],
+      recent_matching_hands: 3,
+      recent_hands: [highHand, unratedHand],
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    const highProgress = {
+      ...progress,
+      recent_matching_hands: 2,
+      recent_hands: [highHand],
+    };
+    const unratedProgress = {
+      ...progress,
+      recent_matching_hands: 1,
+      recent_hands: [unratedHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(highProgress))
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(unratedProgress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Show 2 hands rated high certainty",
+    }));
+
+    const highFilter = await within(dialog).findByLabelText("Active certainty filter");
+    expect(within(highFilter).getByText("High")).toBeInTheDocument();
+    expect(within(dialog).getByText("Showing 1 newest of 2 High hands.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open high-certainty.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", {
+      name: "Open unrated.png training review",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?recent_certainty=high",
+    );
+
+    await user.click(within(highFilter).getByRole("button", {
+      name: "Clear certainty filter",
+    }));
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active certainty filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Show 1 unrated hand",
+    }));
+
+    const unratedFilter = await within(dialog).findByLabelText("Active certainty filter");
+    expect(within(unratedFilter).getByText("Unrated")).toBeInTheDocument();
+    expect(within(dialog).getByText("1 training hand has no certainty rating.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open unrated.png training review",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls[3][0]).toBe(
+      "http://localhost:8000/api/training/progress?recent_certainty=unrated",
+    );
+
+    await user.click(within(unratedFilter).getByRole("button", {
+      name: "Clear certainty filter",
+    }));
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active certainty filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
+  });
+
   it("surfaces legacy unrated hands without treating them as calibrated", async () => {
     const unratedHand = {
       job_id: "unrated-job",

@@ -121,10 +121,11 @@ self-rated certainty, allowing progress to compare accuracy and available EV
 loss by how sure the player felt before reveal. Rated certainty groups with at
 least two hands compare equal recent and previous windows for those metrics.
 Unrated hands remain in overall progress and are excluded only from certainty
-calibration. Street groups with at least two hands expose the same equal-window
-performance comparison. A street summary can filter Recent decisions to its
-newest matching hands without changing global progress or the pending-review
-queue. Approved hero positions are normalized into common
+calibration. A rated certainty group or the unrated bucket can filter Recent
+decisions to its newest matching hands without changing global progress or the
+pending-review queue. Street groups with at least two hands expose the same
+equal-window performance comparison and drill-down behavior. Approved hero
+positions are normalized into common
 six-max and IP/OOP labels so the same metrics can be compared by position;
 hands without a position remain counted separately. A normalized position or
 the unpositioned bucket can apply the same bounded Recent decisions filter.

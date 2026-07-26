@@ -85,6 +85,8 @@ The frontend is a browser control panel for:
 - Comparing action accuracy, exact-line accuracy, and available EV loss across
   low, medium, and high pre-reveal certainty, including equal recent/previous
   performance deltas when enough rated hands exist.
+- Opening the newest training hands for one rated certainty level or the
+  legacy unrated bucket without changing global progress or review queues.
 - Opening unresolved differences for a rated certainty level directly from its
   calibration row.
 - Seeing legacy unrated totals and unresolved reviews without assigning
@@ -252,13 +254,14 @@ frequencies.
     deltas when enough matching hands exist.
     Rated hands also contribute to certainty calibration and equal-window
     performance trends; unrated hands remain in every other aggregate.
-12. Selecting a street, normalized hero position, the unpositioned bucket, an
-    engine route, the unattributed legacy bucket, or a fallback reason shows its
-    newest matching training hands in the Recent decisions list. Position
-    aliases are normalized by the backend; solver requests use one stable
-    metadata key or explicit unattributed selector rather than raw provider
-    text. Street, position, and solver selectors are mutually exclusive. These
-    filters do not alter progress metrics or mistake queues.
+12. Selecting a street, normalized hero position, the unpositioned bucket, a
+    rated certainty, the unrated bucket, an engine route, the unattributed
+    legacy bucket, or a fallback reason shows its newest matching training hands
+    in the Recent decisions list. Position aliases are normalized by the
+    backend; solver requests use one stable metadata key or explicit
+    unattributed selector rather than raw provider text. Street, position,
+    certainty, and solver selectors are mutually exclusive. These filters do
+    not alter progress metrics or mistake queues.
 13. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and certainty rating and prioritize the
@@ -482,6 +485,8 @@ Poker Hero is successful when:
   or isolate legacy unrated hands, without changing global progress.
 - A user can see unresolved counts for rated certainty levels and open one as a
   focused review queue directly from confidence calibration.
+- A user can inspect the newest hands at one rated certainty level or in the
+  unrated bucket without narrowing the unresolved-review queue.
 - A user can see and open an unrated review backlog without representing those
   legacy hands as a calibrated certainty level.
 - A user can open an actionable suggested focus street from progress without

@@ -1249,6 +1249,12 @@ describe("App", () => {
           key: fallbackKey,
           reason: "hero position must identify IP or OOP",
           hands: 2,
+          action_matches: 1,
+          exact_matches: 1,
+          action_accuracy: 0.5,
+          exact_accuracy: 0.5,
+          ev_compared_hands: 1,
+          average_ev_loss_bb: 0.4,
           street_counts: { flop: 1, turn: 1 },
         }],
       },
@@ -1299,24 +1305,27 @@ describe("App", () => {
     });
     expect(showUnattributedHands).toBeEnabled();
     const showEngineHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands handled by Local EV solver",
+      name: "Show 2 hands handled by Local EV solver. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
     });
     expect(showEngineHands).toBeEnabled();
     expect(within(showEngineHands).getByText("Action 50%")).toBeInTheDocument();
     expect(within(showEngineHands).getByText("Exact 50%")).toBeInTheDocument();
     expect(within(showEngineHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
     const showPostflopHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands handled by Postflop solver",
+      name: "Show 2 hands handled by Postflop solver. Action accuracy 100%; exact-line accuracy 100%; EV loss ungraded",
     });
     expect(showPostflopHands).toBeEnabled();
     expect(within(showPostflopHands).getByText("EV ungraded")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", {
-      name: "Show 1 hand handled by Preflop chart",
+      name: "Show 1 hand handled by Preflop chart. Action accuracy 100%; exact-line accuracy 100%; EV loss ungraded",
     })).toBeEnabled();
     const showFallbackHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands using fallback: hero position must identify IP or OOP",
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
     });
     expect(showFallbackHands).toBeEnabled();
+    expect(within(showFallbackHands).getByText("Action 50%")).toBeInTheDocument();
+    expect(within(showFallbackHands).getByText("Exact 50%")).toBeInTheDocument();
+    expect(within(showFallbackHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
 
     await user.click(showEngineHands);
 
@@ -1342,7 +1351,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
 
     const refreshedFallbackHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands using fallback: hero position must identify IP or OOP",
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
     });
     await waitFor(() => expect(refreshedFallbackHands).toBeEnabled());
     await user.click(refreshedFallbackHands);

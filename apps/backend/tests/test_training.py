@@ -253,6 +253,12 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert coverage.fallback_reasons[0].key == fallback_key
     assert coverage.fallback_reasons[0].reason == unsupported_reason
     assert coverage.fallback_reasons[0].hands == 2
+    assert coverage.fallback_reasons[0].action_matches == 1
+    assert coverage.fallback_reasons[0].exact_matches == 1
+    assert coverage.fallback_reasons[0].action_accuracy == 0.5
+    assert coverage.fallback_reasons[0].exact_accuracy == 0.5
+    assert coverage.fallback_reasons[0].ev_compared_hands == 1
+    assert coverage.fallback_reasons[0].average_ev_loss_bb == 0.4
     assert coverage.fallback_reasons[0].street_counts == {"flop": 1, "turn": 1}
     assert progress.recent_matching_hands == 6
 

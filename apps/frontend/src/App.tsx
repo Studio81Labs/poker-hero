@@ -749,6 +749,29 @@ function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function solverPerformanceAccessibleLabel(summary: {
+  action_accuracy?: number;
+  exact_accuracy?: number;
+  ev_compared_hands?: number;
+  average_ev_loss_bb?: number | null;
+}): string | null {
+  if (
+    typeof summary.action_accuracy !== "number"
+    || typeof summary.exact_accuracy !== "number"
+  ) {
+    return null;
+  }
+  const evLoss = (summary.ev_compared_hands ?? 0) > 0
+    && typeof summary.average_ev_loss_bb === "number"
+    ? `average EV loss ${formatEvLossBb(summary.average_ev_loss_bb)}`
+    : "EV loss ungraded";
+  return [
+    `Action accuracy ${benchmarkPercent(summary.action_accuracy)}`,
+    `exact-line accuracy ${benchmarkPercent(summary.exact_accuracy)}`,
+    evLoss,
+  ].join("; ");
+}
+
 function solverStreetCountsLabel(counts: Partial<Record<Street, number>>): string {
   return TRAINING_STREET_ORDER
     .filter((street) => (counts[street] ?? 0) > 0)
@@ -3670,7 +3693,10 @@ export default function App() {
                                       label: providerLabel(route.engine),
                                     })}
                                     disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Show ${route.hands} ${route.hands === 1 ? "hand" : "hands"} handled by ${providerLabel(route.engine)}`}
+                                    aria-label={[
+                                      `Show ${route.hands} ${route.hands === 1 ? "hand" : "hands"} handled by ${providerLabel(route.engine)}`,
+                                      solverPerformanceAccessibleLabel(route),
+                                    ].filter(Boolean).join(". ")}
                                     title="Show training hands"
                                   >
                                     <span className="training-solver-route-name">
@@ -3679,7 +3705,7 @@ export default function App() {
                                     <Eye size={12} aria-hidden="true" />
                                     {typeof route.action_accuracy === "number"
                                       && typeof route.exact_accuracy === "number" ? (
-                                        <small className="training-solver-route-performance">
+                                        <small className="training-solver-performance">
                                           <span>
                                             Action {benchmarkPercent(route.action_accuracy)}
                                           </span>
@@ -3726,11 +3752,31 @@ export default function App() {
                                 label: fallback.reason,
                               })}
                               disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              aria-label={`Show ${fallback.hands} ${fallback.hands === 1 ? "hand" : "hands"} using fallback: ${fallback.reason}`}
+                              aria-label={[
+                                `Show ${fallback.hands} ${fallback.hands === 1 ? "hand" : "hands"} using fallback: ${fallback.reason}`,
+                                solverPerformanceAccessibleLabel(fallback),
+                              ].filter(Boolean).join(". ")}
                               title="Show training hands"
                             >
                               <span>{fallback.reason}</span>
                               <em>{solverStreetCountsLabel(fallback.street_counts) || "—"}</em>
+                              {typeof fallback.action_accuracy === "number"
+                                && typeof fallback.exact_accuracy === "number" ? (
+                                  <small className="training-solver-performance">
+                                    <span>
+                                      Action {benchmarkPercent(fallback.action_accuracy)}
+                                    </span>
+                                    <span>
+                                      Exact {benchmarkPercent(fallback.exact_accuracy)}
+                                    </span>
+                                    <span>
+                                      {(fallback.ev_compared_hands ?? 0) > 0
+                                        && typeof fallback.average_ev_loss_bb === "number"
+                                        ? `${formatEvLossBb(fallback.average_ev_loss_bb)} EV loss`
+                                        : "EV ungraded"}
+                                    </span>
+                                  </small>
+                                ) : null}
                               <strong>{fallback.hands}</strong>
                               <Eye size={13} aria-hidden="true" />
                             </button>

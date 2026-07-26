@@ -324,7 +324,7 @@ def _solver_coverage(
     route_streets: dict[str, dict[Street, int]] = defaultdict(
         lambda: defaultdict(int)
     )
-    reason_hands: dict[str, int] = defaultdict(int)
+    reason_jobs: dict[str, list[JobRecord]] = defaultdict(list)
     reason_streets: dict[str, dict[Street, int]] = defaultdict(
         lambda: defaultdict(int)
     )
@@ -351,7 +351,7 @@ def _solver_coverage(
 
         if fallback_reason is not None:
             fallback_hands += 1
-            reason_hands[fallback_reason] += 1
+            reason_jobs[fallback_reason].append(job)
             if street is not None:
                 reason_streets[fallback_reason][street] += 1
             if engine is not None:
@@ -359,45 +359,27 @@ def _solver_coverage(
 
     routes = []
     for engine, engine_jobs in route_jobs.items():
-        route_outcomes = [outcomes[job.id] for job in engine_jobs]
-        route_action_matches = sum(
-            outcome != "different" for outcome in route_outcomes
-        )
-        route_exact_matches = sum(
-            outcome in {"match", "mixed"} for outcome in route_outcomes
-        )
-        route_ev_losses = [
-            loss
-            for job in engine_jobs
-            if (loss := ev_losses[job.id]) is not None
-        ]
-        route_hands = len(engine_jobs)
         routes.append(
             TrainingSolverRouteSummary(
                 key=_solver_metadata_key(engine),
                 engine=engine,
-                hands=route_hands,
                 fallback_hands=route_fallback_hands[engine],
-                action_matches=route_action_matches,
-                exact_matches=route_exact_matches,
-                action_accuracy=route_action_matches / route_hands,
-                exact_accuracy=route_exact_matches / route_hands,
-                ev_compared_hands=len(route_ev_losses),
-                average_ev_loss_bb=_average_ev_loss(route_ev_losses),
                 street_counts=dict(route_streets[engine]),
+                **_solver_performance_fields(engine_jobs, outcomes, ev_losses),
             )
         )
     routes.sort(key=lambda route: (-route.hands, -route.fallback_hands, route.engine))
 
-    fallback_reasons = [
-        TrainingSolverFallbackSummary(
-            key=_solver_metadata_key(reason),
-            reason=reason,
-            hands=hands,
-            street_counts=dict(reason_streets[reason]),
+    fallback_reasons = []
+    for reason, fallback_jobs in reason_jobs.items():
+        fallback_reasons.append(
+            TrainingSolverFallbackSummary(
+                key=_solver_metadata_key(reason),
+                reason=reason,
+                street_counts=dict(reason_streets[reason]),
+                **_solver_performance_fields(fallback_jobs, outcomes, ev_losses),
+            )
         )
-        for reason, hands in reason_hands.items()
-    ]
     fallback_reasons.sort(
         key=lambda summary: (-summary.hands, summary.reason.casefold())
     )
@@ -413,6 +395,33 @@ def _solver_coverage(
         routes=routes,
         fallback_reasons=fallback_reasons,
     )
+
+
+def _solver_performance_fields(
+    jobs: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    ev_losses: dict[str, float | None],
+) -> dict[str, Any]:
+    compared_outcomes = [outcomes[job.id] for job in jobs]
+    action_matches = sum(outcome != "different" for outcome in compared_outcomes)
+    exact_matches = sum(
+        outcome in {"match", "mixed"} for outcome in compared_outcomes
+    )
+    comparable_ev_losses = [
+        loss
+        for job in jobs
+        if (loss := ev_losses[job.id]) is not None
+    ]
+    hands = len(jobs)
+    return {
+        "hands": hands,
+        "action_matches": action_matches,
+        "exact_matches": exact_matches,
+        "action_accuracy": action_matches / hands,
+        "exact_accuracy": exact_matches / hands,
+        "ev_compared_hands": len(comparable_ev_losses),
+        "average_ev_loss_bb": _average_ev_loss(comparable_ev_losses),
+    }
 
 
 def _solver_coverage_trend(

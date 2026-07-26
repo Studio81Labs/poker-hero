@@ -7,6 +7,7 @@ import type {
   RecommendationAction,
   SystemInfo,
   TrainingCertainty,
+  TrainingCertaintyFilter,
   TrainingProgress,
   TrainingPositionFilter,
   TrainingReviewCertaintyFilter,
@@ -135,6 +136,7 @@ export async function getTrainingProgress(
   solverFilter: TrainingSolverFilter | null = null,
   positionFilter: TrainingPositionFilter | null = null,
   streetFilter: TrainingStreetFilter | null = null,
+  certaintyFilter: TrainingCertaintyFilter | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -173,6 +175,9 @@ export async function getTrainingProgress(
   }
   if (streetFilter) {
     search.set("recent_street", streetFilter.street);
+  }
+  if (certaintyFilter) {
+    search.set("recent_certainty", certaintyFilter.certainty);
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

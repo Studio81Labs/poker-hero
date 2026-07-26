@@ -299,6 +299,15 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     valid_recent_street = client.get(
         "/api/training/progress?recent_street=flop"
     )
+    invalid_recent_certainty = client.get(
+        "/api/training/progress?recent_certainty=very"
+    )
+    valid_recent_certainty = client.get(
+        "/api/training/progress?recent_certainty=high"
+    )
+    valid_recent_unrated = client.get(
+        "/api/training/progress?recent_certainty=unrated"
+    )
     conflicting_position_filters = client.get(
         "/api/training/progress"
         "?recent_position=button"
@@ -318,6 +327,11 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "/api/training/progress"
         "?recent_street=flop"
         f"&solver_route_key={'b' * 64}"
+    )
+    conflicting_certainty_street_filters = client.get(
+        "/api/training/progress"
+        "?recent_certainty=high"
+        "&recent_street=flop"
     )
     conflicting_solver_filters = client.get(
         "/api/training/progress"
@@ -354,6 +368,9 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert valid_recent_unpositioned.status_code == 200
     assert invalid_recent_street.status_code == 422
     assert valid_recent_street.status_code == 200
+    assert invalid_recent_certainty.status_code == 422
+    assert valid_recent_certainty.status_code == 200
+    assert valid_recent_unrated.status_code == 200
     assert conflicting_position_filters.status_code == 422
     assert conflicting_position_filters.json()["detail"] == (
         "recent_position and recent_unpositioned are mutually exclusive"
@@ -369,6 +386,11 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert conflicting_street_solver_filters.status_code == 422
     assert conflicting_street_solver_filters.json()["detail"] == (
         "street, position, and solver recent-hand filters are mutually exclusive"
+    )
+    assert conflicting_certainty_street_filters.status_code == 422
+    assert conflicting_certainty_street_filters.json()["detail"] == (
+        "certainty, street, position, and solver recent-hand filters "
+        "are mutually exclusive"
     )
     assert conflicting_solver_filters.status_code == 422
     assert conflicting_solver_filters.json()["detail"] == (

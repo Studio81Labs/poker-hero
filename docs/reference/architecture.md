@@ -159,7 +159,10 @@ position, and solver summaries. Each rated summary also exposes its global
 pending-review count so the frontend can open that certainty queue without
 deriving counts from the bounded response. Separate unrated total and pending
 counts keep legacy decisions discoverable without treating missing self-ratings
-as a calibration category or assigning them a trend.
+as a calibration category or assigning them a trend. The progress endpoint also
+accepts a rated or unrated certainty selector for the bounded Recent decisions
+projection. That selector is mutually exclusive with street, position, and
+solver Recent filters and does not change aggregates or pending-review results.
 Trend windows use the newest and
 immediately preceding reviewed hands, have the same size, and are capped at ten
 hands each. Action and exact-line deltas are available once two reviewed hands

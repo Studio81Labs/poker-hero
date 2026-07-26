@@ -192,6 +192,11 @@ export interface TrainingStreetFilter {
   label: string;
 }
 
+export interface TrainingCertaintyFilter {
+  certainty: TrainingReviewCertainty;
+  label: string;
+}
+
 export interface TrainingSolverCoverageTrend {
   window_hands: number;
   recent_attribution_rate: number;

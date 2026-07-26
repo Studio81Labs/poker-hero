@@ -288,6 +288,12 @@ class TrainingSolverRouteSummary(BaseModel):
     engine: str
     hands: int = Field(ge=1)
     fallback_hands: int = Field(default=0, ge=0)
+    action_matches: int = Field(default=0, ge=0)
+    exact_matches: int = Field(default=0, ge=0)
+    action_accuracy: float = Field(default=0, ge=0, le=1)
+    exact_accuracy: float = Field(default=0, ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
     street_counts: dict[Street, int] = Field(default_factory=dict)
 
 

@@ -72,7 +72,8 @@ The frontend is a browser control panel for:
   accuracy, and available EV-loss movement.
 - Inspecting which recommendation engines handled locked-answer comparisons,
   their street coverage, unattributed legacy hands, and recorded fallback
-  frequency and reasons.
+  frequency and reasons, plus player action/exact-line accuracy and available
+  average EV loss for each attributed route.
 - Comparing equal recent and previous windows for solver attribution and
   recorded fallback rates.
 - Opening the newest training hands for one attributed engine, the unattributed
@@ -134,6 +135,8 @@ The backend API:
   scoring automation-only hands.
 - Aggregates recommendation-engine routes and true fallback metadata for those
   training comparisons without treating intentional provider routing as fallback.
+- Reuses mixed-strategy-aware outcomes and available EV grades to summarize
+  player performance for each attributed engine route.
 - Derives equal-window solver attribution and fallback trends, capped at ten
   reviewed hands per period.
 - Filters the bounded Recent decisions projection by one stable engine-route
@@ -233,7 +236,8 @@ frequencies.
     equal-window recent trends capped at ten hands per period, and common
     unsupported action differences. The same comparisons expose actual
     recommendation-engine coverage by street, recorded fallback reasons, and
-    equal-window attribution/fallback trends.
+    equal-window attribution/fallback trends. Attributed routes also expose
+    player action/exact-line accuracy and average EV loss where gradable.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
 12. Selecting an engine route, the unattributed legacy bucket, or a fallback
@@ -379,6 +383,8 @@ Recommendation tests:
 - Verify engine coverage counts valid recommendation metadata, retains
   unattributed legacy hands, and counts `fallback_reason` but not intentional
   `routing_reason` metadata as fallback.
+- Verify each attributed route applies the same mixed-strategy outcome semantics
+  and averages EV loss over only its gradable hands.
 - Verify solver coverage trends compare equally sized recent and previous
   windows and treat higher attribution and lower fallback rates as improvements.
 - Verify engine-route keys, fallback-reason keys, and the unattributed selector
@@ -421,7 +427,8 @@ Poker Hero is successful when:
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street
-  coverage, and where recommendation routing relied on a recorded fallback.
+  coverage, player action/exact-line accuracy, available average EV loss, and
+  where recommendation routing relied on a recorded fallback.
 - A user can compare recent solver attribution and fallback rates with the
   equally sized preceding period.
 - A user can open recent hands for one engine route, the unattributed legacy

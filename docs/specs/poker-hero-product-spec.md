@@ -83,7 +83,8 @@ The frontend is a browser control panel for:
   legacy bucket, or a recorded fallback reason without changing global progress
   or the action/sizing review queue.
 - Comparing action accuracy, exact-line accuracy, and available EV loss across
-  low, medium, and high pre-reveal certainty.
+  low, medium, and high pre-reveal certainty, including equal recent/previous
+  performance deltas when enough rated hands exist.
 - Opening unresolved differences for a rated certainty level directly from its
   calibration row.
 - Seeing legacy unrated totals and unresolved reviews without assigning
@@ -249,8 +250,8 @@ frequencies.
     Attributed routes and fallback reasons also expose player action/exact-line
     accuracy and average EV loss where gradable, plus equal recent/previous
     deltas when enough matching hands exist.
-    Rated hands also contribute to certainty calibration; unrated hands remain
-    in every other aggregate.
+    Rated hands also contribute to certainty calibration and equal-window
+    performance trends; unrated hands remain in every other aggregate.
 12. Selecting a street, normalized hero position, the unpositioned bucket, an
     engine route, the unattributed legacy bucket, or a fallback reason shows its
     newest matching training hands in the Recent decisions list. Position
@@ -438,6 +439,8 @@ Poker Hero is successful when:
 - A user can optionally rate how sure they are before reveal and compare
   accuracy and available EV loss across certainty levels without excluding
   unrated hands from overall progress.
+- A user can compare recent and previous action, exact-line, and available
+  EV-loss results within each rated certainty level that has enough hands.
 - A user can track action and exact-line accuracy across reviewed hands and
   reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can see per-hand and average EV loss for decisions that have comparable

@@ -650,12 +650,26 @@ def test_summarize_training_calibrates_self_rated_certainty() -> None:
     assert low.action_accuracy == 1
     assert low.exact_accuracy == 1
     assert low.average_ev_loss_bb == 0
+    assert low.trend is None
     assert high.hands == 2
     assert high.needs_review_hands == 1
     assert high.action_accuracy == 0.5
     assert high.exact_accuracy == 0.5
     assert high.ev_compared_hands == 2
     assert high.average_ev_loss_bb == 0.5
+    assert high.trend is not None
+    assert high.trend.window_hands == 1
+    assert high.trend.recent_action_accuracy == 1
+    assert high.trend.previous_action_accuracy == 0
+    assert high.trend.action_accuracy_delta == 1
+    assert high.trend.recent_exact_accuracy == 1
+    assert high.trend.previous_exact_accuracy == 0
+    assert high.trend.exact_accuracy_delta == 1
+    assert high.trend.recent_ev_compared_hands == 1
+    assert high.trend.previous_ev_compared_hands == 1
+    assert high.trend.recent_average_ev_loss_bb == 0
+    assert high.trend.previous_average_ev_loss_bb == 1
+    assert high.trend.average_ev_loss_delta_bb == -1
     assert progress.unrated_hands == 1
     assert progress.unrated_needs_review_hands == 0
     assert progress.recent_hands[0].decision_certainty is None

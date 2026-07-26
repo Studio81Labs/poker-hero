@@ -209,6 +209,58 @@ def test_summarize_training_reports_performance_by_normalized_position() -> None
     assert progress.unpositioned_hands == 1
 
 
+def test_summarize_training_compares_equal_recent_position_windows() -> None:
+    candidates = {
+        "candidates": [
+            {"action": "fold", "sizing": None, "ev": 0.0},
+            {"action": "call", "sizing": None, "ev": 1.0},
+        ]
+    }
+    aliases = ["button", "btn", "dealer", "BTN"]
+    jobs = [
+        reviewed_job(
+            f"{index:032x}",
+            "flop",
+            "fold" if index < 2 else "call",
+            "call",
+            datetime(2026, 7, index + 1, tzinfo=timezone.utc),
+            recommendation_raw=candidates,
+            hero_position=aliases[index],
+        )
+        for index in range(4)
+    ]
+    jobs.append(
+        reviewed_job(
+            "f" * 32,
+            "turn",
+            "check",
+            "check",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            hero_position="out_of_position",
+        )
+    )
+
+    progress = summarize_training(jobs)
+
+    button = progress.position_summaries[0]
+    assert button.position == "BTN"
+    assert button.trend is not None
+    assert button.trend.window_hands == 2
+    assert button.trend.recent_action_accuracy == 1
+    assert button.trend.previous_action_accuracy == 0
+    assert button.trend.action_accuracy_delta == 1
+    assert button.trend.recent_exact_accuracy == 1
+    assert button.trend.previous_exact_accuracy == 0
+    assert button.trend.exact_accuracy_delta == 1
+    assert button.trend.recent_ev_compared_hands == 2
+    assert button.trend.previous_ev_compared_hands == 2
+    assert button.trend.recent_average_ev_loss_bb == 0
+    assert button.trend.previous_average_ev_loss_bb == 1
+    assert button.trend.average_ev_loss_delta_bb == -1
+    assert progress.position_summaries[1].position == "OOP"
+    assert progress.position_summaries[1].trend is None
+
+
 def test_summarize_training_filters_recent_hands_by_normalized_position() -> None:
     jobs = [
         reviewed_job(

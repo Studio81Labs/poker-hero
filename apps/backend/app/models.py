@@ -230,17 +230,6 @@ class TrainingStreetSummary(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
-class TrainingPositionSummary(BaseModel):
-    position: str = Field(min_length=1)
-    reviewed_hands: int = Field(ge=1)
-    action_matches: int = Field(ge=0)
-    exact_matches: int = Field(ge=0)
-    action_accuracy: float = Field(ge=0, le=1)
-    exact_accuracy: float = Field(ge=0, le=1)
-    ev_compared_hands: int = Field(default=0, ge=0)
-    average_ev_loss_bb: float | None = Field(default=None, ge=0)
-
-
 class TrainingCertaintySummary(BaseModel):
     certainty: TrainingCertainty
     hands: int = Field(ge=1)
@@ -283,6 +272,18 @@ class TrainingTrend(BaseModel):
     recent_average_ev_loss_bb: float | None = Field(default=None, ge=0)
     previous_average_ev_loss_bb: float | None = Field(default=None, ge=0)
     average_ev_loss_delta_bb: float | None = None
+
+
+class TrainingPositionSummary(BaseModel):
+    position: str = Field(min_length=1)
+    reviewed_hands: int = Field(ge=1)
+    action_matches: int = Field(ge=0)
+    exact_matches: int = Field(ge=0)
+    action_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy: float = Field(ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    trend: TrainingTrend | None = None
 
 
 class TrainingActionDifference(BaseModel):

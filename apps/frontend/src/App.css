@@ -2469,6 +2469,53 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.training-position-table tr.has-trend > * {
+  border-bottom: 0;
+  padding-bottom: 3px;
+}
+
+.training-position-table .training-position-trend-row td {
+  padding: 0 0 8px;
+  text-align: left;
+}
+
+.training-position-trend {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 8px;
+  font-weight: 800;
+  gap: 3px 12px;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.training-position-trend > span {
+  margin-right: auto;
+}
+
+.training-position-trend strong {
+  align-items: center;
+  display: inline-flex;
+  font-size: inherit;
+  gap: 4px;
+}
+
+.training-position-trend em {
+  color: var(--muted);
+  font-size: inherit;
+  font-style: normal;
+}
+
+.training-position-trend em.improving {
+  color: var(--positive);
+}
+
+.training-position-trend em.declining {
+  color: var(--accent);
+}
+
 .training-street-table th:last-child,
 .training-street-table td:last-child {
   padding-right: 0;

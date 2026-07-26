@@ -219,6 +219,15 @@ def summarize_training(
                 exact_accuracy=certainty_exact_matches / certainty_total,
                 ev_compared_hands=len(certainty_ev_losses),
                 average_ev_loss_bb=_average_ev_loss(certainty_ev_losses),
+                trend=_training_trend(
+                    sorted(
+                        certainty_jobs,
+                        key=_training_recorded_at,
+                        reverse=True,
+                    ),
+                    outcomes,
+                    ev_losses,
+                ),
             )
         )
 

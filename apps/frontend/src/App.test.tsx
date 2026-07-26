@@ -1933,26 +1933,41 @@ describe("App", () => {
       review_note: null,
       ev_loss_bb: 0.8,
     };
+    const certaintyTrend = {
+      window_hands: 1,
+      recent_action_accuracy: 0,
+      previous_action_accuracy: 1,
+      action_accuracy_delta: -1,
+      recent_exact_accuracy: 0,
+      previous_exact_accuracy: 1,
+      exact_accuracy_delta: -1,
+      recent_ev_compared_hands: 1,
+      previous_ev_compared_hands: 1,
+      recent_average_ev_loss_bb: 0.8,
+      previous_average_ev_loss_bb: 0,
+      average_ev_loss_delta_bb: 0.8,
+    };
     const progress = {
-      reviewed_hands: 1,
-      action_matches: 0,
-      exact_matches: 0,
+      reviewed_hands: 2,
+      action_matches: 1,
+      exact_matches: 1,
       different_actions: 1,
       needs_review_hands: 1,
-      action_accuracy: 0,
-      exact_accuracy: 0,
-      ev_compared_hands: 1,
-      average_ev_loss_bb: 0.8,
+      action_accuracy: 0.5,
+      exact_accuracy: 0.5,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 0.4,
       certainty_summaries: [{
         certainty: "high" as const,
-        hands: 1,
-        action_matches: 0,
-        exact_matches: 0,
+        hands: 2,
+        action_matches: 1,
+        exact_matches: 1,
         needs_review_hands: 1,
-        action_accuracy: 0,
-        exact_accuracy: 0,
-        ev_compared_hands: 1,
-        average_ev_loss_bb: 0.8,
+        action_accuracy: 0.5,
+        exact_accuracy: 0.5,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.4,
+        trend: certaintyTrend,
       }],
       street_summaries: [],
       recent_hands: [highHand],
@@ -1967,6 +1982,11 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Training progress" }));
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const renderedCertaintyTrend = within(dialog).getByLabelText(
+      "Last 1 hand vs previous 1: action accuracy change -100 percentage points, exact-line accuracy change -100 percentage points, average EV loss change +0.8 BB",
+    );
+    expect(within(renderedCertaintyTrend).getAllByText("-100 pts")).toHaveLength(2);
+    expect(within(renderedCertaintyTrend).getByText("+0.8 BB")).toHaveClass("declining");
     const shortcut = within(dialog).getByRole("button", {
       name: "Review high certainty differences (1)",
     });

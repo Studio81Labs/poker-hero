@@ -4080,32 +4080,41 @@ export default function App() {
                         </thead>
                         <tbody>
                           {trainingProgress.certainty_summaries?.map((summary) => (
-                            <tr key={summary.certainty}>
-                              <th>{trainingCertaintyLabel(summary.certainty)}</th>
-                              <td>{summary.hands}</td>
-                              <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                              <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                              <td>
-                                {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
-                                  ? formatEvLossBb(summary.average_ev_loss_bb)
-                                  : "—"}
-                              </td>
-                              <td>
-                                {(summary.needs_review_hands ?? 0) > 0 ? (
-                                  <button
-                                    type="button"
-                                    className="training-certainty-review"
-                                    onClick={() => void focusTrainingReviewCertainty(summary.certainty)}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Review ${summary.certainty} certainty differences (${summary.needs_review_hands})`}
-                                    title={`Review ${summary.certainty}-certainty differences`}
-                                  >
-                                    <Target size={12} aria-hidden="true" />
-                                    {summary.needs_review_hands}
-                                  </button>
-                                ) : "—"}
-                              </td>
-                            </tr>
+                            <Fragment key={summary.certainty}>
+                              <tr className={summary.trend ? "has-trend" : undefined}>
+                                <th>{trainingCertaintyLabel(summary.certainty)}</th>
+                                <td>{summary.hands}</td>
+                                <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                                <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                                <td>
+                                  {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
+                                    ? formatEvLossBb(summary.average_ev_loss_bb)
+                                    : "—"}
+                                </td>
+                                <td>
+                                  {(summary.needs_review_hands ?? 0) > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="training-certainty-review"
+                                      onClick={() => void focusTrainingReviewCertainty(summary.certainty)}
+                                      disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                      aria-label={`Review ${summary.certainty} certainty differences (${summary.needs_review_hands})`}
+                                      title={`Review ${summary.certainty}-certainty differences`}
+                                    >
+                                      <Target size={12} aria-hidden="true" />
+                                      {summary.needs_review_hands}
+                                    </button>
+                                  ) : "—"}
+                                </td>
+                              </tr>
+                              {summary.trend ? (
+                                <tr className="training-summary-trend-row">
+                                  <td colSpan={6}>
+                                    <PerformanceTrend trend={summary.trend} />
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
                           ))}
                           {(trainingProgress.unrated_hands ?? 0) > 0 ? (
                             <tr className="training-unrated-row">

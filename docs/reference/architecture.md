@@ -153,11 +153,13 @@ have their own global count and bounded list ordered by review time, independent
 from both the recent and pending-review limits. The endpoint also groups rated
 decisions by low, medium, or high pre-reveal certainty so accuracy and available
 EV loss can be calibrated without excluding legacy or unrated hands from
-overall progress.
-Each rated summary also exposes its global pending-review count so the frontend
-can open that certainty queue without deriving counts from the bounded response.
-Separate unrated total and pending counts keep legacy decisions discoverable
-without treating missing self-ratings as a calibration category.
+overall progress. Each rated group with at least two hands derives the same
+equal recent and previous performance windows used by the global, street,
+position, and solver summaries. Each rated summary also exposes its global
+pending-review count so the frontend can open that certainty queue without
+deriving counts from the bounded response. Separate unrated total and pending
+counts keep legacy decisions discoverable without treating missing self-ratings
+as a calibration category or assigning them a trend.
 Trend windows use the newest and
 immediately preceding reviewed hands, have the same size, and are capped at ten
 hands each. Action and exact-line deltas are available once two reviewed hands

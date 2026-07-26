@@ -202,6 +202,7 @@ def test_training_progress_reports_completed_decision_reviews(tmp_path: Path) ->
             "exact_accuracy": 1.0,
             "ev_compared_hands": 0,
             "average_ev_loss_bb": None,
+            "trend": None,
         }
     ]
     assert progress["unrated_hands"] == 0

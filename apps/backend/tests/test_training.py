@@ -363,6 +363,55 @@ def test_summarize_training_filters_recent_hands_by_normalized_position() -> Non
     ]
 
 
+def test_summarize_training_filters_recent_hands_by_street() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+        ),
+        reviewed_job(
+            "2" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+        ),
+        reviewed_job(
+            "3" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+        ),
+        reviewed_job(
+            "4" * 32,
+            "turn",
+            "check",
+            "check",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+        ),
+    ]
+
+    progress = summarize_training(
+        jobs,
+        recent_limit=1,
+        recent_street="flop",
+    )
+
+    assert progress.reviewed_hands == 4
+    assert [summary.street for summary in progress.street_summaries] == [
+        "preflop",
+        "flop",
+        "turn",
+    ]
+    assert progress.recent_matching_hands == 2
+    assert [hand.job_id for hand in progress.recent_hands] == ["3" * 32]
+    assert progress.review_queue_hands == 1
+
+
 def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     unsupported_reason = "hero position must identify IP or OOP"
     jobs = [

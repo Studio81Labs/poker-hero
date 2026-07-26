@@ -50,6 +50,7 @@ import type {
   TrainingReviewOrder,
   TrainingReviewStreet,
   TrainingSolverFilter,
+  TrainingStreetFilter,
   TrainingTrend,
 } from "./types";
 
@@ -550,6 +551,10 @@ function trainingCertaintyLabel(certainty: TrainingCertainty): string {
   return `${certainty.slice(0, 1).toUpperCase()}${certainty.slice(1)}`;
 }
 
+function trainingStreetLabel(street: Street): string {
+  return `${street.slice(0, 1).toUpperCase()}${street.slice(1)}`;
+}
+
 function formatEvLossBb(value: number): string {
   return `${formatCandidateValue(value)} BB`;
 }
@@ -956,6 +961,7 @@ function trainingReviewQueueStatus(
   lessonOrder: TrainingReviewOrder,
   solverFilter: TrainingSolverFilter | null,
   positionFilter: TrainingPositionFilter | null,
+  streetFilter: TrainingStreetFilter | null,
 ): string {
   if (view === "lessons") {
     if (loading) {
@@ -1031,6 +1037,19 @@ function trainingReviewQueueStatus(
       return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} recorded at ${positionFilter.label}.`;
     }
     return `${matchingHands} training hand${matchingHands === 1 ? " has" : "s have"} no recorded position.`;
+  }
+  if (view === "recent" && streetFilter) {
+    if (loading) {
+      return `Finding ${streetFilter.label} hands...`;
+    }
+    const matchingHands = progress?.recent_matching_hands
+      ?? progress?.recent_hands.length
+      ?? 0;
+    const visibleHands = progress?.recent_hands.length ?? 0;
+    if (matchingHands > visibleHands) {
+      return `Showing ${visibleHands} newest of ${matchingHands} ${streetFilter.label} hands.`;
+    }
+    return `${matchingHands} training hand${matchingHands === 1 ? "" : "s"} played on ${streetFilter.label}.`;
   }
   if (view !== "review") {
     return "Automation-only hands are not scored.";
@@ -1637,6 +1656,7 @@ export default function App() {
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
   const [trainingSolverFilter, setTrainingSolverFilter] = useState<TrainingSolverFilter | null>(null);
   const [trainingPositionFilter, setTrainingPositionFilter] = useState<TrainingPositionFilter | null>(null);
+  const [trainingStreetFilter, setTrainingStreetFilter] = useState<TrainingStreetFilter | null>(null);
   const [trainingLessonOrder, setTrainingLessonOrder] = useState<TrainingReviewOrder>("recent");
   const [trainingLessonStreet, setTrainingLessonStreet] = useState<TrainingReviewStreet>("all");
   const [trainingLessonSearch, setTrainingLessonSearch] = useState("");
@@ -1768,7 +1788,7 @@ export default function App() {
   const nextReviewHand = trainingProgressView === "lessons"
     || (
       trainingProgressView === "recent"
-      && (trainingSolverFilter || trainingPositionFilter)
+      && (trainingSolverFilter || trainingPositionFilter || trainingStreetFilter)
     )
     ? null
     : trainingProgress?.review_queue[0] ?? null;
@@ -1785,6 +1805,7 @@ export default function App() {
     trainingLessonOrder,
     trainingSolverFilter,
     trainingPositionFilter,
+    trainingStreetFilter,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
 
@@ -2380,6 +2401,7 @@ export default function App() {
         trainingLessonOrder,
         trainingSolverFilter,
         trainingPositionFilter,
+        trainingStreetFilter,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2445,6 +2467,7 @@ export default function App() {
     setTrainingReviewDifference(null);
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
+    setTrainingStreetFilter(null);
     setTrainingLessonOrder("recent");
     setTrainingLessonStreet("all");
     setTrainingLessonSearch("");
@@ -2472,6 +2495,7 @@ export default function App() {
         && reviewDifference?.recommended_action === trainingReviewDifference?.recommended_action
         && trainingSolverFilter === null
         && trainingPositionFilter === null
+        && trainingStreetFilter === null
       )
       || trainingProgressLoading
     ) {
@@ -2483,12 +2507,14 @@ export default function App() {
     const previousDifference = trainingReviewDifference;
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
+    const previousStreetFilter = trainingStreetFilter;
     setTrainingReviewOrder(reviewOrder);
     setTrainingReviewStreet(reviewStreet);
     setTrainingReviewCertainty(reviewCertainty);
     setTrainingReviewDifference(reviewDifference);
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
+    setTrainingStreetFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2508,6 +2534,7 @@ export default function App() {
       setTrainingReviewDifference(previousDifference);
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
+      setTrainingStreetFilter(previousStreetFilter);
       setError(messageFromError(trainingError, "Could not filter training reviews"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2547,6 +2574,7 @@ export default function App() {
         lessonOrder,
         trainingSolverFilter,
         trainingPositionFilter,
+        trainingStreetFilter,
       ));
       setTrainingLessonQuery(lessonQuery);
     } catch (trainingError) {
@@ -2596,8 +2624,10 @@ export default function App() {
     }
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
+    const previousStreetFilter = trainingStreetFilter;
     setTrainingSolverFilter(filter);
     setTrainingPositionFilter(null);
+    setTrainingStreetFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2614,6 +2644,7 @@ export default function App() {
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
+      setTrainingStreetFilter(previousStreetFilter);
       setError(messageFromError(trainingError, "Could not load solver hands"));
     } finally {
       setTrainingProgressLoading(false);
@@ -2641,8 +2672,10 @@ export default function App() {
     }
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
+    const previousStreetFilter = trainingStreetFilter;
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(filter);
+    setTrainingStreetFilter(null);
     setTrainingProgressLoading(true);
     setError(null);
     try {
@@ -2660,7 +2693,49 @@ export default function App() {
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
+      setTrainingStreetFilter(previousStreetFilter);
       setError(messageFromError(trainingError, "Could not load position hands"));
+    } finally {
+      setTrainingProgressLoading(false);
+    }
+  }
+
+  async function updateTrainingStreetFilter(
+    filter: TrainingStreetFilter | null,
+  ) {
+    setTrainingProgressView("recent");
+    if (
+      filter?.street === trainingStreetFilter?.street
+      || trainingProgressLoading
+    ) {
+      return;
+    }
+    const previousSolverFilter = trainingSolverFilter;
+    const previousPositionFilter = trainingPositionFilter;
+    const previousStreetFilter = trainingStreetFilter;
+    setTrainingSolverFilter(null);
+    setTrainingPositionFilter(null);
+    setTrainingStreetFilter(filter);
+    setTrainingProgressLoading(true);
+    setError(null);
+    try {
+      setTrainingProgress(await getTrainingProgress(
+        trainingReviewOrder,
+        trainingReviewStreet,
+        trainingReviewDifference,
+        trainingReviewCertainty,
+        trainingLessonStreet,
+        trainingLessonQuery,
+        trainingLessonOrder,
+        null,
+        null,
+        filter,
+      ));
+    } catch (trainingError) {
+      setTrainingSolverFilter(previousSolverFilter);
+      setTrainingPositionFilter(previousPositionFilter);
+      setTrainingStreetFilter(previousStreetFilter);
+      setError(messageFromError(trainingError, "Could not load street hands"));
     } finally {
       setTrainingProgressLoading(false);
     }
@@ -4143,7 +4218,22 @@ export default function App() {
                         {trainingProgress.street_summaries.map((summary) => (
                           <Fragment key={summary.street}>
                             <tr className={summary.trend ? "has-trend" : undefined}>
-                              <th>{summary.street}</th>
+                              <th scope="row">
+                                <button
+                                  type="button"
+                                  className="training-summary-drilldown"
+                                  onClick={() => void updateTrainingStreetFilter({
+                                    street: summary.street,
+                                    label: trainingStreetLabel(summary.street),
+                                  })}
+                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                  aria-label={`Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} played on ${summary.street}`}
+                                  title="Show training hands"
+                                >
+                                  <span>{summary.street}</span>
+                                  <Eye size={12} aria-hidden="true" />
+                                </button>
+                              </th>
                               <td>{summary.reviewed_hands}</td>
                               <td>{benchmarkPercent(summary.action_accuracy)}</td>
                               <td>{benchmarkPercent(summary.exact_accuracy)}</td>
@@ -4211,7 +4301,7 @@ export default function App() {
                                   <th scope="row">
                                     <button
                                       type="button"
-                                      className="training-position-drilldown"
+                                      className="training-summary-drilldown"
                                       onClick={() => void updateTrainingPositionFilter({
                                         kind: "position",
                                         position: summary.position,
@@ -4406,6 +4496,8 @@ export default function App() {
                                 void updateTrainingSolverFilter(null);
                               } else if (trainingPositionFilter) {
                                 void updateTrainingPositionFilter(null);
+                              } else if (trainingStreetFilter) {
+                                void updateTrainingStreetFilter(null);
                               } else {
                                 setTrainingProgressView("recent");
                               }
@@ -4419,7 +4511,7 @@ export default function App() {
                             className={trainingProgressView === "review" ? "active" : ""}
                             onClick={() => {
                               setTrainingProgressView("review");
-                              if (trainingSolverFilter || trainingPositionFilter) {
+                              if (trainingSolverFilter || trainingPositionFilter || trainingStreetFilter) {
                                 void updateTrainingReviewQueue(
                                   trainingReviewOrder,
                                   trainingReviewStreet,
@@ -4503,6 +4595,23 @@ export default function App() {
                         </button>
                       </div>
                     ) : null}
+                    {trainingProgressView === "recent" && trainingStreetFilter ? (
+                      <div className="training-active-difference training-active-street" aria-label="Active street filter">
+                        <span>
+                          <Target size={12} aria-hidden="true" />
+                          {trainingStreetFilter.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void updateTrainingStreetFilter(null)}
+                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                          aria-label="Clear street filter"
+                          title="Clear street filter"
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
                     {visibleTrainingHands.length > 0 ? (
                       <div className="recent-training-list">
                         {visibleTrainingHands.map((hand) => (
@@ -4581,7 +4690,9 @@ export default function App() {
                                 ? trainingPositionFilter.kind === "position"
                                   ? `No training hands were recorded at ${trainingPositionFilter.label}.`
                                   : "No training hands have a recorded position."
-                                : "No recent training decisions."}
+                                : trainingStreetFilter
+                                  ? `No training hands were played on ${trainingStreetFilter.label}.`
+                                  : "No recent training decisions."}
                       </div>
                     )}
                   </section>

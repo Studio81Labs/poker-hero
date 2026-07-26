@@ -115,6 +115,7 @@ def summarize_training(
     solver_fallback_key: str | None = None,
     solver_route_key: str | None = None,
     solver_unattributed: bool = False,
+    recent_street: Street | None = None,
     recent_position: str | None = None,
     recent_unpositioned: bool = False,
 ) -> TrainingProgress:
@@ -262,6 +263,13 @@ def summarize_training(
         and (
             not solver_unattributed
             or _solver_route_engine(job) is None
+        )
+        and (
+            recent_street is None
+            or (
+                job.approved_state is not None
+                and job.approved_state.street == recent_street
+            )
         )
         and (
             recent_position is None

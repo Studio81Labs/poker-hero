@@ -14,6 +14,7 @@ import type {
   TrainingReviewOrder,
   TrainingReviewStreet,
   TrainingSolverFilter,
+  TrainingStreetFilter,
 } from "./types";
 
 const API_BASE_URL =
@@ -133,6 +134,7 @@ export async function getTrainingProgress(
   lessonOrder: TrainingReviewOrder = "recent",
   solverFilter: TrainingSolverFilter | null = null,
   positionFilter: TrainingPositionFilter | null = null,
+  streetFilter: TrainingStreetFilter | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -168,6 +170,9 @@ export async function getTrainingProgress(
     search.set("recent_position", positionFilter.position);
   } else if (positionFilter?.kind === "unpositioned") {
     search.set("recent_unpositioned", "true");
+  }
+  if (streetFilter) {
+    search.set("recent_street", streetFilter.street);
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

@@ -1184,6 +1184,104 @@ describe("App", () => {
     );
   });
 
+  it("drills into recent training hands from a street summary", async () => {
+    const flopHand = {
+      job_id: "flop-job",
+      original_filename: "flop.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "check" as const,
+      decision_sizing: null,
+      recommended_action: "check" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 0,
+    };
+    const turnHand = {
+      ...flopHand,
+      job_id: "turn-job",
+      original_filename: "turn.png",
+      street: "turn" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 3,
+      exact_matches: 3,
+      different_actions: 0,
+      needs_review_hands: 0,
+      action_accuracy: 1,
+      exact_accuracy: 1,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 0,
+      street_summaries: [{
+        street: "flop" as const,
+        reviewed_hands: 2,
+        action_matches: 2,
+        exact_matches: 2,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0,
+      }, {
+        street: "turn" as const,
+        reviewed_hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0,
+      }],
+      position_summaries: [],
+      unpositioned_hands: 3,
+      recent_matching_hands: 3,
+      recent_hands: [flopHand, turnHand],
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    const flopProgress = {
+      ...progress,
+      recent_matching_hands: 2,
+      recent_hands: [flopHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(flopProgress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Show 2 hands played on flop",
+    }));
+
+    const streetFilter = await within(dialog).findByLabelText("Active street filter");
+    expect(within(streetFilter).getByText("Flop")).toBeInTheDocument();
+    expect(within(dialog).getByText("Showing 1 newest of 2 Flop hands.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open flop.png training review",
+    })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", {
+      name: "Open turn.png training review",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?recent_street=flop",
+    );
+
+    await user.click(within(streetFilter).getByRole("button", {
+      name: "Clear street filter",
+    }));
+    await waitFor(() => expect(within(dialog).queryByLabelText("Active street filter")).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+  });
+
   it("drills into normalized position and unpositioned training hands", async () => {
     const buttonHand = {
       job_id: "button-job",

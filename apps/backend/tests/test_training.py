@@ -240,14 +240,29 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert coverage.routes[0].exact_accuracy == 0.5
     assert coverage.routes[0].ev_compared_hands == 1
     assert coverage.routes[0].average_ev_loss_bb == 0.4
+    assert coverage.routes[0].trend is not None
+    assert coverage.routes[0].trend.window_hands == 1
+    assert coverage.routes[0].trend.recent_action_accuracy == 1
+    assert coverage.routes[0].trend.previous_action_accuracy == 0
+    assert coverage.routes[0].trend.action_accuracy_delta == 1
+    assert coverage.routes[0].trend.recent_exact_accuracy == 1
+    assert coverage.routes[0].trend.previous_exact_accuracy == 0
+    assert coverage.routes[0].trend.exact_accuracy_delta == 1
+    assert coverage.routes[0].trend.recent_ev_compared_hands == 0
+    assert coverage.routes[0].trend.previous_ev_compared_hands == 1
+    assert coverage.routes[0].trend.average_ev_loss_delta_bb is None
     assert coverage.routes[0].street_counts == {"flop": 1, "turn": 1}
     assert coverage.routes[1].fallback_hands == 0
     assert coverage.routes[1].action_accuracy == 1
     assert coverage.routes[1].exact_accuracy == 1
     assert coverage.routes[1].ev_compared_hands == 0
     assert coverage.routes[1].average_ev_loss_bb is None
+    assert coverage.routes[1].trend is not None
+    assert coverage.routes[1].trend.action_accuracy_delta == 0
+    assert coverage.routes[1].trend.exact_accuracy_delta == 0
     assert coverage.routes[1].street_counts == {"flop": 1, "river": 1}
     assert coverage.routes[2].fallback_hands == 0
+    assert coverage.routes[2].trend is None
     assert len(coverage.fallback_reasons) == 1
     fallback_key = hashlib.sha256(unsupported_reason.encode("utf-8")).hexdigest()
     assert coverage.fallback_reasons[0].key == fallback_key
@@ -259,6 +274,7 @@ def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     assert coverage.fallback_reasons[0].exact_accuracy == 0.5
     assert coverage.fallback_reasons[0].ev_compared_hands == 1
     assert coverage.fallback_reasons[0].average_ev_loss_bb == 0.4
+    assert coverage.fallback_reasons[0].trend == coverage.routes[0].trend
     assert coverage.fallback_reasons[0].street_counts == {"flop": 1, "turn": 1}
     assert progress.recent_matching_hands == 6
 

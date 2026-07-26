@@ -294,6 +294,7 @@ class TrainingSolverRouteSummary(BaseModel):
     exact_accuracy: float = Field(default=0, ge=0, le=1)
     ev_compared_hands: int = Field(default=0, ge=0)
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    trend: TrainingTrend | None = None
     street_counts: dict[Street, int] = Field(default_factory=dict)
 
 
@@ -307,6 +308,7 @@ class TrainingSolverFallbackSummary(BaseModel):
     exact_accuracy: float = Field(default=0, ge=0, le=1)
     ev_compared_hands: int = Field(default=0, ge=0)
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
+    trend: TrainingTrend | None = None
     street_counts: dict[Street, int] = Field(default_factory=dict)
 
 

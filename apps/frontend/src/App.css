@@ -2119,6 +2119,21 @@ button:disabled {
   white-space: nowrap;
 }
 
+.training-solver-performance em {
+  color: var(--muted);
+  font-size: inherit;
+  font-style: normal;
+  margin-left: 3px;
+}
+
+.training-solver-performance em.improving {
+  color: var(--positive);
+}
+
+.training-solver-performance em.declining {
+  color: var(--accent);
+}
+
 .training-solver-route:hover:not(:disabled) {
   color: var(--accent);
 }

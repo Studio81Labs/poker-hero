@@ -1138,6 +1138,20 @@ describe("App", () => {
   it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);
+    const solverPerformanceTrend = {
+      window_hands: 1,
+      recent_action_accuracy: 1,
+      previous_action_accuracy: 0,
+      action_accuracy_delta: 1,
+      recent_exact_accuracy: 1,
+      previous_exact_accuracy: 0,
+      exact_accuracy_delta: 1,
+      recent_ev_compared_hands: 1,
+      previous_ev_compared_hands: 1,
+      recent_average_ev_loss_bb: 0.2,
+      previous_average_ev_loss_bb: 0.6,
+      average_ev_loss_delta_bb: -0.4,
+    };
     const routeHand = {
       job_id: "route-job",
       original_filename: "engine.png",
@@ -1219,6 +1233,7 @@ describe("App", () => {
           exact_accuracy: 0.5,
           ev_compared_hands: 1,
           average_ev_loss_bb: 0.4,
+          trend: solverPerformanceTrend,
           street_counts: { flop: 1, turn: 1 },
         }, {
           key: "c".repeat(64),
@@ -1255,6 +1270,7 @@ describe("App", () => {
           exact_accuracy: 0.5,
           ev_compared_hands: 1,
           average_ev_loss_bb: 0.4,
+          trend: solverPerformanceTrend,
           street_counts: { flop: 1, turn: 1 },
         }],
       },
@@ -1305,12 +1321,14 @@ describe("App", () => {
     });
     expect(showUnattributedHands).toBeEnabled();
     const showEngineHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands handled by Local EV solver. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
+      name: "Show 2 hands handled by Local EV solver. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB; Last 1 hand vs previous 1: action accuracy change +100 percentage points, exact-line accuracy change +100 percentage points, average EV loss change -0.4 BB",
     });
     expect(showEngineHands).toBeEnabled();
     expect(within(showEngineHands).getByText("Action 50%")).toBeInTheDocument();
     expect(within(showEngineHands).getByText("Exact 50%")).toBeInTheDocument();
     expect(within(showEngineHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
+    expect(within(showEngineHands).getAllByText("+100 pts")).toHaveLength(2);
+    expect(within(showEngineHands).getByText("-0.4 BB")).toHaveClass("improving");
     const showPostflopHands = within(dialog).getByRole("button", {
       name: "Show 2 hands handled by Postflop solver. Action accuracy 100%; exact-line accuracy 100%; EV loss ungraded",
     });
@@ -1320,12 +1338,14 @@ describe("App", () => {
       name: "Show 1 hand handled by Preflop chart. Action accuracy 100%; exact-line accuracy 100%; EV loss ungraded",
     })).toBeEnabled();
     const showFallbackHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB; Last 1 hand vs previous 1: action accuracy change +100 percentage points, exact-line accuracy change +100 percentage points, average EV loss change -0.4 BB",
     });
     expect(showFallbackHands).toBeEnabled();
     expect(within(showFallbackHands).getByText("Action 50%")).toBeInTheDocument();
     expect(within(showFallbackHands).getByText("Exact 50%")).toBeInTheDocument();
     expect(within(showFallbackHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
+    expect(within(showFallbackHands).getAllByText("+100 pts")).toHaveLength(2);
+    expect(within(showFallbackHands).getByText("-0.4 BB")).toHaveClass("improving");
 
     await user.click(showEngineHands);
 
@@ -1351,7 +1371,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
 
     const refreshedFallbackHands = within(dialog).getByRole("button", {
-      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB",
+      name: "Show 2 hands using fallback: hero position must identify IP or OOP. Action accuracy 50%; exact-line accuracy 50%; average EV loss 0.4 BB; Last 1 hand vs previous 1: action accuracy change +100 percentage points, exact-line accuracy change +100 percentage points, average EV loss change -0.4 BB",
     });
     await waitFor(() => expect(refreshedFallbackHands).toBeEnabled());
     await user.click(refreshedFallbackHands);

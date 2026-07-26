@@ -402,17 +402,18 @@ def _solver_performance_fields(
     outcomes: dict[str, TrainingOutcome],
     ev_losses: dict[str, float | None],
 ) -> dict[str, Any]:
-    compared_outcomes = [outcomes[job.id] for job in jobs]
+    newest_first = sorted(jobs, key=_training_recorded_at, reverse=True)
+    compared_outcomes = [outcomes[job.id] for job in newest_first]
     action_matches = sum(outcome != "different" for outcome in compared_outcomes)
     exact_matches = sum(
         outcome in {"match", "mixed"} for outcome in compared_outcomes
     )
     comparable_ev_losses = [
         loss
-        for job in jobs
+        for job in newest_first
         if (loss := ev_losses[job.id]) is not None
     ]
-    hands = len(jobs)
+    hands = len(newest_first)
     return {
         "hands": hands,
         "action_matches": action_matches,
@@ -421,6 +422,7 @@ def _solver_performance_fields(
         "exact_accuracy": exact_matches / hands,
         "ev_compared_hands": len(comparable_ev_losses),
         "average_ev_loss_bb": _average_ev_loss(comparable_ev_losses),
+        "trend": _training_trend(newest_first, outcomes, ev_losses),
     }
 
 

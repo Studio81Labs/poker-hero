@@ -230,6 +230,17 @@ class TrainingStreetSummary(BaseModel):
     average_ev_loss_bb: float | None = Field(default=None, ge=0)
 
 
+class TrainingPositionSummary(BaseModel):
+    position: str = Field(min_length=1)
+    reviewed_hands: int = Field(ge=1)
+    action_matches: int = Field(ge=0)
+    exact_matches: int = Field(ge=0)
+    action_accuracy: float = Field(ge=0, le=1)
+    exact_accuracy: float = Field(ge=0, le=1)
+    ev_compared_hands: int = Field(default=0, ge=0)
+    average_ev_loss_bb: float | None = Field(default=None, ge=0)
+
+
 class TrainingCertaintySummary(BaseModel):
     certainty: TrainingCertainty
     hands: int = Field(ge=1)
@@ -350,6 +361,8 @@ class TrainingProgress(BaseModel):
     unrated_hands: int = Field(default=0, ge=0)
     unrated_needs_review_hands: int = Field(default=0, ge=0)
     street_summaries: list[TrainingStreetSummary] = Field(default_factory=list)
+    position_summaries: list[TrainingPositionSummary] = Field(default_factory=list)
+    unpositioned_hands: int = Field(default=0, ge=0)
     recent_matching_hands: int = Field(default=0, ge=0)
     recent_hands: list[TrainingRecentHand] = Field(default_factory=list)
     lesson_count: int = Field(default=0, ge=0)

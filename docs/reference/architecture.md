@@ -116,6 +116,9 @@ The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also aggregates the recommendation
 `raw.engine` value for each compared hand, grouped by canonical street.
+Approved hero-position labels are normalized into common six-max seats plus
+IP/OOP for a separate performance breakdown. Missing positions stay in an
+explicit unpositioned count and do not receive a synthetic label.
 Non-empty `fallback_reason` values count as fallback and are grouped for
 diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations

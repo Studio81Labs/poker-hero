@@ -2416,6 +2416,7 @@ button:disabled {
 
 .training-street-table tbody th {
   font-size: 11px;
+  overflow-wrap: anywhere;
   text-transform: capitalize;
 }
 

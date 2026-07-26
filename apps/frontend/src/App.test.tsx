@@ -1027,6 +1027,26 @@ describe("App", () => {
         ev_compared_hands: 2,
         average_ev_loss_bb: 0.005,
       }],
+      position_summaries: [{
+        position: "BTN",
+        reviewed_hands: 2,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 0.5,
+        exact_accuracy: 0.5,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0.12,
+      }, {
+        position: "OOP",
+        reviewed_hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }],
+      unpositioned_hands: 1,
       recent_hands: [exactHand, mixedHand],
       review_queue_hands: 2,
       review_queue: reviewQueue,
@@ -1065,6 +1085,10 @@ describe("App", () => {
     expect(within(dialog).getByRole("row", { name: /low 1 100% 100% 0 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /high 1 100% 100% 0.01 BB/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", { name: /flop 4 75% 50% 0.005 BB/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "By position" })).toBeInTheDocument();
+    expect(within(dialog).getByText("1 unrecorded")).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /BTN 2 50% 50% 0.12 BB/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("row", { name: /OOP 1 100% 100%/i })).toBeInTheDocument();
     expect(within(dialog).getByText("You: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("Solver: Raise 7.5 BB")).toBeInTheDocument();
     expect(within(dialog).getByText("EV loss: 0.01 BB")).toBeInTheDocument();

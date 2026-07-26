@@ -28,6 +28,7 @@ def reviewed_job(
     training_reviewed_at: datetime | None = None,
     training_review_note: str | None = None,
     decision_certainty: TrainingCertainty | None = None,
+    hero_position: str | None = None,
 ) -> JobRecord:
     return JobRecord(
         id=job_id,
@@ -38,6 +39,7 @@ def reviewed_job(
         recommendation_provider="mock",
         approved_state=CanonicalState(
             hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+            hero_position=hero_position,
             street=street,
             user_approved=True,
         ),
@@ -130,6 +132,81 @@ def test_summarize_training_scores_actions_sizes_streets_and_recency() -> None:
     assert progress.review_street_counts == {"flop": 1, "turn": 1}
     assert progress.review_queue_hands == 2
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32, "2" * 32]
+
+
+def test_summarize_training_reports_performance_by_normalized_position() -> None:
+    ev_candidates = {
+        "candidates": [
+            {"action": "fold", "sizing": None, "ev": 0.0},
+            {"action": "call", "sizing": None, "ev": 1.0},
+        ]
+    }
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            hero_position="btn",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "flop",
+            "fold",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            recommendation_raw=ev_candidates,
+            hero_position="dealer",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "turn",
+            "check",
+            "check",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            hero_position="in_position",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "river",
+            "check",
+            "check",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+            hero_position="lojack",
+        ),
+        reviewed_job(
+            "5" * 32,
+            "river",
+            "check",
+            "check",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert [summary.position for summary in progress.position_summaries] == [
+        "BTN",
+        "IP",
+        "LOJACK",
+    ]
+    button = progress.position_summaries[0]
+    assert button.reviewed_hands == 2
+    assert button.action_matches == 1
+    assert button.exact_matches == 1
+    assert button.action_accuracy == 0.5
+    assert button.exact_accuracy == 0.5
+    assert button.ev_compared_hands == 1
+    assert button.average_ev_loss_bb == 1
+    in_position = progress.position_summaries[1]
+    assert in_position.reviewed_hands == 1
+    assert in_position.action_accuracy == 1
+    assert in_position.exact_accuracy == 1
+    assert in_position.ev_compared_hands == 0
+    assert in_position.average_ev_loss_bb is None
+    assert progress.position_summaries[2].reviewed_hands == 1
+    assert progress.unpositioned_hands == 1
 
 
 def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:

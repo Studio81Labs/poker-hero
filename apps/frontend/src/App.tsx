@@ -4020,6 +4020,49 @@ export default function App() {
                     </table>
                   </section>
 
+                  {(trainingProgress.position_summaries?.length ?? 0) > 0 ? (
+                    <section
+                      className="training-progress-section"
+                      aria-labelledby="training-positions-title"
+                    >
+                      <div className="training-section-heading">
+                        <h3 id="training-positions-title">By position</h3>
+                        {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
+                          <span className="training-section-context">
+                            {trainingProgress.unpositioned_hands} unrecorded
+                          </span>
+                        ) : null}
+                      </div>
+                      <table className="training-street-table">
+                        <thead>
+                          <tr>
+                            <th>Position</th>
+                            <th>Hands</th>
+                            <th>Action</th>
+                            <th>Exact</th>
+                            <th>Avg EV loss</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trainingProgress.position_summaries?.map((summary) => (
+                            <tr key={summary.position}>
+                              <th>{summary.position}</th>
+                              <td>{summary.reviewed_hands}</td>
+                              <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                              <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                              <td>
+                                {summary.ev_compared_hands > 0
+                                  && summary.average_ev_loss_bb !== null
+                                  ? formatEvLossBb(summary.average_ev_loss_bb)
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  ) : null}
+
                   <section className="training-progress-section recent-training-section" aria-labelledby="training-hands-title">
                     <div className="training-review-heading">
                       <h3 id="training-hands-title">

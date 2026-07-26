@@ -49,6 +49,7 @@ import type {
   TrainingReviewOrder,
   TrainingReviewStreet,
   TrainingSolverFilter,
+  TrainingTrend,
 } from "./types";
 
 const SUIT_BY_CODE: Record<string, Suit> = {
@@ -749,12 +750,28 @@ function benchmarkPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function solverPerformanceAccessibleLabel(summary: {
+type SolverPerformanceSummary = {
   action_accuracy?: number;
   exact_accuracy?: number;
   ev_compared_hands?: number;
   average_ev_loss_bb?: number | null;
-}): string | null {
+  trend?: TrainingTrend | null;
+};
+
+function solverTrendWindowLabel(trend: TrainingTrend): string {
+  const hands = trend.window_hands === 1 ? "hand" : "hands";
+  return `Last ${trend.window_hands} ${hands} vs previous ${trend.window_hands}`;
+}
+
+function accessiblePointDelta(value: number): string {
+  const points = Math.round(value * 100);
+  const unit = Math.abs(points) === 1 ? "percentage point" : "percentage points";
+  return `${points > 0 ? "+" : ""}${points} ${unit}`;
+}
+
+function solverPerformanceAccessibleLabel(
+  summary: SolverPerformanceSummary,
+): string | null {
   if (
     typeof summary.action_accuracy !== "number"
     || typeof summary.exact_accuracy !== "number"
@@ -765,11 +782,85 @@ function solverPerformanceAccessibleLabel(summary: {
     && typeof summary.average_ev_loss_bb === "number"
     ? `average EV loss ${formatEvLossBb(summary.average_ev_loss_bb)}`
     : "EV loss ungraded";
-  return [
+  const labels = [
     `Action accuracy ${benchmarkPercent(summary.action_accuracy)}`,
     `exact-line accuracy ${benchmarkPercent(summary.exact_accuracy)}`,
     evLoss,
-  ].join("; ");
+  ];
+  if (summary.trend) {
+    const changes = [
+      `action accuracy change ${accessiblePointDelta(summary.trend.action_accuracy_delta)}`,
+      `exact-line accuracy change ${accessiblePointDelta(summary.trend.exact_accuracy_delta)}`,
+    ];
+    if (summary.trend.average_ev_loss_delta_bb !== null) {
+      changes.push(
+        `average EV loss change ${formatEvLossDeltaBb(summary.trend.average_ev_loss_delta_bb)}`,
+      );
+    }
+    labels.push(`${solverTrendWindowLabel(summary.trend)}: ${changes.join(", ")}`);
+  }
+  return labels.join("; ");
+}
+
+function SolverPerformance({
+  summary,
+}: {
+  summary: SolverPerformanceSummary;
+}) {
+  if (
+    typeof summary.action_accuracy !== "number"
+    || typeof summary.exact_accuracy !== "number"
+  ) {
+    return null;
+  }
+  const trendTitle = summary.trend
+    ? solverTrendWindowLabel(summary.trend)
+    : undefined;
+  const evLoss = (summary.ev_compared_hands ?? 0) > 0
+    && typeof summary.average_ev_loss_bb === "number"
+    ? `${formatEvLossBb(summary.average_ev_loss_bb)} EV loss`
+    : "EV ungraded";
+  return (
+    <small className="training-solver-performance" aria-hidden="true">
+      <span>
+        Action {benchmarkPercent(summary.action_accuracy)}
+        {summary.trend ? (
+          <em
+            className={trainingTrendTone(summary.trend.action_accuracy_delta)}
+            title={trendTitle}
+          >
+            {formatAccuracyDelta(summary.trend.action_accuracy_delta)}
+          </em>
+        ) : null}
+      </span>
+      <span>
+        Exact {benchmarkPercent(summary.exact_accuracy)}
+        {summary.trend ? (
+          <em
+            className={trainingTrendTone(summary.trend.exact_accuracy_delta)}
+            title={trendTitle}
+          >
+            {formatAccuracyDelta(summary.trend.exact_accuracy_delta)}
+          </em>
+        ) : null}
+      </span>
+      <span>
+        {evLoss}
+        {summary.trend?.average_ev_loss_delta_bb !== null
+          && summary.trend?.average_ev_loss_delta_bb !== undefined ? (
+            <em
+              className={trainingTrendTone(
+                summary.trend.average_ev_loss_delta_bb,
+                true,
+              )}
+              title={trendTitle}
+            >
+              {formatEvLossDeltaBb(summary.trend.average_ev_loss_delta_bb)}
+            </em>
+          ) : null}
+      </span>
+    </small>
+  );
 }
 
 function solverStreetCountsLabel(counts: Partial<Record<Street, number>>): string {
@@ -3703,23 +3794,7 @@ export default function App() {
                                       {providerLabel(route.engine)}
                                     </span>
                                     <Eye size={12} aria-hidden="true" />
-                                    {typeof route.action_accuracy === "number"
-                                      && typeof route.exact_accuracy === "number" ? (
-                                        <small className="training-solver-performance">
-                                          <span>
-                                            Action {benchmarkPercent(route.action_accuracy)}
-                                          </span>
-                                          <span>
-                                            Exact {benchmarkPercent(route.exact_accuracy)}
-                                          </span>
-                                          <span>
-                                            {(route.ev_compared_hands ?? 0) > 0
-                                              && typeof route.average_ev_loss_bb === "number"
-                                              ? `${formatEvLossBb(route.average_ev_loss_bb)} EV loss`
-                                              : "EV ungraded"}
-                                          </span>
-                                        </small>
-                                      ) : null}
+                                    <SolverPerformance summary={route} />
                                   </button>
                                 </th>
                                 <td>{route.hands}</td>
@@ -3760,23 +3835,7 @@ export default function App() {
                             >
                               <span>{fallback.reason}</span>
                               <em>{solverStreetCountsLabel(fallback.street_counts) || "—"}</em>
-                              {typeof fallback.action_accuracy === "number"
-                                && typeof fallback.exact_accuracy === "number" ? (
-                                  <small className="training-solver-performance">
-                                    <span>
-                                      Action {benchmarkPercent(fallback.action_accuracy)}
-                                    </span>
-                                    <span>
-                                      Exact {benchmarkPercent(fallback.exact_accuracy)}
-                                    </span>
-                                    <span>
-                                      {(fallback.ev_compared_hands ?? 0) > 0
-                                        && typeof fallback.average_ev_loss_bb === "number"
-                                        ? `${formatEvLossBb(fallback.average_ev_loss_bb)} EV loss`
-                                        : "EV ungraded"}
-                                    </span>
-                                  </small>
-                                ) : null}
+                              <SolverPerformance summary={fallback} />
                               <strong>{fallback.hands}</strong>
                               <Eye size={13} aria-hidden="true" />
                             </button>

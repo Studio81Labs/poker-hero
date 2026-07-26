@@ -133,6 +133,7 @@ export interface TrainingSolverRouteSummary {
   exact_accuracy?: number;
   ev_compared_hands?: number;
   average_ev_loss_bb?: number | null;
+  trend?: TrainingTrend | null;
   street_counts: Partial<Record<Street, number>>;
 }
 
@@ -146,6 +147,7 @@ export interface TrainingSolverFallbackSummary {
   exact_accuracy?: number;
   ev_compared_hands?: number;
   average_ev_loss_bb?: number | null;
+  trend?: TrainingTrend | null;
   street_counts: Partial<Record<Street, number>>;
 }
 

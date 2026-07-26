@@ -373,6 +373,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pattern=r"^[0-9a-f]{64}$",
         ),
         solver_unattributed: bool = False,
+        recent_position: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=120,
+            pattern=r".*\S.*",
+        ),
+        recent_unpositioned: bool = False,
     ) -> TrainingProgress:
         if (review_decision_action is None) != (review_recommended_action is None):
             raise HTTPException(
@@ -395,6 +402,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "solver_unattributed are mutually exclusive"
                 ),
             )
+        position_filter_count = sum((
+            recent_position is not None,
+            recent_unpositioned,
+        ))
+        if position_filter_count > 1:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "recent_position and recent_unpositioned "
+                    "are mutually exclusive"
+                ),
+            )
+        if position_filter_count > 0 and solver_filter_count > 0:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "position and solver recent-hand filters "
+                    "are mutually exclusive"
+                ),
+            )
         review_action_difference = (
             (review_decision_action, review_recommended_action)
             if review_decision_action is not None
@@ -413,6 +440,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             solver_fallback_key=solver_fallback_key,
             solver_route_key=solver_route_key,
             solver_unattributed=solver_unattributed,
+            recent_position=recent_position,
+            recent_unpositioned=recent_unpositioned,
         )
 
     @app.get("/api/training/lessons/export")

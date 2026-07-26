@@ -2160,6 +2160,23 @@ button:disabled {
   color: var(--accent);
 }
 
+.training-position-unrecorded {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
+  font: inherit;
+  font-weight: inherit;
+  gap: 3px;
+  padding: 0;
+  text-transform: inherit;
+}
+
+.training-position-unrecorded:hover:not(:disabled) {
+  color: var(--accent);
+}
+
 .training-solver-trend {
   align-items: center;
   border-bottom: 1px solid var(--line-soft);
@@ -2418,6 +2435,38 @@ button:disabled {
   font-size: 11px;
   overflow-wrap: anywhere;
   text-transform: capitalize;
+}
+
+.training-position-table tbody th:first-child {
+  width: 28%;
+}
+
+.training-position-drilldown {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
+  font: inherit;
+  font-weight: inherit;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  text-align: left;
+}
+
+.training-position-drilldown span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.training-position-drilldown:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.training-position-drilldown svg {
+  color: var(--muted);
+  flex: 0 0 auto;
 }
 
 .training-street-table th:last-child,

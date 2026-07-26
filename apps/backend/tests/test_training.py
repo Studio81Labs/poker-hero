@@ -209,6 +209,59 @@ def test_summarize_training_reports_performance_by_normalized_position() -> None
     assert progress.unpositioned_hands == 1
 
 
+def test_summarize_training_filters_recent_hands_by_normalized_position() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "preflop",
+            "call",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            hero_position="btn",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            hero_position="dealer",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "turn",
+            "check",
+            "check",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            hero_position="out_of_position",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "river",
+            "check",
+            "check",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+        ),
+    ]
+
+    button_progress = summarize_training(
+        jobs,
+        recent_limit=1,
+        recent_position="button",
+    )
+    unpositioned_progress = summarize_training(
+        jobs,
+        recent_unpositioned=True,
+    )
+
+    assert button_progress.recent_matching_hands == 2
+    assert [hand.job_id for hand in button_progress.recent_hands] == ["2" * 32]
+    assert unpositioned_progress.recent_matching_hands == 1
+    assert [hand.job_id for hand in unpositioned_progress.recent_hands] == [
+        "4" * 32
+    ]
+
+
 def test_summarize_training_reports_solver_routes_and_fallbacks() -> None:
     unsupported_reason = "hero position must identify IP or OOP"
     jobs = [

@@ -122,7 +122,10 @@ loss by how sure the player felt before reveal. Unrated hands remain in overall
 progress and are excluded only from certainty calibration. Approved hero
 positions are normalized into common six-max and IP/OOP labels so the same
 action, exact-line, and available EV-loss metrics can be compared by position;
-hands without a position remain counted separately. Solver responses also
+hands without a position remain counted separately. A normalized position or
+the unpositioned bucket can filter Recent decisions to its newest matching
+hands without changing global progress or the pending-review queue. Solver
+responses also
 contribute engine coverage by street, including unattributed legacy hands and
 recorded fallback frequency and reasons. Each attributed engine route and
 fallback reason also reports the player's action and exact-line accuracy plus
@@ -130,10 +133,10 @@ average EV loss when candidate EVs are available. Groups with at least two
 hands also compare equal recent and previous windows for those performance
 metrics. Intentional routing, such as using the preflop chart for a supported
 preflop hand, is not counted as fallback.
-An engine route, the unattributed legacy bucket, or a fallback reason can filter
-Recent decisions to its newest matching hands without changing global progress
-or the pending-review queue. Once two reviewed hands are available, coverage
-also compares equal recent and previous windows, showing whether engine
+An engine route, the unattributed legacy bucket, or a fallback reason can also
+filter Recent decisions to its newest matching hands without changing global
+progress or the pending-review queue. Once two reviewed hands are available,
+coverage also compares equal recent and previous windows, showing whether engine
 attribution and recorded fallback use are moving in the desired direction.
 Responses with complete candidate EV metadata also report the selected line's
 EV loss in BB plus aggregate and street-level averages; providers without

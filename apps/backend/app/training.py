@@ -115,6 +115,8 @@ def summarize_training(
     solver_fallback_key: str | None = None,
     solver_route_key: str | None = None,
     solver_unattributed: bool = False,
+    recent_position: str | None = None,
+    recent_unpositioned: bool = False,
 ) -> TrainingProgress:
     reviewed = [
         job
@@ -226,6 +228,11 @@ def summarize_training(
     trend = _training_trend(newest_first, outcomes, ev_losses)
     action_differences = _action_differences(reviewed, outcomes, ev_losses)
     solver_coverage = _solver_coverage(reviewed, outcomes, ev_losses)
+    normalized_recent_position = (
+        _training_position_label(recent_position)
+        if recent_position is not None
+        else None
+    )
     filtered_recent_jobs = [
         job
         for job in newest_first
@@ -246,6 +253,14 @@ def summarize_training(
         and (
             not solver_unattributed
             or _solver_route_engine(job) is None
+        )
+        and (
+            recent_position is None
+            or _training_position(job) == normalized_recent_position
+        )
+        and (
+            not recent_unpositioned
+            or _training_position(job) is None
         )
     ]
     recent_hands = [
@@ -362,11 +377,7 @@ def _position_summaries(
     grouped: dict[str, list[JobRecord]] = defaultdict(list)
     unpositioned_hands = 0
     for job in reviewed:
-        position = _training_position_label(
-            job.approved_state.hero_position
-            if job.approved_state is not None
-            else None
-        )
+        position = _training_position(job)
         if position is None:
             unpositioned_hands += 1
         else:
@@ -410,6 +421,14 @@ def _position_summaries(
         )
     )
     return summaries, unpositioned_hands
+
+
+def _training_position(job: JobRecord) -> str | None:
+    return _training_position_label(
+        job.approved_state.hero_position
+        if job.approved_state is not None
+        else None
+    )
 
 
 def _training_position_label(value: str | None) -> str | None:

@@ -283,6 +283,25 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     valid_solver_unattributed = client.get(
         "/api/training/progress?solver_unattributed=true"
     )
+    invalid_recent_position = client.get(
+        "/api/training/progress?recent_position=%20"
+    )
+    valid_recent_position = client.get(
+        "/api/training/progress?recent_position=button"
+    )
+    valid_recent_unpositioned = client.get(
+        "/api/training/progress?recent_unpositioned=true"
+    )
+    conflicting_position_filters = client.get(
+        "/api/training/progress"
+        "?recent_position=button"
+        "&recent_unpositioned=true"
+    )
+    conflicting_position_solver_filters = client.get(
+        "/api/training/progress"
+        "?recent_position=button"
+        f"&solver_route_key={'b' * 64}"
+    )
     conflicting_solver_filters = client.get(
         "/api/training/progress"
         f"?solver_fallback_key={'a' * 64}"
@@ -313,6 +332,17 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert valid_solver_route.status_code == 200
     assert invalid_solver_unattributed.status_code == 422
     assert valid_solver_unattributed.status_code == 200
+    assert invalid_recent_position.status_code == 422
+    assert valid_recent_position.status_code == 200
+    assert valid_recent_unpositioned.status_code == 200
+    assert conflicting_position_filters.status_code == 422
+    assert conflicting_position_filters.json()["detail"] == (
+        "recent_position and recent_unpositioned are mutually exclusive"
+    )
+    assert conflicting_position_solver_filters.status_code == 422
+    assert conflicting_position_solver_filters.json()["detail"] == (
+        "position and solver recent-hand filters are mutually exclusive"
+    )
     assert conflicting_solver_filters.status_code == 422
     assert conflicting_solver_filters.json()["detail"] == (
         "solver_fallback_key, solver_route_key, and solver_unattributed "

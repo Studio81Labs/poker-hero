@@ -122,7 +122,9 @@ explicit unpositioned count and do not receive a synthetic label. A normalized
 position selector, or the explicit unpositioned selector, filters only the
 bounded Recent decisions projection. Position and solver selectors are
 mutually exclusive, while aggregates and the pending-review projection remain
-global.
+global. Each normalized position with at least two hands also derives equal
+recent and previous performance windows capped at ten hands per side. Its EV
+loss delta requires at least one gradable hand in both windows.
 Non-empty `fallback_reason` values count as fallback and are grouped for
 diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations

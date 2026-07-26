@@ -1185,6 +1185,20 @@ describe("App", () => {
       original_filename: "unpositioned.png",
       recorded_at: "2026-07-20T12:00:00Z",
     };
+    const positionTrend = {
+      window_hands: 1,
+      recent_action_accuracy: 1,
+      previous_action_accuracy: 0,
+      action_accuracy_delta: 1,
+      recent_exact_accuracy: 1,
+      previous_exact_accuracy: 0,
+      exact_accuracy_delta: 1,
+      recent_ev_compared_hands: 1,
+      previous_ev_compared_hands: 1,
+      recent_average_ev_loss_bb: 0.2,
+      previous_average_ev_loss_bb: 0.6,
+      average_ev_loss_delta_bb: -0.4,
+    };
     const progress = {
       reviewed_hands: 3,
       action_matches: 3,
@@ -1205,6 +1219,7 @@ describe("App", () => {
         exact_accuracy: 1,
         ev_compared_hands: 1,
         average_ev_loss_bb: 0,
+        trend: positionTrend,
       }],
       unpositioned_hands: 1,
       recent_matching_hands: 3,
@@ -1234,8 +1249,11 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Training progress" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(dialog).getByText("Last 1 hand vs previous 1")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("+100 pts")).toHaveLength(2);
+    expect(within(dialog).getByText("-0.4 BB")).toHaveClass("improving");
     await user.click(within(dialog).getByRole("button", {
-      name: "Show 2 hands recorded at BTN",
+      name: "Show 2 hands recorded at BTN. Last 1 hand vs previous 1: action accuracy change +100 percentage points, exact-line accuracy change +100 percentage points, average EV loss change -0.4 BB",
     }));
 
     const buttonFilter = await within(dialog).findByLabelText("Active position filter");

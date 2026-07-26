@@ -124,8 +124,9 @@ positions are normalized into common six-max and IP/OOP labels so the same
 action, exact-line, and available EV-loss metrics can be compared by position;
 hands without a position remain counted separately. A normalized position or
 the unpositioned bucket can filter Recent decisions to its newest matching
-hands without changing global progress or the pending-review queue. Solver
-responses also
+hands without changing global progress or the pending-review queue. Position
+groups with at least two hands also compare equal recent and previous windows
+for action, exact-line, and available EV-loss performance. Solver responses also
 contribute engine coverage by street, including unattributed legacy hands and
 recorded fallback frequency and reasons. Each attributed engine route and
 fallback reason also reports the player's action and exact-line accuracy plus

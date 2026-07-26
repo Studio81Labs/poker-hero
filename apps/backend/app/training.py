@@ -409,6 +409,15 @@ def _position_summaries(
                 exact_accuracy=exact_matches / reviewed_hands,
                 ev_compared_hands=len(position_ev_losses),
                 average_ev_loss_bb=_average_ev_loss(position_ev_losses),
+                trend=_training_trend(
+                    sorted(
+                        position_jobs,
+                        key=_training_recorded_at,
+                        reverse=True,
+                    ),
+                    outcomes,
+                    ev_losses,
+                ),
             )
         )
     summaries.sort(

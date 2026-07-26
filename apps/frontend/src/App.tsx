@@ -1,6 +1,6 @@
 import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
@@ -759,7 +759,7 @@ type SolverPerformanceSummary = {
   trend?: TrainingTrend | null;
 };
 
-function solverTrendWindowLabel(trend: TrainingTrend): string {
+function trainingTrendWindowLabel(trend: TrainingTrend): string {
   const hands = trend.window_hands === 1 ? "hand" : "hands";
   return `Last ${trend.window_hands} ${hands} vs previous ${trend.window_hands}`;
 }
@@ -798,7 +798,7 @@ function solverPerformanceAccessibleLabel(
         `average EV loss change ${formatEvLossDeltaBb(summary.trend.average_ev_loss_delta_bb)}`,
       );
     }
-    labels.push(`${solverTrendWindowLabel(summary.trend)}: ${changes.join(", ")}`);
+    labels.push(`${trainingTrendWindowLabel(summary.trend)}: ${changes.join(", ")}`);
   }
   return labels.join("; ");
 }
@@ -815,7 +815,7 @@ function SolverPerformance({
     return null;
   }
   const trendTitle = summary.trend
-    ? solverTrendWindowLabel(summary.trend)
+    ? trainingTrendWindowLabel(summary.trend)
     : undefined;
   const evLoss = (summary.ev_compared_hands ?? 0) > 0
     && typeof summary.average_ev_loss_bb === "number"
@@ -860,6 +860,48 @@ function SolverPerformance({
             </em>
           ) : null}
       </span>
+    </small>
+  );
+}
+
+function performanceTrendAccessibleLabel(trend: TrainingTrend): string {
+  const changes = [
+    `action accuracy change ${accessiblePointDelta(trend.action_accuracy_delta)}`,
+    `exact-line accuracy change ${accessiblePointDelta(trend.exact_accuracy_delta)}`,
+  ];
+  if (trend.average_ev_loss_delta_bb !== null) {
+    changes.push(
+      `average EV loss change ${formatEvLossDeltaBb(trend.average_ev_loss_delta_bb)}`,
+    );
+  }
+  return `${trainingTrendWindowLabel(trend)}: ${changes.join(", ")}`;
+}
+
+function PositionPerformanceTrend({ trend }: { trend: TrainingTrend }) {
+  const title = trainingTrendWindowLabel(trend);
+  return (
+    <small className="training-position-trend" aria-hidden="true">
+      <span>{title}</span>
+      <strong>
+        Action
+        <em className={trainingTrendTone(trend.action_accuracy_delta)}>
+          {formatAccuracyDelta(trend.action_accuracy_delta)}
+        </em>
+      </strong>
+      <strong>
+        Exact
+        <em className={trainingTrendTone(trend.exact_accuracy_delta)}>
+          {formatAccuracyDelta(trend.exact_accuracy_delta)}
+        </em>
+      </strong>
+      {trend.average_ev_loss_delta_bb !== null ? (
+        <strong>
+          EV loss
+          <em className={trainingTrendTone(trend.average_ev_loss_delta_bb, true)}>
+            {formatEvLossDeltaBb(trend.average_ev_loss_delta_bb)}
+          </em>
+        </strong>
+      ) : null}
     </small>
   );
 }
@@ -4141,34 +4183,48 @@ export default function App() {
                           </thead>
                           <tbody>
                             {trainingProgress.position_summaries?.map((summary) => (
-                              <tr key={summary.position}>
-                                <th scope="row">
-                                  <button
-                                    type="button"
-                                    className="training-position-drilldown"
-                                    onClick={() => void updateTrainingPositionFilter({
-                                      kind: "position",
-                                      position: summary.position,
-                                      label: summary.position,
-                                    })}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} recorded at ${summary.position}`}
-                                    title="Show training hands"
-                                  >
-                                    <span>{summary.position}</span>
-                                    <Eye size={12} aria-hidden="true" />
-                                  </button>
-                                </th>
-                                <td>{summary.reviewed_hands}</td>
-                                <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                                <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                                <td>
-                                  {summary.ev_compared_hands > 0
-                                    && summary.average_ev_loss_bb !== null
-                                    ? formatEvLossBb(summary.average_ev_loss_bb)
-                                    : "—"}
-                                </td>
-                              </tr>
+                              <Fragment key={summary.position}>
+                                <tr className={summary.trend ? "has-trend" : undefined}>
+                                  <th scope="row">
+                                    <button
+                                      type="button"
+                                      className="training-position-drilldown"
+                                      onClick={() => void updateTrainingPositionFilter({
+                                        kind: "position",
+                                        position: summary.position,
+                                        label: summary.position,
+                                      })}
+                                      disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                      aria-label={[
+                                        `Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} recorded at ${summary.position}`,
+                                        summary.trend
+                                          ? performanceTrendAccessibleLabel(summary.trend)
+                                          : null,
+                                      ].filter(Boolean).join(". ")}
+                                      title="Show training hands"
+                                    >
+                                      <span>{summary.position}</span>
+                                      <Eye size={12} aria-hidden="true" />
+                                    </button>
+                                  </th>
+                                  <td>{summary.reviewed_hands}</td>
+                                  <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                                  <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                                  <td>
+                                    {summary.ev_compared_hands > 0
+                                      && summary.average_ev_loss_bb !== null
+                                      ? formatEvLossBb(summary.average_ev_loss_bb)
+                                      : "—"}
+                                  </td>
+                                </tr>
+                                {summary.trend ? (
+                                  <tr className="training-position-trend-row">
+                                    <td colSpan={5}>
+                                      <PositionPerformanceTrend trend={summary.trend} />
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </Fragment>
                             ))}
                           </tbody>
                         </table>

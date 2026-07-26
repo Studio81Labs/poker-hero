@@ -3679,7 +3679,7 @@ export default function App() {
                                     <Eye size={12} aria-hidden="true" />
                                     {typeof route.action_accuracy === "number"
                                       && typeof route.exact_accuracy === "number" ? (
-                                        <small className="training-solver-route-performance">
+                                        <small className="training-solver-performance">
                                           <span>
                                             Action {benchmarkPercent(route.action_accuracy)}
                                           </span>
@@ -3731,6 +3731,23 @@ export default function App() {
                             >
                               <span>{fallback.reason}</span>
                               <em>{solverStreetCountsLabel(fallback.street_counts) || "—"}</em>
+                              {typeof fallback.action_accuracy === "number"
+                                && typeof fallback.exact_accuracy === "number" ? (
+                                  <small className="training-solver-performance">
+                                    <span>
+                                      Action {benchmarkPercent(fallback.action_accuracy)}
+                                    </span>
+                                    <span>
+                                      Exact {benchmarkPercent(fallback.exact_accuracy)}
+                                    </span>
+                                    <span>
+                                      {(fallback.ev_compared_hands ?? 0) > 0
+                                        && typeof fallback.average_ev_loss_bb === "number"
+                                        ? `${formatEvLossBb(fallback.average_ev_loss_bb)} EV loss`
+                                        : "EV ungraded"}
+                                    </span>
+                                  </small>
+                                ) : null}
                               <strong>{fallback.hands}</strong>
                               <Eye size={13} aria-hidden="true" />
                             </button>

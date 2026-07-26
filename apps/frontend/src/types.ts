@@ -140,6 +140,12 @@ export interface TrainingSolverFallbackSummary {
   key: string;
   reason: string;
   hands: number;
+  action_matches?: number;
+  exact_matches?: number;
+  action_accuracy?: number;
+  exact_accuracy?: number;
+  ev_compared_hands?: number;
+  average_ev_loss_bb?: number | null;
   street_counts: Partial<Record<Street, number>>;
 }
 

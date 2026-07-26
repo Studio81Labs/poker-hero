@@ -1249,6 +1249,12 @@ describe("App", () => {
           key: fallbackKey,
           reason: "hero position must identify IP or OOP",
           hands: 2,
+          action_matches: 1,
+          exact_matches: 1,
+          action_accuracy: 0.5,
+          exact_accuracy: 0.5,
+          ev_compared_hands: 1,
+          average_ev_loss_bb: 0.4,
           street_counts: { flop: 1, turn: 1 },
         }],
       },
@@ -1317,6 +1323,9 @@ describe("App", () => {
       name: "Show 2 hands using fallback: hero position must identify IP or OOP",
     });
     expect(showFallbackHands).toBeEnabled();
+    expect(within(showFallbackHands).getByText("Action 50%")).toBeInTheDocument();
+    expect(within(showFallbackHands).getByText("Exact 50%")).toBeInTheDocument();
+    expect(within(showFallbackHands).getByText("0.4 BB EV loss")).toBeInTheDocument();
 
     await user.click(showEngineHands);
 

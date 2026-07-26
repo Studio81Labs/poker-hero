@@ -2007,6 +2007,98 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("suggests the highest-loss certainty review focus", async () => {
+    const lowHand = {
+      job_id: "low-certainty-job",
+      original_filename: "low-certainty.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      decision_certainty: "low" as const,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 1.2,
+    };
+    const highHand = {
+      ...lowHand,
+      job_id: "high-certainty-job",
+      original_filename: "high-certainty.png",
+      decision_certainty: "high" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+      ev_loss_bb: 0.4,
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 3,
+      needs_review_hands: 3,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 3,
+      average_ev_loss_bb: 0.67,
+      certainty_summaries: [{
+        certainty: "low" as const,
+        hands: 1,
+        action_matches: 0,
+        exact_matches: 0,
+        needs_review_hands: 1,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 1.2,
+      }, {
+        certainty: "high" as const,
+        hands: 2,
+        action_matches: 0,
+        exact_matches: 0,
+        needs_review_hands: 2,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.4,
+      }],
+      unrated_hands: 0,
+      unrated_needs_review_hands: 0,
+      street_summaries: [],
+      recent_hands: [lowHand, highHand],
+      review_queue_hands: 3,
+      review_queue: [lowHand, highHand],
+    };
+    const focusedProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [lowHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(focusedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const focus = within(dialog).getByRole("button", {
+      name: "Focus low certainty reviews: Highest average EV loss: 1.2 BB",
+    });
+    expect(focus).toHaveTextContent("Focus Low");
+
+    await user.click(focus);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_certainty=low",
+    );
+    expect(await within(dialog).findByLabelText("Review certainty")).toHaveValue("low");
+    expect(within(dialog).getByText(
+      "1 pending review hand across all streets with low certainty.",
+    )).toBeInTheDocument();
+  });
+
   it("drills into rated and unrated certainty hands", async () => {
     const highHand = {
       job_id: "high-certainty-job",
@@ -2172,6 +2264,9 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Training progress" }));
     const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    expect(within(dialog).getByRole("button", {
+      name: "Focus unrated reviews: 1 legacy hand needs review",
+    })).toBeInTheDocument();
     expect(within(dialog).getByRole("row", {
       name: "Unrated 1 — — — 1",
     })).toBeInTheDocument();

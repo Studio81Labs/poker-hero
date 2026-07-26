@@ -205,6 +205,11 @@ Pending counts are also returned per street. The frontend uses only streets
 with pending work when suggesting a focus: highest average EV loss wins when
 comparable EV grades exist, otherwise the lowest action accuracy wins. Pending
 volume and canonical street order provide deterministic tie-breakers.
+The frontend applies the same EV-loss, action-accuracy, pending-volume order to
+rated certainty summaries with pending work, using high-to-low certainty as the
+final deterministic tie-breaker. The Unrated backlog is suggested only when no
+rated certainty group has pending reviews, because it has no calibration
+metrics to compare.
 Completing a review persists a timestamp and optional normalized lesson note on
 the job, then removes it from the pending queue without changing historical
 accuracy. The progress projections include the note for later study.

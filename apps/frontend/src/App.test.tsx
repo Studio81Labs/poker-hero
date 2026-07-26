@@ -1060,8 +1060,10 @@ describe("App", () => {
     const completedProgress = {
       ...progress,
       needs_review_hands: 0,
+      position_summaries: [],
       review_queue_hands: 0,
       review_queue: [],
+      unpositioned_hands: 4,
     };
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(progress))
@@ -1147,6 +1149,8 @@ describe("App", () => {
       "aria-pressed",
       "true",
     );
+    expect(within(completedDialog).getByRole("heading", { name: "By position" })).toBeInTheDocument();
+    expect(within(completedDialog).getByText("4 unrecorded")).toBeInTheDocument();
     expect(within(completedDialog).getByText("No action or sizing differences need review.")).toBeInTheDocument();
     expect(await screen.findByText("Review queue completed")).toBeInTheDocument();
     expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/size-job/training-review");

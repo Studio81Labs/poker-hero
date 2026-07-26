@@ -4020,7 +4020,8 @@ export default function App() {
                     </table>
                   </section>
 
-                  {(trainingProgress.position_summaries?.length ?? 0) > 0 ? (
+                  {(trainingProgress.position_summaries?.length ?? 0) > 0
+                    || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
                     <section
                       className="training-progress-section"
                       aria-labelledby="training-positions-title"

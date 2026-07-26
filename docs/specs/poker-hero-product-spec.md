@@ -250,11 +250,12 @@ frequencies.
     hands exist.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
-12. Selecting an engine route, the unattributed legacy bucket, or a fallback
-    reason shows its newest matching training hands in the Recent decisions
-    list. The request uses one stable metadata key or explicit unattributed
-    selector rather than raw provider text, and does not alter progress metrics
-    or mistake queues.
+12. Selecting a normalized hero position, the unpositioned bucket, an engine
+    route, the unattributed legacy bucket, or a fallback reason shows its newest
+    matching training hands in the Recent decisions list. Position aliases are
+    normalized by the backend; solver requests use one stable metadata key or
+    explicit unattributed selector rather than raw provider text. These filters
+    do not alter progress metrics or mistake queues.
 13. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
     focus the queue on one street and certainty rating and prioritize the
@@ -441,6 +442,9 @@ Poker Hero is successful when:
   candidate EV metadata without excluding ungraded hands from other statistics.
 - A user can compare training performance by normalized hero position without
   treating hands with missing position data as a fabricated seat.
+- A user can open recent hands for one normalized position or the unpositioned
+  bucket and clear that filter without changing global progress or the pending
+  review queue.
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street

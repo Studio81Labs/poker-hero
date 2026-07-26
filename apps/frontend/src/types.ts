@@ -173,6 +173,17 @@ export type TrainingSolverFilter =
     label: string;
   };
 
+export type TrainingPositionFilter =
+  | {
+    kind: "position";
+    position: string;
+    label: string;
+  }
+  | {
+    kind: "unpositioned";
+    label: string;
+  };
+
 export interface TrainingSolverCoverageTrend {
   window_hands: number;
   recent_attribution_rate: number;

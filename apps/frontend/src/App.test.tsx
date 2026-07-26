@@ -1163,6 +1163,117 @@ describe("App", () => {
     );
   });
 
+  it("drills into normalized position and unpositioned training hands", async () => {
+    const buttonHand = {
+      job_id: "button-job",
+      original_filename: "button.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "check" as const,
+      decision_sizing: null,
+      recommended_action: "check" as const,
+      recommended_sizing: null,
+      outcome: "match" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 0,
+    };
+    const unpositionedHand = {
+      ...buttonHand,
+      job_id: "unpositioned-job",
+      original_filename: "unpositioned.png",
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 3,
+      exact_matches: 3,
+      different_actions: 0,
+      needs_review_hands: 0,
+      action_accuracy: 1,
+      exact_accuracy: 1,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 0,
+      street_summaries: [],
+      position_summaries: [{
+        position: "BTN",
+        reviewed_hands: 2,
+        action_matches: 2,
+        exact_matches: 2,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0,
+      }],
+      unpositioned_hands: 1,
+      recent_matching_hands: 3,
+      recent_hands: [buttonHand, unpositionedHand],
+      review_queue_hands: 0,
+      review_queue: [],
+    };
+    const buttonProgress = {
+      ...progress,
+      recent_matching_hands: 2,
+      recent_hands: [buttonHand],
+    };
+    const unpositionedProgress = {
+      ...progress,
+      recent_matching_hands: 1,
+      recent_hands: [unpositionedHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(buttonProgress))
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(unpositionedProgress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Show 2 hands recorded at BTN",
+    }));
+
+    const buttonFilter = await within(dialog).findByLabelText("Active position filter");
+    expect(within(buttonFilter).getByText("BTN")).toBeInTheDocument();
+    expect(within(dialog).getByText("Showing 1 newest of 2 BTN hands.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open button.png training review",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?recent_position=BTN",
+    );
+
+    await user.click(within(buttonFilter).getByRole("button", {
+      name: "Clear position filter",
+    }));
+    await waitFor(() => expect(within(dialog).queryByLabelText("Active position filter")).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Show 1 unpositioned hand",
+    }));
+
+    const unpositionedFilter = await within(dialog).findByLabelText("Active position filter");
+    expect(within(unpositionedFilter).getByText("Unpositioned")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open unpositioned.png training review",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls[3][0]).toBe(
+      "http://localhost:8000/api/training/progress?recent_unpositioned=true",
+    );
+
+    await user.click(within(unpositionedFilter).getByRole("button", {
+      name: "Clear position filter",
+    }));
+    await waitFor(() => expect(within(dialog).queryByLabelText("Active position filter")).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
+  });
+
   it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);

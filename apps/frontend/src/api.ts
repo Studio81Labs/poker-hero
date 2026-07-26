@@ -8,6 +8,7 @@ import type {
   SystemInfo,
   TrainingCertainty,
   TrainingProgress,
+  TrainingPositionFilter,
   TrainingReviewCertaintyFilter,
   TrainingReviewDifference,
   TrainingReviewOrder,
@@ -131,6 +132,7 @@ export async function getTrainingProgress(
   lessonQuery = "",
   lessonOrder: TrainingReviewOrder = "recent",
   solverFilter: TrainingSolverFilter | null = null,
+  positionFilter: TrainingPositionFilter | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -161,6 +163,11 @@ export async function getTrainingProgress(
     search.set("solver_route_key", solverFilter.key);
   } else if (solverFilter?.kind === "unattributed") {
     search.set("solver_unattributed", "true");
+  }
+  if (positionFilter?.kind === "position") {
+    search.set("recent_position", positionFilter.position);
+  } else if (positionFilter?.kind === "unpositioned") {
+    search.set("recent_unpositioned", "true");
   }
   const query = search.size > 0 ? `?${search.toString()}` : "";
   const response = await fetch(`${API_BASE_URL}/api/training/progress${query}`, {

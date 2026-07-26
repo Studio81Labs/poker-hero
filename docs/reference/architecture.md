@@ -118,7 +118,11 @@ recent review links from persisted jobs. It also aggregates the recommendation
 `raw.engine` value for each compared hand, grouped by canonical street.
 Approved hero-position labels are normalized into common six-max seats plus
 IP/OOP for a separate performance breakdown. Missing positions stay in an
-explicit unpositioned count and do not receive a synthetic label.
+explicit unpositioned count and do not receive a synthetic label. A normalized
+position selector, or the explicit unpositioned selector, filters only the
+bounded Recent decisions projection. Position and solver selectors are
+mutually exclusive, while aggregates and the pending-review projection remain
+global.
 Non-empty `fallback_reason` values count as fallback and are grouped for
 diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations

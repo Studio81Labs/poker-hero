@@ -246,6 +246,7 @@ def test_summarize_training_reports_performance_by_normalized_position() -> None
     assert button.exact_matches == 1
     assert button.action_accuracy == 0.5
     assert button.exact_accuracy == 0.5
+    assert button.needs_review_hands == 1
     assert button.ev_compared_hands == 1
     assert button.average_ev_loss_bb == 1
     in_position = progress.position_summaries[1]
@@ -256,6 +257,7 @@ def test_summarize_training_reports_performance_by_normalized_position() -> None
     assert in_position.average_ev_loss_bb is None
     assert progress.position_summaries[2].reviewed_hands == 1
     assert progress.unpositioned_hands == 1
+    assert progress.unpositioned_needs_review_hands == 0
 
 
 def test_summarize_training_compares_equal_recent_position_windows() -> None:
@@ -361,6 +363,78 @@ def test_summarize_training_filters_recent_hands_by_normalized_position() -> Non
     assert [hand.job_id for hand in unpositioned_progress.recent_hands] == [
         "4" * 32
     ]
+
+
+def test_summarize_training_filters_pending_reviews_by_position() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "preflop",
+            "fold",
+            "call",
+            datetime(2026, 7, 1, tzinfo=timezone.utc),
+            hero_position="button",
+        ),
+        reviewed_job(
+            "2" * 32,
+            "flop",
+            "call",
+            "call",
+            datetime(2026, 7, 2, tzinfo=timezone.utc),
+            hero_position="btn",
+        ),
+        reviewed_job(
+            "3" * 32,
+            "turn",
+            "fold",
+            "call",
+            datetime(2026, 7, 3, tzinfo=timezone.utc),
+            hero_position="out_of_position",
+        ),
+        reviewed_job(
+            "4" * 32,
+            "river",
+            "fold",
+            "call",
+            datetime(2026, 7, 4, tzinfo=timezone.utc),
+        ),
+        reviewed_job(
+            "5" * 32,
+            "river",
+            "fold",
+            "call",
+            datetime(2026, 7, 5, tzinfo=timezone.utc),
+            training_reviewed_at=datetime(
+                2026,
+                7,
+                6,
+                tzinfo=timezone.utc,
+            ),
+        ),
+    ]
+
+    button_progress = summarize_training(
+        jobs,
+        review_position="dealer",
+    )
+    unpositioned_progress = summarize_training(
+        jobs,
+        review_unpositioned=True,
+    )
+
+    assert button_progress.review_queue_hands == 1
+    assert [hand.job_id for hand in button_progress.review_queue] == [
+        "1" * 32
+    ]
+    button_summary = button_progress.position_summaries[0]
+    assert button_summary.position == "BTN"
+    assert button_summary.needs_review_hands == 1
+    assert unpositioned_progress.review_queue_hands == 1
+    assert [hand.job_id for hand in unpositioned_progress.review_queue] == [
+        "4" * 32
+    ]
+    assert unpositioned_progress.unpositioned_hands == 2
+    assert unpositioned_progress.unpositioned_needs_review_hands == 1
 
 
 def test_summarize_training_filters_recent_hands_by_street() -> None:

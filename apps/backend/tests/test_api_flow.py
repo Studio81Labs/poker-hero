@@ -293,6 +293,15 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     valid_recent_unpositioned = client.get(
         "/api/training/progress?recent_unpositioned=true"
     )
+    invalid_review_position = client.get(
+        "/api/training/progress?review_position=%20"
+    )
+    valid_review_position = client.get(
+        "/api/training/progress?review_position=button"
+    )
+    valid_review_unpositioned = client.get(
+        "/api/training/progress?review_unpositioned=true"
+    )
     invalid_recent_street = client.get(
         "/api/training/progress?recent_street=middle"
     )
@@ -312,6 +321,11 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
         "/api/training/progress"
         "?recent_position=button"
         "&recent_unpositioned=true"
+    )
+    conflicting_review_position_filters = client.get(
+        "/api/training/progress"
+        "?review_position=button"
+        "&review_unpositioned=true"
     )
     conflicting_position_solver_filters = client.get(
         "/api/training/progress"
@@ -366,6 +380,9 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert invalid_recent_position.status_code == 422
     assert valid_recent_position.status_code == 200
     assert valid_recent_unpositioned.status_code == 200
+    assert invalid_review_position.status_code == 422
+    assert valid_review_position.status_code == 200
+    assert valid_review_unpositioned.status_code == 200
     assert invalid_recent_street.status_code == 422
     assert valid_recent_street.status_code == 200
     assert invalid_recent_certainty.status_code == 422
@@ -374,6 +391,10 @@ def test_training_progress_validates_review_filters(tmp_path: Path) -> None:
     assert conflicting_position_filters.status_code == 422
     assert conflicting_position_filters.json()["detail"] == (
         "recent_position and recent_unpositioned are mutually exclusive"
+    )
+    assert conflicting_review_position_filters.status_code == 422
+    assert conflicting_review_position_filters.json()["detail"] == (
+        "review_position and review_unpositioned are mutually exclusive"
     )
     assert conflicting_position_solver_filters.status_code == 422
     assert conflicting_position_solver_filters.json()["detail"] == (

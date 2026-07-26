@@ -955,6 +955,19 @@ function trainingOutcomeLabel(outcome: TrainingOutcome): string {
   return "Different action";
 }
 
+function sameTrainingPositionFilter(
+  left: TrainingPositionFilter | null,
+  right: TrainingPositionFilter | null,
+): boolean {
+  if (left?.kind !== right?.kind) {
+    return false;
+  }
+  if (!left || !right || left.kind === "unpositioned") {
+    return true;
+  }
+  return right.kind === "position" && left.position === right.position;
+}
+
 function trainingReviewQueueStatus(
   progress: TrainingProgress | null,
   view: TrainingProgressView,
@@ -963,6 +976,7 @@ function trainingReviewQueueStatus(
   street: TrainingReviewStreet,
   difference: TrainingReviewDifference | null,
   certainty: TrainingReviewCertaintyFilter,
+  reviewPosition: TrainingPositionFilter | null,
   lessonStreet: TrainingReviewStreet,
   lessonQuery: string,
   lessonOrder: TrainingReviewOrder,
@@ -1097,7 +1111,17 @@ function trainingReviewQueueStatus(
     : certainty === "unrated"
       ? "without a certainty rating"
       : `with ${certainty} certainty`;
-  const scope = [actionScope, streetScope, certaintyScope].filter(Boolean).join(" ");
+  const positionScope = reviewPosition?.kind === "position"
+    ? `at ${reviewPosition.label}`
+    : reviewPosition?.kind === "unpositioned"
+      ? "without a recorded position"
+      : null;
+  const scope = [
+    actionScope,
+    streetScope,
+    certaintyScope,
+    positionScope,
+  ].filter(Boolean).join(" ");
   if (matchingHands > progress.review_queue.length) {
     const orderLabel = order === "ev_loss" ? "highest-loss" : "newest";
     return `Showing ${progress.review_queue.length} ${orderLabel} of ${matchingHands} review hands ${scope}.`;
@@ -1734,6 +1758,7 @@ export default function App() {
   const [trainingReviewStreet, setTrainingReviewStreet] = useState<TrainingReviewStreet>("all");
   const [trainingReviewCertainty, setTrainingReviewCertainty] = useState<TrainingReviewCertaintyFilter>("all");
   const [trainingReviewDifference, setTrainingReviewDifference] = useState<TrainingReviewDifference | null>(null);
+  const [trainingReviewPosition, setTrainingReviewPosition] = useState<TrainingPositionFilter | null>(null);
   const [trainingSolverFilter, setTrainingSolverFilter] = useState<TrainingSolverFilter | null>(null);
   const [trainingPositionFilter, setTrainingPositionFilter] = useState<TrainingPositionFilter | null>(null);
   const [trainingStreetFilter, setTrainingStreetFilter] = useState<TrainingStreetFilter | null>(null);
@@ -1886,6 +1911,7 @@ export default function App() {
     trainingReviewStreet,
     trainingReviewDifference,
     trainingReviewCertainty,
+    trainingReviewPosition,
     trainingLessonStreet,
     trainingLessonQuery,
     trainingLessonOrder,
@@ -2387,6 +2413,11 @@ export default function App() {
           trainingLessonStreet,
           trainingLessonQuery,
           trainingLessonOrder,
+          null,
+          null,
+          null,
+          null,
+          trainingReviewPosition,
         );
         setTrainingProgress(progress);
         const nextHand = progress.review_queue[0] ?? null;
@@ -2491,6 +2522,7 @@ export default function App() {
         trainingPositionFilter,
         trainingStreetFilter,
         trainingCertaintyFilter,
+        trainingReviewPosition,
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
@@ -2554,6 +2586,7 @@ export default function App() {
     setTrainingReviewStreet("all");
     setTrainingReviewCertainty("all");
     setTrainingReviewDifference(null);
+    setTrainingReviewPosition(null);
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(null);
@@ -2575,12 +2608,14 @@ export default function App() {
     reviewStreet: TrainingReviewStreet,
     reviewDifference: TrainingReviewDifference | null = trainingReviewDifference,
     reviewCertainty: TrainingReviewCertaintyFilter = trainingReviewCertainty,
+    reviewPosition: TrainingPositionFilter | null = trainingReviewPosition,
   ) {
     if (
       (
         reviewOrder === trainingReviewOrder
         && reviewStreet === trainingReviewStreet
         && reviewCertainty === trainingReviewCertainty
+        && sameTrainingPositionFilter(reviewPosition, trainingReviewPosition)
         && reviewDifference?.decision_action === trainingReviewDifference?.decision_action
         && reviewDifference?.recommended_action === trainingReviewDifference?.recommended_action
         && trainingSolverFilter === null
@@ -2596,6 +2631,7 @@ export default function App() {
     const previousStreet = trainingReviewStreet;
     const previousCertainty = trainingReviewCertainty;
     const previousDifference = trainingReviewDifference;
+    const previousReviewPosition = trainingReviewPosition;
     const previousSolverFilter = trainingSolverFilter;
     const previousPositionFilter = trainingPositionFilter;
     const previousStreetFilter = trainingStreetFilter;
@@ -2604,6 +2640,7 @@ export default function App() {
     setTrainingReviewStreet(reviewStreet);
     setTrainingReviewCertainty(reviewCertainty);
     setTrainingReviewDifference(reviewDifference);
+    setTrainingReviewPosition(reviewPosition);
     setTrainingSolverFilter(null);
     setTrainingPositionFilter(null);
     setTrainingStreetFilter(null);
@@ -2619,12 +2656,18 @@ export default function App() {
         trainingLessonStreet,
         trainingLessonQuery,
         trainingLessonOrder,
+        null,
+        null,
+        null,
+        null,
+        reviewPosition,
       ));
     } catch (trainingError) {
       setTrainingReviewOrder(previousOrder);
       setTrainingReviewStreet(previousStreet);
       setTrainingReviewCertainty(previousCertainty);
       setTrainingReviewDifference(previousDifference);
+      setTrainingReviewPosition(previousReviewPosition);
       setTrainingSolverFilter(previousSolverFilter);
       setTrainingPositionFilter(previousPositionFilter);
       setTrainingStreetFilter(previousStreetFilter);
@@ -2670,6 +2713,7 @@ export default function App() {
         trainingPositionFilter,
         trainingStreetFilter,
         trainingCertaintyFilter,
+        trainingReviewPosition,
       ));
       setTrainingLessonQuery(lessonQuery);
     } catch (trainingError) {
@@ -2683,19 +2727,50 @@ export default function App() {
 
   async function focusTrainingReviewStreet(street: Street) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, street, null, "all");
+    await updateTrainingReviewQueue(
+      trainingReviewOrder,
+      street,
+      null,
+      "all",
+      null,
+    );
   }
 
   async function focusTrainingReviewCertainty(certainty: TrainingReviewCertainty) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, "all", null, certainty);
+    await updateTrainingReviewQueue(
+      trainingReviewOrder,
+      "all",
+      null,
+      certainty,
+      null,
+    );
   }
 
   async function focusTrainingActionDifference(
     difference: TrainingReviewDifference,
   ) {
     setTrainingProgressView("review");
-    await updateTrainingReviewQueue(trainingReviewOrder, "all", difference, "all");
+    await updateTrainingReviewQueue(
+      trainingReviewOrder,
+      "all",
+      difference,
+      "all",
+      null,
+    );
+  }
+
+  async function focusTrainingReviewPosition(
+    position: TrainingPositionFilter,
+  ) {
+    setTrainingProgressView("review");
+    await updateTrainingReviewQueue(
+      trainingReviewOrder,
+      "all",
+      null,
+      "all",
+      position,
+    );
   }
 
   async function updateTrainingSolverFilter(
@@ -2737,6 +2812,10 @@ export default function App() {
         trainingLessonQuery,
         trainingLessonOrder,
         filter,
+        null,
+        null,
+        null,
+        trainingReviewPosition,
       ));
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
@@ -2789,6 +2868,9 @@ export default function App() {
         trainingLessonOrder,
         null,
         filter,
+        null,
+        null,
+        trainingReviewPosition,
       ));
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
@@ -2833,6 +2915,8 @@ export default function App() {
         null,
         null,
         filter,
+        null,
+        trainingReviewPosition,
       ));
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
@@ -2878,6 +2962,7 @@ export default function App() {
         null,
         null,
         filter,
+        trainingReviewPosition,
       ));
     } catch (trainingError) {
       setTrainingSolverFilter(previousSolverFilter);
@@ -4472,7 +4557,7 @@ export default function App() {
                       <div className="training-section-heading">
                         <h3 id="training-positions-title">By position</h3>
                         {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
-                          <span className="training-section-context">
+                          <span className="training-section-context training-position-context">
                             <button
                               type="button"
                               className="training-position-unrecorded"
@@ -4487,6 +4572,22 @@ export default function App() {
                               {trainingProgress.unpositioned_hands} unrecorded
                               <Eye size={11} aria-hidden="true" />
                             </button>
+                            {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
+                              <button
+                                type="button"
+                                className="training-certainty-review"
+                                onClick={() => void focusTrainingReviewPosition({
+                                  kind: "unpositioned",
+                                  label: "Unpositioned",
+                                })}
+                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                aria-label={`Review unpositioned differences (${trainingProgress.unpositioned_needs_review_hands})`}
+                                title="Open pending reviews"
+                              >
+                                <Target size={11} aria-hidden="true" />
+                                {trainingProgress.unpositioned_needs_review_hands}
+                              </button>
+                            ) : null}
                           </span>
                         ) : null}
                       </div>
@@ -4499,6 +4600,7 @@ export default function App() {
                               <th>Action</th>
                               <th>Exact</th>
                               <th>Avg EV loss</th>
+                              <th>Review</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4536,10 +4638,29 @@ export default function App() {
                                       ? formatEvLossBb(summary.average_ev_loss_bb)
                                       : "—"}
                                   </td>
+                                  <td>
+                                    {(summary.needs_review_hands ?? 0) > 0 ? (
+                                      <button
+                                        type="button"
+                                        className="training-certainty-review"
+                                        onClick={() => void focusTrainingReviewPosition({
+                                          kind: "position",
+                                          position: summary.position,
+                                          label: summary.position,
+                                        })}
+                                        disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                        aria-label={`Review ${summary.position} position differences (${summary.needs_review_hands})`}
+                                        title="Open pending reviews"
+                                      >
+                                        <Target size={11} aria-hidden="true" />
+                                        {summary.needs_review_hands}
+                                      </button>
+                                    ) : "—"}
+                                  </td>
                                 </tr>
                                 {summary.trend ? (
                                   <tr className="training-summary-trend-row">
-                                    <td colSpan={5}>
+                                    <td colSpan={6}>
                                       <PerformanceTrend
                                         trend={summary.trend}
                                         hiddenFromAssistiveTechnology
@@ -4764,6 +4885,32 @@ export default function App() {
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear action-difference filter"
                           title="Clear action-difference filter"
+                        >
+                          <X size={12} aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
+                    {trainingProgressView === "review" && trainingReviewPosition ? (
+                      <div
+                        className="training-active-difference training-active-position"
+                        aria-label="Active review position filter"
+                      >
+                        <span>
+                          <Target size={12} aria-hidden="true" />
+                          {trainingReviewPosition.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void updateTrainingReviewQueue(
+                            trainingReviewOrder,
+                            trainingReviewStreet,
+                            trainingReviewDifference,
+                            trainingReviewCertainty,
+                            null,
+                          )}
+                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                          aria-label="Clear review position filter"
+                          title="Clear review position filter"
                         >
                           <X size={12} aria-hidden="true" />
                         </button>

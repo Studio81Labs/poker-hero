@@ -101,8 +101,14 @@ type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
+type TrainingCertaintyFocus = {
+  certainty: TrainingReviewCertainty;
+  label: string;
+  reason: string;
+};
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
+const TRAINING_CERTAINTY_FOCUS_ORDER: readonly TrainingCertainty[] = ["high", "medium", "low"];
 
 type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
   monitorTypeSurfaces?: "include" | "exclude";
@@ -1146,6 +1152,60 @@ function suggestedTrainingFocus(progress: TrainingProgress): TrainingFocus | nul
   };
 }
 
+function suggestedCertaintyFocus(
+  progress: TrainingProgress,
+): TrainingCertaintyFocus | null {
+  const candidates = (progress.certainty_summaries ?? []).filter(
+    (summary) => (summary.needs_review_hands ?? 0) > 0,
+  );
+  if (candidates.length === 0) {
+    const unratedPending = progress.unrated_needs_review_hands ?? 0;
+    return unratedPending > 0
+      ? {
+          certainty: "unrated",
+          label: "Unrated",
+          reason: `${unratedPending} legacy ${unratedPending === 1 ? "hand needs" : "hands need"} review`,
+        }
+      : null;
+  }
+
+  const evCandidates = candidates.filter(
+    (summary) => summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null,
+  );
+  const usesEvLoss = evCandidates.length > 0;
+  const ranked = [...(usesEvLoss ? evCandidates : candidates)].sort((left, right) => {
+    if (usesEvLoss) {
+      const evDifference = (right.average_ev_loss_bb ?? 0) - (left.average_ev_loss_bb ?? 0);
+      if (evDifference !== 0) {
+        return evDifference;
+      }
+    } else {
+      const accuracyDifference = left.action_accuracy - right.action_accuracy;
+      if (accuracyDifference !== 0) {
+        return accuracyDifference;
+      }
+    }
+
+    const pendingDifference = (right.needs_review_hands ?? 0) - (left.needs_review_hands ?? 0);
+    if (pendingDifference !== 0) {
+      return pendingDifference;
+    }
+    return TRAINING_CERTAINTY_FOCUS_ORDER.indexOf(left.certainty)
+      - TRAINING_CERTAINTY_FOCUS_ORDER.indexOf(right.certainty);
+  });
+  const focus = ranked[0];
+  if (!focus) {
+    return null;
+  }
+  return {
+    certainty: focus.certainty,
+    label: trainingCertaintyLabel(focus.certainty),
+    reason: usesEvLoss && focus.average_ev_loss_bb !== null
+      ? `Highest average EV loss: ${formatEvLossBb(focus.average_ev_loss_bb)}`
+      : `Lowest action match: ${benchmarkPercent(focus.action_accuracy)}`,
+  };
+}
+
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
   return {
     id: report.id,
@@ -1835,6 +1895,7 @@ export default function App() {
     trainingCertaintyFilter,
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
+  const certaintyFocus = trainingProgress ? suggestedCertaintyFocus(trainingProgress) : null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -4153,7 +4214,21 @@ export default function App() {
                     >
                       <div className="training-section-heading">
                         <h3 id="training-certainty-title">Confidence calibration</h3>
-                        <span className="training-section-context">Self-rated before reveal</span>
+                        {trainingProgressView === "recent" && certaintyFocus ? (
+                          <button
+                            type="button"
+                            className="training-focus-action"
+                            onClick={() => void focusTrainingReviewCertainty(certaintyFocus.certainty)}
+                            disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                            title={certaintyFocus.reason}
+                            aria-label={`Focus ${certaintyFocus.certainty === "unrated" ? "unrated" : `${certaintyFocus.certainty} certainty`} reviews: ${certaintyFocus.reason}`}
+                          >
+                            <Target size={13} aria-hidden="true" />
+                            Focus {certaintyFocus.label}
+                          </button>
+                        ) : (
+                          <span className="training-section-context">Self-rated before reveal</span>
+                        )}
                       </div>
                       <table className="training-street-table training-certainty-table">
                         <thead>

@@ -103,6 +103,8 @@ The frontend is a browser control panel for:
   completed review, then returning to the queue when no matching hands remain.
 - Opening a suggested focus street directly from progress when that street
   still has pending reviews.
+- Opening a suggested certainty focus that prefers comparable EV loss, then
+  action accuracy, and uses Unrated only when no rated backlog remains.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
 - Saving a short lesson note with a completed review and seeing it in progress
@@ -267,9 +269,10 @@ frequencies.
     focus the queue on one street and certainty rating and prioritize the
     highest available EV losses; filters compose before ordering and limiting,
     and ungraded hands remain available after graded ones.
-14. Progress may suggest a street that still has pending reviews, preferring
-    the highest average EV loss when comparable grades exist and otherwise the
-    lowest action accuracy.
+14. Progress may suggest a street and a rated certainty group that still have
+    pending reviews, preferring the highest average EV loss when comparable
+    grades exist and otherwise the lowest action accuracy. The Unrated
+    certainty backlog is suggested only when no rated group has pending work.
 15. A common unsupported action pattern may focus the review queue on that
     exact player-action and solver-action pair.
 16. The user may mark a revisited difference reviewed with an optional lesson
@@ -491,6 +494,9 @@ Poker Hero is successful when:
   legacy hands as a calibrated certainty level.
 - A user can open an actionable suggested focus street from progress without
   manually comparing the street summary and pending queue.
+- A user can open an actionable suggested certainty focus without manually
+  comparing calibrated groups, while Unrated remains a fallback rather than a
+  fabricated performance category.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
 - A user can continue to the next hand under the same review filters without

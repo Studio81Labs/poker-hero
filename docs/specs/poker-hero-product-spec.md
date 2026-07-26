@@ -68,6 +68,8 @@ The frontend is a browser control panel for:
   provider exposes frequencies.
 - Reviewing average EV loss by street and per-hand EV loss when the provider
   exposes a complete numeric candidate line in big blinds.
+- Comparing action accuracy, exact-line accuracy, and available EV loss across
+  normalized hero positions while keeping missing positions explicit.
 - Comparing equal recent and previous windows for action accuracy, exact-line
   accuracy, and available EV-loss movement.
 - Inspecting which recommendation engines handled locked-answer comparisons,
@@ -134,6 +136,8 @@ The backend API:
 - Persists the latest benchmark report with case and field-level accuracy.
 - Derives training progress from completed decision/recommendation pairs without
   scoring automation-only hands.
+- Normalizes approved hero-position aliases and aggregates position-level
+  action, exact-line, and available EV-loss performance.
 - Aggregates recommendation-engine routes and true fallback metadata for those
   training comparisons without treating intentional provider routing as fallback.
 - Reuses mixed-strategy-aware outcomes and available EV grades to summarize
@@ -235,9 +239,10 @@ frequencies.
 10. When a training answer exists, the UI compares it with the recommendation
     and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with
-    street-level results, optional EV-loss grading, recent-hand review links,
-    equal-window recent trends capped at ten hands per period, and common
-    unsupported action differences. The same comparisons expose actual
+    street- and normalized position-level results, optional EV-loss grading,
+    recent-hand review links, equal-window recent trends capped at ten hands per
+    period, and common unsupported action differences. Missing positions remain
+    an explicit count. The same comparisons expose actual
     recommendation-engine coverage by street, recorded fallback reasons, and
     equal-window attribution/fallback trends. Attributed routes and fallback
     reasons also expose player action/exact-line accuracy and average EV loss
@@ -385,6 +390,8 @@ Recommendation tests:
 - Verify lesson exports use the same street/text selection and recency/EV-loss
   order as the Lessons view, include every matching note, and reject an empty
   study set clearly.
+- Verify common six-max and IP/OOP position aliases are grouped consistently,
+  unknown approved labels remain visible, and missing positions remain separate.
 - Verify engine coverage counts valid recommendation metadata, retains
   unattributed legacy hands, and counts `fallback_reason` but not intentional
   `routing_reason` metadata as fallback.
@@ -432,6 +439,8 @@ Poker Hero is successful when:
   reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can see per-hand and average EV loss for decisions that have comparable
   candidate EV metadata without excluding ungraded hands from other statistics.
+- A user can compare training performance by normalized hero position without
+  treating hands with missing position data as a fabricated seat.
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street

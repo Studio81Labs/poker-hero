@@ -15,6 +15,7 @@ from app.models import (
     TrainingCertaintySummary,
     TrainingDecision,
     TrainingOutcome,
+    TrainingPositionSummary,
     TrainingProgress,
     TrainingRecentHand,
     TrainingReviewCertainty,
@@ -33,6 +34,37 @@ MIN_SUPPORTED_FREQUENCY = 0.05
 MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
 CERTAINTY_ORDER: tuple[TrainingCertainty, ...] = ("low", "medium", "high")
+TRAINING_POSITION_ALIASES = {
+    "utg": "UTG",
+    "under the gun": "UTG",
+    "ep": "UTG",
+    "early": "UTG",
+    "early position": "UTG",
+    "hj": "HJ",
+    "hijack": "HJ",
+    "mp": "HJ",
+    "middle": "HJ",
+    "middle position": "HJ",
+    "co": "CO",
+    "cutoff": "CO",
+    "btn": "BTN",
+    "button": "BTN",
+    "dealer": "BTN",
+    "sb": "SB",
+    "small blind": "SB",
+    "bb": "BB",
+    "big blind": "BB",
+    "ip": "IP",
+    "in position": "IP",
+    "oop": "OOP",
+    "out of position": "OOP",
+}
+TRAINING_POSITION_ORDER = {
+    position: index
+    for index, position in enumerate(
+        ("UTG", "HJ", "CO", "BTN", "SB", "BB", "IP", "OOP")
+    )
+}
 PolicySupport = Literal["line", "action"]
 TrainingActionDifferenceFilter = tuple[RecommendationAction, RecommendationAction]
 
@@ -130,6 +162,12 @@ def summarize_training(
                 average_ev_loss_bb=_average_ev_loss(street_ev_losses),
             )
         )
+
+    position_summaries, unpositioned_hands = _position_summaries(
+        reviewed,
+        outcomes,
+        ev_losses,
+    )
 
     certainty_summaries = []
     for certainty in CERTAINTY_ORDER:
@@ -303,6 +341,8 @@ def summarize_training(
         unrated_hands=len(unrated_jobs),
         unrated_needs_review_hands=unrated_needs_review_hands,
         street_summaries=street_summaries,
+        position_summaries=position_summaries,
+        unpositioned_hands=unpositioned_hands,
         recent_matching_hands=len(filtered_recent_jobs),
         recent_hands=recent_hands,
         lesson_count=len(lesson_jobs),
@@ -312,6 +352,75 @@ def summarize_training(
         review_queue_hands=len(filtered_review_jobs),
         review_queue=review_queue,
     )
+
+
+def _position_summaries(
+    reviewed: list[JobRecord],
+    outcomes: dict[str, TrainingOutcome],
+    ev_losses: dict[str, float | None],
+) -> tuple[list[TrainingPositionSummary], int]:
+    grouped: dict[str, list[JobRecord]] = defaultdict(list)
+    unpositioned_hands = 0
+    for job in reviewed:
+        position = _training_position_label(
+            job.approved_state.hero_position
+            if job.approved_state is not None
+            else None
+        )
+        if position is None:
+            unpositioned_hands += 1
+        else:
+            grouped[position].append(job)
+
+    summaries = []
+    for position, position_jobs in grouped.items():
+        action_matches = sum(
+            outcomes[job.id] != "different"
+            for job in position_jobs
+        )
+        exact_matches = sum(
+            outcomes[job.id] in {"match", "mixed"}
+            for job in position_jobs
+        )
+        position_ev_losses = [
+            loss
+            for job in position_jobs
+            if (loss := ev_losses[job.id]) is not None
+        ]
+        reviewed_hands = len(position_jobs)
+        summaries.append(
+            TrainingPositionSummary(
+                position=position,
+                reviewed_hands=reviewed_hands,
+                action_matches=action_matches,
+                exact_matches=exact_matches,
+                action_accuracy=action_matches / reviewed_hands,
+                exact_accuracy=exact_matches / reviewed_hands,
+                ev_compared_hands=len(position_ev_losses),
+                average_ev_loss_bb=_average_ev_loss(position_ev_losses),
+            )
+        )
+    summaries.sort(
+        key=lambda summary: (
+            TRAINING_POSITION_ORDER.get(
+                summary.position,
+                len(TRAINING_POSITION_ORDER),
+            ),
+            summary.position.casefold(),
+        )
+    )
+    return summaries, unpositioned_hands
+
+
+def _training_position_label(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(
+        value.lower().replace("_", " ").replace("-", " ").split()
+    )
+    if not normalized:
+        return None
+    return TRAINING_POSITION_ALIASES.get(normalized, normalized.upper())
 
 
 def _solver_coverage(

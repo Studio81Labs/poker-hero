@@ -69,6 +69,17 @@ export interface TrainingStreetSummary {
   average_ev_loss_bb: number | null;
 }
 
+export interface TrainingPositionSummary {
+  position: string;
+  reviewed_hands: number;
+  action_matches: number;
+  exact_matches: number;
+  action_accuracy: number;
+  exact_accuracy: number;
+  ev_compared_hands: number;
+  average_ev_loss_bb: number | null;
+}
+
 export interface TrainingCertaintySummary {
   certainty: TrainingCertainty;
   hands: number;
@@ -205,6 +216,8 @@ export interface TrainingProgress {
   unrated_hands?: number;
   unrated_needs_review_hands?: number;
   street_summaries: TrainingStreetSummary[];
+  position_summaries?: TrainingPositionSummary[];
+  unpositioned_hands?: number;
   recent_matching_hands?: number;
   recent_hands: TrainingRecentHand[];
   lesson_count?: number;

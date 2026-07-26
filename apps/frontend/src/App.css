@@ -2441,7 +2441,7 @@ button:disabled {
   width: 28%;
 }
 
-.training-position-drilldown {
+.training-summary-drilldown {
   align-items: center;
   background: transparent;
   border: 0;
@@ -2455,16 +2455,16 @@ button:disabled {
   text-align: left;
 }
 
-.training-position-drilldown span {
+.training-summary-drilldown span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.training-position-drilldown:hover:not(:disabled) {
+.training-summary-drilldown:hover:not(:disabled) {
   color: var(--accent);
 }
 
-.training-position-drilldown svg {
+.training-summary-drilldown svg {
   color: var(--muted);
   flex: 0 0 auto;
 }

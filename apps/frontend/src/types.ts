@@ -186,6 +186,11 @@ export type TrainingPositionFilter =
     label: string;
   };
 
+export interface TrainingStreetFilter {
+  street: Street;
+  label: string;
+}
+
 export interface TrainingSolverCoverageTrend {
   window_hands: number;
   recent_attribution_rate: number;

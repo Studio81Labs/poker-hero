@@ -373,6 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             pattern=r"^[0-9a-f]{64}$",
         ),
         solver_unattributed: bool = False,
+        recent_street: Street | None = None,
         recent_position: str | None = Query(
             default=None,
             min_length=1,
@@ -422,6 +423,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "are mutually exclusive"
                 ),
             )
+        if recent_street is not None and (
+            position_filter_count > 0 or solver_filter_count > 0
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "street, position, and solver recent-hand filters "
+                    "are mutually exclusive"
+                ),
+            )
         review_action_difference = (
             (review_decision_action, review_recommended_action)
             if review_decision_action is not None
@@ -440,6 +451,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             solver_fallback_key=solver_fallback_key,
             solver_route_key=solver_route_key,
             solver_unattributed=solver_unattributed,
+            recent_street=recent_street,
             recent_position=recent_position,
             recent_unpositioned=recent_unpositioned,
         )

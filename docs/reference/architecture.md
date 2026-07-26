@@ -118,7 +118,9 @@ recent review links from persisted jobs. It also aggregates the recommendation
 `raw.engine` value for each compared hand, grouped by canonical street. Each
 street with at least two hands derives equal recent and previous performance
 windows capped at ten hands per side. Its EV-loss delta requires at least one
-gradable hand in both windows.
+gradable hand in both windows. A canonical street selector filters only the
+bounded Recent decisions projection and is mutually exclusive with position
+and solver selectors.
 Approved hero-position labels are normalized into common six-max seats plus
 IP/OOP for a separate performance breakdown. Missing positions stay in an
 explicit unpositioned count and do not receive a synthetic label. A normalized

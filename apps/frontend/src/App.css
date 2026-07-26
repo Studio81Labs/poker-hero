@@ -2469,17 +2469,17 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.training-position-table tr.has-trend > * {
+.training-street-table tr.has-trend > * {
   border-bottom: 0;
   padding-bottom: 3px;
 }
 
-.training-position-table .training-position-trend-row td {
+.training-street-table .training-summary-trend-row td {
   padding: 0 0 8px;
   text-align: left;
 }
 
-.training-position-trend {
+.training-summary-trend {
   align-items: center;
   color: var(--muted);
   display: flex;
@@ -2491,28 +2491,28 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.training-position-trend > span {
+.training-summary-trend > span {
   margin-right: auto;
 }
 
-.training-position-trend strong {
+.training-summary-trend strong {
   align-items: center;
   display: inline-flex;
   font-size: inherit;
   gap: 4px;
 }
 
-.training-position-trend em {
+.training-summary-trend em {
   color: var(--muted);
   font-size: inherit;
   font-style: normal;
 }
 
-.training-position-trend em.improving {
+.training-summary-trend em.improving {
   color: var(--positive);
 }
 
-.training-position-trend em.declining {
+.training-summary-trend em.declining {
   color: var(--accent);
 }
 

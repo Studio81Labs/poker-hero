@@ -119,14 +119,15 @@ When a user locks an answer before revealing guidance, training progress tracks
 action and exact-line accuracy. The answer may include a low, medium, or high
 self-rated certainty, allowing progress to compare accuracy and available EV
 loss by how sure the player felt before reveal. Unrated hands remain in overall
-progress and are excluded only from certainty calibration. Approved hero
-positions are normalized into common six-max and IP/OOP labels so the same
-action, exact-line, and available EV-loss metrics can be compared by position;
-hands without a position remain counted separately. A normalized position or
-the unpositioned bucket can filter Recent decisions to its newest matching
-hands without changing global progress or the pending-review queue. Position
-groups with at least two hands also compare equal recent and previous windows
-for action, exact-line, and available EV-loss performance. Solver responses also
+progress and are excluded only from certainty calibration. Street groups with
+at least two hands compare equal recent and previous windows for action,
+exact-line, and available EV-loss performance. Approved hero positions are
+normalized into common six-max and IP/OOP labels so the same metrics can be
+compared by position; hands without a position remain counted separately. A
+normalized position or the unpositioned bucket can filter Recent decisions to
+its newest matching hands without changing global progress or the pending-review
+queue. Position groups with at least two hands also expose those equal-window
+comparisons. Solver responses also
 contribute engine coverage by street, including unattributed legacy hands and
 recorded fallback frequency and reasons. Each attributed engine route and
 fallback reason also reports the player's action and exact-line accuracy plus

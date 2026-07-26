@@ -242,13 +242,13 @@ frequencies.
     street- and normalized position-level results, optional EV-loss grading,
     recent-hand review links, equal-window recent trends capped at ten hands per
     period, and common unsupported action differences. Missing positions remain
-    an explicit count. Each position with enough hands also exposes equal-window
-    action, exact-line, and available EV-loss changes. The same comparisons
-    expose actual recommendation-engine coverage by street, recorded fallback
-    reasons, and equal-window attribution/fallback trends. Attributed routes and
-    fallback reasons also expose player action/exact-line accuracy and average
-    EV loss where gradable, plus equal recent/previous deltas when enough
-    matching hands exist.
+    an explicit count. Each street and position with enough hands also exposes
+    equal-window action, exact-line, and available EV-loss changes. The same
+    comparisons expose actual recommendation-engine coverage by street,
+    recorded fallback reasons, and equal-window attribution/fallback trends.
+    Attributed routes and fallback reasons also expose player action/exact-line
+    accuracy and average EV loss where gradable, plus equal recent/previous
+    deltas when enough matching hands exist.
     Rated hands also contribute to certainty calibration; unrated hands remain
     in every other aggregate.
 12. Selecting a normalized hero position, the unpositioned bucket, an engine
@@ -441,6 +441,8 @@ Poker Hero is successful when:
   reopen recent decisions, without counting meaningful solver mixes as mistakes.
 - A user can see per-hand and average EV loss for decisions that have comparable
   candidate EV metadata without excluding ungraded hands from other statistics.
+- A user can compare recent and previous action, exact-line, and available
+  EV-loss results within each street that has enough reviewed hands.
 - A user can compare training performance by normalized hero position without
   treating hands with missing position data as a fabricated seat.
 - A user can compare recent and previous action, exact-line, and available

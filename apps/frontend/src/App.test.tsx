@@ -3813,6 +3813,88 @@ describe("App", () => {
     );
   });
 
+  it("preserves loaded search pages when the matching total changes", async () => {
+    const savedJobs = Array.from({ length: 50 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `changing-search-history-${index}`,
+      original_filename: `changing-search-history-${index}.png`,
+      archived_at: `2026-07-25T00:${String(49 - index).padStart(2, "0")}:00Z`,
+    }));
+    const newJob: JobRecord = {
+      ...recommendedJob(),
+      id: "new-search-history-job",
+      original_filename: "new-search-history-job.png",
+      archived_at: "2026-07-26T00:00:00Z",
+    };
+    const updatedJobs = [newJob, ...savedJobs];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(24, 48),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs.slice(48),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs.slice(24, 48),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs.slice(48),
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 48",
+    })).toBeInTheDocument();
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 51",
+    })).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/51 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:8000/api/history?query=flop",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      6,
+      "http://localhost:8000/api/history?offset=48&query=flop",
+      { credentials: "include" },
+    );
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

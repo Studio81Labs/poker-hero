@@ -2507,7 +2507,13 @@ export default function App() {
           return;
         }
         if (page.total !== historySearchTotal) {
-          const refreshedPage = await getHistory(0, historySearchQuery);
+          const refreshedPage = await getHistorySearchExtent(
+            historySearchQuery,
+            Math.max(
+              visibleHistory.length + page.jobs.length,
+              HISTORY_CACHE_LIMIT,
+            ),
+          );
           if (requestId === historySearchRequestRef.current) {
             applyHistorySearchPage(refreshedPage);
           }

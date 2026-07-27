@@ -4502,13 +4502,17 @@ describe("App", () => {
     );
     window.localStorage.setItem("poker-training-history-total-v1", "1");
     window.sessionStorage.removeItem("poker-training-history-synced");
-    fetchMock().mockResolvedValueOnce(jsonResponse({
-      total: 1,
-      jobs: [{
-        ...legacyJob,
-        archived_at: "2026-07-10T00:04:00Z",
-      }],
-    }));
+    window.localStorage.removeItem("poker-training-processing-v1");
+    window.localStorage.removeItem("poker-training-processing-total-v1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingMigration = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingMigration.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "post-migration-processing",
+      }));
 
     render(<App />);
 
@@ -4519,10 +4523,28 @@ describe("App", () => {
         body: JSON.stringify({ job_ids: [jobId] }),
       }),
     ));
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    pendingMigration.resolve(jsonResponse({
+      total: 1,
+      jobs: [{
+        ...legacyJob,
+        archived_at: "2026-07-10T00:04:00Z",
+      }],
+    }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
     expect(screen.getByRole("button", {
       name: "Reopen history item 1",
     })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: legacy.png",
+    })).not.toBeInTheDocument();
     expect(window.sessionStorage.getItem("poker-training-history-synced")).toBe("true");
+    expect(window.sessionStorage.getItem("poker-training-processing-synced")).toBe("true");
   });
 
   it("shows normalized decision evidence for solver recommendations", async () => {
@@ -5089,6 +5111,7 @@ describe("App", () => {
 
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {
     const pendingReviewJob = deferredResponse();
+    const benchmarkJobId = "b".repeat(32);
     const activeJob = {
       ...approvedJob(),
       id: "active-job",
@@ -5099,10 +5122,11 @@ describe("App", () => {
     const reviewedState = canonicalState({ pot_size: 12.5 });
     const reviewedJob = {
       ...approvedJob(reviewedState),
-      id: "benchmark-job",
+      id: benchmarkJobId,
       original_filename: "mismatch.png",
-      image_filename: "benchmark-job.png",
+      image_filename: `${benchmarkJobId}.png`,
       benchmark_included: true,
+      parser_result: null,
     };
     const benchmarkReport = {
       id: "benchmark-review",
@@ -5118,7 +5142,7 @@ describe("App", () => {
       field_metrics: [{ field: "pot_size", correct: 0, total: 1, accuracy: 0 }],
       cases: [
         {
-          job_id: "benchmark-job",
+          job_id: benchmarkJobId,
           original_filename: "mismatch.png",
           status: "completed",
           correct_fields: 9,
@@ -5168,12 +5192,15 @@ describe("App", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Parser benchmark" })).not.toBeInTheDocument());
     expect(screen.getByAltText("Uploaded poker table screenshot")).toHaveAttribute(
       "src",
-      "http://localhost:8000/api/jobs/benchmark-job/image",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/image`,
     );
     expect(screen.getByLabelText(/Pot/)).toHaveValue("12.5");
+    await waitFor(() => expect(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ).toBe("[]"));
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
-      "http://localhost:8000/api/jobs/benchmark-job",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
   });
 

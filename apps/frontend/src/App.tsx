@@ -1572,6 +1572,12 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && candidate.archived_at == null;
 }
 
+function isBenchmarkOnlyJob(job: JobRecord): boolean {
+  return job.benchmark_included
+    && job.parser_result === null
+    && job.recommendation === null;
+}
+
 function readProcessingQueue(): JobRecord[] | null {
   if (typeof window === "undefined") {
     return null;
@@ -1585,7 +1591,9 @@ function readProcessingQueue(): JobRecord[] | null {
     if (!Array.isArray(parsed)) {
       return null;
     }
-    return parsed.filter(isCachedJobRecord);
+    return parsed
+      .filter(isCachedJobRecord)
+      .filter((job) => !isBenchmarkOnlyJob(job));
   } catch {
     return null;
   }
@@ -1594,7 +1602,8 @@ function readProcessingQueue(): JobRecord[] | null {
 function processingJobsForCache(jobs: JobRecord[]): JobRecord[] {
   return jobs.filter((job) =>
     PERSISTED_JOB_ID_PATTERN.test(job.id)
-    && job.archived_at == null,
+    && job.archived_at == null
+    && !isBenchmarkOnlyJob(job),
   );
 }
 
@@ -2427,6 +2436,7 @@ export default function App() {
   const formBaselineRef = useRef(form);
   const formDirtyRef = useRef(false);
   const processingCacheInitializedRef = useRef(false);
+  const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
   useEffect(() => {
@@ -2647,7 +2657,9 @@ export default function App() {
       )
       .map((item) => item.id);
     if (legacyJobIds.length > 0) {
-      void syncHistory(legacyJobIds, false);
+      const migration = syncHistory(legacyJobIds, false);
+      legacyHistoryArchivePromiseRef.current = migration;
+      void migration;
       return;
     }
     void syncHistory(null, false);
@@ -2655,15 +2667,22 @@ export default function App() {
 
   useEffect(() => {
     const cachedJobs = readProcessingQueue();
+    const legacyHistoryArchive = legacyHistoryArchivePromiseRef.current;
     if (
-      processingQueueSessionSynced()
+      legacyHistoryArchive === null
+      && processingQueueSessionSynced()
       && readCachedProcessingQueueTotal(cachedJobs) !== null
     ) {
       return;
     }
 
     const cachedIds = new Set((cachedJobs ?? []).map((cachedJob) => cachedJob.id));
-    processingRestorePromiseRef.current ??= getProcessingQueueExtent();
+    processingRestorePromiseRef.current ??= (async () => {
+      if (legacyHistoryArchive !== null && !(await legacyHistoryArchive)) {
+        throw new Error("Could not migrate legacy history before restoring processing");
+      }
+      return getProcessingQueueExtent();
+    })();
     let active = true;
     void processingRestorePromiseRef.current
       .then((queue) => {
@@ -2974,15 +2993,17 @@ export default function App() {
   async function syncHistory(
     jobIds: string[] | null = null,
     reportErrors = true,
-  ) {
+  ): Promise<boolean> {
     setHistoryLoading(true);
     try {
       const page = jobIds ? await archiveJobs(jobIds) : await getHistory();
       applyHistoryPage(page);
+      return true;
     } catch (historyError) {
       if (reportErrors) {
         setError(messageFromError(historyError, "Could not load saved history"));
       }
+      return false;
     } finally {
       setHistoryLoading(false);
     }

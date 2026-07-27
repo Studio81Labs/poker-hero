@@ -308,14 +308,149 @@ describe("App", () => {
     )).toBe("true");
   });
 
-  it("restores every processing page while keeping the browser cache bounded", async () => {
+  it("realigns an untouched cached form with the reconciled active job", async () => {
+    const cachedJob = jobRecord({
+      id: "d".repeat(32),
+      original_filename: "reconciled-table.png",
+    });
+    const reconciledState: DetectedState = {
+      ...detectedState,
+      hero_cards: [
+        { rank: "Q", suit: "clubs" },
+        { rank: "Q", suit: "hearts" },
+      ],
+    };
+    const reconciledJob = jobRecord({
+      ...cachedJob,
+      parser_result: {
+        ...cachedJob.parser_result!,
+        state: reconciledState,
+      },
+      updated_at: "2026-07-10T00:01:00Z",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingQueue = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingQueue.promise);
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
+    pendingQueue.resolve(jsonResponse({
+      total: 1,
+      jobs: [reconciledJob],
+      snapshot_version: "reconciled-snapshot",
+    }));
+
+    expect(await screen.findByDisplayValue("Qc Qh")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Ah Kd")).not.toBeInTheDocument();
+  });
+
+  it("preserves a dirty form while its active job is reconciled", async () => {
+    const cachedJob = jobRecord({
+      id: "e".repeat(32),
+      original_filename: "edited-table.png",
+    });
+    const reconciledState: DetectedState = {
+      ...detectedState,
+      hero_cards: [
+        { rank: "Q", suit: "clubs" },
+        { rank: "Q", suit: "hearts" },
+      ],
+    };
+    const reconciledJob = jobRecord({
+      ...cachedJob,
+      parser_result: {
+        ...cachedJob.parser_result!,
+        state: reconciledState,
+      },
+      updated_at: "2026-07-10T00:01:00Z",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingQueue = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingQueue.promise);
+    render(<App />);
+    const user = userEvent.setup();
+    const heroCards = await screen.findByLabelText(/Hero cards/);
+
+    await user.clear(heroCards);
+    await user.type(heroCards, "7d Ah");
+    pendingQueue.resolve(jsonResponse({
+      total: 1,
+      jobs: [reconciledJob],
+      snapshot_version: "reconciled-snapshot",
+    }));
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].updated_at).toBe("2026-07-10T00:01:00Z"));
+    expect(heroCards).toHaveValue("7d Ah");
+    expect(screen.queryByDisplayValue("Qc Qh")).not.toBeInTheDocument();
+  });
+
+  it("keeps a dirty cached job selected when reconciliation removes it", async () => {
+    const cachedJob = jobRecord({
+      id: "f".repeat(32),
+      original_filename: "dirty-cached-table.png",
+    });
+    const incomingJob = jobRecord({
+      id: "1".repeat(32),
+      original_filename: "different-table.png",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingQueue = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingQueue.promise);
+    render(<App />);
+    const user = userEvent.setup();
+    const heroCards = await screen.findByLabelText(/Hero cards/);
+
+    await user.clear(heroCards);
+    await user.type(heroCards, "7d Ah");
+    pendingQueue.resolve(jsonResponse({
+      total: 1,
+      jobs: [incomingJob],
+      snapshot_version: "replacement-snapshot",
+    }));
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 2: different-table.png",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: dirty-cached-table.png",
+    })).toHaveClass("active");
+    expect(heroCards).toHaveValue("7d Ah");
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+  });
+
+  it("reconciles queues larger than the bounded browser cache", async () => {
     const persistedJobs = Array.from({ length: 101 }, (_, index) => jobRecord({
       id: index.toString(16).padStart(32, "0"),
       original_filename: `persisted-${index + 1}.png`,
     }));
-    window.localStorage.removeItem("poker-training-processing-v1");
-    window.localStorage.removeItem("poker-training-processing-total-v1");
-    window.sessionStorage.removeItem("poker-training-processing-synced");
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify(persistedJobs.slice(0, 100)),
+    );
+    window.localStorage.setItem(
+      "poker-training-processing-total-v1",
+      String(persistedJobs.length),
+    );
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
         total: persistedJobs.length,

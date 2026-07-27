@@ -1636,7 +1636,8 @@ function readCachedProcessingQueueTotal(
     if (
       !Number.isSafeInteger(parsed)
       || parsed < 0
-      || cachedJobs.length !== Math.min(parsed, PROCESSING_QUEUE_CACHE_LIMIT)
+      || cachedJobs.length !== parsed
+      || cachedJobs.length > PROCESSING_QUEUE_CACHE_LIMIT
     ) {
       return null;
     }
@@ -2422,6 +2423,9 @@ export default function App() {
   const queueAbortRequestedRef = useRef(false);
   const historySearchRequestRef = useRef(0);
   const jobsRef = useRef(jobs);
+  const activeJobIdRef = useRef(activeJobId);
+  const formBaselineRef = useRef(form);
+  const formDirtyRef = useRef(false);
   const processingCacheInitializedRef = useRef(false);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
@@ -2666,15 +2670,36 @@ export default function App() {
         if (!active) {
           return;
         }
-        const nextJobs = reconcileProcessingJobs(
-          jobsRef.current,
+        const currentJobs = jobsRef.current;
+        const currentActiveId = activeJobIdRef.current;
+        const currentActiveJob = currentActiveId === null
+          ? null
+          : currentJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
+        let nextJobs = reconcileProcessingJobs(
+          currentJobs,
           queue.jobs,
           cachedIds,
         );
+        const preservedMissingDirtyJob = formDirtyRef.current
+          && currentActiveJob !== null
+          && !nextJobs.some((candidate) => candidate.id === currentActiveJob.id);
+        if (preservedMissingDirtyJob) {
+          nextJobs = [currentActiveJob, ...nextJobs];
+        }
+        const reconciledActiveJob = currentActiveId === null
+          ? null
+          : nextJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
+        const preserveDirtyForm = formDirtyRef.current
+          && reconciledActiveJob !== null;
         jobsRef.current = nextJobs;
         setJobs(nextJobs);
-        if (writeProcessingQueue(nextJobs)) {
+        if (!preserveDirtyForm) {
+          alignWorkspaceToJob(reconciledActiveJob ?? nextJobs[0] ?? null);
+        }
+        if (writeProcessingQueue(nextJobs) && !preservedMissingDirtyJob) {
           markProcessingQueueSessionSynced();
+        } else if (preservedMissingDirtyJob) {
+          markProcessingQueueSessionUnsynced();
         }
       })
       .catch((processingError) => {
@@ -2695,13 +2720,7 @@ export default function App() {
     if (activeJobId !== null || jobs.length === 0) {
       return;
     }
-    const nextJob = jobs[0];
-    setActiveJobId(nextJob.id);
-    const nextState = stateFromJob(nextJob);
-    setForm(stateToForm(nextState));
-    setApprovedStateKey(
-      nextJob.approved_state ? approvalKey(nextJob.approved_state) : null,
-    );
+    alignWorkspaceToJob(jobs[0]);
   }, [activeJobId, jobs]);
 
   useEffect(() => {
@@ -2743,11 +2762,21 @@ export default function App() {
     setFiles(Array.from(event.target.files ?? []));
   }
 
+  function alignWorkspaceToJob(nextJob: JobRecord | null) {
+    const nextState = nextJob ? stateFromJob(nextJob) : EMPTY_STATE;
+    const nextForm = stateToForm(nextState);
+    activeJobIdRef.current = nextJob?.id ?? null;
+    formBaselineRef.current = nextForm;
+    formDirtyRef.current = false;
+    setActiveJobId(nextJob?.id ?? null);
+    setForm(nextForm);
+    setApprovedStateKey(
+      nextJob?.approved_state ? approvalKey(nextJob.approved_state) : null,
+    );
+  }
+
   function activateJob(nextJob: JobRecord) {
-    setActiveJobId(nextJob.id);
-    const nextState = stateFromJob(nextJob);
-    setForm(stateToForm(nextState));
-    setApprovedStateKey(nextJob.approved_state ? approvalKey(nextJob.approved_state) : null);
+    alignWorkspaceToJob(nextJob);
     setLivePreviewVisible(false);
     setError(null);
   }
@@ -2755,6 +2784,7 @@ export default function App() {
   function replaceJob(updatedJob: JobRecord) {
     setJobs((current) => current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)));
     updateHistoryJob(updatedJob);
+    activeJobIdRef.current = updatedJob.id;
     setActiveJobId(updatedJob.id);
   }
 
@@ -2965,8 +2995,11 @@ export default function App() {
 
   function applyApprovedJob(approved: JobRecord, fallbackState: CanonicalState) {
     const approvedState = approved.approved_state ?? { ...fallbackState, user_approved: true };
+    const approvedForm = stateToForm(approvedState);
     replaceJob(approved);
-    setForm(stateToForm(approvedState));
+    formBaselineRef.current = approvedForm;
+    formDirtyRef.current = false;
+    setForm(approvedForm);
     setApprovedStateKey(approvalKey(approvedState));
   }
 
@@ -3432,6 +3465,8 @@ export default function App() {
         next.preflop_opener_position = "";
         next.preflop_open_size = "";
       }
+      formDirtyRef.current = JSON.stringify(next)
+        !== JSON.stringify(formBaselineRef.current);
       return next;
     });
     setApprovedStateKey(null);
@@ -3440,7 +3475,10 @@ export default function App() {
 
   function resetToParser() {
     if (job?.parser_result) {
-      setForm(stateToForm(job.parser_result.state));
+      const parserForm = stateToForm(job.parser_result.state);
+      formBaselineRef.current = parserForm;
+      formDirtyRef.current = false;
+      setForm(parserForm);
       setError(null);
       setApprovedStateKey(null);
       setJobs((current) => current.map((candidate) => (candidate.id === job.id ? clearApprovedResult(candidate) : candidate)));
@@ -4083,9 +4121,7 @@ export default function App() {
       if (remainingJobs.length > 0) {
         activateJob(remainingJobs.find((candidate) => candidate.id === activeJobId) ?? remainingJobs[0]);
       } else {
-        setActiveJobId(null);
-        setForm(stateToForm(EMPTY_STATE));
-        setApprovedStateKey(null);
+        alignWorkspaceToJob(null);
         setError(null);
       }
     } catch (historyError) {

@@ -211,6 +211,109 @@ def test_history_pages_archived_jobs_in_stable_newest_first_order(
     assert client.get("/api/history?offset=-1").status_code == 422
 
 
+def test_history_scan_does_not_block_an_unarchived_job_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    archived_id = upload_job(client, filename="archived.png").json()["id"]
+    active_id = upload_job(client, filename="active.png").json()["id"]
+    approve_job(client, archived_id)
+    client.put("/api/history", json={"job_ids": [archived_id]})
+
+    history_started = Event()
+    release_history = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_list = FileJobStore.list
+
+    def paused_list(store: FileJobStore):
+        jobs = original_list(store)
+        history_started.set()
+        assert release_history.wait(timeout=2)
+        return jobs
+
+    monkeypatch.setattr(FileJobStore, "list", paused_list)
+
+    history_thread = Thread(
+        target=lambda: responses.update(history=client.get("/api/history")),
+    )
+
+    def run_approval() -> None:
+        responses["approval"] = approve_job(client, active_id)
+        approval_finished.set()
+
+    approval_thread = Thread(target=run_approval)
+    history_thread.start()
+    try:
+        assert history_started.wait(timeout=2)
+        approval_thread.start()
+        assert approval_finished.wait(timeout=1)
+    finally:
+        release_history.set()
+        history_thread.join(timeout=2)
+        approval_thread.join(timeout=2)
+
+    assert not history_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["history"].status_code == 200
+    assert responses["approval"].status_code == 200
+
+
+def test_history_scan_serializes_an_archived_job_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="archived.png").json()["id"]
+    approve_job(client, job_id)
+    client.put("/api/history", json={"job_ids": [job_id]})
+
+    history_started = Event()
+    release_history = Event()
+    approval_started = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_list = FileJobStore.list
+
+    def paused_list(store: FileJobStore):
+        jobs = original_list(store)
+        history_started.set()
+        assert release_history.wait(timeout=2)
+        return jobs
+
+    monkeypatch.setattr(FileJobStore, "list", paused_list)
+
+    history_thread = Thread(
+        target=lambda: responses.update(history=client.get("/api/history")),
+    )
+    corrected_state = {**APPROVED_STATE, "pot_size": 21.0}
+
+    def run_approval() -> None:
+        approval_started.set()
+        responses["approval"] = approve_job(client, job_id, corrected_state)
+        approval_finished.set()
+
+    approval_thread = Thread(target=run_approval)
+    history_thread.start()
+    try:
+        assert history_started.wait(timeout=2)
+        approval_thread.start()
+        assert approval_started.wait(timeout=2)
+        assert not approval_finished.wait(timeout=0.1)
+    finally:
+        release_history.set()
+        history_thread.join(timeout=2)
+        approval_thread.join(timeout=2)
+
+    assert not history_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["history"].status_code == 200
+    assert responses["history"].json()["jobs"][0]["approved_state"]["pot_size"] == 12.5
+    assert responses["approval"].status_code == 200
+    assert responses["approval"].json()["approved_state"]["pot_size"] == 21
+
+
 def test_history_searches_archived_poker_context_before_paging(
     tmp_path: Path,
 ) -> None:

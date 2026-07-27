@@ -210,6 +210,7 @@ interface RecommendationEvidence {
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
+const HISTORY_SEARCH_PAGE_LIMIT = 100;
 const HISTORY_SNAPSHOT_RETRY_LIMIT = 3;
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
@@ -1581,7 +1582,11 @@ async function getHistorySearchExtent(
     let total = 0;
 
     do {
-      const page = await getHistory(jobs.length, query);
+      const page = await getHistory(
+        jobs.length,
+        query,
+        Math.min(HISTORY_SEARCH_PAGE_LIMIT, loadedCount - jobs.length),
+      );
       if (
         snapshotVersion !== null
         && page.snapshot_version !== undefined
@@ -2110,6 +2115,7 @@ export default function App() {
   const [historySearchQuery, setHistorySearchQuery] = useState("");
   const [historySearchResults, setHistorySearchResults] = useState<HistoryItem[] | null>(null);
   const [historySearchTotal, setHistorySearchTotal] = useState(0);
+  const [historySearchSnapshotVersion, setHistorySearchSnapshotVersion] = useState<string | null>(null);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
@@ -2434,6 +2440,7 @@ export default function App() {
   function applyHistorySearchPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
     setHistorySearchTotal(page.total);
+    setHistorySearchSnapshotVersion(page.snapshot_version ?? null);
     setHistorySearchResults((current) => {
       if (!append || current === null) {
         return reconcileHistoryItems(current ?? [], pageItems);
@@ -2449,6 +2456,7 @@ export default function App() {
     setHistorySearchQuery("");
     setHistorySearchResults(null);
     setHistorySearchTotal(0);
+    setHistorySearchSnapshotVersion(null);
   }
 
   async function onSearchHistory(event: FormEvent<HTMLFormElement>) {
@@ -2521,14 +2529,28 @@ export default function App() {
     try {
       if (historySearchActive) {
         const requestId = ++historySearchRequestRef.current;
-        const page = await getHistorySearchExtent(
+        const page = await getHistory(visibleHistory.length, historySearchQuery);
+        if (requestId !== historySearchRequestRef.current) {
+          return;
+        }
+        if (
+          historySearchSnapshotVersion !== null
+          && page.snapshot_version === historySearchSnapshotVersion
+        ) {
+          applyHistorySearchPage(page, true);
+          return;
+        }
+        const rebuiltPage = await getHistorySearchExtent(
           historySearchQuery,
-          visibleHistory.length + HISTORY_CACHE_LIMIT,
+          Math.min(
+            visibleHistory.length + HISTORY_CACHE_LIMIT,
+            page.total,
+          ),
         );
         if (requestId !== historySearchRequestRef.current) {
           return;
         }
-        applyHistorySearchPage(page);
+        applyHistorySearchPage(rebuiltPage);
         return;
       }
       const page = await getHistory(history.length);

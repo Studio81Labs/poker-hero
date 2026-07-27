@@ -266,8 +266,12 @@ the same shared job-replacement path; unsaved form edits do not alter history.
 Incoming refresh pages reconcile matching jobs by `updated_at`, so an older
 in-flight response cannot overwrite a newer saved correction.
 Optional all-term history search filters the complete persisted archive before
-offset paging. Search results and their match count remain separate from the
-global archive count and newest-page browser cache.
+offset paging. A history-specific lock gives each archive scan and snapshot hash
+a consistent view without blocking unrelated active-job updates. Search pages
+carry that snapshot version so the frontend appends the next page directly while
+the archive is unchanged, and rebuilds the loaded extent in bounded larger
+requests only after a version change. Search results and their match count remain
+separate from the global archive count and newest-page browser cache.
 Local development uses `apps/backend/data`; the container contract uses
 `/app/data`. Coolify must mount persistent storage at `/app/data`. The container
 entrypoint repairs volume ownership before dropping to the non-root `poker`

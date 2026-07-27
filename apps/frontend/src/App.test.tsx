@@ -3626,10 +3626,12 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         total: 2,
         jobs: [firstMatch],
+        snapshot_version: "stable-search",
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 2,
-        jobs: [firstMatch, secondMatch],
+        jobs: [secondMatch],
+        snapshot_version: "stable-search",
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -3662,7 +3664,7 @@ describe("App", () => {
     );
     expect(fetchMock()).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:8000/api/history?query=turn+bluff",
+      "http://localhost:8000/api/history?offset=1&query=turn+bluff",
       { credentials: "include" },
     );
     expect(within(screen.getByLabelText("Session status")).getByText("1")).toBeInTheDocument();
@@ -3702,11 +3704,13 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         total: 1,
         jobs: [savedJob],
+        snapshot_version: "before-approval",
       }))
       .mockResolvedValueOnce(jsonResponse(reapprovedJob))
       .mockResolvedValueOnce(jsonResponse({
         total: 0,
         jobs: [],
+        snapshot_version: "after-approval",
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -3733,7 +3737,7 @@ describe("App", () => {
     expect(within(historyPanel).getByText(/0 matches/)).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenNthCalledWith(
       3,
-      "http://localhost:8000/api/history?query=raise",
+      "http://localhost:8000/api/history?query=raise&limit=24",
       { credentials: "include" },
     );
     const reviewedStat = within(screen.getByLabelText("Session status"))
@@ -3762,23 +3766,18 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         total: 25,
         jobs: savedJobs.slice(0, 24),
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 25,
-        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-approval",
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 25,
         jobs: savedJobs.slice(24),
+        snapshot_version: "before-approval",
       }))
       .mockResolvedValueOnce(jsonResponse(reapprovedLastJob))
       .mockResolvedValueOnce(jsonResponse({
         total: 25,
-        jobs: savedJobs.slice(0, 24),
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 25,
-        jobs: [reapprovedLastJob],
+        jobs: [...savedJobs.slice(0, 24), reapprovedLastJob],
+        snapshot_version: "after-approval",
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -3811,8 +3810,8 @@ describe("App", () => {
       name: "Load older history",
     })).not.toBeInTheDocument();
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      6,
-      "http://localhost:8000/api/history?offset=24&query=flop",
+      4,
+      "http://localhost:8000/api/history?query=flop&limit=25",
       { credentials: "include" },
     );
   });
@@ -3835,26 +3834,22 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
         jobs: savedJobs.slice(0, 24),
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 50,
-        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-membership-change",
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
         jobs: savedJobs.slice(24, 48),
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 51,
-        jobs: updatedJobs.slice(0, 24),
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 51,
-        jobs: updatedJobs.slice(24, 48),
+        snapshot_version: "before-membership-change",
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 51,
         jobs: updatedJobs.slice(48),
+        snapshot_version: "after-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs,
+        snapshot_version: "after-membership-change",
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -3889,12 +3884,7 @@ describe("App", () => {
     })).not.toBeInTheDocument();
     expect(fetchMock()).toHaveBeenNthCalledWith(
       4,
-      "http://localhost:8000/api/history?query=flop",
-      { credentials: "include" },
-    );
-    expect(fetchMock()).toHaveBeenNthCalledWith(
-      6,
-      "http://localhost:8000/api/history?offset=48&query=flop",
+      "http://localhost:8000/api/history?query=flop&limit=51",
       { credentials: "include" },
     );
   });
@@ -3926,22 +3916,12 @@ describe("App", () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
-        jobs: savedJobs.slice(0, 24),
-        snapshot_version: "before-membership-change",
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 50,
         jobs: updatedJobs.slice(24, 48),
         snapshot_version: "after-membership-change",
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
-        jobs: updatedJobs.slice(0, 24),
-        snapshot_version: "after-membership-change",
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 50,
-        jobs: updatedJobs.slice(24, 48),
+        jobs: updatedJobs.slice(0, 48),
         snapshot_version: "after-membership-change",
       }));
     render(<App />);
@@ -3968,15 +3948,15 @@ describe("App", () => {
     expect(within(historyPanel).getByRole("button", {
       name: "Load older history",
     })).toHaveTextContent("Load 2 older");
-    expect(fetchMock()).toHaveBeenCalledTimes(5);
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      4,
-      "http://localhost:8000/api/history?query=flop",
+      2,
+      "http://localhost:8000/api/history?offset=24&query=flop",
       { credentials: "include" },
     );
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      5,
-      "http://localhost:8000/api/history?offset=24&query=flop",
+      3,
+      "http://localhost:8000/api/history?query=flop&limit=48",
       { credentials: "include" },
     );
   });

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 import re
-from threading import Lock
+from threading import Lock, RLock
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
+    history_lock = RLock()
     dataset_import_lock = Lock()
     benchmark_corpus_lock = Lock()
 
@@ -94,6 +95,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def job_lock_for(job_id: str):
         return job_locks[job_lock_index(job_id)]
+
+    def save_job(job: JobRecord) -> JobRecord:
+        if job.archived_at is None:
+            return store.save(job)
+        with history_lock:
+            return store.save(job)
 
     def current_recommendation_target(
         job_id: str,
@@ -154,12 +161,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ParserConfigurationError as exc:
             job.status = "error"
             job.error = str(exc)
-            store.save(job)
+            save_job(job)
             raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
         except ParserError as exc:
             job.status = "error"
             job.error = str(exc)
-            store.save(job)
+            save_job(job)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         job.parser_result = parser_result
@@ -168,7 +175,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state = CanonicalState.from_parser_result(parser_result)
             job.approved_state.user_approved = True
             job.status = "approved"
-        return store.save(job)
+        return save_job(job)
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
@@ -180,9 +187,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         offset: int = Query(default=0, ge=0),
         query: str | None = Query(default=None, max_length=100),
     ) -> JobHistory:
-        with ExitStack() as history_lock_stack:
-            for job_lock in job_locks:
-                history_lock_stack.enter_context(job_lock)
+        with history_lock:
             return build_job_history(store, limit, offset, query)
 
     @app.put("/api/history", response_model=JobHistory)
@@ -202,13 +207,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     detail="Only approved or recommended jobs can be moved to history",
                 )
 
-            archived_at = datetime.now(timezone.utc)
-            for job in jobs:
-                if job.archived_at is None:
-                    job.archived_at = archived_at
-                    store.save(job)
-
-        return build_job_history(store, limit)
+            with history_lock:
+                archived_at = datetime.now(timezone.utc)
+                for job in jobs:
+                    if job.archived_at is None:
+                        job.archived_at = archived_at
+                        store.save(job)
+                return build_job_history(store, limit)
 
     @app.get("/api/jobs/{job_id}/image")
     def get_job_image(job_id: str) -> FileResponse:
@@ -233,7 +238,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_review_note = None
             job.status = "approved"
             job.error = None
-            return store.save(job)
+            return save_job(job)
 
     @app.put("/api/jobs/{job_id}/decision", response_model=JobRecord)
     def record_training_decision(
@@ -262,7 +267,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_review_note = None
             job.status = "approved"
             job.error = None
-            return store.save(job)
+            return save_job(job)
 
     @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
     def recommend(job_id: str) -> JobRecord:
@@ -283,7 +288,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
 
         if missing:
@@ -298,14 +303,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except ProviderError as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         with job_lock_for(job_id):
@@ -315,7 +320,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             current.training_review_note = None
             current.status = "recommended"
             current.error = None
-            return store.save(current)
+            return save_job(current)
 
     @app.put("/api/jobs/{job_id}/training-review", response_model=JobRecord)
     def complete_training_review(
@@ -342,7 +347,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 job.training_review_note = review.note
                 changed = True
             if changed:
-                return store.save(job)
+                return save_job(job)
             return job
 
     @app.delete("/api/jobs/{job_id}/training-review", response_model=JobRecord)
@@ -361,7 +366,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             if job.training_reviewed_at is not None:
                 job.training_reviewed_at = None
-                return store.save(job)
+                return save_job(job)
             return job
 
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
@@ -402,7 +407,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
                 candidate_archive.close()
             job.benchmark_included = selection.included
-            return store.save(job)
+            return save_job(job)
 
     @app.get("/api/training/progress", response_model=TrainingProgress)
     def get_training_progress(
@@ -637,14 +642,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ):
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
-                return import_parser_dataset(
-                    dataset,
-                    store,
-                    recommendation_provider=active_settings.recommendation_provider,
-                    parser_provider=active_settings.parser_provider,
-                    layout_profile=active_settings.parser_layout_profile,
-                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
-                )
+                with history_lock:
+                    return import_parser_dataset(
+                        dataset,
+                        store,
+                        recommendation_provider=active_settings.recommendation_provider,
+                        parser_provider=active_settings.parser_provider,
+                        layout_profile=active_settings.parser_layout_profile,
+                        max_archive_bytes=active_settings.max_dataset_upload_bytes,
+                    )
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 

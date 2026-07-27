@@ -226,7 +226,8 @@ accuracy or EV metrics to compare.
 Action-difference suggestions consider only patterns with pending work. The
 highest comparable average EV loss wins when graded patterns exist; otherwise
 the largest unresolved backlog wins. Total pattern volume and canonical action
-order make ties deterministic.
+order make ties deterministic. Pattern rows expose that unresolved count as the
+review action; completed patterns render a non-actionable clear state.
 Completing a review persists a timestamp and optional normalized lesson note on
 the job, then removes it from the pending queue without changing historical
 accuracy. The progress projections include the note for later study.

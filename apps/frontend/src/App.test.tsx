@@ -1120,9 +1120,11 @@ describe("App", () => {
     expect(within(dialog).getByText("Supported mix")).toBeInTheDocument();
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/training/progress");
 
-    await user.click(within(dialog).getByRole("button", {
-      name: "Review Fold to Call differences",
-    }));
+    const reviewFoldToCall = within(dialog).getByRole("button", {
+      name: "Review Fold to Call differences (2)",
+    });
+    expect(reviewFoldToCall).toHaveTextContent("2");
+    await user.click(reviewFoldToCall);
 
     expect(within(dialog).getByRole("button", { name: "Needs review 2" })).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).queryByRole("button", { name: "Open exact.png training review" })).not.toBeInTheDocument();
@@ -1908,6 +1910,13 @@ describe("App", () => {
         needs_review_hands: 4,
         ev_compared_hands: 0,
         average_ev_loss_bb: null,
+      }, {
+        decision_action: "raise" as const,
+        recommended_action: "call" as const,
+        hands: 2,
+        needs_review_hands: 0,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
       }],
       street_summaries: [],
       position_summaries: [],
@@ -1933,6 +1942,12 @@ describe("App", () => {
       name: "Focus Check to Bet differences: Largest backlog: 4 hands need review",
     });
     expect(focus).toHaveTextContent("Focus Check to Bet");
+    expect(within(dialog).getByRole("button", {
+      name: "Review Check to Bet differences (4)",
+    })).toHaveTextContent("4");
+    expect(within(dialog).getByLabelText(
+      "No pending Raise to Call reviews",
+    )).toHaveTextContent("—");
 
     await user.click(focus);
 
@@ -2391,9 +2406,11 @@ describe("App", () => {
     expect(within(differences).getByText("Call")).toBeInTheDocument();
     expect(within(differences).getByText("2 hands")).toBeInTheDocument();
     expect(within(differences).getByText("0.8 BB avg loss")).toBeInTheDocument();
-    await user.click(within(differences).getByRole("button", {
-      name: "Review Fold to Call differences",
-    }));
+    const reviewFoldToCall = within(differences).getByRole("button", {
+      name: "Review Fold to Call differences (2)",
+    });
+    expect(reviewFoldToCall).toHaveTextContent("2");
+    await user.click(reviewFoldToCall);
     expect(await within(dialog).findByLabelText("Active action-difference filter")).toHaveTextContent(
       "FoldCall",
     );

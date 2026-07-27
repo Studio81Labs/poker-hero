@@ -1569,6 +1569,28 @@ function historyItemsFromPage(page: JobHistory): HistoryItem[] {
   }));
 }
 
+async function getHistorySearchExtent(
+  query: string,
+  loadedCount: number,
+): Promise<JobHistory> {
+  const jobs: JobRecord[] = [];
+  let total = 0;
+
+  do {
+    const page = await getHistory(jobs.length, query);
+    total = page.total;
+    jobs.push(...page.jobs);
+    if (page.jobs.length === 0) {
+      break;
+    }
+  } while (jobs.length < Math.min(loadedCount, total));
+
+  return {
+    total,
+    jobs: jobs.slice(0, Math.min(loadedCount, total)),
+  };
+}
+
 function mergeHistoryItems(
   current: HistoryItem[],
   incoming: HistoryItem[],
@@ -2439,8 +2461,12 @@ export default function App() {
 
   async function revalidateHistorySearch(query: string) {
     const requestId = ++historySearchRequestRef.current;
+    const loadedCount = Math.max(
+      historySearchResults?.length ?? 0,
+      HISTORY_CACHE_LIMIT,
+    );
     try {
-      const page = await getHistory(0, query);
+      const page = await getHistorySearchExtent(query, loadedCount);
       if (requestId === historySearchRequestRef.current) {
         applyHistorySearchPage(page);
       }

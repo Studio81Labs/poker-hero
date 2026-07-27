@@ -262,6 +262,10 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     approve_job(client, other_id)
     client.post(f"/api/jobs/{ace_spades_id}/recommend")
     client.post(f"/api/jobs/{other_id}/recommend")
+    store = FileJobStore(tmp_path)
+    other_job = store.get(other_id)
+    other_job.training_review_note = "Play as bluff when blockers support it."
+    store.save(other_job)
     client.put(
         "/api/history",
         json={"job_ids": [ace_spades_id, other_id]},
@@ -272,6 +276,15 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     assert response.status_code == 200
     assert response.json()["total"] == 1
     assert [job["id"] for job in response.json()["jobs"]] == [ace_spades_id]
+
+    prose_response = client.get(
+        "/api/history",
+        params={"query": "play as bluff"},
+    )
+
+    assert prose_response.status_code == 200
+    assert prose_response.json()["total"] == 1
+    assert [job["id"] for job in prose_response.json()["jobs"]] == [other_id]
 
 
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:

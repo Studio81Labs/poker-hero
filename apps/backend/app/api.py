@@ -73,7 +73,11 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♥": "h",
     "♠": "s",
 })
-HISTORY_CARD_QUERY_PATTERN = re.compile(r"^(?:[2-9tjqka]|10)[cdhs]$")
+HISTORY_SYMBOL_CARD_QUERY_PATTERN = re.compile(
+    r"^(?:[2-9tjqka]|10)[♣♦♥♠]$",
+    re.IGNORECASE,
+)
+HISTORY_CODE_CARD_QUERY_PATTERN = re.compile(r"^(?:[2-9TJQKA]|10)[cdhsCDHS]$")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -695,7 +699,7 @@ def build_job_history(
         key=lambda job: (job.archived_at, job.created_at),
         reverse=True,
     )
-    query_terms = normalize_history_query(query).split()
+    query_terms = history_query_terms(query)
     if query_terms:
         archived_jobs = [
             job
@@ -712,14 +716,33 @@ def normalize_history_query(value: str | None) -> str:
     return (value or "").translate(HISTORY_QUERY_TRANSLATION).casefold().strip()
 
 
-def history_matches_query(job: JobRecord, query_terms: list[str]) -> bool:
+def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
+    terms: list[tuple[str, bool]] = []
+    for raw_term in (value or "").split():
+        normalized_term = normalize_history_query(raw_term)
+        if not normalized_term:
+            continue
+        terms.append((
+            normalized_term,
+            bool(
+                HISTORY_SYMBOL_CARD_QUERY_PATTERN.fullmatch(raw_term)
+                or HISTORY_CODE_CARD_QUERY_PATTERN.fullmatch(raw_term)
+            ),
+        ))
+    return terms
+
+
+def history_matches_query(
+    job: JobRecord,
+    query_terms: list[tuple[str, bool]],
+) -> bool:
     search_text = history_search_text(job)
     card_tokens = history_card_tokens(job)
     return all(
         term in card_tokens
-        if HISTORY_CARD_QUERY_PATTERN.fullmatch(term)
+        if is_card
         else term in search_text
-        for term in query_terms
+        for term, is_card in query_terms
     )
 
 

@@ -3743,6 +3743,76 @@ describe("App", () => {
     expect(within(reviewedStat as HTMLElement).getByText("1")).toBeInTheDocument();
   });
 
+  it("preserves loaded search pages when an archived hand changes", async () => {
+    const savedJobs = Array.from({ length: 25 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `searched-history-${index}`,
+      original_filename: `searched-history-${index}.png`,
+      archived_at: `2026-07-${String(25 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    const lastJob = savedJobs[24];
+    const reapprovedLastJob: JobRecord = {
+      ...approvedJob(),
+      id: lastJob.id,
+      original_filename: lastJob.original_filename,
+      archived_at: lastJob.archived_at,
+      updated_at: "2026-07-26T00:00:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(24),
+      }))
+      .mockResolvedValueOnce(jsonResponse(reapprovedLastJob))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: [reapprovedLastJob],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 25",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const lastHistoryItem = await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 25",
+    });
+    expect(within(lastHistoryItem).getByText("approved")).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/25 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      5,
+      "http://localhost:8000/api/history?offset=24&query=flop",
+      { credentials: "include" },
+    );
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

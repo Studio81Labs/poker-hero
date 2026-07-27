@@ -3629,7 +3629,7 @@ describe("App", () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 2,
-        jobs: [secondMatch],
+        jobs: [firstMatch, secondMatch],
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -3662,7 +3662,7 @@ describe("App", () => {
     );
     expect(fetchMock()).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:8000/api/history?offset=1&query=turn+bluff",
+      "http://localhost:8000/api/history?query=turn+bluff",
       { credentials: "include" },
     );
     expect(within(screen.getByLabelText("Session status")).getByText("1")).toBeInTheDocument();
@@ -3765,6 +3765,10 @@ describe("App", () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 25,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
         jobs: savedJobs.slice(24),
       }))
       .mockResolvedValueOnce(jsonResponse(reapprovedLastJob))
@@ -3807,7 +3811,7 @@ describe("App", () => {
       name: "Load older history",
     })).not.toBeInTheDocument();
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      5,
+      6,
       "http://localhost:8000/api/history?offset=24&query=flop",
       { credentials: "include" },
     );
@@ -3834,11 +3838,11 @@ describe("App", () => {
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
-        jobs: savedJobs.slice(24, 48),
+        jobs: savedJobs.slice(0, 24),
       }))
       .mockResolvedValueOnce(jsonResponse({
-        total: 51,
-        jobs: updatedJobs.slice(48),
+        total: 50,
+        jobs: savedJobs.slice(24, 48),
       }))
       .mockResolvedValueOnce(jsonResponse({
         total: 51,
@@ -3891,6 +3895,73 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenNthCalledWith(
       6,
       "http://localhost:8000/api/history?offset=48&query=flop",
+      { credentials: "include" },
+    );
+  });
+
+  it("rebuilds loaded search pages when membership shifts at the same total", async () => {
+    const savedJobs = Array.from({ length: 50 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `stable-search-membership-${index}`,
+      original_filename: `stable-search-membership-${index}.png`,
+      archived_at: `2026-07-25T00:${String(49 - index).padStart(2, "0")}:00Z`,
+    }));
+    const newMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "Q", suit: "clubs" },
+          { rank: "Q", suit: "hearts" },
+        ],
+      })),
+      id: "new-search-membership",
+      original_filename: "new-search-membership.png",
+      archived_at: "2026-07-26T00:00:00Z",
+    };
+    const updatedJobs = [newMatch, ...savedJobs.slice(0, 49)];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockImplementation((input) => Promise.resolve(jsonResponse({
+        total: 50,
+        jobs: String(input).includes("offset=24")
+          ? updatedJobs.slice(24, 48)
+          : updatedJobs.slice(0, 24),
+      })));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText("Q♣")).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Reopen history item 48",
+    })).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    })).toHaveTextContent("Load 2 older");
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?query=flop",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/history?offset=24&query=flop",
       { credentials: "include" },
     );
   });

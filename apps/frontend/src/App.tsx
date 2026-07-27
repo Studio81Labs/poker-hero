@@ -2502,24 +2502,14 @@ export default function App() {
     try {
       if (historySearchActive) {
         const requestId = ++historySearchRequestRef.current;
-        const page = await getHistory(visibleHistory.length, historySearchQuery);
+        const page = await getHistorySearchExtent(
+          historySearchQuery,
+          visibleHistory.length + HISTORY_CACHE_LIMIT,
+        );
         if (requestId !== historySearchRequestRef.current) {
           return;
         }
-        if (page.total !== historySearchTotal) {
-          const refreshedPage = await getHistorySearchExtent(
-            historySearchQuery,
-            Math.max(
-              visibleHistory.length + page.jobs.length,
-              HISTORY_CACHE_LIMIT,
-            ),
-          );
-          if (requestId === historySearchRequestRef.current) {
-            applyHistorySearchPage(refreshedPage);
-          }
-          return;
-        }
-        applyHistorySearchPage(page, true);
+        applyHistorySearchPage(page);
         return;
       }
       const page = await getHistory(history.length);

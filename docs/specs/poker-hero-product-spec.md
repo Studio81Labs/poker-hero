@@ -97,6 +97,8 @@ The frontend is a browser control panel for:
   and the solver's headline action, with available average EV loss.
 - Opening a repeated action-difference pattern as a focused review queue while
   retaining street and EV-loss ordering controls.
+- Opening a suggested action-difference focus that prefers the highest
+  comparable average EV loss and otherwise the largest unresolved backlog.
 - Filtering decisions to a bounded needs-review queue for action or sizing
   differences, focusing it by normalized position or the unpositioned bucket,
   street, and pre-reveal certainty, ordering it by recency or available EV
@@ -280,8 +282,10 @@ frequencies.
     loss when comparable grades exist and otherwise the lowest action
     accuracy. The Unrated certainty and Unpositioned backlogs are suggested
     only when no scored group in their category has pending work.
-15. A common unsupported action pattern may focus the review queue on that
-    exact player-action and solver-action pair.
+15. Progress may suggest a common unsupported action pattern with pending work,
+    preferring the highest comparable average EV loss and otherwise the largest
+    unresolved backlog. That exact player-action and solver-action pair may
+    focus the review queue.
 16. The user may mark a revisited difference reviewed with an optional lesson
     note, which removes it from the pending queue while preserving both in
     progress history.
@@ -488,6 +492,8 @@ Poker Hero is successful when:
   solver-supported mixed actions or sizing-only differences as mistakes.
 - A user can open pending reviews for one repeated action pattern without
   manually searching the broader queue.
+- A user can open an actionable suggested action pattern without manually
+  comparing its EV loss and pending volume with every repeated difference.
 - A user can isolate the newest action or sizing differences and reopen the next
   hand needing review.
 - A user can reorder pending reviews by EV loss so the highest-cost comparable

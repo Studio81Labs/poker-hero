@@ -2314,7 +2314,13 @@ button:disabled {
   white-space: nowrap;
 }
 
-.training-differences-heading > span {
+.training-differences-heading-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.training-differences-context {
   color: var(--muted);
   font-size: 9px;
   font-weight: 800;
@@ -3419,6 +3425,22 @@ button:disabled {
   .training-progress-summary.has-ev > div:nth-child(5) {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .training-differences-heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .training-differences-heading-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .training-differences-heading-actions .training-focus-action {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   .training-difference {

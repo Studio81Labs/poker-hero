@@ -207,6 +207,20 @@ interface RecommendationEvidence {
   candidates: RecommendationEvidenceCandidate[];
 }
 
+interface AutomationSettings {
+  enabled: boolean;
+  autoApprove: boolean;
+  autoRecommend: boolean;
+  allowWarnings: boolean;
+}
+
+const DEFAULT_AUTOMATION_SETTINGS: AutomationSettings = {
+  enabled: true,
+  autoApprove: true,
+  autoRecommend: true,
+  allowWarnings: false,
+};
+const AUTOMATION_SETTINGS_STORAGE_KEY = "poker-training-automation-v1";
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
@@ -1455,6 +1469,49 @@ function benchmarkMismatchLabel(comparisons: BenchmarkFieldComparison[]): string
   return `${mismatchCount} ${mismatchCount === 1 ? "mismatch" : "mismatches"}`;
 }
 
+function readAutomationSettings(): AutomationSettings {
+  if (typeof window === "undefined") {
+    return DEFAULT_AUTOMATION_SETTINGS;
+  }
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(AUTOMATION_SETTINGS_STORAGE_KEY) ?? "null",
+    ) as Partial<AutomationSettings> | null;
+    if (
+      parsed === null
+      || typeof parsed !== "object"
+      || typeof parsed.enabled !== "boolean"
+      || typeof parsed.autoApprove !== "boolean"
+      || typeof parsed.autoRecommend !== "boolean"
+      || typeof parsed.allowWarnings !== "boolean"
+    ) {
+      return DEFAULT_AUTOMATION_SETTINGS;
+    }
+    return {
+      enabled: parsed.enabled,
+      autoApprove: parsed.autoApprove,
+      autoRecommend: parsed.autoApprove && parsed.autoRecommend,
+      allowWarnings: parsed.allowWarnings,
+    };
+  } catch {
+    return DEFAULT_AUTOMATION_SETTINGS;
+  }
+}
+
+function writeAutomationSettings(settings: AutomationSettings): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      AUTOMATION_SETTINGS_STORAGE_KEY,
+      JSON.stringify(settings),
+    );
+  } catch {
+    // Browser storage is optional; the current session keeps the chosen settings.
+  }
+}
+
 function readHistory(): HistoryItem[] | null {
   if (typeof window === "undefined") {
     return null;
@@ -2070,7 +2127,9 @@ export default function App() {
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [screenSourceLabel, setScreenSourceLabel] = useState<string | null>(null);
   const [livePreviewVisible, setLivePreviewVisible] = useState(false);
-  const [automationEnabled, setAutomationEnabled] = useState(true);
+  const [automationSettings, setAutomationSettings] = useState(
+    readAutomationSettings,
+  );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
@@ -2104,9 +2163,6 @@ export default function App() {
   const [benchmarkReviewJobId, setBenchmarkReviewJobId] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [systemInfoLoading, setSystemInfoLoading] = useState(false);
-  const [automationApprove, setAutomationApprove] = useState(true);
-  const [automationRecommend, setAutomationRecommend] = useState(true);
-  const [automationAllowWarnings, setAutomationAllowWarnings] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory() ?? []);
   const [historyTotal, setHistoryTotal] = useState(readHistoryTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -2125,6 +2181,10 @@ export default function App() {
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
   const historySearchRequestRef = useRef(0);
+
+  useEffect(() => {
+    writeAutomationSettings(automationSettings);
+  }, [automationSettings]);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2165,6 +2225,10 @@ export default function App() {
   const queueCount = jobs.length > 0 ? jobs.length : files.length;
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
+  const automationEnabled = automationSettings.enabled;
+  const automationApprove = automationSettings.autoApprove;
+  const automationRecommend = automationSettings.autoRecommend;
+  const automationAllowWarnings = automationSettings.allowWarnings;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
   const historySearchActive = historySearchResults !== null;
   const visibleHistory = historySearchResults ?? history;
@@ -3075,10 +3139,17 @@ export default function App() {
   }
 
   function updateAutomationApprove(value: boolean) {
-    setAutomationApprove(value);
-    if (!value) {
-      setAutomationRecommend(false);
-    }
+    updateAutomationSettings((current) => ({
+      ...current,
+      autoApprove: value,
+      autoRecommend: value && current.autoRecommend,
+    }));
+  }
+
+  function updateAutomationSettings(
+    updater: (current: AutomationSettings) => AutomationSettings,
+  ) {
+    setAutomationSettings(updater);
   }
 
   function openInfoDialog() {
@@ -3763,7 +3834,10 @@ export default function App() {
             <button
               type="button"
               className={automationEnabled ? "automation-master active" : "automation-master"}
-              onClick={() => setAutomationEnabled((current) => !current)}
+              onClick={() => updateAutomationSettings((current) => ({
+                ...current,
+                enabled: !current.enabled,
+              }))}
               aria-pressed={automationEnabled}
               aria-label={`Automation ${automationEnabled ? "On" : "Off"}`}
             >
@@ -4564,14 +4638,20 @@ export default function App() {
                 description="Generate a play the moment a frame is approved"
                 checked={automationRecommend}
                 disabled={!automationApprove}
-                onToggle={() => setAutomationRecommend((current) => !current)}
+                onToggle={() => updateAutomationSettings((current) => ({
+                  ...current,
+                  autoRecommend: !current.autoRecommend,
+                }))}
               />
               <AutomationToggle
                 title="Allow parser warnings"
                 description="Continue automation even when fields are flagged"
                 checked={automationAllowWarnings}
                 disabled={!automationApprove}
-                onToggle={() => setAutomationAllowWarnings((current) => !current)}
+                onToggle={() => updateAutomationSettings((current) => ({
+                  ...current,
+                  allowWarnings: !current.allowWarnings,
+                }))}
               />
             </div>
 

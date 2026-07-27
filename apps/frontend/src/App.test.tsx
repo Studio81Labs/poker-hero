@@ -264,6 +264,58 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("restores automation settings across reloads", async () => {
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Automation On" }));
+    await user.click(screen.getByRole("button", { name: "Configure automation" }));
+    await user.click(screen.getByRole("switch", {
+      name: /Auto-request recommendation/,
+    }));
+    await user.click(screen.getByRole("switch", {
+      name: /Allow parser warnings/,
+    }));
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "Automation Off" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await user.click(screen.getByRole("button", { name: "Configure automation" }));
+    expect(screen.getByRole("switch", {
+      name: /Auto-approve parsed state/,
+    })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("switch", {
+      name: /Auto-request recommendation/,
+    })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", {
+      name: /Allow parser warnings/,
+    })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("uses safe automation defaults when saved settings are malformed", () => {
+    window.localStorage.setItem(
+      "poker-training-automation-v1",
+      JSON.stringify({
+        enabled: "yes",
+        autoApprove: true,
+        autoRecommend: true,
+        allowWarnings: false,
+      }),
+    );
+
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "Automation On" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("uploads a screenshot, populates parser state, and enables approval", async () => {
     fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201));
     render(<App />);

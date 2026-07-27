@@ -254,6 +254,8 @@ only and leaves other queue items free to continue.
 ## Persistence
 
 The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`.
+The frontend retains automation preferences in versioned browser-local storage;
+invalid or unavailable storage falls back to the established application defaults.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

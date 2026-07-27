@@ -134,7 +134,8 @@ The frontend is a browser control panel for:
   action EVs or frequencies, solver quality, preflop chart policy context,
   postflop tree and range assumptions, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
-- Moving completed items into an autosaved history.
+- Moving completed items into an autosaved history and loading older archived
+  hands without expanding the browser cache.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
 - Exporting the explicitly selected screenshots and canonical labels as a portable parser dataset.
 
@@ -307,7 +308,7 @@ frequencies.
 21. The UI retains completed items in processing until the user clears them into
     backend-persisted history. A browser-session restore and explicit refresh
     recover the latest archived hands without relying on one browser's local
-    storage.
+    storage, while bounded older pages remain available on demand.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

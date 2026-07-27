@@ -3431,6 +3431,121 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(1);
   });
 
+  it("loads older persisted history without expanding the local cache", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJobs = Array.from({ length: 31 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `paged-history-${index}`,
+      original_filename: `paged-history-${index}.png`,
+      archived_at: `2026-07-${String(31 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 31,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 31,
+        jobs: savedJobs.slice(24),
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    const loadOlder = await screen.findByRole("button", {
+      name: "Load older history",
+    });
+    expect(loadOlder).toHaveTextContent("Load 7 older");
+    await user.click(loadOlder);
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 31",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=24",
+      { credentials: "include" },
+    );
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))).toHaveLength(24);
+  });
+
+  it("restarts history pagination when the archived total changes between pages", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJobs = Array.from({ length: 31 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `stable-history-${index}`,
+      original_filename: `stable-history-${index}.png`,
+      archived_at: `2026-07-${String(31 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    const newJob: JobRecord = {
+      ...recommendedJob(),
+      id: "new-history-job",
+      original_filename: "new-history-job.png",
+      archived_at: "2026-08-01T00:00:00Z",
+    };
+    const updatedJobs = [newJob, ...savedJobs];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 31,
+        jobs: savedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 32,
+        jobs: updatedJobs.slice(24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 32,
+        jobs: updatedJobs.slice(0, 24),
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 32,
+        jobs: updatedJobs.slice(24),
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", {
+      name: "Load older history",
+    }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=24",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+    expect(screen.getByRole("button", {
+      name: "Load older history",
+    })).toHaveTextContent("Load 8 older");
+
+    await user.click(screen.getByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 32",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:8000/api/history?offset=24",
+      { credentials: "include" },
+    );
+  });
+
   it("reloads persisted history when local caching failed but session storage is available", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

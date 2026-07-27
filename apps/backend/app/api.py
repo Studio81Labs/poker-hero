@@ -165,8 +165,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/history", response_model=JobHistory)
     def get_history(
         limit: int = Query(default=24, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
     ) -> JobHistory:
-        return build_job_history(store, limit)
+        return build_job_history(store, limit, offset)
 
     @app.put("/api/history", response_model=JobHistory)
     def archive_jobs(
@@ -674,13 +675,20 @@ def is_history_ready(job: JobRecord) -> bool:
     )
 
 
-def build_job_history(store: FileJobStore, limit: int) -> JobHistory:
+def build_job_history(
+    store: FileJobStore,
+    limit: int,
+    offset: int = 0,
+) -> JobHistory:
     archived_jobs = sorted(
         (job for job in store.list() if job.archived_at is not None),
         key=lambda job: (job.archived_at, job.created_at),
         reverse=True,
     )
-    return JobHistory(total=len(archived_jobs), jobs=archived_jobs[:limit])
+    return JobHistory(
+        total=len(archived_jobs),
+        jobs=archived_jobs[offset : offset + limit],
+    )
 
 
 def is_supported_image(image_bytes: bytes) -> bool:

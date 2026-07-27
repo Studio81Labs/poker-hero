@@ -1569,6 +1569,17 @@ function historyItemsFromPage(page: JobHistory): HistoryItem[] {
   }));
 }
 
+function mergeHistoryItems(
+  current: HistoryItem[],
+  incoming: HistoryItem[],
+): HistoryItem[] {
+  const currentIds = new Set(current.map((item) => item.id));
+  return [
+    ...current,
+    ...incoming.filter((item) => !currentIds.has(item.id)),
+  ];
+}
+
 function cardToCode(card: Card): string {
   return `${card.rank}${CODE_BY_SUIT[card.suit]}`;
 }
@@ -2313,14 +2324,36 @@ export default function App() {
     });
   }
 
-  function applyHistoryPage(page: JobHistory) {
-    const items = historyItemsFromPage(page);
+  function applyHistoryPage(page: JobHistory, append = false) {
+    const pageItems = historyItemsFromPage(page);
+    const items = append ? mergeHistoryItems(history, pageItems) : pageItems;
     setHistory(items);
     setHistoryTotal(page.total);
     const historyCached = writeHistory(items);
     const totalCached = writeHistoryTotal(page.total);
     if (historyCached && totalCached) {
       markHistorySessionSynced();
+    }
+  }
+
+  async function loadOlderHistory() {
+    if (historyLoading || history.length >= historyTotal) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const page = await getHistory(history.length);
+      if (page.total !== historyTotal) {
+        applyHistoryPage(await getHistory());
+        return;
+      }
+      applyHistoryPage(page, true);
+    } catch (historyError) {
+      setError(messageFromError(historyError, "Could not load older history"));
+    } finally {
+      setHistoryLoading(false);
     }
   }
 
@@ -3714,6 +3747,22 @@ export default function App() {
                     </button>
                   );
                 })}
+                {history.length < historyTotal ? (
+                  <button
+                    type="button"
+                    className="history-load-older"
+                    onClick={() => void loadOlderHistory()}
+                    disabled={historyLoading || busy}
+                    aria-label="Load older history"
+                  >
+                    <ChevronDown size={12} aria-hidden="true" />
+                    <span>
+                      {historyLoading
+                        ? "Loading..."
+                        : `Load ${historyTotal - history.length} older`}
+                    </span>
+                  </button>
+                ) : null}
               </div>
             ) : (
               <div className="history-empty">

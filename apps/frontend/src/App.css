@@ -2183,6 +2183,12 @@ button:disabled {
   gap: 8px;
 }
 
+.training-position-heading-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
 .training-solver-trend {
   align-items: center;
   border-bottom: 1px solid var(--line-soft);

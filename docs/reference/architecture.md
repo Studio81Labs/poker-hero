@@ -217,6 +217,10 @@ rated certainty summaries with pending work, using high-to-low certainty as the
 final deterministic tie-breaker. The Unrated backlog is suggested only when no
 rated certainty group has pending reviews, because it has no calibration
 metrics to compare.
+Normalized position summaries use the same ranking, with canonical position
+order as the final tie-breaker. The Unpositioned backlog is suggested only when
+no normalized position has pending reviews, because it has no position-level
+accuracy or EV metrics to compare.
 Completing a review persists a timestamp and optional normalized lesson note on
 the job, then removes it from the pending queue without changing historical
 accuracy. The progress projections include the note for later study.

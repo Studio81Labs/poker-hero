@@ -163,7 +163,9 @@ preferring the highest graded average EV loss and otherwise the lowest action
 accuracy. The Unrated backlog is suggested only when no rated certainty group
 has pending work. Legacy hands appear in a separate Unrated row with no
 fabricated accuracy or EV metrics and the same review shortcut. Progress also
-compares equal recent and previous windows,
+suggests a normalized position backlog using the same EV-loss and action-match
+ranking. Unpositioned hands are suggested only when no scored position has
+pending work. Progress also compares equal recent and previous windows,
 capped at ten hands each, so action, exact-line, and available EV-loss movement
 is visible without letting a larger period skew the trend. Common unsupported
 action choices are grouped by the player's action and the solver's headline

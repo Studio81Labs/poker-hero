@@ -89,6 +89,8 @@ The frontend is a browser control panel for:
   legacy unrated bucket without changing global progress or review queues.
 - Opening unresolved differences for a rated certainty level directly from its
   calibration row.
+- Seeing unresolved counts for normalized positions and hands without a
+  recorded position, then opening either group as a focused review queue.
 - Seeing legacy unrated totals and unresolved reviews without assigning
   calibration accuracy or EV metrics to those hands.
 - Reviewing repeated unsupported action choices grouped by the player's action
@@ -96,9 +98,10 @@ The frontend is a browser control panel for:
 - Opening a repeated action-difference pattern as a focused review queue while
   retaining street and EV-loss ordering controls.
 - Filtering decisions to a bounded needs-review queue for action or sizing
-  differences, focusing it by street and pre-reveal certainty, ordering it by
-  recency or available EV loss, and reopening the persisted hand. Legacy hands
-  without a certainty rating remain available through an unrated filter.
+  differences, focusing it by normalized position or the unpositioned bucket,
+  street, and pre-reveal certainty, ordering it by recency or available EV
+  loss, and reopening the persisted hand. Legacy hands without a certainty
+  rating remain available through an unrated filter.
 - Continuing through hands in the active filtered review queue after each
   completed review, then returning to the queue when no matching hands remain.
 - Opening a suggested focus street directly from progress when that street
@@ -266,9 +269,10 @@ frequencies.
     not alter progress metrics or mistake queues.
 13. Unsupported actions and supported actions with a sizing difference appear
     in a separate bounded queue ordered by recency by default. The user may
-    focus the queue on one street and certainty rating and prioritize the
-    highest available EV losses; filters compose before ordering and limiting,
-    and ungraded hands remain available after graded ones.
+    focus the queue on one normalized position or the unpositioned bucket, one
+    street, and one certainty rating and prioritize the highest available EV
+    losses; filters compose before ordering and limiting, and ungraded hands
+    remain available after graded ones.
 14. Progress may suggest a street and a rated certainty group that still have
     pending reviews, preferring the highest average EV loss when comparable
     grades exist and otherwise the lowest action accuracy. The Unrated
@@ -279,8 +283,8 @@ frequencies.
     note, which removes it from the pending queue while preserving both in
     progress history.
 17. When that hand was opened from the review queue, the UI reloads the same
-    action-pair, street, certainty, and order filters and opens the next
-    matching hand. An exhausted queue returns to its empty review view.
+    action-pair, position, street, certainty, and order filters and opens the
+    next matching hand. An exhausted queue returns to its empty review view.
 18. A completed review may be reopened, returning the unchanged comparison and
     its editable lesson note to the pending queue.
 19. Saved lessons may be filtered by street and note text, then ordered by
@@ -462,6 +466,9 @@ Poker Hero is successful when:
 - A user can open recent hands for one normalized position or the unpositioned
   bucket and clear that filter without changing global progress or the pending
   review queue.
+- A user can see unresolved counts for each normalized position and the
+  unpositioned bucket, then open either as a pending-review queue while keeping
+  review street, certainty, action-pair, and ordering controls available.
 - A user can compare recent action, exact-line, and available EV-loss results
   against an equally sized preceding period.
 - A user can see which engines handled reviewed decisions, their street

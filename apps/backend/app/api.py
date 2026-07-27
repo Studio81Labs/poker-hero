@@ -359,6 +359,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         review_order: TrainingReviewOrder = "recent",
         review_street: Street | None = None,
         review_certainty: TrainingReviewCertainty | None = None,
+        review_position: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=120,
+            pattern=r".*\S.*",
+        ),
+        review_unpositioned: bool = False,
         review_decision_action: RecommendationAction | None = None,
         review_recommended_action: RecommendationAction | None = None,
         lesson_order: TrainingReviewOrder = "recent",
@@ -389,6 +396,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail=(
                     "review_decision_action and review_recommended_action "
                     "must be provided together"
+                ),
+            )
+        if review_position is not None and review_unpositioned:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "review_position and review_unpositioned "
+                    "are mutually exclusive"
                 ),
             )
         solver_filter_count = sum((
@@ -457,6 +472,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             review_order=review_order,
             review_street=review_street,
             review_certainty=review_certainty,
+            review_position=review_position,
+            review_unpositioned=review_unpositioned,
             review_action_difference=review_action_difference,
             lesson_street=lesson_street,
             lesson_query=lesson_query,

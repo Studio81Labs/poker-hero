@@ -1411,6 +1411,140 @@ describe("App", () => {
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
+  it("opens pending reviews from position summaries", async () => {
+    const buttonHand = {
+      job_id: "button-review",
+      original_filename: "button-review.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 1,
+    };
+    const unpositionedHand = {
+      ...buttonHand,
+      job_id: "unpositioned-review",
+      original_filename: "unpositioned-review.png",
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const progress = {
+      reviewed_hands: 3,
+      action_matches: 1,
+      exact_matches: 1,
+      different_actions: 2,
+      needs_review_hands: 2,
+      action_accuracy: 1 / 3,
+      exact_accuracy: 1 / 3,
+      ev_compared_hands: 2,
+      average_ev_loss_bb: 1,
+      street_summaries: [],
+      position_summaries: [{
+        position: "BTN",
+        reviewed_hands: 2,
+        action_matches: 1,
+        exact_matches: 1,
+        needs_review_hands: 1,
+        action_accuracy: 0.5,
+        exact_accuracy: 0.5,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 1,
+      }],
+      unpositioned_hands: 1,
+      unpositioned_needs_review_hands: 1,
+      recent_matching_hands: 3,
+      recent_hands: [buttonHand, unpositionedHand],
+      review_queue_hands: 2,
+      review_queue: [buttonHand, unpositionedHand],
+    };
+    const buttonProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [buttonHand],
+    };
+    const unpositionedProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [unpositionedHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(buttonProgress))
+      .mockResolvedValueOnce(jsonResponse(buttonProgress))
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(unpositionedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Review BTN position differences (1)",
+    }));
+
+    const buttonFilter = await within(dialog).findByLabelText(
+      "Active review position filter",
+    );
+    expect(within(buttonFilter).getByText("BTN")).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "1 pending review hand across all streets at BTN.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open button-review.png training review",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_position=BTN",
+    );
+
+    await user.selectOptions(
+      within(dialog).getByLabelText("Review street"),
+      "flop",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand on flop at BTN.",
+    )).toBeInTheDocument();
+    expect(fetchMock().mock.calls[2][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_street=flop&review_position=BTN",
+    );
+
+    const filteredButtonPosition = within(dialog).getByLabelText(
+      "Active review position filter",
+    );
+    await user.click(within(filteredButtonPosition).getByRole("button", {
+      name: "Clear review position filter",
+    }));
+    await waitFor(() => expect(
+      within(dialog).queryByLabelText("Active review position filter"),
+    ).not.toBeInTheDocument());
+    expect(fetchMock().mock.calls[3][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_street=flop",
+    );
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Review unpositioned differences (1)",
+    }));
+
+    const unpositionedFilter = await within(dialog).findByLabelText(
+      "Active review position filter",
+    );
+    expect(within(unpositionedFilter).getByText("Unpositioned")).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "1 pending review hand across all streets without a recorded position.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open unpositioned-review.png training review",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls[4][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_unpositioned=true",
+    );
+  });
+
   it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);

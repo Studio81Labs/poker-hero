@@ -75,6 +75,7 @@ export interface TrainingPositionSummary {
   reviewed_hands: number;
   action_matches: number;
   exact_matches: number;
+  needs_review_hands?: number;
   action_accuracy: number;
   exact_accuracy: number;
   ev_compared_hands: number;
@@ -242,6 +243,7 @@ export interface TrainingProgress {
   street_summaries: TrainingStreetSummary[];
   position_summaries?: TrainingPositionSummary[];
   unpositioned_hands?: number;
+  unpositioned_needs_review_hands?: number;
   recent_matching_hands?: number;
   recent_hands: TrainingRecentHand[];
   lesson_count?: number;

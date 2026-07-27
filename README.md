@@ -130,7 +130,10 @@ six-max and IP/OOP labels so the same metrics can be compared by position;
 hands without a position remain counted separately. A normalized position or
 the unpositioned bucket can apply the same bounded Recent decisions filter.
 Position groups with at least two hands also expose those equal-window
-comparisons. Solver responses also
+comparisons. Position rows and the unpositioned bucket also expose unresolved
+counts and can open a focused needs-review queue. That review position composes
+with street, certainty, action-pattern, and ordering controls while remaining
+separate from the Recent decisions position filter. Solver responses also
 contribute engine coverage by street, including unattributed legacy hands and
 recorded fallback frequency and reasons. Each attributed engine route and
 fallback reason also reports the player's action and exact-line accuracy plus
@@ -166,11 +169,12 @@ is visible without letting a larger period skew the trend. Common unsupported
 action choices are grouped by the player's action and the solver's headline
 action, with available average EV loss, to make repeated differences easier to
 study. A pattern with pending work can open a review queue scoped to that exact
-action pair; street and EV-loss ordering remain available within the focused
-queue. Completing a hand opened from that queue reloads the same filters and
-opens the next matching hand, then returns to the empty queue when the session
-is complete. A review can include a short lesson note. Notes stay attached to
-the hand in progress history and return to the editor when a review is reopened.
+action pair; position, street, certainty, and EV-loss ordering remain available
+within the focused queue. Completing a hand opened from that queue reloads the
+same filters and opens the next matching hand, then returns to the empty queue
+when the session is complete. A review can include a short lesson note. Notes
+stay attached to the hand in progress history and return to the editor when a
+review is reopened.
 Completed notes also appear in a dedicated Lessons view, newest first by
 default and kept independently from the shorter recent-decisions list. A
 completed lesson note can be edited or removed in place without reopening the

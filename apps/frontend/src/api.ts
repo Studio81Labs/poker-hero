@@ -137,6 +137,7 @@ export async function getTrainingProgress(
   positionFilter: TrainingPositionFilter | null = null,
   streetFilter: TrainingStreetFilter | null = null,
   certaintyFilter: TrainingCertaintyFilter | null = null,
+  reviewPositionFilter: TrainingPositionFilter | null = null,
 ): Promise<TrainingProgress> {
   const search = new URLSearchParams();
   if (reviewOrder !== "recent") {
@@ -151,6 +152,11 @@ export async function getTrainingProgress(
   if (reviewDifference) {
     search.set("review_decision_action", reviewDifference.decision_action);
     search.set("review_recommended_action", reviewDifference.recommended_action);
+  }
+  if (reviewPositionFilter?.kind === "position") {
+    search.set("review_position", reviewPositionFilter.position);
+  } else if (reviewPositionFilter?.kind === "unpositioned") {
+    search.set("review_unpositioned", "true");
   }
   if (lessonOrder !== "recent") {
     search.set("lesson_order", lessonOrder);

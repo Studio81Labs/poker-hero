@@ -127,9 +127,14 @@ explicit unpositioned count and do not receive a synthetic label. A normalized
 position selector, or the explicit unpositioned selector, filters only the
 bounded Recent decisions projection. Position and solver selectors are
 mutually exclusive, while aggregates and the pending-review projection remain
-global. Each normalized position with at least two hands also derives equal
-recent and previous performance windows capped at ten hands per side. Its EV
-loss delta requires at least one gradable hand in both windows.
+global. Each normalized position and the unpositioned bucket separately expose
+their global unresolved count. A review-position selector, or the explicit
+review-unpositioned selector, filters the pending-review projection and
+composes with action-pair, street, certainty, and ordering parameters without
+changing aggregate or Recent decisions results. Each normalized position with
+at least two hands also derives equal recent and previous performance windows
+capped at ten hands per side. Its EV loss delta requires at least one gradable
+hand in both windows.
 Non-empty `fallback_reason` values count as fallback and are grouped for
 diagnostics; `routing_reason` records an intentional engine choice, such as the
 preflop chart route, and does not count as fallback. Older recommendations
@@ -175,9 +180,11 @@ Patterns retain their full hand count while averaging EV over only the hands
 with comparable candidate grades, and expose a separate pending-review count.
 The review endpoint accepts player-action and headline-action filters only as a
 complete pair. That pair selects unsupported action outcomes before optional
-street filtering, ordering, and limiting, so solver-supported mixed actions are
-not pulled into a focused pattern queue. The headline recommendation is always
-supported. Alternate provider candidates are supported
+street, certainty, and normalized-position filtering, ordering, and limiting,
+so solver-supported mixed actions are not pulled into a focused pattern queue.
+Normalized position and explicit unpositioned review selectors are mutually
+exclusive. The headline recommendation is always supported. Alternate provider
+candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is
 recorded as a supported mix; an alternate action with different sizing remains
@@ -224,8 +231,8 @@ the review marker explicitly reopens the same comparison and returns it to the
 pending queue while retaining the note for editing.
 The frontend treats a hand opened from that queue as a review session. After
 persisting its review marker, it reloads the progress endpoint with the current
-action-pair, street, certainty, and order parameters and opens the first
-remaining hand.
+action-pair, position, street, certainty, and order parameters and opens the
+first remaining hand.
 An exhausted session returns to the filtered empty queue; a continuation error
 does not roll back or misreport the review that already completed.
 

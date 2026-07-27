@@ -108,6 +108,8 @@ def summarize_training(
     review_order: TrainingReviewOrder = "recent",
     review_street: Street | None = None,
     review_certainty: TrainingReviewCertainty | None = None,
+    review_position: str | None = None,
+    review_unpositioned: bool = False,
     review_action_difference: TrainingActionDifferenceFilter | None = None,
     lesson_street: Street | None = None,
     lesson_query: str | None = None,
@@ -176,7 +178,11 @@ def summarize_training(
             )
         )
 
-    position_summaries, unpositioned_hands = _position_summaries(
+    (
+        position_summaries,
+        unpositioned_hands,
+        unpositioned_needs_review_hands,
+    ) = _position_summaries(
         reviewed,
         outcomes,
         ev_losses,
@@ -328,6 +334,11 @@ def summarize_training(
     for job in pending_review_jobs:
         if job.approved_state is not None and job.approved_state.street is not None:
             review_street_counts[job.approved_state.street] += 1
+    normalized_review_position = (
+        _training_position_label(review_position)
+        if review_position is not None
+        else None
+    )
     filtered_review_jobs = [
         job
         for job in pending_review_jobs
@@ -350,6 +361,14 @@ def summarize_training(
                     or job.training_decision.certainty == review_certainty
                 )
             )
+        )
+        and (
+            review_position is None
+            or _training_position(job) == normalized_review_position
+        )
+        and (
+            not review_unpositioned
+            or _training_position(job) is None
         )
         and (
             review_action_difference is None
@@ -398,6 +417,7 @@ def summarize_training(
         street_summaries=street_summaries,
         position_summaries=position_summaries,
         unpositioned_hands=unpositioned_hands,
+        unpositioned_needs_review_hands=unpositioned_needs_review_hands,
         recent_matching_hands=len(filtered_recent_jobs),
         recent_hands=recent_hands,
         lesson_count=len(lesson_jobs),
@@ -413,13 +433,19 @@ def _position_summaries(
     reviewed: list[JobRecord],
     outcomes: dict[str, TrainingOutcome],
     ev_losses: dict[str, float | None],
-) -> tuple[list[TrainingPositionSummary], int]:
+) -> tuple[list[TrainingPositionSummary], int, int]:
     grouped: dict[str, list[JobRecord]] = defaultdict(list)
     unpositioned_hands = 0
+    unpositioned_needs_review_hands = 0
     for job in reviewed:
         position = _training_position(job)
         if position is None:
             unpositioned_hands += 1
+            if (
+                outcomes[job.id] not in {"match", "mixed"}
+                and job.training_reviewed_at is None
+            ):
+                unpositioned_needs_review_hands += 1
         else:
             grouped[position].append(job)
 
@@ -431,6 +457,11 @@ def _position_summaries(
         )
         exact_matches = sum(
             outcomes[job.id] in {"match", "mixed"}
+            for job in position_jobs
+        )
+        needs_review_hands = sum(
+            outcomes[job.id] not in {"match", "mixed"}
+            and job.training_reviewed_at is None
             for job in position_jobs
         )
         position_ev_losses = [
@@ -445,6 +476,7 @@ def _position_summaries(
                 reviewed_hands=reviewed_hands,
                 action_matches=action_matches,
                 exact_matches=exact_matches,
+                needs_review_hands=needs_review_hands,
                 action_accuracy=action_matches / reviewed_hands,
                 exact_accuracy=exact_matches / reviewed_hands,
                 ev_compared_hands=len(position_ev_losses),
@@ -469,7 +501,7 @@ def _position_summaries(
             summary.position.casefold(),
         )
     )
-    return summaries, unpositioned_hands
+    return summaries, unpositioned_hands, unpositioned_needs_review_hands
 
 
 def _training_position(job: JobRecord) -> str | None:

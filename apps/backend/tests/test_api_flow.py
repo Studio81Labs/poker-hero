@@ -245,6 +245,35 @@ def test_history_searches_archived_poker_context_before_paging(
     ).status_code == 422
 
 
+def test_history_card_queries_do_not_match_recommendation_prose(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path, recommendation_provider="rule_based")
+    ace_spades_id = upload_job(client, filename="ace-spades.png").json()["id"]
+    other_id = upload_job(client, filename="other-hand.png").json()["id"]
+    ace_spades_state = {
+        **APPROVED_STATE,
+        "hero_cards": [
+            {"rank": "A", "suit": "spades"},
+            {"rank": "K", "suit": "diamonds"},
+        ],
+    }
+    approve_job(client, ace_spades_id, ace_spades_state)
+    approve_job(client, other_id)
+    client.post(f"/api/jobs/{ace_spades_id}/recommend")
+    client.post(f"/api/jobs/{other_id}/recommend")
+    client.put(
+        "/api/history",
+        json={"job_ids": [ace_spades_id, other_id]},
+    )
+
+    response = client.get("/api/history", params={"query": "A♠"})
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert [job["id"] for job in response.json()["jobs"]] == [ace_spades_id]
+
+
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

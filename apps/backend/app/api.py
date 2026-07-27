@@ -1,6 +1,7 @@
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from io import BytesIO
+import re
 from threading import Lock
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
@@ -72,6 +73,7 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♥": "h",
     "♠": "s",
 })
+HISTORY_CARD_QUERY_PATTERN = re.compile(r"^(?:[2-9tjqka]|10)[cdhs]$")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -712,7 +714,26 @@ def normalize_history_query(value: str | None) -> str:
 
 def history_matches_query(job: JobRecord, query_terms: list[str]) -> bool:
     search_text = history_search_text(job)
-    return all(term in search_text for term in query_terms)
+    card_tokens = history_card_tokens(job)
+    return all(
+        term in card_tokens
+        if HISTORY_CARD_QUERY_PATTERN.fullmatch(term)
+        else term in search_text
+        for term in query_terms
+    )
+
+
+def history_card_tokens(job: JobRecord) -> set[str]:
+    state = job.approved_state or (job.parser_result.state if job.parser_result else None)
+    if state is None:
+        return set()
+    tokens = {card.code.casefold() for card in [*state.hero_cards, *state.board_cards]}
+    tokens.update(
+        f"10{token[1:]}"
+        for token in tuple(tokens)
+        if token.startswith("t")
+    )
+    return tokens
 
 
 def history_search_text(job: JobRecord) -> str:

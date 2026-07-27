@@ -3678,6 +3678,71 @@ describe("App", () => {
     expect(within(historyPanel).queryByText("Q♣")).not.toBeInTheDocument();
   });
 
+  it("revalidates the active history search after an archived hand changes", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      archived_at: archivedAt,
+    };
+    const reapprovedJob: JobRecord = {
+      ...approvedJob(),
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: savedJob.id,
+        job: savedJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [savedJob],
+      }))
+      .mockResolvedValueOnce(jsonResponse(reapprovedJob))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "raise");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await within(historyPanel).findByText(
+      "No saved hands match this search.",
+    )).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/0 matches/)).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/history?query=raise",
+      { credentials: "include" },
+    );
+    const reviewedStat = within(screen.getByLabelText("Session status"))
+      .getByText("reviewed")
+      .closest(".toolbar-stat");
+    expect(reviewedStat).not.toBeNull();
+    expect(within(reviewedStat as HTMLElement).getByText("1")).toBeInTheDocument();
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

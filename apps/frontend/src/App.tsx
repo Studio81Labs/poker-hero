@@ -2077,6 +2077,7 @@ export default function App() {
   const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
+  const historySearchRequestRef = useRef(0);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2346,11 +2347,11 @@ export default function App() {
         ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
         : [nextJob, ...current];
     });
-    updateHistoryJob(nextJob);
+    updateHistoryJob(nextJob, false);
     activateJob(nextJob);
   }
 
-  function updateHistoryJob(updatedJob: JobRecord) {
+  function updateHistoryJob(updatedJob: JobRecord, revalidateSearch = true) {
     setHistory((current) => {
       if (!current.some((item) => item.id === updatedJob.id)) {
         return current;
@@ -2363,6 +2364,14 @@ export default function App() {
       current?.map((item) => (item.id === updatedJob.id ? { ...item, job: updatedJob } : item))
       ?? null,
     );
+    if (
+      revalidateSearch
+      && updatedJob.archived_at
+      && historySearchActive
+      && historySearchQuery
+    ) {
+      void revalidateHistorySearch(historySearchQuery);
+    }
   }
 
   function applyHistoryPage(page: JobHistory, append = false) {
@@ -2393,6 +2402,7 @@ export default function App() {
   }
 
   function clearHistorySearch() {
+    historySearchRequestRef.current += 1;
     setHistorySearchOpen(false);
     setHistorySearchInput("");
     setHistorySearchQuery("");
@@ -2408,16 +2418,36 @@ export default function App() {
       return;
     }
 
+    const requestId = ++historySearchRequestRef.current;
     setHistoryLoading(true);
     setError(null);
     try {
       const page = await getHistory(0, query);
+      if (requestId !== historySearchRequestRef.current) {
+        return;
+      }
       setHistorySearchQuery(query);
       applyHistorySearchPage(page);
     } catch (historyError) {
-      setError(messageFromError(historyError, "Could not search saved history"));
+      if (requestId === historySearchRequestRef.current) {
+        setError(messageFromError(historyError, "Could not search saved history"));
+      }
     } finally {
       setHistoryLoading(false);
+    }
+  }
+
+  async function revalidateHistorySearch(query: string) {
+    const requestId = ++historySearchRequestRef.current;
+    try {
+      const page = await getHistory(0, query);
+      if (requestId === historySearchRequestRef.current) {
+        applyHistorySearchPage(page);
+      }
+    } catch (historyError) {
+      if (requestId === historySearchRequestRef.current) {
+        setError(messageFromError(historyError, "Could not refresh history search"));
+      }
     }
   }
 
@@ -2430,9 +2460,7 @@ export default function App() {
     setHistoryLoading(true);
     setError(null);
     try {
-      applyHistorySearchPage(await getHistory(0, historySearchQuery));
-    } catch (historyError) {
-      setError(messageFromError(historyError, "Could not refresh history search"));
+      await revalidateHistorySearch(historySearchQuery);
     } finally {
       setHistoryLoading(false);
     }
@@ -2447,9 +2475,16 @@ export default function App() {
     setError(null);
     try {
       if (historySearchActive) {
+        const requestId = ++historySearchRequestRef.current;
         const page = await getHistory(visibleHistory.length, historySearchQuery);
+        if (requestId !== historySearchRequestRef.current) {
+          return;
+        }
         if (page.total !== historySearchTotal) {
-          applyHistorySearchPage(await getHistory(0, historySearchQuery));
+          const refreshedPage = await getHistory(0, historySearchQuery);
+          if (requestId === historySearchRequestRef.current) {
+            applyHistorySearchPage(refreshedPage);
+          }
           return;
         }
         applyHistorySearchPage(page, true);
@@ -3585,6 +3620,9 @@ export default function App() {
     setError(null);
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
+      if (historySearchActive && historySearchQuery) {
+        void revalidateHistorySearch(historySearchQuery);
+      }
       const remainingJobs = jobs.filter((candidate) => !isHistoryReady(candidate));
       setJobs(remainingJobs);
       if (remainingJobs.length > 0) {

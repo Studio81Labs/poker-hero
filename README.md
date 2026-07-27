@@ -191,6 +191,10 @@ graded lessons in EV-loss order. The active study set can be downloaded as
 Markdown in the same order without the display limit.
 Changing the approved state, training answer, or recommendation clears the note
 because the comparison it described is no longer current.
+Clearing completed processing items persists an archive timestamp on each
+backend job. The history rail restores the latest archived hands once per
+browser session, keeps a small local cache for immediate rendering and fallback,
+and can be refreshed explicitly after another device archives work.
 
 ### Offline Parser Benchmarks
 
@@ -264,6 +268,8 @@ for the runtime topology.
 - `POST /api/jobs`
 - `GET /api/jobs/{job_id}`
 - `GET /api/jobs/{job_id}/image`
+- `GET /api/history`
+- `PUT /api/history`
 - `POST /api/jobs/{job_id}/approve`
 - `PUT /api/jobs/{job_id}/decision`
 - `POST /api/jobs/{job_id}/recommend`

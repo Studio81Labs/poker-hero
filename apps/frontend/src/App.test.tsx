@@ -206,6 +206,10 @@ async function uploadScreenshot(name = "table.png") {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.localStorage.setItem("poker-training-history-v1", "[]");
+  window.localStorage.setItem("poker-training-history-total-v1", "0");
+  window.sessionStorage.clear();
+  window.sessionStorage.setItem("poker-training-history-synced", "true");
   vi.stubGlobal("fetch", vi.fn());
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
@@ -481,7 +485,15 @@ describe("App", () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "screen-capture.png" }), 201))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "screen-capture.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "screen-capture.png" }));
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "screen-capture.png" }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [{
+          ...recommendedJob(),
+          original_filename: "screen-capture.png",
+          archived_at: "2026-07-10T00:01:00Z",
+        }],
+      }));
     render(<App />);
     const user = userEvent.setup();
 
@@ -503,10 +515,15 @@ describe("App", () => {
     expect(within(historyItem).getByText("raise")).toBeInTheDocument();
     expect(within(historyItem).getByText("A♥")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open screenshot 1: screen-capture.png" })).not.toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/jobs");
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/history");
+    expect(fetchMock().mock.calls[3][1]?.method).toBe("PUT");
+    expect(JSON.parse(String(fetchMock().mock.calls[3][1]?.body))).toEqual({
+      job_ids: ["job-123"],
+    });
     expect(JSON.parse(String(fetchMock().mock.calls[1][1]?.body)).user_approved).toBe(true);
   });
 
@@ -514,7 +531,15 @@ describe("App", () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "uploaded.png" }), 201))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "uploaded.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "uploaded.png" }));
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "uploaded.png" }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [{
+          ...recommendedJob(),
+          original_filename: "uploaded.png",
+          archived_at: "2026-07-10T00:01:00Z",
+        }],
+      }));
     render(<App />);
     const user = userEvent.setup();
 
@@ -530,10 +555,78 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Reopen history item 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open screenshot 1: uploaded.png" })).not.toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/jobs");
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/history");
+  });
+
+  it("keeps completed jobs in processing when history persistence fails", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "retry.png" }), 201))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "retry.png" }))
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "retry.png" }))
+      .mockResolvedValueOnce(jsonResponse({ detail: "History storage is unavailable" }, 500));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["retry"], "retry.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+
+    expect(await screen.findByText("History storage is unavailable")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: retry.png",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Reopen history item 1",
+    })).not.toBeInTheDocument();
+  });
+
+  it("clears persisted jobs when the bounded browser history cache is unavailable", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "storage-disabled.png" }), 201))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "storage-disabled.png" }))
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "storage-disabled.png" }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [{
+          ...recommendedJob(),
+          original_filename: "storage-disabled.png",
+          archived_at: "2026-07-10T00:01:00Z",
+        }],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["storage-disabled"], "storage-disabled.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is disabled", "QuotaExceededError");
+    });
+
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: storage-disabled.png",
+    })).not.toBeInTheDocument();
+    expect(screen.queryByText("Storage is disabled")).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
   });
 
   it("stops automation before approval when parser warnings are not allowed", async () => {
@@ -3261,6 +3354,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: savedJob.id, job: savedJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3277,6 +3371,204 @@ describe("App", () => {
     expect(screen.queryByLabelText("Decision evidence")).not.toBeInTheDocument();
   });
 
+  it("restores persisted history when the browser has no local cache", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJob: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "Q", suit: "clubs" },
+          { rank: "Q", suit: "hearts" },
+        ],
+      })),
+      id: "server-history-job",
+      original_filename: "server-history.png",
+      archived_at: "2026-07-10T00:02:00Z",
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 3,
+      jobs: [savedJob],
+    }));
+
+    render(<App />);
+
+    const historyItem = await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    });
+    expect(within(historyItem).getByText("Q♣")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Session status")).getByText("3")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+    expect(JSON.parse(
+      String(window.localStorage.getItem("poker-training-history-v1")),
+    )).toHaveLength(1);
+  });
+
+  it("preserves the complete persisted history count across same-tab reloads", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJobs = Array.from({ length: 24 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `server-history-${index}`,
+      original_filename: `server-history-${index}.png`,
+      archived_at: `2026-07-10T00:${String(index).padStart(2, "0")}:00Z`,
+    }));
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 31,
+      jobs: savedJobs,
+    }));
+
+    const firstRender = render(<App />);
+    expect(await within(screen.getByLabelText("Session status")).findByText("31")).toBeInTheDocument();
+    expect(window.localStorage.getItem("poker-training-history-total-v1")).toBe("31");
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(within(screen.getByLabelText("Session status")).getByText("31")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads persisted history when local caching failed but session storage is available", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "quota-history-job",
+      original_filename: "quota-history.png",
+      archived_at: "2026-07-10T00:05:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ total: 1, jobs: [savedJob] }))
+      .mockResolvedValueOnce(jsonResponse({ total: 1, jobs: [savedJob] }));
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function setItem(
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (this === window.localStorage) {
+        throw new DOMException("Local storage quota exceeded", "QuotaExceededError");
+      }
+      originalSetItem.call(this, key, value);
+    });
+
+    const firstRender = render(<App />);
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["missing", null],
+    ["unreadable", "{not-json"],
+  ])("reloads persisted history when the local cache is %s", async (_label, cachedValue) => {
+    if (cachedValue === null) {
+      window.localStorage.removeItem("poker-training-history-v1");
+    } else {
+      window.localStorage.setItem("poker-training-history-v1", cachedValue);
+    }
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    window.sessionStorage.setItem("poker-training-history-synced", "true");
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "recovered-history-job",
+      original_filename: "recovered-history.png",
+      archived_at: "2026-07-10T00:06:00Z",
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [savedJob],
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+  });
+
+  it("refreshes saved history from the backend", async () => {
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "refreshed-history-job",
+      original_filename: "refreshed.png",
+      archived_at: "2026-07-10T00:03:00Z",
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [savedJob],
+    }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Refresh saved history" }));
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+  });
+
+  it("migrates legacy local history into persisted history", async () => {
+    const jobId = "a".repeat(32);
+    const legacyJob: JobRecord = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "legacy.png",
+      archived_at: null,
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: jobId,
+        job: legacyJob,
+        savedAt: "2026-07-10T00:00:00Z",
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [{
+        ...legacyJob,
+        archived_at: "2026-07-10T00:04:00Z",
+      }],
+    }));
+
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ job_ids: [jobId] }),
+      }),
+    ));
+    expect(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBe("true");
+  });
+
   it("shows normalized decision evidence for solver recommendations", async () => {
     const evidenceJob: JobRecord = {
       ...recommendedJob(),
@@ -3289,6 +3581,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: evidenceJob.id, job: evidenceJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3352,6 +3645,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3407,6 +3701,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: malformedJob.id, job: malformedJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3454,6 +3749,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3511,6 +3807,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3816,6 +4113,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: activeJob.id, job: activeJob, savedAt: "2026-07-20T12:00:00Z" }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
       .mockReturnValueOnce(pendingReviewJob.promise);

@@ -24,12 +24,14 @@ from app.dataset_import import (
     parse_parser_dataset_archive,
 )
 from app.models import (
+    ArchiveJobsRequest,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
     BenchmarkReportSummary,
     BenchmarkSelectionRequest,
     CanonicalState,
+    JobHistory,
     JobRecord,
     RecommendationAction,
     RecommendationRequest,
@@ -159,6 +161,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
         return load_job_or_404(store, job_id)
+
+    @app.get("/api/history", response_model=JobHistory)
+    def get_history(
+        limit: int = Query(default=24, ge=1, le=100),
+    ) -> JobHistory:
+        return build_job_history(store, limit)
+
+    @app.put("/api/history", response_model=JobHistory)
+    def archive_jobs(
+        request: ArchiveJobsRequest,
+        limit: int = Query(default=24, ge=1, le=100),
+    ) -> JobHistory:
+        lock_indexes = sorted({job_lock_index(job_id) for job_id in request.job_ids})
+        with ExitStack() as job_lock_stack:
+            for lock_index in lock_indexes:
+                job_lock_stack.enter_context(job_locks[lock_index])
+
+            jobs = [load_job_or_404(store, job_id) for job_id in request.job_ids]
+            if any(not is_history_ready(job) for job in jobs):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Only approved or recommended jobs can be moved to history",
+                )
+
+            archived_at = datetime.now(timezone.utc)
+            for job in jobs:
+                if job.archived_at is None:
+                    job.archived_at = archived_at
+                    store.save(job)
+
+        return build_job_history(store, limit)
 
     @app.get("/api/jobs/{job_id}/image")
     def get_job_image(job_id: str) -> FileResponse:
@@ -631,6 +664,23 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
         return store.get(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Job not found") from exc
+
+
+def is_history_ready(job: JobRecord) -> bool:
+    return (
+        job.status in {"approved", "recommended"}
+        or job.approved_state is not None
+        or job.recommendation is not None
+    )
+
+
+def build_job_history(store: FileJobStore, limit: int) -> JobHistory:
+    archived_jobs = sorted(
+        (job for job in store.list() if job.archived_at is not None),
+        key=lambda job: (job.archived_at, job.created_at),
+        reverse=True,
+    )
+    return JobHistory(total=len(archived_jobs), jobs=archived_jobs[:limit])
 
 
 def is_supported_image(image_bytes: bytes) -> bool:

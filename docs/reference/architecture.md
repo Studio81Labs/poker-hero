@@ -103,7 +103,8 @@ selection API prevents the app from producing a dataset that import rejects.
     filterable by street/text and ordered by recency or available EV loss,
     without returning them to the pending queue. The same complete selection
     can be exported as Markdown.
-11. Completed queue items remain in processing until explicitly cleared into history.
+11. Completed queue items remain in processing until explicitly cleared into
+    backend-persisted history.
 12. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
@@ -252,10 +253,16 @@ only and leaves other queue items free to continue.
 
 ## Persistence
 
-The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`. Local development
-uses `apps/backend/data`; the container contract uses `/app/data`. Coolify must
-mount persistent storage at `/app/data`. The container entrypoint repairs volume
-ownership before dropping to the non-root `poker` user.
+The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`.
+Archiving sets `archived_at` on the existing job rather than copying its data;
+the history projection orders those jobs by archive time and returns a bounded
+latest list plus the complete count. The frontend restores that projection once
+per browser session and retains a bounded local cache only for immediate display
+and compatibility with history saved before the backend archive contract.
+Local development uses `apps/backend/data`; the container contract uses
+`/app/data`. Coolify must mount persistent storage at `/app/data`. The container
+entrypoint repairs volume ownership before dropping to the non-root `poker`
+user.
 
 ## Deployment Topology
 

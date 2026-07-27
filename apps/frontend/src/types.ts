@@ -268,9 +268,15 @@ export interface JobRecord {
   training_reviewed_at: string | null;
   training_review_note: string | null;
   benchmark_included: boolean;
+  archived_at?: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobHistory {
+  total: number;
+  jobs: JobRecord[];
 }
 
 export interface SystemInfo {

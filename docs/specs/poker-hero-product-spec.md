@@ -304,7 +304,10 @@ frequencies.
     returned. Ungraded lessons remain available after graded lessons.
 20. The active lesson filters and order can produce a complete Markdown
     download without applying the on-screen list limit.
-21. The UI retains completed items in processing until the user clears them into history.
+21. The UI retains completed items in processing until the user clears them into
+    backend-persisted history. A browser-session restore and explicit refresh
+    recover the latest archived hands without relying on one browser's local
+    storage.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
@@ -543,6 +546,8 @@ Poker Hero is successful when:
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
+- Cleared history survives browser storage resets and can be refreshed from the
+  persisted backend.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.

@@ -121,6 +121,73 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert result["recommendation"]["sizing"] is None
 
 
+def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    parsed_id = upload_job(client, filename="parsed.png").json()["id"]
+    first_id = upload_job(client, filename="first.png").json()["id"]
+    second_id = upload_job(client, filename="second.png").json()["id"]
+    approve_job(client, first_id)
+    approve_job(client, second_id)
+    client.post(f"/api/jobs/{second_id}/recommend")
+
+    empty_history = client.get("/api/history")
+    rejected = client.put("/api/history", json={"job_ids": [parsed_id]})
+    archived = client.put(
+        "/api/history",
+        json={"job_ids": [first_id, second_id]},
+    )
+
+    assert empty_history.status_code == 200
+    assert empty_history.json() == {"total": 0, "jobs": []}
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == (
+        "Only approved or recommended jobs can be moved to history"
+    )
+    assert FileJobStore(tmp_path).get(parsed_id).archived_at is None
+    assert archived.status_code == 200
+    history = archived.json()
+    assert history["total"] == 2
+    assert [job["id"] for job in history["jobs"]] == [second_id, first_id]
+    assert all(job["archived_at"] for job in history["jobs"])
+
+    persisted_at = FileJobStore(tmp_path).get(first_id).archived_at
+    repeated = client.put("/api/history?limit=1", json={"job_ids": [first_id]})
+
+    assert repeated.status_code == 200
+    assert repeated.json()["total"] == 2
+    assert len(repeated.json()["jobs"]) == 1
+    assert FileJobStore(tmp_path).get(first_id).archived_at == persisted_at
+
+
+def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        "/api/history",
+        json={"job_ids": [job_id, "f" * 32]},
+    )
+
+    assert response.status_code == 404
+    assert client.get("/api/history").json() == {"total": 0, "jobs": []}
+    assert FileJobStore(tmp_path).get(job_id).archived_at is None
+
+
+def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        "/api/history",
+        json={"job_ids": [job_id, job_id]},
+    )
+
+    assert response.status_code == 422
+    assert client.get("/api/history").json() == {"total": 0, "jobs": []}
+
+
 def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

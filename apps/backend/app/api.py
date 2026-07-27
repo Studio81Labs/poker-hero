@@ -73,11 +73,9 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♥": "h",
     "♠": "s",
 })
-HISTORY_SYMBOL_CARD_QUERY_PATTERN = re.compile(
-    r"^(?:[2-9tjqka]|10)[♣♦♥♠]$",
-    re.IGNORECASE,
+HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
+    r"(?:(?i:(?:[2-9tjqka]|10)[♣♦♥♠])|(?:[2-9TJQKA]|10)[cdhsCDHS])",
 )
-HISTORY_CODE_CARD_QUERY_PATTERN = re.compile(r"^(?:[2-9TJQKA]|10)[cdhsCDHS]$")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -716,19 +714,32 @@ def normalize_history_query(value: str | None) -> str:
     return (value or "").translate(HISTORY_QUERY_TRANSLATION).casefold().strip()
 
 
+def compact_history_card_terms(value: str) -> list[str] | None:
+    matches = list(HISTORY_CARD_QUERY_TOKEN_PATTERN.finditer(value))
+    if (
+        not matches
+        or matches[0].start() != 0
+        or matches[-1].end() != len(value)
+        or any(
+            previous.end() != current.start()
+            for previous, current in zip(matches, matches[1:])
+        )
+    ):
+        return None
+    return [normalize_history_query(match.group()) for match in matches]
+
+
 def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
     terms: list[tuple[str, bool]] = []
     for raw_term in (value or "").split():
+        card_terms = compact_history_card_terms(raw_term)
+        if card_terms is not None:
+            terms.extend((card_term, True) for card_term in card_terms)
+            continue
         normalized_term = normalize_history_query(raw_term)
         if not normalized_term:
             continue
-        terms.append((
-            normalized_term,
-            bool(
-                HISTORY_SYMBOL_CARD_QUERY_PATTERN.fullmatch(raw_term)
-                or HISTORY_CODE_CARD_QUERY_PATTERN.fullmatch(raw_term)
-            ),
-        ))
+        terms.append((normalized_term, False))
     return terms
 
 

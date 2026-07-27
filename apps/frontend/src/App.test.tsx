@@ -3961,6 +3961,53 @@ describe("App", () => {
     );
   });
 
+  it("clears a paged search when its changed snapshot has no matches", async () => {
+    const savedJobs = Array.from({ length: 25 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `removed-search-history-${index}`,
+      original_filename: `removed-search-history-${index}.png`,
+      archived_at: `2026-07-${String(25 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-removal",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "after-removal",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText(
+      "No saved hands match this search.",
+    )).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/0 matches/)).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=24&query=flop",
+      { credentials: "include" },
+    );
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

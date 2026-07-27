@@ -375,13 +375,22 @@ def test_history_card_queries_do_not_match_recommendation_prose(
             {"rank": "K", "suit": "diamonds"},
         ],
     }
+    other_state = {
+        **APPROVED_STATE,
+        "hero_cards": [
+            {"rank": "Q", "suit": "clubs"},
+            {"rank": "K", "suit": "diamonds"},
+        ],
+    }
     approve_job(client, ace_spades_id, ace_spades_state)
-    approve_job(client, other_id)
+    approve_job(client, other_id, other_state)
     client.post(f"/api/jobs/{ace_spades_id}/recommend")
     client.post(f"/api/jobs/{other_id}/recommend")
     store = FileJobStore(tmp_path)
     other_job = store.get(other_id)
-    other_job.training_review_note = "Play as bluff when blockers support it."
+    other_job.training_review_note = (
+        "Play as bluff when blockers support it. Ah, I missed the draw."
+    )
     store.save(other_job)
     client.put(
         "/api/history",
@@ -390,6 +399,8 @@ def test_history_card_queries_do_not_match_recommendation_prose(
 
     for card_query in (
         "A♠",
+        "a♠",
+        "As",
         "AsKd",
         "askd",
         "A♠K♦",
@@ -411,6 +422,23 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     assert prose_response.status_code == 200
     assert prose_response.json()["total"] == 1
     assert [job["id"] for job in prose_response.json()["jobs"]] == [other_id]
+
+    lowercase_prose_response = client.get(
+        "/api/history",
+        params={"query": "ah"},
+    )
+    canonical_card_response = client.get(
+        "/api/history",
+        params={"query": "Ah"},
+    )
+
+    assert lowercase_prose_response.status_code == 200
+    assert lowercase_prose_response.json()["total"] == 1
+    assert [job["id"] for job in lowercase_prose_response.json()["jobs"]] == [
+        other_id
+    ]
+    assert canonical_card_response.status_code == 200
+    assert canonical_card_response.json()["total"] == 0
 
 
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:

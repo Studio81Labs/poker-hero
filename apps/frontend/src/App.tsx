@@ -2540,6 +2540,10 @@ export default function App() {
           applyHistorySearchPage(page, true);
           return;
         }
+        if (page.total === 0) {
+          applyHistorySearchPage(page);
+          return;
+        }
         const rebuiltPage = await getHistorySearchExtent(
           historySearchQuery,
           Math.min(

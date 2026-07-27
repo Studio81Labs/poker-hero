@@ -77,6 +77,7 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
 HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
     r"(?i:(?:[2-9tjqka]|10)[cdhs♣♦♥♠])",
 )
+HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
 
@@ -770,8 +771,12 @@ def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
     )
     terms: list[tuple[str, bool]] = []
     for raw_term, card_terms in zip(raw_terms, card_term_groups):
-        lowercase_as_is_prose = raw_term == "as" and card_term_count == 1
-        if card_terms is not None and not lowercase_as_is_prose:
+        lowercase_singleton_is_prose = (
+            card_term_count == 1
+            and HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN.fullmatch(raw_term)
+            is not None
+        )
+        if card_terms is not None and not lowercase_singleton_is_prose:
             terms.extend((card_term, True) for card_term in card_terms)
             continue
         normalized_term = normalize_history_query(raw_term)

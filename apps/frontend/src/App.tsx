@@ -209,6 +209,7 @@ interface RecommendationEvidence {
 
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
+const HISTORY_CACHE_LIMIT = 24;
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
@@ -1462,9 +1463,9 @@ function readHistory(): HistoryItem[] | null {
       return null;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as HistoryItem[]) : [];
+    return Array.isArray(parsed) ? (parsed as HistoryItem[]) : null;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -1473,7 +1474,10 @@ function writeHistory(items: HistoryItem[]): boolean {
     return false;
   }
   try {
-    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 24)));
+    window.localStorage.setItem(
+      HISTORY_STORAGE_KEY,
+      JSON.stringify(items.slice(0, HISTORY_CACHE_LIMIT)),
+    );
     return true;
   } catch {
     // Persisted history remains authoritative when the bounded browser cache is unavailable.
@@ -1482,19 +1486,32 @@ function writeHistory(items: HistoryItem[]): boolean {
   }
 }
 
-function readHistoryTotal(): number {
-  const cachedHistory = readHistory();
+function readCachedHistoryTotal(cachedHistory: HistoryItem[] | null): number | null {
   if (cachedHistory === null || typeof window === "undefined") {
-    return 0;
+    return null;
   }
   try {
-    const parsed = Number(window.localStorage.getItem(HISTORY_TOTAL_STORAGE_KEY));
-    return Number.isSafeInteger(parsed) && parsed >= cachedHistory.length
-      ? parsed
-      : cachedHistory.length;
+    const raw = window.localStorage.getItem(HISTORY_TOTAL_STORAGE_KEY);
+    if (raw === null) {
+      return null;
+    }
+    const parsed = Number(raw);
+    if (
+      !Number.isSafeInteger(parsed)
+      || parsed < 0
+      || cachedHistory.length !== Math.min(parsed, HISTORY_CACHE_LIMIT)
+    ) {
+      return null;
+    }
+    return parsed;
   } catch {
-    return cachedHistory.length;
+    return null;
   }
+}
+
+function readHistoryTotal(): number {
+  const cachedHistory = readHistory();
+  return readCachedHistoryTotal(cachedHistory) ?? cachedHistory?.length ?? 0;
 }
 
 function writeHistoryTotal(total: number): boolean {
@@ -2201,11 +2218,14 @@ export default function App() {
   }, [error, errorSequence]);
 
   useEffect(() => {
-    if (historySessionSynced()) {
+    const cachedHistory = readHistory();
+    if (
+      historySessionSynced()
+      && readCachedHistoryTotal(cachedHistory) !== null
+    ) {
       return;
     }
 
-    const cachedHistory = readHistory();
     const legacyJobIds = (cachedHistory ?? [])
       .filter((item) =>
         item.job.archived_at == null

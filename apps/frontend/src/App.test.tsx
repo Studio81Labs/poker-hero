@@ -207,6 +207,7 @@ async function uploadScreenshot(name = "table.png") {
 beforeEach(() => {
   window.localStorage.clear();
   window.localStorage.setItem("poker-training-history-v1", "[]");
+  window.localStorage.setItem("poker-training-history-total-v1", "0");
   window.sessionStorage.clear();
   window.sessionStorage.setItem("poker-training-history-synced", "true");
   vi.stubGlobal("fetch", vi.fn());
@@ -3353,6 +3354,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: savedJob.id, job: savedJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3468,6 +3470,39 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(2);
   });
 
+  it.each([
+    ["missing", null],
+    ["unreadable", "{not-json"],
+  ])("reloads persisted history when the local cache is %s", async (_label, cachedValue) => {
+    if (cachedValue === null) {
+      window.localStorage.removeItem("poker-training-history-v1");
+    } else {
+      window.localStorage.setItem("poker-training-history-v1", cachedValue);
+    }
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    window.sessionStorage.setItem("poker-training-history-synced", "true");
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "recovered-history-job",
+      original_filename: "recovered-history.png",
+      archived_at: "2026-07-10T00:06:00Z",
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [savedJob],
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+  });
+
   it("refreshes saved history from the backend", async () => {
     const savedJob: JobRecord = {
       ...recommendedJob(),
@@ -3509,6 +3544,7 @@ describe("App", () => {
         savedAt: "2026-07-10T00:00:00Z",
       }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     window.sessionStorage.removeItem("poker-training-history-synced");
     fetchMock().mockResolvedValueOnce(jsonResponse({
       total: 1,
@@ -3545,6 +3581,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: evidenceJob.id, job: evidenceJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3608,6 +3645,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3663,6 +3701,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: malformedJob.id, job: malformedJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3710,6 +3749,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -3767,6 +3807,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     render(<App />);
     const user = userEvent.setup();
 
@@ -4072,6 +4113,7 @@ describe("App", () => {
       "poker-training-history-v1",
       JSON.stringify([{ id: activeJob.id, job: activeJob, savedAt: "2026-07-20T12:00:00Z" }]),
     );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
       .mockReturnValueOnce(pendingReviewJob.promise);

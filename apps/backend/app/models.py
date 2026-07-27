@@ -421,6 +421,12 @@ class JobHistory(BaseModel):
     snapshot_version: str
 
 
+class JobQueue(BaseModel):
+    total: int = Field(ge=0)
+    jobs: list[JobRecord] = Field(default_factory=list)
+    snapshot_version: str
+
+
 class BenchmarkSelectionRequest(BaseModel):
     included: bool
 

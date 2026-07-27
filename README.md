@@ -199,6 +199,10 @@ after another device archives work. Saving changes to a reopened archived hand
 updates its history card and bounded browser cache immediately. Server-backed
 search can find older hands by filename, cards, table context, recommendation,
 or lesson text without replacing that newest-page cache.
+Unarchived upload and capture jobs also survive reloads: the browser renders a
+bounded local queue cache immediately, then reconciles the complete oldest-first
+processing projection from the backend. Dataset-only benchmark imports stay out
+of that operational queue.
 
 ### Offline Parser Benchmarks
 

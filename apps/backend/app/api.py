@@ -34,6 +34,7 @@ from app.models import (
     BenchmarkSelectionRequest,
     CanonicalState,
     JobHistory,
+    JobQueue,
     JobRecord,
     RecommendationAction,
     RecommendationRequest,
@@ -183,6 +184,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state.user_approved = True
             job.status = "approved"
         return save_job(job)
+
+    @app.get("/api/jobs", response_model=JobQueue)
+    def get_processing_jobs(
+        limit: int = Query(default=100, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> JobQueue:
+        return build_job_queue(store, limit, offset)
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
@@ -704,6 +712,31 @@ def is_history_ready(job: JobRecord) -> bool:
     )
 
 
+def build_job_queue(
+    store: FileJobStore,
+    limit: int,
+    offset: int = 0,
+) -> JobQueue:
+    processing_jobs = sorted(
+        (
+            job
+            for job in store.list()
+            if job.archived_at is None
+            and not (
+                job.benchmark_included
+                and job.parser_result is None
+                and job.recommendation is None
+            )
+        ),
+        key=lambda job: (job.created_at, job.id),
+    )
+    return JobQueue(
+        total=len(processing_jobs),
+        jobs=processing_jobs[offset : offset + limit],
+        snapshot_version=job_snapshot_version(processing_jobs),
+    )
+
+
 def build_job_history(
     store: FileJobStore,
     limit: int,
@@ -727,11 +760,11 @@ def build_job_history(
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],
-        snapshot_version=history_snapshot_version(archived_jobs),
+        snapshot_version=job_snapshot_version(archived_jobs),
     )
 
 
-def history_snapshot_version(jobs: list[JobRecord]) -> str:
+def job_snapshot_version(jobs: list[JobRecord]) -> str:
     digest = sha256()
     for job in jobs:
         digest.update(job.id.encode())

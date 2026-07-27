@@ -206,9 +206,12 @@ async function uploadScreenshot(name = "table.png") {
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.localStorage.setItem("poker-training-processing-v1", "[]");
+  window.localStorage.setItem("poker-training-processing-total-v1", "0");
   window.localStorage.setItem("poker-training-history-v1", "[]");
   window.localStorage.setItem("poker-training-history-total-v1", "0");
   window.sessionStorage.clear();
+  window.sessionStorage.setItem("poker-training-processing-synced", "true");
   window.sessionStorage.setItem("poker-training-history-synced", "true");
   vi.stubGlobal("fetch", vi.fn());
   Object.defineProperty(navigator, "mediaDevices", {
@@ -225,6 +228,123 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("restores the processing queue immediately from the browser cache", async () => {
+    const cachedJob = jobRecord({
+      id: "a".repeat(32),
+      original_filename: "cached-table.png",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: cached-table.png",
+    })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Ah Kd")).toBeInTheDocument();
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("reconciles malformed processing cache entries from the backend", async () => {
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([{ id: "c".repeat(32) }]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 0,
+      jobs: [],
+      snapshot_version: "empty-processing-snapshot",
+    }));
+
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await waitFor(() => expect(window.localStorage.getItem(
+      "poker-training-processing-total-v1",
+    )).toBe("0"));
+    expect(screen.queryByRole("button", {
+      name: /Open screenshot/,
+    })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(
+      "poker-training-processing-v1",
+    )).toBe("[]");
+  });
+
+  it("restores persisted processing jobs when the browser cache is unavailable", async () => {
+    const persistedJob = jobRecord({
+      id: "b".repeat(32),
+      original_filename: "persisted-table.png",
+    });
+    window.localStorage.removeItem("poker-training-processing-v1");
+    window.localStorage.removeItem("poker-training-processing-total-v1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "processing-snapshot",
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: persisted-table.png",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toHaveLength(1);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
+  it("restores every processing page while keeping the browser cache bounded", async () => {
+    const persistedJobs = Array.from({ length: 101 }, (_, index) => jobRecord({
+      id: index.toString(16).padStart(32, "0"),
+      original_filename: `persisted-${index + 1}.png`,
+    }));
+    window.localStorage.removeItem("poker-training-processing-v1");
+    window.localStorage.removeItem("poker-training-processing-total-v1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: persistedJobs.length,
+        jobs: persistedJobs.slice(0, 100),
+        snapshot_version: "processing-snapshot",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: persistedJobs.length,
+        jobs: persistedJobs.slice(100),
+        snapshot_version: "processing-snapshot",
+      }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 101: persisted-101.png",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/jobs",
+      "http://localhost:8000/api/jobs?offset=100",
+    ]);
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toHaveLength(100);
+    expect(window.localStorage.getItem(
+      "poker-training-processing-total-v1",
+    )).toBe("101");
+  });
+
   it("renders live capture first and exposes upload mode", async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({

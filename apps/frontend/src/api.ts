@@ -4,6 +4,7 @@ import type {
   BenchmarkReport,
   CanonicalState,
   JobHistory,
+  JobQueue,
   JobRecord,
   RecommendationAction,
   SystemInfo,
@@ -58,6 +59,14 @@ export async function getJob(jobId: string): Promise<JobRecord> {
     credentials: "include",
   });
   return readJson<JobRecord>(response);
+}
+
+export async function getProcessingJobs(offset = 0): Promise<JobQueue> {
+  const query = offset > 0 ? `?offset=${offset}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/jobs${query}`, {
+    credentials: "include",
+  });
+  return readJson<JobQueue>(response);
 }
 
 export async function getHistory(

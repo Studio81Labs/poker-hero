@@ -308,9 +308,12 @@ frequencies.
 20. The active lesson filters and order can produce a complete Markdown
     download without applying the on-screen list limit.
 21. The UI retains completed items in processing until the user clears them into
-    backend-persisted history. A browser-session restore and explicit refresh
-    recover the latest archived hands without relying on one browser's local
-    storage, while bounded older pages remain available on demand. Saved
+    backend-persisted history. Unarchived upload and capture jobs are restored
+    in stable queue order after a reload from a bounded browser cache reconciled
+    with the complete paged backend projection. Benchmark-only dataset imports
+    do not enter the processing queue. A browser-session restore and explicit
+    refresh recover the latest archived hands without relying on one browser's
+    local storage, while bounded older pages remain available on demand. Saved
     changes to a reopened archived hand update its visible history entry
     immediately. Archive-wide search uses its own paged result set and match
     count without changing the global reviewed count or newest-page cache.
@@ -552,6 +555,8 @@ Poker Hero is successful when:
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
+- Unarchived processing work survives a browser reload without mixing imported
+  benchmark-only cases into the queue.
 - Cleared history survives browser storage resets and can be refreshed from the
   persisted backend.
 - A user can search the complete persisted archive and page matching hands

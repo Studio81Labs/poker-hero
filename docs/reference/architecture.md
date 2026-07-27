@@ -104,7 +104,8 @@ selection API prevents the app from producing a dataset that import rejects.
     without returning them to the pending queue. The same complete selection
     can be exported as Markdown.
 11. Completed queue items remain in processing until explicitly cleared into
-    backend-persisted history.
+    backend-persisted history. Unarchived upload and capture jobs restore in
+    stable queue order after reload.
 12. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
@@ -256,6 +257,14 @@ only and leaves other queue items free to continue.
 The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`.
 The frontend retains automation preferences in versioned browser-local storage;
 invalid or unavailable storage falls back to the established application defaults.
+Unarchived upload and capture jobs are exposed through a stable oldest-first,
+offset-paged processing projection with a snapshot hash. The frontend caches at
+most 100 of those records for immediate reload display, retains the complete
+persisted count, and reconciles all backend pages once per browser session or
+after queue membership changes. Snapshot changes restart the bounded page walk,
+while a newer in-memory mutation wins by `updated_at`. Imported benchmark-only
+jobs have approved labels but no parser result or recommendation, so they remain
+in the benchmark corpus without appearing as processing work.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

@@ -280,6 +280,12 @@ export interface JobHistory {
   snapshot_version?: string;
 }
 
+export interface JobQueue {
+  total: number;
+  jobs: JobRecord[];
+  snapshot_version?: string;
+}
+
 export interface SystemInfo {
   status: string;
   parser_provider: string;

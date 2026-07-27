@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { archiveJobs, getHistory } from "./api";
+import { archiveJobs, getHistory, getProcessingJobs } from "./api";
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -64,6 +64,24 @@ describe("getHistory", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8000/api/history?offset=24&query=turn+bluff",
+      { credentials: "include" },
+    );
+  });
+});
+
+describe("getProcessingJobs", () => {
+  it("requests the next processing page from the current loaded offset", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      total: 125,
+      jobs: [],
+      snapshot_version: "queue-snapshot",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProcessingJobs(100);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs?offset=100",
       { credentials: "include" },
     );
   });

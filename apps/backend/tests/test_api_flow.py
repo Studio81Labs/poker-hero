@@ -121,6 +121,48 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert result["recommendation"]["sizing"] is None
 
 
+def test_processing_queue_pages_unarchived_jobs_in_stable_order(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_ids = [
+        upload_job(client, filename=f"queue-{index}.png").json()["id"]
+        for index in range(4)
+    ]
+    approve_job(client, job_ids[1])
+    client.put("/api/history", json={"job_ids": [job_ids[1]]})
+    benchmark_only_id = upload_job(
+        client,
+        filename="benchmark-only.png",
+    ).json()["id"]
+    store = FileJobStore(tmp_path)
+    benchmark_only = store.get(benchmark_only_id)
+    benchmark_only.parser_result = None
+    benchmark_only.approved_state = APPROVED_STATE
+    benchmark_only.benchmark_included = True
+    benchmark_only.status = "approved"
+    store.save(benchmark_only)
+
+    first_page = client.get("/api/jobs?limit=2")
+    second_page = client.get("/api/jobs?limit=2&offset=2")
+    changed_job = store.get(job_ids[2])
+    changed_job.error = "Needs another look"
+    store.save(changed_job)
+    changed_page = client.get("/api/jobs?limit=2")
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 3
+    assert [job["id"] for job in first_page.json()["jobs"]] == [
+        job_ids[0],
+        job_ids[2],
+    ]
+    assert [job["id"] for job in second_page.json()["jobs"]] == [job_ids[3]]
+    assert first_page.json()["snapshot_version"] == second_page.json()["snapshot_version"]
+    assert changed_page.json()["snapshot_version"] != first_page.json()["snapshot_version"]
+    assert client.get("/api/jobs?offset=-1").status_code == 422
+
+
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     parsed_id = upload_job(client, filename="parsed.png").json()["id"]

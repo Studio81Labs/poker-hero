@@ -13,6 +13,7 @@ import {
   getBenchmarkReport,
   getHistory,
   getJob,
+  getProcessingJobs,
   getSystemInfo,
   getTrainingProgress,
   imageUrl,
@@ -36,6 +37,7 @@ import type {
   DetectedState,
   FacingAction,
   JobHistory,
+  JobQueue,
   JobRecord,
   Rank,
   RecommendationAction,
@@ -80,6 +82,7 @@ const MIN_SUPPORTED_FREQUENCY = 0.05;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
+const PROCESSING_QUEUE_SESSION_SYNC_KEY = "poker-training-processing-synced";
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -221,6 +224,10 @@ const DEFAULT_AUTOMATION_SETTINGS: AutomationSettings = {
   allowWarnings: false,
 };
 const AUTOMATION_SETTINGS_STORAGE_KEY = "poker-training-automation-v1";
+const PROCESSING_QUEUE_STORAGE_KEY = "poker-training-processing-v1";
+const PROCESSING_QUEUE_TOTAL_STORAGE_KEY = "poker-training-processing-total-v1";
+const PROCESSING_QUEUE_CACHE_LIMIT = 100;
+const PROCESSING_QUEUE_SNAPSHOT_RETRY_LIMIT = 3;
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
@@ -1512,6 +1519,209 @@ function writeAutomationSettings(settings: AutomationSettings): void {
   }
 }
 
+function isCachedDetectedState(value: unknown): value is DetectedState {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const state = value as Partial<DetectedState>;
+  return Array.isArray(state.hero_cards)
+    && Array.isArray(state.board_cards);
+}
+
+function isCachedParserResult(value: unknown): boolean {
+  if (value === null) {
+    return true;
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  const parserResult = value as Record<string, unknown>;
+  return isCachedDetectedState(parserResult.state)
+    && parserResult.confidences !== null
+    && typeof parserResult.confidences === "object"
+    && Array.isArray(parserResult.warnings)
+    && parserResult.raw !== null
+    && typeof parserResult.raw === "object";
+}
+
+function isCachedJobRecord(value: unknown): value is JobRecord {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<JobRecord>;
+  return typeof candidate.id === "string"
+    && PERSISTED_JOB_ID_PATTERN.test(candidate.id)
+    && (
+      candidate.status === "created"
+      || candidate.status === "parsed"
+      || candidate.status === "approved"
+      || candidate.status === "recommended"
+      || candidate.status === "error"
+    )
+    && typeof candidate.original_filename === "string"
+    && typeof candidate.image_filename === "string"
+    && typeof candidate.parser_provider === "string"
+    && typeof candidate.recommendation_provider === "string"
+    && isCachedParserResult(candidate.parser_result)
+    && (
+      candidate.approved_state === null
+      || isCachedDetectedState(candidate.approved_state)
+    )
+    && typeof candidate.created_at === "string"
+    && typeof candidate.updated_at === "string"
+    && candidate.archived_at == null;
+}
+
+function readProcessingQueue(): JobRecord[] | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(PROCESSING_QUEUE_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed.filter(isCachedJobRecord);
+  } catch {
+    return null;
+  }
+}
+
+function processingJobsForCache(jobs: JobRecord[]): JobRecord[] {
+  return jobs.filter((job) =>
+    PERSISTED_JOB_ID_PATTERN.test(job.id)
+    && job.archived_at == null,
+  );
+}
+
+function writeProcessingQueue(jobs: JobRecord[]): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const processingJobs = processingJobsForCache(jobs);
+  try {
+    window.localStorage.setItem(
+      PROCESSING_QUEUE_STORAGE_KEY,
+      JSON.stringify(processingJobs.slice(0, PROCESSING_QUEUE_CACHE_LIMIT)),
+    );
+    window.localStorage.setItem(
+      PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
+      String(processingJobs.length),
+    );
+    return true;
+  } catch {
+    markProcessingQueueSessionUnsynced();
+    return false;
+  }
+}
+
+function readCachedProcessingQueueTotal(
+  cachedJobs: JobRecord[] | null,
+): number | null {
+  if (cachedJobs === null || typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(
+      PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
+    );
+    if (raw === null) {
+      return null;
+    }
+    const parsed = Number(raw);
+    if (
+      !Number.isSafeInteger(parsed)
+      || parsed < 0
+      || cachedJobs.length !== Math.min(parsed, PROCESSING_QUEUE_CACHE_LIMIT)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function markProcessingQueueSessionSynced(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(PROCESSING_QUEUE_SESSION_SYNC_KEY, "true");
+  } catch {
+    // Persisted jobs remain available when browser session storage is unavailable.
+  }
+}
+
+function markProcessingQueueSessionUnsynced(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.removeItem(PROCESSING_QUEUE_SESSION_SYNC_KEY);
+  } catch {
+    // Blocked session storage already forces the app to reconcile on reload.
+  }
+}
+
+function processingQueueSessionSynced(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.sessionStorage.getItem(
+      PROCESSING_QUEUE_SESSION_SYNC_KEY,
+    ) === "true";
+  } catch {
+    return false;
+  }
+}
+
+async function getProcessingQueueExtent(): Promise<JobQueue> {
+  for (
+    let attempt = 0;
+    attempt < PROCESSING_QUEUE_SNAPSHOT_RETRY_LIMIT;
+    attempt += 1
+  ) {
+    const jobs: JobRecord[] = [];
+    let snapshotVersion: string | null = null;
+    let snapshotChanged = false;
+    let total = 0;
+
+    do {
+      const page = await getProcessingJobs(jobs.length);
+      if (
+        snapshotVersion !== null
+        && page.snapshot_version !== undefined
+        && page.snapshot_version !== snapshotVersion
+      ) {
+        snapshotChanged = true;
+        break;
+      }
+      snapshotVersion ??= page.snapshot_version ?? null;
+      total = page.total;
+      jobs.push(...page.jobs);
+      if (page.jobs.length === 0) {
+        break;
+      }
+    } while (jobs.length < total);
+
+    if (!snapshotChanged && jobs.length >= total) {
+      return {
+        total,
+        jobs: jobs.slice(0, total),
+        snapshot_version: snapshotVersion ?? undefined,
+      };
+    }
+  }
+
+  throw new Error("Processing queue changed repeatedly while loading");
+}
+
 function readHistory(): HistoryItem[] | null {
   if (typeof window === "undefined") {
     return null;
@@ -1697,6 +1907,34 @@ function newerHistoryItem(
     && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
     ? current
     : incoming;
+}
+
+function newerJob(current: JobRecord, incoming: JobRecord): JobRecord {
+  const currentUpdatedAt = Date.parse(current.updated_at);
+  const incomingUpdatedAt = Date.parse(incoming.updated_at);
+  return Number.isFinite(currentUpdatedAt)
+    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+    ? current
+    : incoming;
+}
+
+function reconcileProcessingJobs(
+  current: JobRecord[],
+  incoming: JobRecord[],
+  cachedIds: Set<string>,
+): JobRecord[] {
+  const currentById = new Map(current.map((job) => [job.id, job]));
+  const incomingIds = new Set(incoming.map((job) => job.id));
+  return [
+    ...incoming.map((job) => {
+      const currentJob = currentById.get(job.id);
+      return currentJob ? newerJob(currentJob, job) : job;
+    }),
+    ...current.filter((job) =>
+      !cachedIds.has(job.id)
+      && !incomingIds.has(job.id),
+    ),
+  ];
 }
 
 function reconcileHistoryItems(
@@ -2113,7 +2351,9 @@ function queueDetail(job: JobRecord): string {
 
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
-  const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [jobs, setJobs] = useState<JobRecord[]>(
+    () => readProcessingQueue() ?? [],
+  );
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [form, setForm] = useState<StateForm>(() => stateToForm(EMPTY_STATE));
   const [approvedStateKey, setApprovedStateKey] = useState<string | null>(null);
@@ -2181,10 +2421,22 @@ export default function App() {
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
   const historySearchRequestRef = useRef(0);
+  const jobsRef = useRef(jobs);
+  const processingCacheInitializedRef = useRef(false);
+  const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
   useEffect(() => {
     writeAutomationSettings(automationSettings);
   }, [automationSettings]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+    if (!processingCacheInitializedRef.current) {
+      processingCacheInitializedRef.current = true;
+      return;
+    }
+    writeProcessingQueue(jobs);
+  }, [jobs]);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2396,6 +2648,61 @@ export default function App() {
     }
     void syncHistory(null, false);
   }, []);
+
+  useEffect(() => {
+    const cachedJobs = readProcessingQueue();
+    if (
+      processingQueueSessionSynced()
+      && readCachedProcessingQueueTotal(cachedJobs) !== null
+    ) {
+      return;
+    }
+
+    const cachedIds = new Set((cachedJobs ?? []).map((cachedJob) => cachedJob.id));
+    processingRestorePromiseRef.current ??= getProcessingQueueExtent();
+    let active = true;
+    void processingRestorePromiseRef.current
+      .then((queue) => {
+        if (!active) {
+          return;
+        }
+        const nextJobs = reconcileProcessingJobs(
+          jobsRef.current,
+          queue.jobs,
+          cachedIds,
+        );
+        jobsRef.current = nextJobs;
+        setJobs(nextJobs);
+        if (writeProcessingQueue(nextJobs)) {
+          markProcessingQueueSessionSynced();
+        }
+      })
+      .catch((processingError) => {
+        if (active) {
+          setError(messageFromError(
+            processingError,
+            "Could not restore processing queue",
+          ));
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeJobId !== null || jobs.length === 0) {
+      return;
+    }
+    const nextJob = jobs[0];
+    setActiveJobId(nextJob.id);
+    const nextState = stateFromJob(nextJob);
+    setForm(stateToForm(nextState));
+    setApprovedStateKey(
+      nextJob.approved_state ? approvalKey(nextJob.approved_state) : null,
+    );
+  }, [activeJobId, jobs]);
 
   useEffect(() => {
     if (!currentStateApproved) {
@@ -2693,6 +3000,7 @@ export default function App() {
 
   async function uploadSelectedFiles(runAutomation: boolean): Promise<JobRecord[]> {
     const selectedFiles = [...files];
+    markProcessingQueueSessionUnsynced();
     const controller = new AbortController();
     queueAbortControllerRef.current = controller;
     queueAbortRequestedRef.current = false;
@@ -2866,6 +3174,7 @@ export default function App() {
   }
 
   async function captureAndParseScreen(): Promise<JobRecord> {
+    markProcessingQueueSessionUnsynced();
     const created = await uploadScreenshot(await captureSharedScreenFile());
     appendJob(created);
     return created;
@@ -3763,6 +4072,7 @@ export default function App() {
 
     setBusy(true);
     setError(null);
+    markProcessingQueueSessionUnsynced();
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
       if (historySearchActive && historySearchQuery) {

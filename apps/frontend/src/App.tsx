@@ -1468,14 +1468,17 @@ function readHistory(): HistoryItem[] | null {
   }
 }
 
-function writeHistory(items: HistoryItem[]): void {
+function writeHistory(items: HistoryItem[]): boolean {
   if (typeof window === "undefined") {
-    return;
+    return false;
   }
   try {
     window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 24)));
+    return true;
   } catch {
     // Persisted history remains authoritative when the bounded browser cache is unavailable.
+    markHistorySessionUnsynced();
+    return false;
   }
 }
 
@@ -1494,14 +1497,17 @@ function readHistoryTotal(): number {
   }
 }
 
-function writeHistoryTotal(total: number): void {
+function writeHistoryTotal(total: number): boolean {
   if (typeof window === "undefined") {
-    return;
+    return false;
   }
   try {
     window.localStorage.setItem(HISTORY_TOTAL_STORAGE_KEY, String(total));
+    return true;
   } catch {
     // The server count remains authoritative when browser storage is unavailable.
+    markHistorySessionUnsynced();
+    return false;
   }
 }
 
@@ -1513,6 +1519,17 @@ function markHistorySessionSynced(): void {
     window.sessionStorage.setItem(HISTORY_SESSION_SYNC_KEY, "true");
   } catch {
     // The persisted endpoint remains usable when browser storage is unavailable.
+  }
+}
+
+function markHistorySessionUnsynced(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.removeItem(HISTORY_SESSION_SYNC_KEY);
+  } catch {
+    // A blocked session store already forces the app to fetch history on reload.
   }
 }
 
@@ -2280,9 +2297,11 @@ export default function App() {
     const items = historyItemsFromPage(page);
     setHistory(items);
     setHistoryTotal(page.total);
-    writeHistory(items);
-    writeHistoryTotal(page.total);
-    markHistorySessionSynced();
+    const historyCached = writeHistory(items);
+    const totalCached = writeHistoryTotal(page.total);
+    if (historyCached && totalCached) {
+      markHistorySessionSynced();
+    }
   }
 
   async function syncHistory(

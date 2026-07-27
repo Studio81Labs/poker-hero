@@ -625,6 +625,7 @@ describe("App", () => {
       name: "Open screenshot 1: storage-disabled.png",
     })).not.toBeInTheDocument();
     expect(screen.queryByText("Storage is disabled")).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
   });
 
   it("stops automation before approval when parser warnings are not allowed", async () => {
@@ -3426,6 +3427,45 @@ describe("App", () => {
 
     expect(within(screen.getByLabelText("Session status")).getByText("31")).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads persisted history when local caching failed but session storage is available", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "quota-history-job",
+      original_filename: "quota-history.png",
+      archived_at: "2026-07-10T00:05:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ total: 1, jobs: [savedJob] }))
+      .mockResolvedValueOnce(jsonResponse({ total: 1, jobs: [savedJob] }));
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function setItem(
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (this === window.localStorage) {
+        throw new DOMException("Local storage quota exceeded", "QuotaExceededError");
+      }
+      originalSetItem.call(this, key, value);
+    });
+
+    const firstRender = render(<App />);
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
   });
 
   it("refreshes saved history from the backend", async () => {

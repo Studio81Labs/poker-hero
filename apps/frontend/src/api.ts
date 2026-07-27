@@ -3,6 +3,7 @@ import type {
   BenchmarkOverview,
   BenchmarkReport,
   CanonicalState,
+  JobHistory,
   JobRecord,
   RecommendationAction,
   SystemInfo,
@@ -55,6 +56,23 @@ export async function getJob(jobId: string): Promise<JobRecord> {
     credentials: "include",
   });
   return readJson<JobRecord>(response);
+}
+
+export async function getHistory(): Promise<JobHistory> {
+  const response = await fetch(`${API_BASE_URL}/api/history`, {
+    credentials: "include",
+  });
+  return readJson<JobHistory>(response);
+}
+
+export async function archiveJobs(jobIds: string[]): Promise<JobHistory> {
+  const response = await fetch(`${API_BASE_URL}/api/history`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ job_ids: jobIds }),
+    credentials: "include",
+  });
+  return readJson<JobHistory>(response);
 }
 
 export async function uploadScreenshot(file: File, signal?: AbortSignal): Promise<JobRecord> {

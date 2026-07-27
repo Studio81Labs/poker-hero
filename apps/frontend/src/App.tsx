@@ -6,10 +6,12 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import {
   approveState,
+  archiveJobs,
   benchmarkDatasetUrl,
   completeTrainingReview,
   getBenchmarkOverview,
   getBenchmarkReport,
+  getHistory,
   getJob,
   getSystemInfo,
   getTrainingProgress,
@@ -33,6 +35,7 @@ import type {
   Card,
   DetectedState,
   FacingAction,
+  JobHistory,
   JobRecord,
   Rank,
   RecommendationAction,
@@ -75,6 +78,8 @@ const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "cal
 const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
+const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -1446,14 +1451,14 @@ function benchmarkMismatchLabel(comparisons: BenchmarkFieldComparison[]): string
   return `${mismatchCount} ${mismatchCount === 1 ? "mismatch" : "mismatches"}`;
 }
 
-function readHistory(): HistoryItem[] {
+function readHistory(): HistoryItem[] | null {
   if (typeof window === "undefined") {
-    return [];
+    return null;
   }
   try {
     const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
     if (!raw) {
-      return [];
+      return null;
     }
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? (parsed as HistoryItem[]) : [];
@@ -1467,6 +1472,36 @@ function writeHistory(items: HistoryItem[]): void {
     return;
   }
   window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 24)));
+}
+
+function markHistorySessionSynced(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(HISTORY_SESSION_SYNC_KEY, "true");
+  } catch {
+    // The persisted endpoint remains usable when browser storage is unavailable.
+  }
+}
+
+function historySessionSynced(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return window.sessionStorage.getItem(HISTORY_SESSION_SYNC_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function historyItemsFromPage(page: JobHistory): HistoryItem[] {
+  return page.jobs.map((job) => ({
+    id: job.id,
+    job,
+    savedAt: job.archived_at ?? job.updated_at,
+  }));
 }
 
 function cardToCode(card: Card): string {
@@ -1923,7 +1958,9 @@ export default function App() {
   const [automationApprove, setAutomationApprove] = useState(true);
   const [automationRecommend, setAutomationRecommend] = useState(true);
   const [automationAllowWarnings, setAutomationAllowWarnings] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>(() => readHistory());
+  const [history, setHistory] = useState<HistoryItem[]>(() => readHistory() ?? []);
+  const [historyTotal, setHistoryTotal] = useState(() => readHistory()?.length ?? 0);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
@@ -2116,6 +2153,25 @@ export default function App() {
   }, [error, errorSequence]);
 
   useEffect(() => {
+    if (historySessionSynced()) {
+      return;
+    }
+
+    const cachedHistory = readHistory();
+    const legacyJobIds = (cachedHistory ?? [])
+      .filter((item) =>
+        item.job.archived_at === undefined
+        && PERSISTED_JOB_ID_PATTERN.test(item.id),
+      )
+      .map((item) => item.id);
+    if (legacyJobIds.length > 0) {
+      void syncHistory(legacyJobIds, false);
+      return;
+    }
+    void syncHistory(null, false);
+  }, []);
+
+  useEffect(() => {
     if (!currentStateApproved) {
       setTrainingAction("");
       setTrainingSizing("");
@@ -2189,29 +2245,34 @@ export default function App() {
     });
   }
 
+  function applyHistoryPage(page: JobHistory) {
+    const items = historyItemsFromPage(page);
+    setHistory(items);
+    setHistoryTotal(page.total);
+    writeHistory(items);
+    markHistorySessionSynced();
+  }
+
+  async function syncHistory(
+    jobIds: string[] | null = null,
+    reportErrors = true,
+  ) {
+    setHistoryLoading(true);
+    try {
+      const page = jobIds ? await archiveJobs(jobIds) : await getHistory();
+      applyHistoryPage(page);
+    } catch (historyError) {
+      if (reportErrors) {
+        setError(messageFromError(historyError, "Could not load saved history"));
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   function appendJob(created: JobRecord) {
     setJobs((current) => [...current, created]);
     activateJob(created);
-  }
-
-  function saveHistoryJobs(nextJobs: JobRecord[]) {
-    if (nextJobs.length === 0) {
-      return;
-    }
-
-    const savedAt = new Date().toISOString();
-    const items: HistoryItem[] = nextJobs.map((nextJob) => ({
-      id: nextJob.id,
-      job: nextJob,
-      savedAt,
-    }));
-    const incomingIds = new Set(items.map((item) => item.id));
-
-    setHistory((current) => {
-      const next = [...items, ...current.filter((candidate) => !incomingIds.has(candidate.id))].slice(0, 24);
-      writeHistory(next);
-      return next;
-    });
   }
 
   function applyApprovedJob(approved: JobRecord, fallbackState: CanonicalState) {
@@ -3308,22 +3369,30 @@ export default function App() {
     activateJob(item.job);
   }
 
-  function clearReviewedToHistory() {
+  async function clearReviewedToHistory() {
     const readyJobs = jobs.filter(isHistoryReady);
     if (readyJobs.length === 0) {
       return;
     }
 
-    const remainingJobs = jobs.filter((candidate) => !isHistoryReady(candidate));
-    saveHistoryJobs(readyJobs);
-    setJobs(remainingJobs);
-    if (remainingJobs.length > 0) {
-      activateJob(remainingJobs.find((candidate) => candidate.id === activeJobId) ?? remainingJobs[0]);
-    } else {
-      setActiveJobId(null);
-      setForm(stateToForm(EMPTY_STATE));
-      setApprovedStateKey(null);
-      setError(null);
+    setBusy(true);
+    setError(null);
+    try {
+      applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
+      const remainingJobs = jobs.filter((candidate) => !isHistoryReady(candidate));
+      setJobs(remainingJobs);
+      if (remainingJobs.length > 0) {
+        activateJob(remainingJobs.find((candidate) => candidate.id === activeJobId) ?? remainingJobs[0]);
+      } else {
+        setActiveJobId(null);
+        setForm(stateToForm(EMPTY_STATE));
+        setApprovedStateKey(null);
+        setError(null);
+      }
+    } catch (historyError) {
+      setError(messageFromError(historyError, "Could not save reviewed hands to history"));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -3364,7 +3433,7 @@ export default function App() {
           </div>
           <i aria-hidden="true" />
           <div className="toolbar-stat">
-            <strong>{history.length}</strong>
+            <strong>{historyTotal}</strong>
             <span>reviewed</span>
           </div>
           <div className={screenSharing ? "source-status active" : "source-status"}>
@@ -3499,7 +3568,7 @@ export default function App() {
                   type="button"
                   className="clear-reviewed-button"
                   onClick={clearReviewedToHistory}
-                  disabled={busy || clearableJobs.length === 0}
+                  disabled={historyLoading || busy || clearableJobs.length === 0}
                   title="Clear reviewed to history"
                   aria-label="Clear reviewed"
                 >
@@ -3535,7 +3604,19 @@ export default function App() {
           <section className="history-panel" aria-label="Session history">
             <div className="rail-section-heading history-heading">
               <span>History · reopen</span>
-              <span className="autosaved-pill">Auto-saved</span>
+              <span className="history-heading-actions">
+                <span className="autosaved-pill">Auto-saved</span>
+                <button
+                  type="button"
+                  className="history-refresh"
+                  onClick={() => void syncHistory()}
+                  disabled={historyLoading || busy}
+                  title="Refresh saved history"
+                  aria-label="Refresh saved history"
+                >
+                  <RefreshCcw size={12} aria-hidden="true" />
+                </button>
+              </span>
             </div>
             {history.length > 0 ? (
               <div className="history-list">
@@ -3564,7 +3645,9 @@ export default function App() {
                 })}
               </div>
             ) : (
-              <div className="history-empty">Cleared reviewed hands will appear here.</div>
+              <div className="history-empty">
+                {historyLoading ? "Loading saved history..." : "Cleared reviewed hands will appear here."}
+              </div>
             )}
           </section>
         </aside>

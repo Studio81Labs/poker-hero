@@ -394,12 +394,30 @@ class JobRecord(BaseModel):
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
     benchmark_included: bool = False
+    archived_at: datetime | None = None
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)
+
+
+class ArchiveJobsRequest(BaseModel):
+    job_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("job_ids")
+    @classmethod
+    def validate_job_ids(cls, value: list[str]) -> list[str]:
+        unique_ids = list(dict.fromkeys(value))
+        if len(unique_ids) != len(value):
+            raise ValueError("job_ids must not contain duplicates")
+        return value
+
+
+class JobHistory(BaseModel):
+    total: int = Field(ge=0)
+    jobs: list[JobRecord] = Field(default_factory=list)
 
 
 class BenchmarkSelectionRequest(BaseModel):

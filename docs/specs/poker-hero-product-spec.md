@@ -106,6 +106,8 @@ The frontend is a browser control panel for:
   rating remain available through an unrated filter.
 - Continuing through hands in the active filtered review queue after each
   completed review, then returning to the queue when no matching hands remain.
+- Seeing unresolved counts for each street and opening that street as a
+  focused review queue directly from its summary row.
 - Opening a suggested focus street directly from progress when that street
   still has pending reviews.
 - Opening a suggested certainty focus that prefers comparable EV loss, then
@@ -277,11 +279,13 @@ frequencies.
     street, and one certainty rating and prioritize the highest available EV
     losses; filters compose before ordering and limiting, and ungraded hands
     remain available after graded ones.
-14. Progress may suggest a street, normalized position, and rated certainty
-    group that still have pending reviews, preferring the highest average EV
-    loss when comparable grades exist and otherwise the lowest action
-    accuracy. The Unrated certainty and Unpositioned backlogs are suggested
-    only when no scored group in their category has pending work.
+14. Street summaries expose their pending-review counts and may open the
+    matching review queue directly. Progress may suggest a street, normalized
+    position, and rated certainty group that still have pending reviews,
+    preferring the highest average EV loss when comparable grades exist and
+    otherwise the lowest action accuracy. The Unrated certainty and
+    Unpositioned backlogs are suggested only when no scored group in their
+    category has pending work.
 15. Progress may suggest a common unsupported action pattern with pending work,
     preferring the highest comparable average EV loss and otherwise the largest
     unresolved backlog. That exact player-action and solver-action pair may
@@ -500,6 +504,8 @@ Poker Hero is successful when:
   decisions are reviewed first without hiding ungraded hands.
 - A user can focus pending reviews on one street without changing global
   accuracy or hiding the total number of reviews still pending.
+- A user can see unresolved counts for each street and open its pending reviews
+  directly from the street summary.
 - A user can focus pending reviews by low, medium, or high pre-reveal certainty,
   or isolate legacy unrated hands, without changing global progress.
 - A user can see unresolved counts for rated certainty levels and open one as a

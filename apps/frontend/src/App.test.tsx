@@ -1411,6 +1411,89 @@ describe("App", () => {
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
+  it("opens pending reviews from street summaries", async () => {
+    const flopHand = {
+      job_id: "flop-review",
+      original_filename: "flop-review.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 0.8,
+    };
+    const progress = {
+      reviewed_hands: 2,
+      action_matches: 1,
+      exact_matches: 1,
+      different_actions: 1,
+      needs_review_hands: 1,
+      action_accuracy: 0.5,
+      exact_accuracy: 0.5,
+      ev_compared_hands: 1,
+      average_ev_loss_bb: 0.8,
+      street_summaries: [{
+        street: "flop" as const,
+        reviewed_hands: 1,
+        action_matches: 0,
+        exact_matches: 0,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 0.8,
+      }, {
+        street: "turn" as const,
+        reviewed_hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }],
+      position_summaries: [],
+      recent_matching_hands: 2,
+      recent_hands: [flopHand],
+      review_street_counts: { flop: 1 },
+      review_queue_hands: 1,
+      review_queue: [flopHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const reviewFlop = within(dialog).getByRole("button", {
+      name: "Review flop street differences (1)",
+    });
+    expect(reviewFlop).toHaveTextContent("1");
+    const turnRow = within(dialog).getByRole("row", {
+      name: "turn 1 100% 100% — —",
+    });
+    expect(within(turnRow).getAllByRole("button")).toHaveLength(1);
+
+    await user.click(reviewFlop);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_street=flop",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand on flop.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open flop-review.png training review",
+    })).toBeInTheDocument();
+  });
+
   it("opens pending reviews from position summaries", async () => {
     const buttonHand = {
       job_id: "button-review",

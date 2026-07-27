@@ -3403,6 +3403,31 @@ describe("App", () => {
     )).toHaveLength(1);
   });
 
+  it("preserves the complete persisted history count across same-tab reloads", async () => {
+    window.localStorage.removeItem("poker-training-history-v1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const savedJobs = Array.from({ length: 24 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `server-history-${index}`,
+      original_filename: `server-history-${index}.png`,
+      archived_at: `2026-07-10T00:${String(index).padStart(2, "0")}:00Z`,
+    }));
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 31,
+      jobs: savedJobs,
+    }));
+
+    const firstRender = render(<App />);
+    expect(await within(screen.getByLabelText("Session status")).findByText("31")).toBeInTheDocument();
+    expect(window.localStorage.getItem("poker-training-history-total-v1")).toBe("31");
+    firstRender.unmount();
+
+    render(<App />);
+
+    expect(within(screen.getByLabelText("Session status")).getByText("31")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   it("refreshes saved history from the backend", async () => {
     const savedJob: JobRecord = {
       ...recommendedJob(),

@@ -208,6 +208,7 @@ interface RecommendationEvidence {
 }
 
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
+const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
@@ -1478,6 +1479,32 @@ function writeHistory(items: HistoryItem[]): void {
   }
 }
 
+function readHistoryTotal(): number {
+  const cachedHistory = readHistory();
+  if (cachedHistory === null || typeof window === "undefined") {
+    return 0;
+  }
+  try {
+    const parsed = Number(window.localStorage.getItem(HISTORY_TOTAL_STORAGE_KEY));
+    return Number.isSafeInteger(parsed) && parsed >= cachedHistory.length
+      ? parsed
+      : cachedHistory.length;
+  } catch {
+    return cachedHistory.length;
+  }
+}
+
+function writeHistoryTotal(total: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(HISTORY_TOTAL_STORAGE_KEY, String(total));
+  } catch {
+    // The server count remains authoritative when browser storage is unavailable.
+  }
+}
+
 function markHistorySessionSynced(): void {
   if (typeof window === "undefined") {
     return;
@@ -1963,7 +1990,7 @@ export default function App() {
   const [automationRecommend, setAutomationRecommend] = useState(true);
   const [automationAllowWarnings, setAutomationAllowWarnings] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory() ?? []);
-  const [historyTotal, setHistoryTotal] = useState(() => readHistory()?.length ?? 0);
+  const [historyTotal, setHistoryTotal] = useState(readHistoryTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2254,6 +2281,7 @@ export default function App() {
     setHistory(items);
     setHistoryTotal(page.total);
     writeHistory(items);
+    writeHistoryTotal(page.total);
     markHistorySessionSynced();
   }
 

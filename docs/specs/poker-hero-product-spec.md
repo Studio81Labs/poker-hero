@@ -308,7 +308,9 @@ frequencies.
 21. The UI retains completed items in processing until the user clears them into
     backend-persisted history. A browser-session restore and explicit refresh
     recover the latest archived hands without relying on one browser's local
-    storage, while bounded older pages remain available on demand.
+    storage, while bounded older pages remain available on demand. Saved
+    changes to a reopened archived hand update its visible history entry
+    immediately.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

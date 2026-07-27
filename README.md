@@ -195,7 +195,8 @@ Clearing completed processing items persists an archive timestamp on each
 backend job. The history rail restores the latest archived hands once per
 browser session, keeps a small local cache for immediate rendering and fallback,
 can load older archived hands in bounded pages, and can be refreshed explicitly
-after another device archives work.
+after another device archives work. Saving changes to a reopened archived hand
+updates its history card and bounded browser cache immediately.
 
 ### Offline Parser Benchmarks
 

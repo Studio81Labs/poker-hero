@@ -2300,6 +2300,7 @@ export default function App() {
 
   function replaceJob(updatedJob: JobRecord) {
     setJobs((current) => current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)));
+    updateHistoryJob(updatedJob);
     setActiveJobId(updatedJob.id);
   }
 
@@ -2310,6 +2311,7 @@ export default function App() {
         ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
         : [nextJob, ...current];
     });
+    updateHistoryJob(nextJob);
     activateJob(nextJob);
   }
 
@@ -2705,7 +2707,6 @@ export default function App() {
         trainingReviewNote.trim() || null,
       );
       replaceJob(reviewedJob);
-      updateHistoryJob(reviewedJob);
       if (!continueReviewQueue) {
         toast.success("Training review completed");
         return;
@@ -2764,7 +2765,6 @@ export default function App() {
     try {
       const reopenedJob = await reopenTrainingReview(job.id);
       replaceJob(reopenedJob);
-      updateHistoryJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
@@ -2800,7 +2800,6 @@ export default function App() {
     try {
       const updatedJob = await completeTrainingReview(job.id, note);
       replaceJob(updatedJob);
-      updateHistoryJob(updatedJob);
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
@@ -3432,13 +3431,7 @@ export default function App() {
     setError(null);
     try {
       const reviewJob = await getJob(jobId);
-      setJobs((current) => {
-        const existing = current.some((candidate) => candidate.id === reviewJob.id);
-        return existing
-          ? current.map((candidate) => (candidate.id === reviewJob.id ? reviewJob : candidate))
-          : [reviewJob, ...current];
-      });
-      activateJob(reviewJob);
+      upsertAndActivateJob(reviewJob);
       setBenchmarkDialogOpen(false);
       setExpandedBenchmarkCaseId(null);
     } catch (benchmarkError) {

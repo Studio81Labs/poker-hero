@@ -3371,6 +3371,53 @@ describe("App", () => {
     expect(screen.queryByLabelText("Decision evidence")).not.toBeInTheDocument();
   });
 
+  it("updates persisted history immediately after a reopened hand is re-approved", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      archived_at: archivedAt,
+    };
+    const reapprovedJob: JobRecord = {
+      ...approvedJob(),
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: savedJob.id,
+        job: savedJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse(reapprovedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    expect(within(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    })).getByText("raise")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const updatedHistoryItem = screen.getByRole("button", {
+      name: "Reopen history item 1",
+    });
+    await waitFor(() => expect(within(updatedHistoryItem).getByText("approved")).toBeInTheDocument());
+    expect(within(updatedHistoryItem).queryByText("raise")).not.toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].job).toMatchObject({
+      status: "approved",
+      recommendation: null,
+      updated_at: "2026-07-10T00:03:00Z",
+    });
+  });
+
   it("restores persisted history when the browser has no local cache", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

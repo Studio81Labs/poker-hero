@@ -1699,6 +1699,168 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("suggests the highest-loss action-difference review focus", async () => {
+    const patternHand = {
+      job_id: "raise-call-focus-job",
+      original_filename: "raise-call-focus.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "raise" as const,
+      decision_sizing: 8,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 1.1,
+    };
+    const progress = {
+      reviewed_hands: 9,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 9,
+      needs_review_hands: 7,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 3,
+      average_ev_loss_bb: 0.6,
+      action_differences: [{
+        decision_action: "fold" as const,
+        recommended_action: "call" as const,
+        hands: 4,
+        needs_review_hands: 2,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.4,
+      }, {
+        decision_action: "check" as const,
+        recommended_action: "bet" as const,
+        hands: 4,
+        needs_review_hands: 4,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }, {
+        decision_action: "raise" as const,
+        recommended_action: "call" as const,
+        hands: 1,
+        needs_review_hands: 1,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 1.1,
+      }],
+      street_summaries: [],
+      position_summaries: [],
+      recent_hands: [patternHand],
+      review_queue_hands: 7,
+      review_queue: [patternHand],
+    };
+    const focusedProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [patternHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(focusedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const focus = within(dialog).getByRole("button", {
+      name: "Focus Raise to Call differences: Highest average EV loss: 1.1 BB",
+    });
+    expect(focus).toHaveTextContent("Focus Raise to Call");
+
+    await user.click(focus);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=raise&review_recommended_action=call",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand for Raise to Call across all streets.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open raise-call-focus.png training review",
+    })).toBeInTheDocument();
+  });
+
+  it("suggests the largest action-difference backlog when EV is ungraded", async () => {
+    const patternHand = {
+      job_id: "check-bet-focus-job",
+      original_filename: "check-bet-focus.png",
+      street: "flop" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "check" as const,
+      decision_sizing: null,
+      recommended_action: "bet" as const,
+      recommended_sizing: 2,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
+    const progress = {
+      reviewed_hands: 9,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 9,
+      needs_review_hands: 6,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 0,
+      average_ev_loss_bb: null,
+      action_differences: [{
+        decision_action: "fold" as const,
+        recommended_action: "call" as const,
+        hands: 5,
+        needs_review_hands: 2,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }, {
+        decision_action: "check" as const,
+        recommended_action: "bet" as const,
+        hands: 4,
+        needs_review_hands: 4,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }],
+      street_summaries: [],
+      position_summaries: [],
+      recent_hands: [patternHand],
+      review_queue_hands: 6,
+      review_queue: [patternHand],
+    };
+    const focusedProgress = {
+      ...progress,
+      review_queue_hands: 4,
+      review_queue: [patternHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(focusedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const focus = within(dialog).getByRole("button", {
+      name: "Focus Check to Bet differences: Largest backlog: 4 hands need review",
+    });
+    expect(focus).toHaveTextContent("Focus Check to Bet");
+
+    await user.click(focus);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_decision_action=check&review_recommended_action=bet",
+    );
+    expect(await within(dialog).findByText(
+      "Showing 1 newest of 4 review hands for Check to Bet across all streets.",
+    )).toBeInTheDocument();
+  });
+
   it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);

@@ -111,6 +111,11 @@ type TrainingPositionFocus = {
   label: string;
   reason: string;
 };
+type TrainingActionDifferenceFocus = {
+  difference: TrainingReviewDifference;
+  label: string;
+  reason: string;
+};
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
 const TRAINING_CERTAINTY_FOCUS_ORDER: readonly TrainingCertainty[] = ["high", "medium", "low"];
@@ -1309,6 +1314,60 @@ function suggestedPositionFocus(
   };
 }
 
+function suggestedActionDifferenceFocus(
+  progress: TrainingProgress,
+): TrainingActionDifferenceFocus | null {
+  const candidates = (progress.action_differences ?? []).filter(
+    (difference) => difference.needs_review_hands > 0,
+  );
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const evCandidates = candidates.filter(
+    (difference) => difference.ev_compared_hands > 0
+      && difference.average_ev_loss_bb !== null,
+  );
+  const usesEvLoss = evCandidates.length > 0;
+  const ranked = [...(usesEvLoss ? evCandidates : candidates)].sort((left, right) => {
+    if (usesEvLoss) {
+      const evDifference = (right.average_ev_loss_bb ?? 0) - (left.average_ev_loss_bb ?? 0);
+      if (evDifference !== 0) {
+        return evDifference;
+      }
+    }
+
+    const pendingDifference = right.needs_review_hands - left.needs_review_hands;
+    if (pendingDifference !== 0) {
+      return pendingDifference;
+    }
+    const handDifference = right.hands - left.hands;
+    if (handDifference !== 0) {
+      return handDifference;
+    }
+    const decisionDifference = TRAINING_ACTIONS.indexOf(left.decision_action)
+      - TRAINING_ACTIONS.indexOf(right.decision_action);
+    return decisionDifference !== 0
+      ? decisionDifference
+      : TRAINING_ACTIONS.indexOf(left.recommended_action)
+        - TRAINING_ACTIONS.indexOf(right.recommended_action);
+  });
+  const focus = ranked[0];
+  if (!focus) {
+    return null;
+  }
+  return {
+    difference: {
+      decision_action: focus.decision_action,
+      recommended_action: focus.recommended_action,
+    },
+    label: `${trainingDecisionLabel(focus.decision_action, null)} to ${trainingDecisionLabel(focus.recommended_action, null)}`,
+    reason: usesEvLoss && focus.average_ev_loss_bb !== null
+      ? `Highest average EV loss: ${formatEvLossBb(focus.average_ev_loss_bb)}`
+      : `Largest backlog: ${focus.needs_review_hands} ${focus.needs_review_hands === 1 ? "hand needs" : "hands need"} review`,
+  };
+}
+
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
   return {
     id: report.id,
@@ -2002,6 +2061,9 @@ export default function App() {
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
   const certaintyFocus = trainingProgress ? suggestedCertaintyFocus(trainingProgress) : null;
   const positionFocus = trainingProgress ? suggestedPositionFocus(trainingProgress) : null;
+  const actionDifferenceFocus = trainingProgress
+    ? suggestedActionDifferenceFocus(trainingProgress)
+    : null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -4515,7 +4577,30 @@ export default function App() {
                     >
                       <div className="training-section-heading training-differences-heading">
                         <h3 id="training-differences-title">Common differences</h3>
-                        <span>Unsupported action choices</span>
+                        <span className="training-differences-heading-actions">
+                          <span className="training-differences-context">
+                            Unsupported action choices
+                          </span>
+                          {trainingProgressView === "recent" && actionDifferenceFocus ? (
+                            <button
+                              type="button"
+                              className="training-focus-action"
+                              onClick={() => void focusTrainingActionDifference(
+                                actionDifferenceFocus.difference,
+                              )}
+                              disabled={
+                                trainingProgressLoading
+                                || trainingReviewJobId !== null
+                                || busy
+                              }
+                              title={actionDifferenceFocus.reason}
+                              aria-label={`Focus ${actionDifferenceFocus.label} differences: ${actionDifferenceFocus.reason}`}
+                            >
+                              <Target size={13} aria-hidden="true" />
+                              Focus {actionDifferenceFocus.label}
+                            </button>
+                          ) : null}
+                        </span>
                       </div>
                       <div className="training-differences-list">
                         {trainingProgress.action_differences?.slice(0, 3).map((difference) => (

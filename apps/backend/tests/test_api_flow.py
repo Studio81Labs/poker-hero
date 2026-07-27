@@ -349,6 +349,10 @@ def test_history_searches_archived_poker_context_before_paging(
         "/api/history",
         params={"query": "river raise"},
     )
+    separator_only = client.get(
+        "/api/history",
+        params={"query": ", ,"},
+    )
 
     assert poker_terms.status_code == 200
     assert poker_terms.json()["total"] == 1
@@ -356,6 +360,9 @@ def test_history_searches_archived_poker_context_before_paging(
     assert [job["id"] for job in filename.json()["jobs"]] == [matching_id]
     assert no_match.json()["total"] == 0
     assert no_match.json()["jobs"] == []
+    assert separator_only.status_code == 200
+    assert separator_only.json()["total"] == 0
+    assert separator_only.json()["jobs"] == []
     assert client.get(
         "/api/history",
         params={"query": "x" * 101},

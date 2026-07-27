@@ -716,6 +716,8 @@ def build_job_history(
             for job in archived_jobs
             if history_matches_query(job, query_terms)
         ]
+    elif query is not None and query.strip():
+        archived_jobs = []
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],

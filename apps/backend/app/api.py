@@ -1,7 +1,9 @@
 from contextlib import ExitStack
 from datetime import datetime, timezone
+from hashlib import sha256
 from io import BytesIO
-from threading import Lock
+import re
+from threading import Lock, RLock
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +68,23 @@ from app.training import (
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
+HISTORY_QUERY_TRANSLATION = str.maketrans({
+    "♣": "c",
+    "♦": "d",
+    "♥": "h",
+    "♠": "s",
+    "\ufe0e": None,
+    "\ufe0f": None,
+})
+HISTORY_PRESENTATION_SELECTOR_TRANSLATION = str.maketrans({
+    "\ufe0e": None,
+    "\ufe0f": None,
+})
+HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
+    r"(?i:(?:[2-9tjqka]|10)[cdhs♣♦♥♠])",
+)
+HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
+HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -74,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
+    history_lock = RLock()
     dataset_import_lock = Lock()
     benchmark_corpus_lock = Lock()
 
@@ -82,6 +102,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def job_lock_for(job_id: str):
         return job_locks[job_lock_index(job_id)]
+
+    def save_job(job: JobRecord) -> JobRecord:
+        if job.archived_at is None:
+            return store.save(job)
+        with history_lock:
+            return store.save(job)
 
     def current_recommendation_target(
         job_id: str,
@@ -142,12 +168,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ParserConfigurationError as exc:
             job.status = "error"
             job.error = str(exc)
-            store.save(job)
+            save_job(job)
             raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
         except ParserError as exc:
             job.status = "error"
             job.error = str(exc)
-            store.save(job)
+            save_job(job)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         job.parser_result = parser_result
@@ -156,7 +182,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state = CanonicalState.from_parser_result(parser_result)
             job.approved_state.user_approved = True
             job.status = "approved"
-        return store.save(job)
+        return save_job(job)
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
@@ -166,8 +192,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_history(
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
+        query: str | None = Query(default=None, max_length=100),
     ) -> JobHistory:
-        return build_job_history(store, limit, offset)
+        with history_lock:
+            return build_job_history(store, limit, offset, query)
 
     @app.put("/api/history", response_model=JobHistory)
     def archive_jobs(
@@ -186,13 +214,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     detail="Only approved or recommended jobs can be moved to history",
                 )
 
-            archived_at = datetime.now(timezone.utc)
-            for job in jobs:
-                if job.archived_at is None:
-                    job.archived_at = archived_at
-                    store.save(job)
-
-        return build_job_history(store, limit)
+            with history_lock:
+                archived_at = datetime.now(timezone.utc)
+                for job in jobs:
+                    if job.archived_at is None:
+                        job.archived_at = archived_at
+                        store.save(job)
+                return build_job_history(store, limit)
 
     @app.get("/api/jobs/{job_id}/image")
     def get_job_image(job_id: str) -> FileResponse:
@@ -217,7 +245,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_review_note = None
             job.status = "approved"
             job.error = None
-            return store.save(job)
+            return save_job(job)
 
     @app.put("/api/jobs/{job_id}/decision", response_model=JobRecord)
     def record_training_decision(
@@ -246,7 +274,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.training_review_note = None
             job.status = "approved"
             job.error = None
-            return store.save(job)
+            return save_job(job)
 
     @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
     def recommend(job_id: str) -> JobRecord:
@@ -267,7 +295,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
 
         if missing:
@@ -282,14 +310,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except ProviderError as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(job_id, approved_state)
                 current.status = "error"
                 current.error = str(exc)
-                store.save(current)
+                save_job(current)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         with job_lock_for(job_id):
@@ -299,7 +327,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             current.training_review_note = None
             current.status = "recommended"
             current.error = None
-            return store.save(current)
+            return save_job(current)
 
     @app.put("/api/jobs/{job_id}/training-review", response_model=JobRecord)
     def complete_training_review(
@@ -326,7 +354,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 job.training_review_note = review.note
                 changed = True
             if changed:
-                return store.save(job)
+                return save_job(job)
             return job
 
     @app.delete("/api/jobs/{job_id}/training-review", response_model=JobRecord)
@@ -345,7 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             if job.training_reviewed_at is not None:
                 job.training_reviewed_at = None
-                return store.save(job)
+                return save_job(job)
             return job
 
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
@@ -386,7 +414,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise HTTPException(status_code=409, detail=str(exc)) from exc
                 candidate_archive.close()
             job.benchmark_included = selection.included
-            return store.save(job)
+            return save_job(job)
 
     @app.get("/api/training/progress", response_model=TrainingProgress)
     def get_training_progress(
@@ -621,14 +649,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ):
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
-                return import_parser_dataset(
-                    dataset,
-                    store,
-                    recommendation_provider=active_settings.recommendation_provider,
-                    parser_provider=active_settings.parser_provider,
-                    layout_profile=active_settings.parser_layout_profile,
-                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
-                )
+                with history_lock:
+                    return import_parser_dataset(
+                        dataset,
+                        store,
+                        recommendation_provider=active_settings.recommendation_provider,
+                        parser_provider=active_settings.parser_provider,
+                        layout_profile=active_settings.parser_layout_profile,
+                        max_archive_bytes=active_settings.max_dataset_upload_bytes,
+                    )
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -679,16 +708,163 @@ def build_job_history(
     store: FileJobStore,
     limit: int,
     offset: int = 0,
+    query: str | None = None,
 ) -> JobHistory:
     archived_jobs = sorted(
         (job for job in store.list() if job.archived_at is not None),
         key=lambda job: (job.archived_at, job.created_at),
         reverse=True,
     )
+    query_terms = history_query_terms(query)
+    if query_terms:
+        archived_jobs = [
+            job
+            for job in archived_jobs
+            if history_matches_query(job, query_terms)
+        ]
+    elif query is not None and query.strip():
+        archived_jobs = []
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],
+        snapshot_version=history_snapshot_version(archived_jobs),
     )
+
+
+def history_snapshot_version(jobs: list[JobRecord]) -> str:
+    digest = sha256()
+    for job in jobs:
+        digest.update(job.id.encode())
+        digest.update(b"\0")
+        digest.update(job.updated_at.isoformat().encode())
+        digest.update(b"\0")
+        digest.update((job.archived_at.isoformat() if job.archived_at else "").encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def normalize_history_query(value: str | None) -> str:
+    return (value or "").translate(HISTORY_QUERY_TRANSLATION).casefold().strip()
+
+
+def compact_history_card_terms(value: str) -> list[str] | None:
+    matches = list(HISTORY_CARD_QUERY_TOKEN_PATTERN.finditer(value))
+    if (
+        not matches
+        or matches[0].start() != 0
+        or matches[-1].end() != len(value)
+        or any(
+            previous.end() != current.start()
+            for previous, current in zip(matches, matches[1:])
+        )
+    ):
+        return None
+    return [normalize_history_query(match.group()) for match in matches]
+
+
+def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
+    query_value = (value or "").translate(
+        HISTORY_PRESENTATION_SELECTOR_TRANSLATION
+    )
+    raw_terms = [
+        raw_term
+        for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(query_value)
+        if raw_term
+    ]
+    card_term_groups = [
+        compact_history_card_terms(raw_term)
+        for raw_term in raw_terms
+    ]
+    card_term_count = sum(
+        len(card_terms)
+        for card_terms in card_term_groups
+        if card_terms is not None
+    )
+    terms: list[tuple[str, bool]] = []
+    for raw_term, card_terms in zip(raw_terms, card_term_groups):
+        lowercase_singleton_is_prose = (
+            card_term_count == 1
+            and HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN.fullmatch(raw_term)
+            is not None
+        )
+        if card_terms is not None and not lowercase_singleton_is_prose:
+            terms.extend((card_term, True) for card_term in card_terms)
+            continue
+        normalized_term = normalize_history_query(raw_term)
+        if not normalized_term:
+            continue
+        terms.append((normalized_term, False))
+    return terms
+
+
+def history_matches_query(
+    job: JobRecord,
+    query_terms: list[tuple[str, bool]],
+) -> bool:
+    search_text = history_search_text(job)
+    card_tokens = history_card_tokens(job)
+    return all(
+        term in card_tokens
+        if is_card
+        else term in search_text
+        for term, is_card in query_terms
+    )
+
+
+def history_card_tokens(job: JobRecord) -> set[str]:
+    state = job.approved_state or (job.parser_result.state if job.parser_result else None)
+    if state is None:
+        return set()
+    tokens = {card.code.casefold() for card in [*state.hero_cards, *state.board_cards]}
+    tokens.update(
+        f"10{token[1:]}"
+        for token in tuple(tokens)
+        if token.startswith("t")
+    )
+    return tokens
+
+
+def history_search_text(job: JobRecord) -> str:
+    state = job.approved_state or (job.parser_result.state if job.parser_result else None)
+    values: list[str] = [
+        job.original_filename,
+        job.status,
+        job.parser_provider,
+        job.recommendation_provider,
+    ]
+    if state is not None:
+        values.extend(
+            value
+            for value in [
+                state.street,
+                state.hero_position,
+                state.preflop_opener_position,
+                state.facing_action,
+                state.action_context,
+            ]
+            if value is not None
+        )
+        for card in [*state.hero_cards, *state.board_cards]:
+            values.extend([card.code, card.rank, card.suit])
+            if card.rank == "T":
+                values.append(f"10{card.code[1:]}")
+    if job.training_decision is not None:
+        values.extend([
+            job.training_decision.action,
+            job.training_decision.certainty or "",
+        ])
+        if job.training_decision.sizing is not None:
+            values.append(str(job.training_decision.sizing))
+    if job.recommendation is not None:
+        values.extend([
+            job.recommendation.action,
+            job.recommendation.explanation,
+        ])
+        if job.recommendation.sizing is not None:
+            values.append(str(job.recommendation.sizing))
+    if job.training_review_note:
+        values.append(job.training_review_note)
+    return normalize_history_query(" ".join(values))
 
 
 def is_supported_image(image_bytes: bytes) -> bool:

@@ -134,8 +134,9 @@ The frontend is a browser control panel for:
   action EVs or frequencies, solver quality, preflop chart policy context,
   postflop tree and range assumptions, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
-- Moving completed items into an autosaved history and loading older archived
-  hands without expanding the browser cache.
+- Moving completed items into an autosaved history, loading older archived
+  hands, and searching the full archive without expanding or replacing the
+  browser cache.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
 - Exporting the explicitly selected screenshots and canonical labels as a portable parser dataset.
 
@@ -310,7 +311,8 @@ frequencies.
     recover the latest archived hands without relying on one browser's local
     storage, while bounded older pages remain available on demand. Saved
     changes to a reopened archived hand update its visible history entry
-    immediately.
+    immediately. Archive-wide search uses its own paged result set and match
+    count without changing the global reviewed count or newest-page cache.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
@@ -551,6 +553,8 @@ Poker Hero is successful when:
 - Completed work remains reviewable before being cleared into history.
 - Cleared history survives browser storage resets and can be refreshed from the
   persisted backend.
+- A user can search the complete persisted archive and page matching hands
+  without replacing the newest-history cache or global reviewed count.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.

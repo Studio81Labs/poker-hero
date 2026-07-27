@@ -196,7 +196,9 @@ backend job. The history rail restores the latest archived hands once per
 browser session, keeps a small local cache for immediate rendering and fallback,
 can load older archived hands in bounded pages, and can be refreshed explicitly
 after another device archives work. Saving changes to a reopened archived hand
-updates its history card and bounded browser cache immediately.
+updates its history card and bounded browser cache immediately. Server-backed
+search can find older hands by filename, cards, table context, recommendation,
+or lesson text without replacing that newest-page cache.
 
 ### Offline Parser Benchmarks
 

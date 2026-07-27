@@ -277,6 +277,7 @@ export interface JobRecord {
 export interface JobHistory {
   total: number;
   jobs: JobRecord[];
+  snapshot_version?: string;
 }
 
 export interface SystemInfo {

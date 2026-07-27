@@ -52,4 +52,19 @@ describe("getHistory", () => {
       { credentials: "include" },
     );
   });
+
+  it("encodes history search terms alongside the page offset", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      total: 2,
+      jobs: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getHistory(24, "turn bluff");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history?offset=24&query=turn+bluff",
+      { credentials: "include" },
+    );
+  });
 });

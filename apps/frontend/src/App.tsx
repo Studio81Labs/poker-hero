@@ -1,5 +1,5 @@
 import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
@@ -210,6 +210,8 @@ interface RecommendationEvidence {
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
+const HISTORY_SEARCH_PAGE_LIMIT = 100;
+const HISTORY_SNAPSHOT_RETRY_LIMIT = 3;
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
@@ -1569,6 +1571,50 @@ function historyItemsFromPage(page: JobHistory): HistoryItem[] {
   }));
 }
 
+async function getHistorySearchExtent(
+  query: string,
+  loadedCount: number,
+): Promise<JobHistory> {
+  for (let attempt = 0; attempt < HISTORY_SNAPSHOT_RETRY_LIMIT; attempt += 1) {
+    const jobs: JobRecord[] = [];
+    let snapshotVersion: string | null = null;
+    let snapshotChanged = false;
+    let total = 0;
+
+    do {
+      const page = await getHistory(
+        jobs.length,
+        query,
+        Math.min(HISTORY_SEARCH_PAGE_LIMIT, loadedCount - jobs.length),
+      );
+      if (
+        snapshotVersion !== null
+        && page.snapshot_version !== undefined
+        && page.snapshot_version !== snapshotVersion
+      ) {
+        snapshotChanged = true;
+        break;
+      }
+      snapshotVersion ??= page.snapshot_version ?? null;
+      total = page.total;
+      jobs.push(...page.jobs);
+      if (page.jobs.length === 0) {
+        break;
+      }
+    } while (jobs.length < Math.min(loadedCount, total));
+
+    if (!snapshotChanged) {
+      return {
+        total,
+        jobs: jobs.slice(0, Math.min(loadedCount, total)),
+        snapshot_version: snapshotVersion ?? undefined,
+      };
+    }
+  }
+
+  throw new Error("Saved history changed repeatedly while loading");
+}
+
 function mergeHistoryItems(
   current: HistoryItem[],
   incoming: HistoryItem[],
@@ -2064,6 +2110,12 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory() ?? []);
   const [historyTotal, setHistoryTotal] = useState(readHistoryTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [historySearchInput, setHistorySearchInput] = useState("");
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [historySearchResults, setHistorySearchResults] = useState<HistoryItem[] | null>(null);
+  const [historySearchTotal, setHistorySearchTotal] = useState(0);
+  const [historySearchSnapshotVersion, setHistorySearchSnapshotVersion] = useState<string | null>(null);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
@@ -2072,6 +2124,7 @@ export default function App() {
   const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
+  const historySearchRequestRef = useRef(0);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2113,6 +2166,9 @@ export default function App() {
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
+  const historySearchActive = historySearchResults !== null;
+  const visibleHistory = historySearchResults ?? history;
+  const visibleHistoryTotal = historySearchActive ? historySearchTotal : historyTotal;
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
@@ -2338,11 +2394,11 @@ export default function App() {
         ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
         : [nextJob, ...current];
     });
-    updateHistoryJob(nextJob);
+    updateHistoryJob(nextJob, false);
     activateJob(nextJob);
   }
 
-  function updateHistoryJob(updatedJob: JobRecord) {
+  function updateHistoryJob(updatedJob: JobRecord, revalidateSearch = true) {
     setHistory((current) => {
       if (!current.some((item) => item.id === updatedJob.id)) {
         return current;
@@ -2351,6 +2407,18 @@ export default function App() {
       writeHistory(next);
       return next;
     });
+    setHistorySearchResults((current) =>
+      current?.map((item) => (item.id === updatedJob.id ? { ...item, job: updatedJob } : item))
+      ?? null,
+    );
+    if (
+      revalidateSearch
+      && updatedJob.archived_at
+      && historySearchActive
+      && historySearchQuery
+    ) {
+      void revalidateHistorySearch(historySearchQuery);
+    }
   }
 
   function applyHistoryPage(page: JobHistory, append = false) {
@@ -2369,14 +2437,126 @@ export default function App() {
     });
   }
 
-  async function loadOlderHistory() {
-    if (historyLoading || history.length >= historyTotal) {
+  function applyHistorySearchPage(page: JobHistory, append = false) {
+    const pageItems = historyItemsFromPage(page);
+    setHistorySearchTotal(page.total);
+    setHistorySearchSnapshotVersion(page.snapshot_version ?? null);
+    setHistorySearchResults((current) => {
+      if (!append || current === null) {
+        return reconcileHistoryItems(current ?? [], pageItems);
+      }
+      return mergeHistoryItems(current, pageItems);
+    });
+  }
+
+  function clearHistorySearch() {
+    historySearchRequestRef.current += 1;
+    setHistorySearchOpen(false);
+    setHistorySearchInput("");
+    setHistorySearchQuery("");
+    setHistorySearchResults(null);
+    setHistorySearchTotal(0);
+    setHistorySearchSnapshotVersion(null);
+  }
+
+  async function onSearchHistory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = historySearchInput.trim();
+    if (!query) {
+      clearHistorySearch();
+      return;
+    }
+
+    const requestId = ++historySearchRequestRef.current;
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const page = await getHistory(0, query);
+      if (requestId !== historySearchRequestRef.current) {
+        return;
+      }
+      setHistorySearchQuery(query);
+      applyHistorySearchPage(page);
+    } catch (historyError) {
+      if (requestId === historySearchRequestRef.current) {
+        setError(messageFromError(historyError, "Could not search saved history"));
+      }
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function revalidateHistorySearch(query: string) {
+    const requestId = ++historySearchRequestRef.current;
+    const loadedCount = Math.max(
+      historySearchResults?.length ?? 0,
+      HISTORY_CACHE_LIMIT,
+    );
+    try {
+      const page = await getHistorySearchExtent(query, loadedCount);
+      if (requestId === historySearchRequestRef.current) {
+        applyHistorySearchPage(page);
+      }
+    } catch (historyError) {
+      if (requestId === historySearchRequestRef.current) {
+        setError(messageFromError(historyError, "Could not refresh history search"));
+      }
+    }
+  }
+
+  async function refreshVisibleHistory() {
+    if (!historySearchActive) {
+      await syncHistory();
       return;
     }
 
     setHistoryLoading(true);
     setError(null);
     try {
+      await revalidateHistorySearch(historySearchQuery);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function loadOlderHistory() {
+    if (historyLoading || visibleHistory.length >= visibleHistoryTotal) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      if (historySearchActive) {
+        const requestId = ++historySearchRequestRef.current;
+        const page = await getHistory(visibleHistory.length, historySearchQuery);
+        if (requestId !== historySearchRequestRef.current) {
+          return;
+        }
+        if (
+          historySearchSnapshotVersion !== null
+          && page.snapshot_version === historySearchSnapshotVersion
+        ) {
+          applyHistorySearchPage(page, true);
+          return;
+        }
+        if (page.total === 0) {
+          applyHistorySearchPage(page);
+          return;
+        }
+        const rebuiltPage = await getHistorySearchExtent(
+          historySearchQuery,
+          Math.min(
+            visibleHistory.length + HISTORY_CACHE_LIMIT,
+            page.total,
+          ),
+        );
+        if (requestId !== historySearchRequestRef.current) {
+          return;
+        }
+        applyHistorySearchPage(rebuiltPage);
+        return;
+      }
       const page = await getHistory(history.length);
       if (page.total !== historyTotal) {
         applyHistoryPage(await getHistory());
@@ -3380,6 +3560,13 @@ export default function App() {
         writeHistory(next);
         return next;
       });
+      setHistorySearchResults((current) =>
+        current?.map((item) =>
+          importedIds.has(item.id)
+            ? { ...item, job: { ...item.job, benchmark_included: true } }
+            : item,
+        ) ?? null,
+      );
       const readyCases = result.imported_cases + result.reused_cases;
       toast.success(`Dataset ready: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`);
     } catch (benchmarkError) {
@@ -3507,6 +3694,9 @@ export default function App() {
     setError(null);
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
+      if (historySearchActive && historySearchQuery) {
+        void revalidateHistorySearch(historySearchQuery);
+      }
       const remainingJobs = jobs.filter((candidate) => !isHistoryReady(candidate));
       setJobs(remainingJobs);
       if (remainingJobs.length > 0) {
@@ -3731,24 +3921,68 @@ export default function App() {
 
           <section className="history-panel" aria-label="Session history">
             <div className="rail-section-heading history-heading">
-              <span>History · reopen</span>
+              <span>
+                {historySearchActive
+                  ? `History · ${historySearchTotal} ${historySearchTotal === 1 ? "match" : "matches"}`
+                  : "History · reopen"}
+              </span>
               <span className="history-heading-actions">
                 <span className="autosaved-pill">Auto-saved</span>
                 <button
                   type="button"
-                  className="history-refresh"
-                  onClick={() => void syncHistory()}
+                  className={historySearchOpen ? "history-search-toggle active" : "history-search-toggle"}
+                  onClick={() => {
+                    if (historySearchOpen) {
+                      clearHistorySearch();
+                    } else {
+                      setHistorySearchOpen(true);
+                    }
+                  }}
                   disabled={historyLoading || busy}
-                  title="Refresh saved history"
-                  aria-label="Refresh saved history"
+                  title={historySearchOpen ? "Close history search" : "Search saved history"}
+                  aria-label={historySearchOpen ? "Close history search" : "Search saved history"}
+                >
+                  {historySearchOpen ? <X size={12} aria-hidden="true" /> : <Search size={12} aria-hidden="true" />}
+                </button>
+                <button
+                  type="button"
+                  className="history-refresh"
+                  onClick={() => void refreshVisibleHistory()}
+                  disabled={historyLoading || busy}
+                  title={historySearchActive ? "Refresh history search" : "Refresh saved history"}
+                  aria-label={historySearchActive ? "Refresh history search" : "Refresh saved history"}
                 >
                   <RefreshCcw size={12} aria-hidden="true" />
                 </button>
               </span>
             </div>
-            {history.length > 0 ? (
+            {historySearchOpen ? (
+              <form className="history-search-form" onSubmit={(event) => void onSearchHistory(event)}>
+                <label className="sr-only" htmlFor="history-search-query">History search query</label>
+                <input
+                  id="history-search-query"
+                  type="search"
+                  value={historySearchInput}
+                  onChange={(event) => setHistorySearchInput(event.target.value)}
+                  placeholder="Cards, street, action..."
+                  maxLength={100}
+                  disabled={historyLoading || busy}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={historyLoading || busy || historySearchInput.trim().length === 0}
+                  title="Run history search"
+                  aria-label="Run history search"
+                >
+                  <Search size={12} aria-hidden="true" />
+                </button>
+              </form>
+            ) : null}
+            {visibleHistory.length > 0 ? (
               <div className="history-list">
-                {history.map((item, index) => {
+                {visibleHistory.map((item, index) => {
                   const cards = historyCards(item.job);
                   return (
                     <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
@@ -3771,7 +4005,7 @@ export default function App() {
                     </button>
                   );
                 })}
-                {history.length < historyTotal ? (
+                {visibleHistory.length < visibleHistoryTotal ? (
                   <button
                     type="button"
                     className="history-load-older"
@@ -3783,14 +4017,18 @@ export default function App() {
                     <span>
                       {historyLoading
                         ? "Loading..."
-                        : `Load ${historyTotal - history.length} older`}
+                        : `Load ${visibleHistoryTotal - visibleHistory.length} older`}
                     </span>
                   </button>
                 ) : null}
               </div>
             ) : (
               <div className="history-empty">
-                {historyLoading ? "Loading saved history..." : "Cleared reviewed hands will appear here."}
+                {historyLoading
+                  ? "Loading saved history..."
+                  : historySearchActive
+                    ? "No saved hands match this search."
+                    : "Cleared reviewed hands will appear here."}
               </div>
             )}
           </section>

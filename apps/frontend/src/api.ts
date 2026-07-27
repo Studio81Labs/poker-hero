@@ -60,9 +60,23 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return readJson<JobRecord>(response);
 }
 
-export async function getHistory(offset = 0): Promise<JobHistory> {
-  const query = offset > 0 ? `?offset=${offset}` : "";
-  const response = await fetch(`${API_BASE_URL}/api/history${query}`, {
+export async function getHistory(
+  offset = 0,
+  query = "",
+  limit?: number,
+): Promise<JobHistory> {
+  const params = new URLSearchParams();
+  if (offset > 0) {
+    params.set("offset", String(offset));
+  }
+  if (query.trim()) {
+    params.set("query", query.trim());
+  }
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
+  }
+  const queryString = params.size > 0 ? `?${params.toString()}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/history${queryString}`, {
     credentials: "include",
   });
   return readJson<JobHistory>(response);

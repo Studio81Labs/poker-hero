@@ -3582,6 +3582,432 @@ describe("App", () => {
     ))).toHaveLength(24);
   });
 
+  it("searches and pages archived hands without replacing the newest-page cache", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const cachedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "cached-history-job",
+      archived_at: archivedAt,
+    };
+    const firstMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "Q", suit: "clubs" },
+          { rank: "Q", suit: "hearts" },
+        ],
+        street: "turn",
+      })),
+      id: "matching-history-1",
+      original_filename: "turn-bluff-1.png",
+      archived_at: "2026-07-09T00:00:00Z",
+    };
+    const secondMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "7", suit: "diamonds" },
+          { rank: "9", suit: "clubs" },
+        ],
+        street: "turn",
+      })),
+      id: "matching-history-2",
+      original_filename: "turn-bluff-2.png",
+      archived_at: "2026-07-08T00:00:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: cachedJob.id,
+        job: cachedJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 2,
+        jobs: [firstMatch],
+        snapshot_version: "stable-search",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 2,
+        jobs: [secondMatch],
+        snapshot_version: "stable-search",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "turn bluff");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+
+    expect(await within(historyPanel).findByText("Q♣")).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/2 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    })).toHaveTextContent("Load 1 older");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText("7♦")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8000/api/history?query=turn+bluff",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=1&query=turn+bluff",
+      { credentials: "include" },
+    );
+    expect(within(screen.getByLabelText("Session status")).getByText("1")).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].id).toBe(cachedJob.id);
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Close history search",
+    }));
+
+    expect(within(historyPanel).getByText("A♥")).toBeInTheDocument();
+    expect(within(historyPanel).queryByText("Q♣")).not.toBeInTheDocument();
+  });
+
+  it("revalidates the active history search after an archived hand changes", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const savedJob: JobRecord = {
+      ...recommendedJob(),
+      archived_at: archivedAt,
+    };
+    const reapprovedJob: JobRecord = {
+      ...approvedJob(),
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: savedJob.id,
+        job: savedJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [savedJob],
+        snapshot_version: "before-approval",
+      }))
+      .mockResolvedValueOnce(jsonResponse(reapprovedJob))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "after-approval",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "raise");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await within(historyPanel).findByText(
+      "No saved hands match this search.",
+    )).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/0 matches/)).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/history?query=raise&limit=24",
+      { credentials: "include" },
+    );
+    const reviewedStat = within(screen.getByLabelText("Session status"))
+      .getByText("reviewed")
+      .closest(".toolbar-stat");
+    expect(reviewedStat).not.toBeNull();
+    expect(within(reviewedStat as HTMLElement).getByText("1")).toBeInTheDocument();
+  });
+
+  it("preserves loaded search pages when an archived hand changes", async () => {
+    const savedJobs = Array.from({ length: 25 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `searched-history-${index}`,
+      original_filename: `searched-history-${index}.png`,
+      archived_at: `2026-07-${String(25 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    const lastJob = savedJobs[24];
+    const reapprovedLastJob: JobRecord = {
+      ...approvedJob(),
+      id: lastJob.id,
+      original_filename: lastJob.original_filename,
+      archived_at: lastJob.archived_at,
+      updated_at: "2026-07-26T00:00:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-approval",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(24),
+        snapshot_version: "before-approval",
+      }))
+      .mockResolvedValueOnce(jsonResponse(reapprovedLastJob))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: [...savedJobs.slice(0, 24), reapprovedLastJob],
+        snapshot_version: "after-approval",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 25",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const lastHistoryItem = await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 25",
+    });
+    expect(within(lastHistoryItem).getByText("approved")).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/25 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:8000/api/history?query=flop&limit=25",
+      { credentials: "include" },
+    );
+  });
+
+  it("preserves loaded search pages when the matching total changes", async () => {
+    const savedJobs = Array.from({ length: 50 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `changing-search-history-${index}`,
+      original_filename: `changing-search-history-${index}.png`,
+      archived_at: `2026-07-25T00:${String(49 - index).padStart(2, "0")}:00Z`,
+    }));
+    const newJob: JobRecord = {
+      ...recommendedJob(),
+      id: "new-search-history-job",
+      original_filename: "new-search-history-job.png",
+      archived_at: "2026-07-26T00:00:00Z",
+    };
+    const updatedJobs = [newJob, ...savedJobs];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(24, 48),
+        snapshot_version: "before-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs.slice(48),
+        snapshot_version: "after-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 51,
+        jobs: updatedJobs,
+        snapshot_version: "after-membership-change",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 48",
+    })).toBeInTheDocument();
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByRole("button", {
+      name: "Reopen history item 51",
+    })).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/51 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).queryByRole("button", {
+      name: "Load older history",
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:8000/api/history?query=flop&limit=51",
+      { credentials: "include" },
+    );
+  });
+
+  it("rebuilds loaded search pages when membership shifts at the same total", async () => {
+    const savedJobs = Array.from({ length: 50 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `stable-search-membership-${index}`,
+      original_filename: `stable-search-membership-${index}.png`,
+      archived_at: `2026-07-25T00:${String(49 - index).padStart(2, "0")}:00Z`,
+    }));
+    const newMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "Q", suit: "clubs" },
+          { rank: "Q", suit: "hearts" },
+        ],
+      })),
+      id: "new-search-membership",
+      original_filename: "new-search-membership.png",
+      archived_at: "2026-07-26T00:00:00Z",
+    };
+    const updatedJobs = [newMatch, ...savedJobs.slice(0, 49)];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: updatedJobs.slice(24, 48),
+        snapshot_version: "after-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: updatedJobs.slice(0, 48),
+        snapshot_version: "after-membership-change",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText("Q♣")).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Reopen history item 48",
+    })).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    })).toHaveTextContent("Load 2 older");
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=24&query=flop",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/history?query=flop&limit=48",
+      { credentials: "include" },
+    );
+  });
+
+  it("clears a paged search when its changed snapshot has no matches", async () => {
+    const savedJobs = Array.from({ length: 25 }, (_, index): JobRecord => ({
+      ...recommendedJob(),
+      id: `removed-search-history-${index}`,
+      original_filename: `removed-search-history-${index}.png`,
+      archived_at: `2026-07-${String(25 - index).padStart(2, "0")}T00:00:00Z`,
+    }));
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 25,
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-removal",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "after-removal",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(await within(historyPanel).findByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText(
+      "No saved hands match this search.",
+    )).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/0 matches/)).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=24&query=flop",
+      { credentials: "include" },
+    );
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");
@@ -4279,6 +4705,79 @@ describe("App", () => {
     expect(fetchMock().mock.calls[1][1]).toMatchObject({ method: "POST" });
     const form = fetchMock().mock.calls[1][1]?.body as FormData;
     expect(form.get("file")).toBe(dataset);
+  });
+
+  it("updates an imported hand held only by the history search projection", async () => {
+    const archivedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "archived-import-job",
+      original_filename: "archived-import.png",
+      benchmark_included: false,
+      archived_at: "2026-07-10T00:02:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [archivedJob],
+        snapshot_version: "before-import",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        imported_cases: 0,
+        reused_cases: 1,
+        included_cases: 1,
+        job_ids: [archivedJob.id],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        latest_report: null,
+        recent_reports: [],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const importDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    await waitFor(() => expect(
+      within(importDialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(importDialog).getByLabelText("Parser dataset ZIP"),
+      new File(["dataset-zip"], "parser-dataset.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    expect(await screen.findByText("Dataset ready: 1 hand")).toBeInTheDocument();
+    await user.click(within(importDialog).getByRole("button", { name: "Done" }));
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const reopenedDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+
+    expect(await within(reopenedDialog).findByRole("switch", {
+      name: /Use current hand as ground truth/,
+    })).toHaveAttribute("aria-checked", "true");
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
   });
 
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {

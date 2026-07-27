@@ -1471,7 +1471,11 @@ function writeHistory(items: HistoryItem[]): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 24)));
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items.slice(0, 24)));
+  } catch {
+    // Persisted history remains authoritative when the bounded browser cache is unavailable.
+  }
 }
 
 function markHistorySessionSynced(): void {
@@ -2160,7 +2164,7 @@ export default function App() {
     const cachedHistory = readHistory();
     const legacyJobIds = (cachedHistory ?? [])
       .filter((item) =>
-        item.job.archived_at === undefined
+        item.job.archived_at == null
         && PERSISTED_JOB_ID_PATTERN.test(item.id),
       )
       .map((item) => item.id);

@@ -589,6 +589,44 @@ describe("App", () => {
     })).not.toBeInTheDocument();
   });
 
+  it("clears persisted jobs when the bounded browser history cache is unavailable", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "storage-disabled.png" }), 201))
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "storage-disabled.png" }))
+      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "storage-disabled.png" }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [{
+          ...recommendedJob(),
+          original_filename: "storage-disabled.png",
+          archived_at: "2026-07-10T00:01:00Z",
+        }],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["storage-disabled"], "storage-disabled.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage is disabled", "QuotaExceededError");
+    });
+
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: storage-disabled.png",
+    })).not.toBeInTheDocument();
+    expect(screen.queryByText("Storage is disabled")).not.toBeInTheDocument();
+  });
+
   it("stops automation before approval when parser warnings are not allowed", async () => {
     stubDisplayMedia("window");
     stubCanvasCapture();
@@ -3396,6 +3434,7 @@ describe("App", () => {
       ...recommendedJob(),
       id: jobId,
       original_filename: "legacy.png",
+      archived_at: null,
     };
     window.localStorage.setItem(
       "poker-training-history-v1",

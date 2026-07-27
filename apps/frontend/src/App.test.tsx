@@ -3582,6 +3582,102 @@ describe("App", () => {
     ))).toHaveLength(24);
   });
 
+  it("searches and pages archived hands without replacing the newest-page cache", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const cachedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "cached-history-job",
+      archived_at: archivedAt,
+    };
+    const firstMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "Q", suit: "clubs" },
+          { rank: "Q", suit: "hearts" },
+        ],
+        street: "turn",
+      })),
+      id: "matching-history-1",
+      original_filename: "turn-bluff-1.png",
+      archived_at: "2026-07-09T00:00:00Z",
+    };
+    const secondMatch: JobRecord = {
+      ...recommendedJob(canonicalState({
+        hero_cards: [
+          { rank: "7", suit: "diamonds" },
+          { rank: "9", suit: "clubs" },
+        ],
+        street: "turn",
+      })),
+      id: "matching-history-2",
+      original_filename: "turn-bluff-2.png",
+      archived_at: "2026-07-08T00:00:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: cachedJob.id,
+        job: cachedJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 2,
+        jobs: [firstMatch],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 2,
+        jobs: [secondMatch],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "turn bluff");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+
+    expect(await within(historyPanel).findByText("Q♣")).toBeInTheDocument();
+    expect(within(historyPanel).getByText(/2 matches/)).toBeInTheDocument();
+    expect(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    })).toHaveTextContent("Load 1 older");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Load older history",
+    }));
+
+    expect(await within(historyPanel).findByText("7♦")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      1,
+      "http://localhost:8000/api/history?query=turn+bluff",
+      { credentials: "include" },
+    );
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      "http://localhost:8000/api/history?offset=1&query=turn+bluff",
+      { credentials: "include" },
+    );
+    expect(within(screen.getByLabelText("Session status")).getByText("1")).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].id).toBe(cachedJob.id);
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Close history search",
+    }));
+
+    expect(within(historyPanel).getByText("A♥")).toBeInTheDocument();
+    expect(within(historyPanel).queryByText("Q♣")).not.toBeInTheDocument();
+  });
+
   it("restarts history pagination when the archived total changes between pages", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

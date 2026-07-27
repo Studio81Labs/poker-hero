@@ -66,6 +66,12 @@ from app.training import (
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
+HISTORY_QUERY_TRANSLATION = str.maketrans({
+    "♣": "c",
+    "♦": "d",
+    "♥": "h",
+    "♠": "s",
+})
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -166,8 +172,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_history(
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
+        query: str | None = Query(default=None, max_length=100),
     ) -> JobHistory:
-        return build_job_history(store, limit, offset)
+        return build_job_history(store, limit, offset, query)
 
     @app.put("/api/history", response_model=JobHistory)
     def archive_jobs(
@@ -679,16 +686,76 @@ def build_job_history(
     store: FileJobStore,
     limit: int,
     offset: int = 0,
+    query: str | None = None,
 ) -> JobHistory:
     archived_jobs = sorted(
         (job for job in store.list() if job.archived_at is not None),
         key=lambda job: (job.archived_at, job.created_at),
         reverse=True,
     )
+    query_terms = normalize_history_query(query).split()
+    if query_terms:
+        archived_jobs = [
+            job
+            for job in archived_jobs
+            if history_matches_query(job, query_terms)
+        ]
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],
     )
+
+
+def normalize_history_query(value: str | None) -> str:
+    return (value or "").translate(HISTORY_QUERY_TRANSLATION).casefold().strip()
+
+
+def history_matches_query(job: JobRecord, query_terms: list[str]) -> bool:
+    search_text = history_search_text(job)
+    return all(term in search_text for term in query_terms)
+
+
+def history_search_text(job: JobRecord) -> str:
+    state = job.approved_state or (job.parser_result.state if job.parser_result else None)
+    values: list[str] = [
+        job.original_filename,
+        job.status,
+        job.parser_provider,
+        job.recommendation_provider,
+    ]
+    if state is not None:
+        values.extend(
+            value
+            for value in [
+                state.street,
+                state.hero_position,
+                state.preflop_opener_position,
+                state.facing_action,
+                state.action_context,
+            ]
+            if value is not None
+        )
+        for card in [*state.hero_cards, *state.board_cards]:
+            values.extend([card.code, card.rank, card.suit])
+            if card.rank == "T":
+                values.append(f"10{card.code[1:]}")
+    if job.training_decision is not None:
+        values.extend([
+            job.training_decision.action,
+            job.training_decision.certainty or "",
+        ])
+        if job.training_decision.sizing is not None:
+            values.append(str(job.training_decision.sizing))
+    if job.recommendation is not None:
+        values.extend([
+            job.recommendation.action,
+            job.recommendation.explanation,
+        ])
+        if job.recommendation.sizing is not None:
+            values.append(str(job.recommendation.sizing))
+    if job.training_review_note:
+        values.append(job.training_review_note)
+    return normalize_history_query(" ".join(values))
 
 
 def is_supported_image(image_bytes: bytes) -> bool:

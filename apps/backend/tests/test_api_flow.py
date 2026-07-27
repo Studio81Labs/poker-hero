@@ -198,6 +198,53 @@ def test_history_pages_archived_jobs_in_stable_newest_first_order(
     assert client.get("/api/history?offset=-1").status_code == 422
 
 
+def test_history_searches_archived_poker_context_before_paging(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    matching_id = upload_job(client, filename="river-bluff.png").json()["id"]
+    other_id = upload_job(client, filename="value-line.png").json()["id"]
+    matching_state = {
+        **APPROVED_STATE,
+        "hero_cards": [
+            {"rank": "7", "suit": "diamonds"},
+            {"rank": "A", "suit": "hearts"},
+        ],
+        "street": "turn",
+    }
+    approve_job(client, matching_id, matching_state)
+    approve_job(client, other_id)
+    client.post(f"/api/jobs/{matching_id}/recommend")
+    client.post(f"/api/jobs/{other_id}/recommend")
+    client.put(
+        "/api/history",
+        json={"job_ids": [matching_id, other_id]},
+    )
+
+    poker_terms = client.get(
+        "/api/history",
+        params={"query": "7♦ TURN call", "limit": 1},
+    )
+    filename = client.get(
+        "/api/history",
+        params={"query": "RIVER-BLUFF"},
+    )
+    no_match = client.get(
+        "/api/history",
+        params={"query": "river raise"},
+    )
+
+    assert poker_terms.status_code == 200
+    assert poker_terms.json()["total"] == 1
+    assert [job["id"] for job in poker_terms.json()["jobs"]] == [matching_id]
+    assert [job["id"] for job in filename.json()["jobs"]] == [matching_id]
+    assert no_match.json() == {"total": 0, "jobs": []}
+    assert client.get(
+        "/api/history",
+        params={"query": "x" * 101},
+    ).status_code == 422
+
+
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

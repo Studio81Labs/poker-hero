@@ -1,5 +1,5 @@
 import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
-import type { ChangeEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
@@ -2064,6 +2064,11 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>(() => readHistory() ?? []);
   const [historyTotal, setHistoryTotal] = useState(readHistoryTotal);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [historySearchInput, setHistorySearchInput] = useState("");
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [historySearchResults, setHistorySearchResults] = useState<HistoryItem[] | null>(null);
+  const [historySearchTotal, setHistorySearchTotal] = useState(0);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
@@ -2113,6 +2118,9 @@ export default function App() {
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
   const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const clearableJobs = useMemo(() => jobs.filter(isHistoryReady), [jobs]);
+  const historySearchActive = historySearchResults !== null;
+  const visibleHistory = historySearchResults ?? history;
+  const visibleHistoryTotal = historySearchActive ? historySearchTotal : historyTotal;
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
@@ -2351,6 +2359,10 @@ export default function App() {
       writeHistory(next);
       return next;
     });
+    setHistorySearchResults((current) =>
+      current?.map((item) => (item.id === updatedJob.id ? { ...item, job: updatedJob } : item))
+      ?? null,
+    );
   }
 
   function applyHistoryPage(page: JobHistory, append = false) {
@@ -2369,14 +2381,80 @@ export default function App() {
     });
   }
 
-  async function loadOlderHistory() {
-    if (historyLoading || history.length >= historyTotal) {
+  function applyHistorySearchPage(page: JobHistory, append = false) {
+    const pageItems = historyItemsFromPage(page);
+    setHistorySearchTotal(page.total);
+    setHistorySearchResults((current) => {
+      if (!append || current === null) {
+        return reconcileHistoryItems(current ?? [], pageItems);
+      }
+      return mergeHistoryItems(current, pageItems);
+    });
+  }
+
+  function clearHistorySearch() {
+    setHistorySearchOpen(false);
+    setHistorySearchInput("");
+    setHistorySearchQuery("");
+    setHistorySearchResults(null);
+    setHistorySearchTotal(0);
+  }
+
+  async function onSearchHistory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = historySearchInput.trim();
+    if (!query) {
+      clearHistorySearch();
       return;
     }
 
     setHistoryLoading(true);
     setError(null);
     try {
+      const page = await getHistory(0, query);
+      setHistorySearchQuery(query);
+      applyHistorySearchPage(page);
+    } catch (historyError) {
+      setError(messageFromError(historyError, "Could not search saved history"));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function refreshVisibleHistory() {
+    if (!historySearchActive) {
+      await syncHistory();
+      return;
+    }
+
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      applyHistorySearchPage(await getHistory(0, historySearchQuery));
+    } catch (historyError) {
+      setError(messageFromError(historyError, "Could not refresh history search"));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function loadOlderHistory() {
+    if (historyLoading || visibleHistory.length >= visibleHistoryTotal) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      if (historySearchActive) {
+        const page = await getHistory(visibleHistory.length, historySearchQuery);
+        if (page.total !== historySearchTotal) {
+          applyHistorySearchPage(await getHistory(0, historySearchQuery));
+          return;
+        }
+        applyHistorySearchPage(page, true);
+        return;
+      }
       const page = await getHistory(history.length);
       if (page.total !== historyTotal) {
         applyHistoryPage(await getHistory());
@@ -3731,24 +3809,68 @@ export default function App() {
 
           <section className="history-panel" aria-label="Session history">
             <div className="rail-section-heading history-heading">
-              <span>History · reopen</span>
+              <span>
+                {historySearchActive
+                  ? `History · ${historySearchTotal} ${historySearchTotal === 1 ? "match" : "matches"}`
+                  : "History · reopen"}
+              </span>
               <span className="history-heading-actions">
                 <span className="autosaved-pill">Auto-saved</span>
                 <button
                   type="button"
-                  className="history-refresh"
-                  onClick={() => void syncHistory()}
+                  className={historySearchOpen ? "history-search-toggle active" : "history-search-toggle"}
+                  onClick={() => {
+                    if (historySearchOpen) {
+                      clearHistorySearch();
+                    } else {
+                      setHistorySearchOpen(true);
+                    }
+                  }}
                   disabled={historyLoading || busy}
-                  title="Refresh saved history"
-                  aria-label="Refresh saved history"
+                  title={historySearchOpen ? "Close history search" : "Search saved history"}
+                  aria-label={historySearchOpen ? "Close history search" : "Search saved history"}
+                >
+                  {historySearchOpen ? <X size={12} aria-hidden="true" /> : <Search size={12} aria-hidden="true" />}
+                </button>
+                <button
+                  type="button"
+                  className="history-refresh"
+                  onClick={() => void refreshVisibleHistory()}
+                  disabled={historyLoading || busy}
+                  title={historySearchActive ? "Refresh history search" : "Refresh saved history"}
+                  aria-label={historySearchActive ? "Refresh history search" : "Refresh saved history"}
                 >
                   <RefreshCcw size={12} aria-hidden="true" />
                 </button>
               </span>
             </div>
-            {history.length > 0 ? (
+            {historySearchOpen ? (
+              <form className="history-search-form" onSubmit={(event) => void onSearchHistory(event)}>
+                <label className="sr-only" htmlFor="history-search-query">History search query</label>
+                <input
+                  id="history-search-query"
+                  type="search"
+                  value={historySearchInput}
+                  onChange={(event) => setHistorySearchInput(event.target.value)}
+                  placeholder="Cards, street, action..."
+                  maxLength={100}
+                  disabled={historyLoading || busy}
+                  autoComplete="off"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={historyLoading || busy || historySearchInput.trim().length === 0}
+                  title="Run history search"
+                  aria-label="Run history search"
+                >
+                  <Search size={12} aria-hidden="true" />
+                </button>
+              </form>
+            ) : null}
+            {visibleHistory.length > 0 ? (
               <div className="history-list">
-                {history.map((item, index) => {
+                {visibleHistory.map((item, index) => {
                   const cards = historyCards(item.job);
                   return (
                     <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
@@ -3771,7 +3893,7 @@ export default function App() {
                     </button>
                   );
                 })}
-                {history.length < historyTotal ? (
+                {visibleHistory.length < visibleHistoryTotal ? (
                   <button
                     type="button"
                     className="history-load-older"
@@ -3783,14 +3905,18 @@ export default function App() {
                     <span>
                       {historyLoading
                         ? "Loading..."
-                        : `Load ${historyTotal - history.length} older`}
+                        : `Load ${visibleHistoryTotal - visibleHistory.length} older`}
                     </span>
                   </button>
                 ) : null}
               </div>
             ) : (
               <div className="history-empty">
-                {historyLoading ? "Loading saved history..." : "Cleared reviewed hands will appear here."}
+                {historyLoading
+                  ? "Loading saved history..."
+                  : historySearchActive
+                    ? "No saved hands match this search."
+                    : "Cleared reviewed hands will appear here."}
               </div>
             )}
           </section>

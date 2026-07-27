@@ -407,6 +407,8 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     for card_query in (
         "A♠",
         "a♠",
+        "A♠︎",
+        "A♠️",
         "As",
         "AsKd",
         "askd",

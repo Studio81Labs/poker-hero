@@ -3560,6 +3560,13 @@ export default function App() {
         writeHistory(next);
         return next;
       });
+      setHistorySearchResults((current) =>
+        current?.map((item) =>
+          importedIds.has(item.id)
+            ? { ...item, job: { ...item.job, benchmark_included: true } }
+            : item,
+        ) ?? null,
+      );
       const readyCases = result.imported_cases + result.reused_cases;
       toast.success(`Dataset ready: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`);
     } catch (benchmarkError) {

@@ -73,6 +73,12 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♦": "d",
     "♥": "h",
     "♠": "s",
+    "\ufe0e": None,
+    "\ufe0f": None,
+})
+HISTORY_PRESENTATION_SELECTOR_TRANSLATION = str.maketrans({
+    "\ufe0e": None,
+    "\ufe0f": None,
 })
 HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
     r"(?i:(?:[2-9tjqka]|10)[cdhs♣♦♥♠])",
@@ -757,9 +763,12 @@ def compact_history_card_terms(value: str) -> list[str] | None:
 
 
 def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
+    query_value = (value or "").translate(
+        HISTORY_PRESENTATION_SELECTOR_TRANSLATION
+    )
     raw_terms = [
         raw_term
-        for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(value or "")
+        for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(query_value)
         if raw_term
     ]
     card_term_groups = [

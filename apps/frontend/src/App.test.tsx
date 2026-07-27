@@ -4707,6 +4707,79 @@ describe("App", () => {
     expect(form.get("file")).toBe(dataset);
   });
 
+  it("updates an imported hand held only by the history search projection", async () => {
+    const archivedJob: JobRecord = {
+      ...recommendedJob(),
+      id: "archived-import-job",
+      original_filename: "archived-import.png",
+      benchmark_included: false,
+      archived_at: "2026-07-10T00:02:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [archivedJob],
+        snapshot_version: "before-import",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        imported_cases: 0,
+        reused_cases: 1,
+        included_cases: 1,
+        job_ids: [archivedJob.id],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        latest_report: null,
+        recent_reports: [],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+    const historyPanel = screen.getByLabelText("Session history");
+
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Search saved history",
+    }));
+    await user.type(within(historyPanel).getByLabelText(
+      "History search query",
+    ), "flop");
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Run history search",
+    }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const importDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    await waitFor(() => expect(
+      within(importDialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(importDialog).getByLabelText("Parser dataset ZIP"),
+      new File(["dataset-zip"], "parser-dataset.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    expect(await screen.findByText("Dataset ready: 1 hand")).toBeInTheDocument();
+    await user.click(within(importDialog).getByRole("button", { name: "Done" }));
+    await user.click(within(historyPanel).getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const reopenedDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+
+    expect(await within(reopenedDialog).findByRole("switch", {
+      name: /Use current hand as ground truth/,
+    })).toHaveAttribute("aria-checked", "true");
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
+  });
+
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {
     const pendingReviewJob = deferredResponse();
     const activeJob = {

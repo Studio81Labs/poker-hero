@@ -2344,7 +2344,12 @@ export default function App() {
     setHistoryLoading(true);
     setError(null);
     try {
-      applyHistoryPage(await getHistory(history.length), true);
+      const page = await getHistory(history.length);
+      if (page.total !== historyTotal) {
+        applyHistoryPage(await getHistory());
+        return;
+      }
+      applyHistoryPage(page, true);
     } catch (historyError) {
       setError(messageFromError(historyError, "Could not load older history"));
     } finally {

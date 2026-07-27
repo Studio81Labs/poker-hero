@@ -388,7 +388,15 @@ def test_history_card_queries_do_not_match_recommendation_prose(
         json={"job_ids": [ace_spades_id, other_id]},
     )
 
-    for card_query in ("A♠", "AsKd", "A♠K♦", "As,Kd", "A♠,K♦"):
+    for card_query in (
+        "A♠",
+        "AsKd",
+        "askd",
+        "A♠K♦",
+        "As,Kd",
+        "as,kd",
+        "A♠,K♦",
+    ):
         response = client.get("/api/history", params={"query": card_query})
 
         assert response.status_code == 200

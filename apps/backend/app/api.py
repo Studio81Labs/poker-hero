@@ -75,7 +75,7 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♠": "s",
 })
 HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
-    r"(?:(?i:(?:[2-9tjqka]|10)[♣♦♥♠])|(?:[2-9TJQKA]|10)[cdhsCDHS])",
+    r"(?i:(?:[2-9tjqka]|10)[cdhs♣♦♥♠])",
 )
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
@@ -754,10 +754,24 @@ def compact_history_card_terms(value: str) -> list[str] | None:
 
 
 def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
+    raw_terms = [
+        raw_term
+        for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(value or "")
+        if raw_term
+    ]
+    card_term_groups = [
+        compact_history_card_terms(raw_term)
+        for raw_term in raw_terms
+    ]
+    card_term_count = sum(
+        len(card_terms)
+        for card_terms in card_term_groups
+        if card_terms is not None
+    )
     terms: list[tuple[str, bool]] = []
-    for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(value or ""):
-        card_terms = compact_history_card_terms(raw_term)
-        if card_terms is not None:
+    for raw_term, card_terms in zip(raw_terms, card_term_groups):
+        lowercase_as_is_prose = raw_term == "as" and card_term_count == 1
+        if card_terms is not None and not lowercase_as_is_prose:
             terms.extend((card_term, True) for card_term in card_terms)
             continue
         normalized_term = normalize_history_query(raw_term)

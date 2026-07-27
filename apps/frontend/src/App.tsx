@@ -106,9 +106,24 @@ type TrainingCertaintyFocus = {
   label: string;
   reason: string;
 };
+type TrainingPositionFocus = {
+  filter: TrainingPositionFilter;
+  label: string;
+  reason: string;
+};
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
 const TRAINING_CERTAINTY_FOCUS_ORDER: readonly TrainingCertainty[] = ["high", "medium", "low"];
+const TRAINING_POSITION_FOCUS_ORDER: readonly string[] = [
+  "UTG",
+  "HJ",
+  "CO",
+  "BTN",
+  "SB",
+  "BB",
+  "IP",
+  "OOP",
+];
 
 type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
   monitorTypeSurfaces?: "include" | "exclude";
@@ -1230,6 +1245,70 @@ function suggestedCertaintyFocus(
   };
 }
 
+function suggestedPositionFocus(
+  progress: TrainingProgress,
+): TrainingPositionFocus | null {
+  const candidates = (progress.position_summaries ?? []).filter(
+    (summary) => (summary.needs_review_hands ?? 0) > 0,
+  );
+  if (candidates.length === 0) {
+    const unpositionedPending = progress.unpositioned_needs_review_hands ?? 0;
+    return unpositionedPending > 0
+      ? {
+          filter: {
+            kind: "unpositioned",
+            label: "Unpositioned",
+          },
+          label: "Unpositioned",
+          reason: `${unpositionedPending} unpositioned ${unpositionedPending === 1 ? "hand needs" : "hands need"} review`,
+        }
+      : null;
+  }
+
+  const evCandidates = candidates.filter(
+    (summary) => summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null,
+  );
+  const usesEvLoss = evCandidates.length > 0;
+  const ranked = [...(usesEvLoss ? evCandidates : candidates)].sort((left, right) => {
+    if (usesEvLoss) {
+      const evDifference = (right.average_ev_loss_bb ?? 0) - (left.average_ev_loss_bb ?? 0);
+      if (evDifference !== 0) {
+        return evDifference;
+      }
+    } else {
+      const accuracyDifference = left.action_accuracy - right.action_accuracy;
+      if (accuracyDifference !== 0) {
+        return accuracyDifference;
+      }
+    }
+
+    const pendingDifference = (right.needs_review_hands ?? 0) - (left.needs_review_hands ?? 0);
+    if (pendingDifference !== 0) {
+      return pendingDifference;
+    }
+    const leftOrder = TRAINING_POSITION_FOCUS_ORDER.indexOf(left.position);
+    const rightOrder = TRAINING_POSITION_FOCUS_ORDER.indexOf(right.position);
+    return (leftOrder < 0 ? TRAINING_POSITION_FOCUS_ORDER.length : leftOrder)
+      - (rightOrder < 0 ? TRAINING_POSITION_FOCUS_ORDER.length : rightOrder)
+      || left.position.localeCompare(right.position);
+  });
+  const focus = ranked[0];
+  if (!focus) {
+    return null;
+  }
+  return {
+    filter: {
+      kind: "position",
+      position: focus.position,
+      label: focus.position,
+    },
+    label: focus.position,
+    reason: usesEvLoss && focus.average_ev_loss_bb !== null
+      ? `Highest average EV loss: ${formatEvLossBb(focus.average_ev_loss_bb)}`
+      : `Lowest action match: ${benchmarkPercent(focus.action_accuracy)}`,
+  };
+}
+
 function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary {
   return {
     id: report.id,
@@ -1922,6 +2001,7 @@ export default function App() {
   );
   const trainingFocus = trainingProgress ? suggestedTrainingFocus(trainingProgress) : null;
   const certaintyFocus = trainingProgress ? suggestedCertaintyFocus(trainingProgress) : null;
+  const positionFocus = trainingProgress ? suggestedPositionFocus(trainingProgress) : null;
 
   function setError(nextError: string | null) {
     setErrorMessage(nextError);
@@ -4556,37 +4636,55 @@ export default function App() {
                     >
                       <div className="training-section-heading">
                         <h3 id="training-positions-title">By position</h3>
-                        {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
-                          <span className="training-section-context training-position-context">
-                            <button
-                              type="button"
-                              className="training-position-unrecorded"
-                              onClick={() => void updateTrainingPositionFilter({
-                                kind: "unpositioned",
-                                label: "Unpositioned",
-                              })}
-                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              aria-label={`Show ${trainingProgress.unpositioned_hands} unpositioned ${trainingProgress.unpositioned_hands === 1 ? "hand" : "hands"}`}
-                              title="Show training hands"
-                            >
-                              {trainingProgress.unpositioned_hands} unrecorded
-                              <Eye size={11} aria-hidden="true" />
-                            </button>
-                            {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
+                        {(trainingProgressView === "recent" && positionFocus)
+                          || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
+                          <span className="training-position-heading-actions">
+                            {trainingProgressView === "recent" && positionFocus ? (
                               <button
                                 type="button"
-                                className="training-certainty-review"
-                                onClick={() => void focusTrainingReviewPosition({
-                                  kind: "unpositioned",
-                                  label: "Unpositioned",
-                                })}
+                                className="training-focus-action"
+                                onClick={() => void focusTrainingReviewPosition(positionFocus.filter)}
                                 disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                aria-label={`Review unpositioned differences (${trainingProgress.unpositioned_needs_review_hands})`}
-                                title="Open pending reviews"
+                                title={positionFocus.reason}
+                                aria-label={`Focus ${positionFocus.filter.kind === "unpositioned" ? "unpositioned" : `${positionFocus.label} position`} reviews: ${positionFocus.reason}`}
                               >
-                                <Target size={11} aria-hidden="true" />
-                                {trainingProgress.unpositioned_needs_review_hands}
+                                <Target size={13} aria-hidden="true" />
+                                Focus {positionFocus.label}
                               </button>
+                            ) : null}
+                            {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
+                              <span className="training-section-context training-position-context">
+                                <button
+                                  type="button"
+                                  className="training-position-unrecorded"
+                                  onClick={() => void updateTrainingPositionFilter({
+                                    kind: "unpositioned",
+                                    label: "Unpositioned",
+                                  })}
+                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                  aria-label={`Show ${trainingProgress.unpositioned_hands} unpositioned ${trainingProgress.unpositioned_hands === 1 ? "hand" : "hands"}`}
+                                  title="Show training hands"
+                                >
+                                  {trainingProgress.unpositioned_hands} unrecorded
+                                  <Eye size={11} aria-hidden="true" />
+                                </button>
+                                {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
+                                  <button
+                                    type="button"
+                                    className="training-certainty-review"
+                                    onClick={() => void focusTrainingReviewPosition({
+                                      kind: "unpositioned",
+                                      label: "Unpositioned",
+                                    })}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={`Review unpositioned differences (${trainingProgress.unpositioned_needs_review_hands})`}
+                                    title="Open pending reviews"
+                                  >
+                                    <Target size={11} aria-hidden="true" />
+                                    {trainingProgress.unpositioned_needs_review_hands}
+                                  </button>
+                                ) : null}
+                              </span>
                             ) : null}
                           </span>
                         ) : null}

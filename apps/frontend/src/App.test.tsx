@@ -1545,6 +1545,160 @@ describe("App", () => {
     );
   });
 
+  it("suggests the highest-loss position review focus", async () => {
+    const bigBlindHand = {
+      job_id: "bb-focus-job",
+      original_filename: "bb-focus.png",
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: 1.2,
+    };
+    const progress = {
+      reviewed_hands: 4,
+      action_matches: 0,
+      exact_matches: 0,
+      different_actions: 4,
+      needs_review_hands: 4,
+      action_accuracy: 0,
+      exact_accuracy: 0,
+      ev_compared_hands: 4,
+      average_ev_loss_bb: 0.6,
+      street_summaries: [],
+      position_summaries: [{
+        position: "BTN",
+        reviewed_hands: 2,
+        action_matches: 0,
+        exact_matches: 0,
+        needs_review_hands: 2,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 2,
+        average_ev_loss_bb: 0.4,
+      }, {
+        position: "BB",
+        reviewed_hands: 1,
+        action_matches: 0,
+        exact_matches: 0,
+        needs_review_hands: 1,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        ev_compared_hands: 1,
+        average_ev_loss_bb: 1.2,
+      }],
+      unpositioned_hands: 1,
+      unpositioned_needs_review_hands: 1,
+      recent_hands: [bigBlindHand],
+      review_queue_hands: 4,
+      review_queue: [bigBlindHand],
+    };
+    const focusedProgress = {
+      ...progress,
+      review_queue_hands: 1,
+      review_queue: [bigBlindHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(focusedProgress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const focus = within(dialog).getByRole("button", {
+      name: "Focus BB position reviews: Highest average EV loss: 1.2 BB",
+    });
+    expect(focus).toHaveTextContent("Focus BB");
+
+    await user.click(focus);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_position=BB",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand across all streets at BB.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Open bb-focus.png training review",
+    })).toBeInTheDocument();
+  });
+
+  it("suggests unpositioned reviews when scored positions are clear", async () => {
+    const unpositionedHand = {
+      job_id: "unpositioned-focus-job",
+      original_filename: "unpositioned-focus.png",
+      street: "river" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "fold" as const,
+      decision_sizing: null,
+      recommended_action: "call" as const,
+      recommended_sizing: null,
+      outcome: "different" as const,
+      recorded_at: "2026-07-20T13:00:00Z",
+      reviewed_at: null,
+      review_note: null,
+      ev_loss_bb: null,
+    };
+    const progress = {
+      reviewed_hands: 2,
+      action_matches: 1,
+      exact_matches: 1,
+      different_actions: 1,
+      needs_review_hands: 1,
+      action_accuracy: 0.5,
+      exact_accuracy: 0.5,
+      ev_compared_hands: 0,
+      average_ev_loss_bb: null,
+      street_summaries: [],
+      position_summaries: [{
+        position: "BTN",
+        reviewed_hands: 1,
+        action_matches: 1,
+        exact_matches: 1,
+        needs_review_hands: 0,
+        action_accuracy: 1,
+        exact_accuracy: 1,
+        ev_compared_hands: 0,
+        average_ev_loss_bb: null,
+      }],
+      unpositioned_hands: 1,
+      unpositioned_needs_review_hands: 1,
+      recent_hands: [unpositionedHand],
+      review_queue_hands: 1,
+      review_queue: [unpositionedHand],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(progress))
+      .mockResolvedValueOnce(jsonResponse(progress));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    const focus = within(dialog).getByRole("button", {
+      name: "Focus unpositioned reviews: 1 unpositioned hand needs review",
+    });
+    expect(focus).toHaveTextContent("Focus Unpositioned");
+
+    await user.click(focus);
+
+    expect(fetchMock().mock.calls[1][0]).toBe(
+      "http://localhost:8000/api/training/progress?review_unpositioned=true",
+    );
+    expect(await within(dialog).findByText(
+      "1 pending review hand across all streets without a recorded position.",
+    )).toBeInTheDocument();
+  });
+
   it("drills into solver engine, fallback, and unattributed coverage", async () => {
     const routeKey = "b".repeat(64);
     const fallbackKey = "a".repeat(64);

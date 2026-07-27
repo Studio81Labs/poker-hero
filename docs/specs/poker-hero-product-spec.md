@@ -108,6 +108,8 @@ The frontend is a browser control panel for:
   still has pending reviews.
 - Opening a suggested certainty focus that prefers comparable EV loss, then
   action accuracy, and uses Unrated only when no rated backlog remains.
+- Opening a suggested position focus that uses the same performance ranking
+  and treats Unpositioned as a fallback when no scored position needs review.
 - Marking a revisited action or sizing difference reviewed without changing the
   historical comparison result.
 - Saving a short lesson note with a completed review and seeing it in progress
@@ -273,10 +275,11 @@ frequencies.
     street, and one certainty rating and prioritize the highest available EV
     losses; filters compose before ordering and limiting, and ungraded hands
     remain available after graded ones.
-14. Progress may suggest a street and a rated certainty group that still have
-    pending reviews, preferring the highest average EV loss when comparable
-    grades exist and otherwise the lowest action accuracy. The Unrated
-    certainty backlog is suggested only when no rated group has pending work.
+14. Progress may suggest a street, normalized position, and rated certainty
+    group that still have pending reviews, preferring the highest average EV
+    loss when comparable grades exist and otherwise the lowest action
+    accuracy. The Unrated certainty and Unpositioned backlogs are suggested
+    only when no scored group in their category has pending work.
 15. A common unsupported action pattern may focus the review queue on that
     exact player-action and solver-action pair.
 16. The user may mark a revisited difference reviewed with an optional lesson
@@ -504,6 +507,9 @@ Poker Hero is successful when:
 - A user can open an actionable suggested certainty focus without manually
   comparing calibrated groups, while Unrated remains a fallback rather than a
   fabricated performance category.
+- A user can open an actionable suggested position focus without manually
+  comparing position summaries, while Unpositioned remains a fallback rather
+  than a fabricated performance category.
 - A user can complete that review so it leaves the pending queue without
   changing recorded accuracy.
 - A user can continue to the next hand under the same review filters without

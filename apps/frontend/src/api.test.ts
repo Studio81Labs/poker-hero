@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { archiveJobs } from "./api";
+import { archiveJobs, getHistory } from "./api";
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -34,5 +34,22 @@ describe("archiveJobs", () => {
       jobIds.slice(100, 200),
       jobIds.slice(200),
     ]);
+  });
+});
+
+describe("getHistory", () => {
+  it("requests an older page from the current loaded offset", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      total: 31,
+      jobs: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getHistory(24);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history?offset=24",
+      { credentials: "include" },
+    );
   });
 });

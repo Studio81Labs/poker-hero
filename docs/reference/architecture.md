@@ -256,9 +256,11 @@ only and leaves other queue items free to continue.
 The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
-latest list plus the complete count. The frontend restores that projection once
-per browser session and retains a bounded local cache only for immediate display
-and compatibility with history saved before the backend archive contract.
+latest list plus the complete count. Offset-based reads let the frontend append
+older pages inside the fixed history rail. The frontend restores the newest
+projection once per browser session and retains only that bounded first page in
+its local cache for immediate display and compatibility with history saved
+before the backend archive contract.
 Local development uses `apps/backend/data`; the container contract uses
 `/app/data`. Coolify must mount persistent storage at `/app/data`. The container
 entrypoint repairs volume ownership before dropping to the non-root `poker`

@@ -174,6 +174,30 @@ def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None
     assert FileJobStore(tmp_path).get(job_id).archived_at is None
 
 
+def test_history_pages_archived_jobs_in_stable_newest_first_order(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_ids = [
+        upload_job(client, filename=f"history-{index}.png").json()["id"]
+        for index in range(4)
+    ]
+    for job_id in job_ids:
+        approve_job(client, job_id)
+    archived = client.put("/api/history", json={"job_ids": job_ids})
+
+    page = client.get("/api/history?limit=2&offset=1")
+
+    assert archived.status_code == 200
+    assert page.status_code == 200
+    assert page.json()["total"] == 4
+    assert [job["id"] for job in page.json()["jobs"]] == [
+        job_ids[2],
+        job_ids[1],
+    ]
+    assert client.get("/api/history?offset=-1").status_code == 422
+
+
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

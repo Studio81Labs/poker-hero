@@ -60,8 +60,9 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return readJson<JobRecord>(response);
 }
 
-export async function getHistory(): Promise<JobHistory> {
-  const response = await fetch(`${API_BASE_URL}/api/history`, {
+export async function getHistory(offset = 0): Promise<JobHistory> {
+  const query = offset > 0 ? `?offset=${offset}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/history${query}`, {
     credentials: "include",
   });
   return readJson<JobHistory>(response);

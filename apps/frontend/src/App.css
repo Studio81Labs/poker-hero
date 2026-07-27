@@ -737,6 +737,27 @@ button:disabled {
   color: var(--text);
 }
 
+.history-load-older {
+  align-items: center;
+  background: transparent;
+  border: 1px dashed rgba(32, 30, 29, 0.28);
+  color: var(--muted);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  gap: 5px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 8px;
+}
+
+.history-load-older:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
 .history-cards {
   display: flex;
   gap: 3px;

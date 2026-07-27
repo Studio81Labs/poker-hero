@@ -22,6 +22,7 @@ Supported poker format:
 - Multiple poker-client layouts through configurable parser profiles and sample-driven validation.
 - Multi-image upload, browser capture, independent queue processing, and saved history.
 - Optional automation for approval and recommendation when configured confidence requirements are met.
+- Browser-local retention of the automation master state and options.
 - A ground-truth parser benchmark built from explicitly selected approved hands.
 
 Out of scope:

@@ -173,13 +173,14 @@ action choices are grouped by the player's action and the solver's headline
 action, with available average EV loss, to make repeated differences easier to
 study. Progress suggests the unresolved pattern with the highest comparable
 average EV loss, or the largest pending backlog when every pattern is ungraded.
-A pattern with pending work can open a review queue scoped to that exact action
-pair; position, street, certainty, and EV-loss ordering remain available within
-the focused queue. Completing a hand opened from that queue reloads the same
-filters and opens the next matching hand, then returns to the empty queue when
-the session is complete. A review can include a short lesson note. Notes stay
-attached to the hand in progress history and return to the editor when a review
-is reopened.
+Each pattern shows its unresolved count and can open a review queue scoped to
+that exact action pair; position, street, certainty, and EV-loss ordering remain
+available within the focused queue. Completed patterns show a clear state
+instead of a disabled action. Completing a hand opened from that queue reloads
+the same filters and opens the next matching hand, then returns to the empty
+queue when the session is complete. A review can include a short lesson note.
+Notes stay attached to the hand in progress history and return to the editor
+when a review is reopened.
 Completed notes also appear in a dedicated Lessons view, newest first by
 default and kept independently from the shorter recent-decisions list. A
 completed lesson note can be edited or removed in place without reopening the

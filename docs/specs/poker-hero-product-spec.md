@@ -94,7 +94,8 @@ The frontend is a browser control panel for:
 - Seeing legacy unrated totals and unresolved reviews without assigning
   calibration accuracy or EV metrics to those hands.
 - Reviewing repeated unsupported action choices grouped by the player's action
-  and the solver's headline action, with available average EV loss.
+  and the solver's headline action, with available average EV loss and visible
+  unresolved counts.
 - Opening a repeated action-difference pattern as a focused review queue while
   retaining street and EV-loss ordering controls.
 - Opening a suggested action-difference focus that prefers the highest
@@ -288,8 +289,8 @@ frequencies.
     category has pending work.
 15. Progress may suggest a common unsupported action pattern with pending work,
     preferring the highest comparable average EV loss and otherwise the largest
-    unresolved backlog. That exact player-action and solver-action pair may
-    focus the review queue.
+    unresolved backlog. Each pattern exposes its unresolved count; that exact
+    player-action and solver-action pair may focus the review queue.
 16. The user may mark a revisited difference reviewed with an optional lesson
     note, which removes it from the pending queue while preserving both in
     progress history.
@@ -493,7 +494,8 @@ Poker Hero is successful when:
   bucket, or a fallback reason and clear that filter without changing the
   pending action/sizing review queue.
 - A user can identify repeated unsupported action choices without treating
-  solver-supported mixed actions or sizing-only differences as mistakes.
+  solver-supported mixed actions or sizing-only differences as mistakes, and
+  can see how many reviews remain for each pattern.
 - A user can open pending reviews for one repeated action pattern without
   manually searching the broader queue.
 - A user can open an actionable suggested action pattern without manually

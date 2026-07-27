@@ -4621,23 +4621,30 @@ export default function App() {
                                 ? `${formatEvLossBb(difference.average_ev_loss_bb)} avg loss`
                                 : "EV ungraded"}
                             </em>
-                            <button
-                              type="button"
-                              className="training-difference-review"
-                              onClick={() => void focusTrainingActionDifference(difference)}
-                              disabled={
-                                difference.needs_review_hands === 0
-                                || trainingProgressLoading
-                                || trainingReviewJobId !== null
-                                || busy
-                              }
-                              aria-label={`Review ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} differences`}
-                              title={difference.needs_review_hands > 0
-                                ? `${difference.needs_review_hands} pending review${difference.needs_review_hands === 1 ? "" : "s"}`
-                                : "No pending reviews"}
-                            >
-                              <Eye size={14} aria-hidden="true" />
-                            </button>
+                            {difference.needs_review_hands > 0 ? (
+                              <button
+                                type="button"
+                                className="training-difference-review"
+                                onClick={() => void focusTrainingActionDifference(difference)}
+                                disabled={
+                                  trainingProgressLoading
+                                  || trainingReviewJobId !== null
+                                  || busy
+                                }
+                                aria-label={`Review ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} differences (${difference.needs_review_hands})`}
+                                title={`${difference.needs_review_hands} pending review${difference.needs_review_hands === 1 ? "" : "s"}`}
+                              >
+                                <Target size={12} aria-hidden="true" />
+                                {difference.needs_review_hands}
+                              </button>
+                            ) : (
+                              <span
+                                className="training-difference-review-empty"
+                                aria-label={`No pending ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} reviews`}
+                              >
+                                —
+                              </span>
+                            )}
                           </div>
                         ))}
                       </div>

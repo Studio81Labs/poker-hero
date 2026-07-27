@@ -3458,6 +3458,11 @@ button:disabled {
     grid-row: 1 / 3;
   }
 
+  .training-street-table th,
+  .training-street-table td {
+    padding-inline: 4px;
+  }
+
   .training-solver-table th,
   .training-solver-table td {
     padding-inline: 5px;

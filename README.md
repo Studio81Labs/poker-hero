@@ -154,7 +154,8 @@ ungraded hands afterward. It can
 also focus on one street; filtering happens before ordering and the bounded
 queue limit. Training progress suggests an actionable focus street from the
 pending queue, preferring the highest graded average EV loss and otherwise the
-lowest action accuracy. Reviews can also be scoped to low, medium, or high
+lowest action accuracy. Street rows show their unresolved count and can open
+that street queue directly. Reviews can also be scoped to low, medium, or high
 self-rated certainty, or to legacy hands with no rating; certainty combines
 with street and action-pattern filters before ordering and limiting. Rated
 calibration rows show their unresolved count and can open that certainty queue

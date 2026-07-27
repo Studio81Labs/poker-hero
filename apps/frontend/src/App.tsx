@@ -4669,46 +4669,71 @@ export default function App() {
                           <th>Action</th>
                           <th>Exact</th>
                           <th>Avg EV loss</th>
+                          <th>Review</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {trainingProgress.street_summaries.map((summary) => (
-                          <Fragment key={summary.street}>
-                            <tr className={summary.trend ? "has-trend" : undefined}>
-                              <th scope="row">
-                                <button
-                                  type="button"
-                                  className="training-summary-drilldown"
-                                  onClick={() => void updateTrainingStreetFilter({
-                                    street: summary.street,
-                                    label: trainingStreetLabel(summary.street),
-                                  })}
-                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                  aria-label={`Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} played on ${summary.street}`}
-                                  title="Show training hands"
-                                >
-                                  <span>{summary.street}</span>
-                                  <Eye size={12} aria-hidden="true" />
-                                </button>
-                              </th>
-                              <td>{summary.reviewed_hands}</td>
-                              <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                              <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                              <td>
-                                {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
-                                  ? formatEvLossBb(summary.average_ev_loss_bb)
-                                  : "—"}
-                              </td>
-                            </tr>
-                            {summary.trend ? (
-                              <tr className="training-summary-trend-row">
-                                <td colSpan={5}>
-                                  <PerformanceTrend trend={summary.trend} />
+                        {trainingProgress.street_summaries.map((summary) => {
+                          const pendingReviews = trainingProgress.review_street_counts?.[
+                            summary.street
+                          ] ?? 0;
+                          return (
+                            <Fragment key={summary.street}>
+                              <tr className={summary.trend ? "has-trend" : undefined}>
+                                <th scope="row">
+                                  <button
+                                    type="button"
+                                    className="training-summary-drilldown"
+                                    onClick={() => void updateTrainingStreetFilter({
+                                      street: summary.street,
+                                      label: trainingStreetLabel(summary.street),
+                                    })}
+                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                                    aria-label={`Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} played on ${summary.street}`}
+                                    title="Show training hands"
+                                  >
+                                    <span>{summary.street}</span>
+                                    <Eye size={12} aria-hidden="true" />
+                                  </button>
+                                </th>
+                                <td>{summary.reviewed_hands}</td>
+                                <td>{benchmarkPercent(summary.action_accuracy)}</td>
+                                <td>{benchmarkPercent(summary.exact_accuracy)}</td>
+                                <td>
+                                  {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
+                                    ? formatEvLossBb(summary.average_ev_loss_bb)
+                                    : "—"}
+                                </td>
+                                <td>
+                                  {pendingReviews > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="training-certainty-review"
+                                      onClick={() => void focusTrainingReviewStreet(summary.street)}
+                                      disabled={
+                                        trainingProgressLoading
+                                        || trainingReviewJobId !== null
+                                        || busy
+                                      }
+                                      aria-label={`Review ${summary.street} street differences (${pendingReviews})`}
+                                      title={`Review ${summary.street} differences`}
+                                    >
+                                      <Target size={12} aria-hidden="true" />
+                                      {pendingReviews}
+                                    </button>
+                                  ) : "—"}
                                 </td>
                               </tr>
-                            ) : null}
-                          </Fragment>
-                        ))}
+                              {summary.trend ? (
+                                <tr className="training-summary-trend-row">
+                                  <td colSpan={6}>
+                                    <PerformanceTrend trend={summary.trend} />
+                                  </td>
+                                </tr>
+                              ) : null}
+                            </Fragment>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </section>

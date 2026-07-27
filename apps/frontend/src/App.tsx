@@ -1574,10 +1574,37 @@ function mergeHistoryItems(
   incoming: HistoryItem[],
 ): HistoryItem[] {
   const currentIds = new Set(current.map((item) => item.id));
+  const incomingById = new Map(incoming.map((item) => [item.id, item]));
   return [
-    ...current,
+    ...current.map((item) => {
+      const incomingItem = incomingById.get(item.id);
+      return incomingItem ? newerHistoryItem(item, incomingItem) : item;
+    }),
     ...incoming.filter((item) => !currentIds.has(item.id)),
   ];
+}
+
+function newerHistoryItem(
+  current: HistoryItem,
+  incoming: HistoryItem,
+): HistoryItem {
+  const currentUpdatedAt = Date.parse(current.job.updated_at);
+  const incomingUpdatedAt = Date.parse(incoming.job.updated_at);
+  return Number.isFinite(currentUpdatedAt)
+    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+    ? current
+    : incoming;
+}
+
+function reconcileHistoryItems(
+  current: HistoryItem[],
+  incoming: HistoryItem[],
+): HistoryItem[] {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  return incoming.map((item) => {
+    const currentItem = currentById.get(item.id);
+    return currentItem ? newerHistoryItem(currentItem, item) : item;
+  });
 }
 
 function cardToCode(card: Card): string {
@@ -2300,6 +2327,7 @@ export default function App() {
 
   function replaceJob(updatedJob: JobRecord) {
     setJobs((current) => current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)));
+    updateHistoryJob(updatedJob);
     setActiveJobId(updatedJob.id);
   }
 
@@ -2310,6 +2338,7 @@ export default function App() {
         ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
         : [nextJob, ...current];
     });
+    updateHistoryJob(nextJob);
     activateJob(nextJob);
   }
 
@@ -2326,14 +2355,18 @@ export default function App() {
 
   function applyHistoryPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
-    const items = append ? mergeHistoryItems(history, pageItems) : pageItems;
-    setHistory(items);
     setHistoryTotal(page.total);
-    const historyCached = writeHistory(items);
-    const totalCached = writeHistoryTotal(page.total);
-    if (historyCached && totalCached) {
-      markHistorySessionSynced();
-    }
+    setHistory((current) => {
+      const items = append
+        ? mergeHistoryItems(current, pageItems)
+        : reconcileHistoryItems(current, pageItems);
+      const historyCached = writeHistory(items);
+      const totalCached = writeHistoryTotal(page.total);
+      if (historyCached && totalCached) {
+        markHistorySessionSynced();
+      }
+      return items;
+    });
   }
 
   async function loadOlderHistory() {
@@ -2705,7 +2738,6 @@ export default function App() {
         trainingReviewNote.trim() || null,
       );
       replaceJob(reviewedJob);
-      updateHistoryJob(reviewedJob);
       if (!continueReviewQueue) {
         toast.success("Training review completed");
         return;
@@ -2764,7 +2796,6 @@ export default function App() {
     try {
       const reopenedJob = await reopenTrainingReview(job.id);
       replaceJob(reopenedJob);
-      updateHistoryJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
       setError(messageFromError(reviewError, "Could not reopen training review"));
@@ -2800,7 +2831,6 @@ export default function App() {
     try {
       const updatedJob = await completeTrainingReview(job.id, note);
       replaceJob(updatedJob);
-      updateHistoryJob(updatedJob);
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
@@ -3432,13 +3462,7 @@ export default function App() {
     setError(null);
     try {
       const reviewJob = await getJob(jobId);
-      setJobs((current) => {
-        const existing = current.some((candidate) => candidate.id === reviewJob.id);
-        return existing
-          ? current.map((candidate) => (candidate.id === reviewJob.id ? reviewJob : candidate))
-          : [reviewJob, ...current];
-      });
-      activateJob(reviewJob);
+      upsertAndActivateJob(reviewJob);
       setBenchmarkDialogOpen(false);
       setExpandedBenchmarkCaseId(null);
     } catch (benchmarkError) {

@@ -210,6 +210,7 @@ interface RecommendationEvidence {
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
+const HISTORY_SNAPSHOT_RETRY_LIMIT = 3;
 const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
@@ -1573,22 +1574,40 @@ async function getHistorySearchExtent(
   query: string,
   loadedCount: number,
 ): Promise<JobHistory> {
-  const jobs: JobRecord[] = [];
-  let total = 0;
+  for (let attempt = 0; attempt < HISTORY_SNAPSHOT_RETRY_LIMIT; attempt += 1) {
+    const jobs: JobRecord[] = [];
+    let snapshotVersion: string | null = null;
+    let snapshotChanged = false;
+    let total = 0;
 
-  do {
-    const page = await getHistory(jobs.length, query);
-    total = page.total;
-    jobs.push(...page.jobs);
-    if (page.jobs.length === 0) {
-      break;
+    do {
+      const page = await getHistory(jobs.length, query);
+      if (
+        snapshotVersion !== null
+        && page.snapshot_version !== undefined
+        && page.snapshot_version !== snapshotVersion
+      ) {
+        snapshotChanged = true;
+        break;
+      }
+      snapshotVersion ??= page.snapshot_version ?? null;
+      total = page.total;
+      jobs.push(...page.jobs);
+      if (page.jobs.length === 0) {
+        break;
+      }
+    } while (jobs.length < Math.min(loadedCount, total));
+
+    if (!snapshotChanged) {
+      return {
+        total,
+        jobs: jobs.slice(0, Math.min(loadedCount, total)),
+        snapshot_version: snapshotVersion ?? undefined,
+      };
     }
-  } while (jobs.length < Math.min(loadedCount, total));
+  }
 
-  return {
-    total,
-    jobs: jobs.slice(0, Math.min(loadedCount, total)),
-  };
+  throw new Error("Saved history changed repeatedly while loading");
 }
 
 function mergeHistoryItems(

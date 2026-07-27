@@ -3922,13 +3922,28 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         total: 50,
         jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-membership-change",
       }))
-      .mockImplementation((input) => Promise.resolve(jsonResponse({
+      .mockResolvedValueOnce(jsonResponse({
         total: 50,
-        jobs: String(input).includes("offset=24")
-          ? updatedJobs.slice(24, 48)
-          : updatedJobs.slice(0, 24),
-      })));
+        jobs: savedJobs.slice(0, 24),
+        snapshot_version: "before-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: updatedJobs.slice(24, 48),
+        snapshot_version: "after-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: updatedJobs.slice(0, 24),
+        snapshot_version: "after-membership-change",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 50,
+        jobs: updatedJobs.slice(24, 48),
+        snapshot_version: "after-membership-change",
+      }));
     render(<App />);
     const user = userEvent.setup();
     const historyPanel = screen.getByLabelText("Session history");
@@ -3953,14 +3968,14 @@ describe("App", () => {
     expect(within(historyPanel).getByRole("button", {
       name: "Load older history",
     })).toHaveTextContent("Load 2 older");
-    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenCalledTimes(5);
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      2,
+      4,
       "http://localhost:8000/api/history?query=flop",
       { credentials: "include" },
     );
     expect(fetchMock()).toHaveBeenNthCalledWith(
-      3,
+      5,
       "http://localhost:8000/api/history?offset=24&query=flop",
       { credentials: "include" },
     );

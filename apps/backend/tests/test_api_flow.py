@@ -138,7 +138,9 @@ def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) ->
     )
 
     assert empty_history.status_code == 200
-    assert empty_history.json() == {"total": 0, "jobs": []}
+    assert empty_history.json()["total"] == 0
+    assert empty_history.json()["jobs"] == []
+    assert empty_history.json()["snapshot_version"]
     assert rejected.status_code == 409
     assert rejected.json()["detail"] == (
         "Only approved or recommended jobs can be moved to history"
@@ -170,7 +172,9 @@ def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None
     )
 
     assert response.status_code == 404
-    assert client.get("/api/history").json() == {"total": 0, "jobs": []}
+    empty_history = client.get("/api/history").json()
+    assert empty_history["total"] == 0
+    assert empty_history["jobs"] == []
     assert FileJobStore(tmp_path).get(job_id).archived_at is None
 
 
@@ -186,15 +190,24 @@ def test_history_pages_archived_jobs_in_stable_newest_first_order(
         approve_job(client, job_id)
     archived = client.put("/api/history", json={"job_ids": job_ids})
 
+    first_page = client.get("/api/history?limit=2")
     page = client.get("/api/history?limit=2&offset=1")
+    store = FileJobStore(tmp_path)
+    changed_job = store.get(job_ids[0])
+    changed_job.training_review_note = "Snapshot content changed."
+    store.save(changed_job)
+    changed_page = client.get("/api/history?limit=2")
 
     assert archived.status_code == 200
+    assert first_page.status_code == 200
     assert page.status_code == 200
     assert page.json()["total"] == 4
+    assert first_page.json()["snapshot_version"] == page.json()["snapshot_version"]
     assert [job["id"] for job in page.json()["jobs"]] == [
         job_ids[2],
         job_ids[1],
     ]
+    assert changed_page.json()["snapshot_version"] != page.json()["snapshot_version"]
     assert client.get("/api/history?offset=-1").status_code == 422
 
 
@@ -238,7 +251,8 @@ def test_history_searches_archived_poker_context_before_paging(
     assert poker_terms.json()["total"] == 1
     assert [job["id"] for job in poker_terms.json()["jobs"]] == [matching_id]
     assert [job["id"] for job in filename.json()["jobs"]] == [matching_id]
-    assert no_match.json() == {"total": 0, "jobs": []}
+    assert no_match.json()["total"] == 0
+    assert no_match.json()["jobs"] == []
     assert client.get(
         "/api/history",
         params={"query": "x" * 101},
@@ -271,7 +285,7 @@ def test_history_card_queries_do_not_match_recommendation_prose(
         json={"job_ids": [ace_spades_id, other_id]},
     )
 
-    for card_query in ("A♠", "AsKd", "A♠K♦"):
+    for card_query in ("A♠", "AsKd", "A♠K♦", "As,Kd", "A♠,K♦"):
         response = client.get("/api/history", params={"query": card_query})
 
         assert response.status_code == 200
@@ -299,7 +313,9 @@ def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 422
-    assert client.get("/api/history").json() == {"total": 0, "jobs": []}
+    empty_history = client.get("/api/history").json()
+    assert empty_history["total"] == 0
+    assert empty_history["jobs"] == []
 
 
 def test_reapproval_clears_previous_recommendation(tmp_path: Path) -> None:

@@ -1,5 +1,6 @@
 from contextlib import ExitStack
 from datetime import datetime, timezone
+from hashlib import sha256
 from io import BytesIO
 import re
 from threading import Lock
@@ -76,6 +77,7 @@ HISTORY_QUERY_TRANSLATION = str.maketrans({
 HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
     r"(?:(?i:(?:[2-9tjqka]|10)[♣♦♥♠])|(?:[2-9TJQKA]|10)[cdhsCDHS])",
 )
+HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -178,7 +180,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         offset: int = Query(default=0, ge=0),
         query: str | None = Query(default=None, max_length=100),
     ) -> JobHistory:
-        return build_job_history(store, limit, offset, query)
+        with ExitStack() as history_lock_stack:
+            for job_lock in job_locks:
+                history_lock_stack.enter_context(job_lock)
+            return build_job_history(store, limit, offset, query)
 
     @app.put("/api/history", response_model=JobHistory)
     def archive_jobs(
@@ -707,7 +712,20 @@ def build_job_history(
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],
+        snapshot_version=history_snapshot_version(archived_jobs),
     )
+
+
+def history_snapshot_version(jobs: list[JobRecord]) -> str:
+    digest = sha256()
+    for job in jobs:
+        digest.update(job.id.encode())
+        digest.update(b"\0")
+        digest.update(job.updated_at.isoformat().encode())
+        digest.update(b"\0")
+        digest.update((job.archived_at.isoformat() if job.archived_at else "").encode())
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def normalize_history_query(value: str | None) -> str:
@@ -731,7 +749,7 @@ def compact_history_card_terms(value: str) -> list[str] | None:
 
 def history_query_terms(value: str | None) -> list[tuple[str, bool]]:
     terms: list[tuple[str, bool]] = []
-    for raw_term in (value or "").split():
+    for raw_term in HISTORY_QUERY_SEPARATOR_PATTERN.split(value or ""):
         card_terms = compact_history_card_terms(raw_term)
         if card_terms is not None:
             terms.extend((card_term, True) for card_term in card_terms)

@@ -3418,6 +3418,67 @@ describe("App", () => {
     });
   });
 
+  it("keeps a newer reopened hand when an older history refresh finishes", async () => {
+    const archivedAt = "2026-07-10T00:02:00Z";
+    const staleJob: JobRecord = {
+      ...recommendedJob(),
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const reapprovedJob: JobRecord = {
+      ...approvedJob(),
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: staleJob.id,
+        job: staleJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const pendingHistory = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingHistory.promise)
+      .mockResolvedValueOnce(jsonResponse(reapprovedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    await user.click(screen.getByRole("button", { name: "Reset to parser" }));
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+    await waitFor(() => expect(within(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    })).getByText("approved")).toBeInTheDocument());
+
+    pendingHistory.resolve(jsonResponse({
+      total: 1,
+      jobs: [staleJob],
+    }));
+
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "Refresh saved history",
+    })).toBeEnabled());
+    const historyItem = screen.getByRole("button", {
+      name: "Reopen history item 1",
+    });
+    expect(within(historyItem).getByText("approved")).toBeInTheDocument();
+    expect(within(historyItem).queryByText("raise")).not.toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].job).toMatchObject({
+      status: "approved",
+      recommendation: null,
+      updated_at: "2026-07-10T00:03:00Z",
+    });
+  });
+
   it("restores persisted history when the browser has no local cache", async () => {
     window.localStorage.removeItem("poker-training-history-v1");
     window.sessionStorage.removeItem("poker-training-history-synced");

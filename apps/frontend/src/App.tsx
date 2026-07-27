@@ -1574,10 +1574,37 @@ function mergeHistoryItems(
   incoming: HistoryItem[],
 ): HistoryItem[] {
   const currentIds = new Set(current.map((item) => item.id));
+  const incomingById = new Map(incoming.map((item) => [item.id, item]));
   return [
-    ...current,
+    ...current.map((item) => {
+      const incomingItem = incomingById.get(item.id);
+      return incomingItem ? newerHistoryItem(item, incomingItem) : item;
+    }),
     ...incoming.filter((item) => !currentIds.has(item.id)),
   ];
+}
+
+function newerHistoryItem(
+  current: HistoryItem,
+  incoming: HistoryItem,
+): HistoryItem {
+  const currentUpdatedAt = Date.parse(current.job.updated_at);
+  const incomingUpdatedAt = Date.parse(incoming.job.updated_at);
+  return Number.isFinite(currentUpdatedAt)
+    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+    ? current
+    : incoming;
+}
+
+function reconcileHistoryItems(
+  current: HistoryItem[],
+  incoming: HistoryItem[],
+): HistoryItem[] {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  return incoming.map((item) => {
+    const currentItem = currentById.get(item.id);
+    return currentItem ? newerHistoryItem(currentItem, item) : item;
+  });
 }
 
 function cardToCode(card: Card): string {
@@ -2328,14 +2355,18 @@ export default function App() {
 
   function applyHistoryPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
-    const items = append ? mergeHistoryItems(history, pageItems) : pageItems;
-    setHistory(items);
     setHistoryTotal(page.total);
-    const historyCached = writeHistory(items);
-    const totalCached = writeHistoryTotal(page.total);
-    if (historyCached && totalCached) {
-      markHistorySessionSynced();
-    }
+    setHistory((current) => {
+      const items = append
+        ? mergeHistoryItems(current, pageItems)
+        : reconcileHistoryItems(current, pageItems);
+      const historyCached = writeHistory(items);
+      const totalCached = writeHistoryTotal(page.total);
+      if (historyCached && totalCached) {
+        markHistorySessionSynced();
+      }
+      return items;
+    });
   }
 
   async function loadOlderHistory() {

@@ -2843,10 +2843,7 @@ export default function App() {
       processingMutationCountRef.current - 1,
       0,
     );
-    if (
-      processingMutationCountRef.current === 0
-      && processingRestoreRetryRequestedRef.current
-    ) {
+    if (processingMutationCountRef.current === 0) {
       scheduleProcessingQueueRestore();
     }
   }

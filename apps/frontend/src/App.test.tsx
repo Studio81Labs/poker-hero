@@ -132,6 +132,17 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function processingQueueResponse(
+  jobs: JobRecord[],
+  snapshotVersion = "test-processing-snapshot",
+): Response {
+  return jsonResponse({
+    total: jobs.length,
+    jobs,
+    snapshot_version: snapshotVersion,
+  });
+}
+
 function deferredResponse() {
   let resolve!: (response: Response) => void;
   const promise = new Promise<Response>((resolvePromise) => {
@@ -922,10 +933,16 @@ describe("App", () => {
     );
     await user.click(screen.getByRole("button", { name: "Upload and parse" }));
 
-    const localFailure = await screen.findByRole("button", {
-      name: `Open screenshot 1: ${filename}`,
-    });
-    expect(within(localFailure).getByText(localError)).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getAllByRole("button", {
+      name: new RegExp(`Open screenshot \\d+: ${filename.replace(".", "\\.")}`),
+    })).toHaveLength(1));
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedJob]);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
 
     await act(async () => {
       pendingQueue.resolve(jsonResponse({
@@ -934,10 +951,38 @@ describe("App", () => {
         snapshot_version: "stale-empty-snapshot",
       }));
     });
+  });
 
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+  it("reconciles a lost upload response after an already-synced mount", async () => {
+    const persistedAt = new Date().toISOString();
+    const persistedJob = jobRecord({
+      id: "8".repeat(32),
+      original_filename: "lost-after-sync.png",
+      created_at: persistedAt,
+      updated_at: persistedAt,
+    });
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after upload"))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [persistedJob],
+        snapshot_version: "post-mutation-snapshot",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    expect(fetchMock()).not.toHaveBeenCalled();
+    await disableAutomation(user);
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["upload"], "lost-after-sync.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getAllByRole("button", {
-      name: new RegExp(`Open screenshot \\d+: ${filename.replace(".", "\\.")}`),
+      name: /Open screenshot \d+: lost-after-sync\.png/,
     })).toHaveLength(1));
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
@@ -1039,7 +1084,10 @@ describe("App", () => {
   });
 
   it("uploads a screenshot, populates parser state, and enables approval", async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201));
+    const created = jobRecord();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
     render(<App />);
 
     const user = await uploadScreenshot();
@@ -1066,6 +1114,7 @@ describe("App", () => {
     const correctedState = canonicalState({ pot_size: 20 });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(importedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([importedJob]))
       .mockResolvedValueOnce(jsonResponse({ ...importedJob, approved_state: correctedState }));
     render(<App />);
 
@@ -1081,8 +1130,8 @@ describe("App", () => {
     expect(approveButton).toBeEnabled();
     await user.click(approveButton);
 
-    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/imported-job/approve");
-    const payload = JSON.parse(String(fetchMock().mock.calls[1][1]?.body));
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/imported-job/approve");
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
     expect(payload.pot_size).toBe(20);
     expect(payload.user_approved).toBe(true);
   });
@@ -1103,23 +1152,21 @@ describe("App", () => {
       street: "preflop",
       action_context: "Hero faces 1.5 BB to call into 3.5 BB pot",
     };
+    const firstJob = jobRecord({ id: "job-1", original_filename: "first.png" });
+    const secondJob = jobRecord({
+      id: "job-2",
+      original_filename: "second.png",
+      parser_result: {
+        state: secondState,
+        confidences: { hero_cards: 0.91, street: 0.9 },
+        warnings: [],
+        raw: {},
+      },
+    });
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ id: "job-1", original_filename: "first.png" }), 201))
-      .mockResolvedValueOnce(
-        jsonResponse(
-          jobRecord({
-            id: "job-2",
-            original_filename: "second.png",
-            parser_result: {
-              state: secondState,
-              confidences: { hero_cards: 0.91, street: 0.9 },
-              warnings: [],
-              raw: {},
-            },
-          }),
-          201,
-        ),
-    );
+      .mockResolvedValueOnce(jsonResponse(firstJob, 201))
+      .mockResolvedValueOnce(jsonResponse(secondJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([firstJob, secondJob]));
     render(<App />);
     const user = userEvent.setup();
     await disableAutomation(user);
@@ -1135,7 +1182,7 @@ describe("App", () => {
     expect(await screen.findByLabelText("Screenshots queue")).toBeInTheDocument();
     expect(screen.getByText("2 screenshots")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Ah Kd")).toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
 
     await user.click(screen.getByRole("button", { name: "Open screenshot 2: second.png" }));
 
@@ -1145,10 +1192,13 @@ describe("App", () => {
   });
 
   it("continues a batch upload when one screenshot fails", async () => {
+    const firstJob = jobRecord({ id: "job-1", original_filename: "first.png" });
+    const thirdJob = jobRecord({ id: "job-3", original_filename: "third.png" });
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ id: "job-1", original_filename: "first.png" }), 201))
+      .mockResolvedValueOnce(jsonResponse(firstJob, 201))
       .mockResolvedValueOnce(jsonResponse({ detail: "Second image is unreadable" }, 400))
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ id: "job-3", original_filename: "third.png" }), 201));
+      .mockResolvedValueOnce(jsonResponse(thirdJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([firstJob, thirdJob]));
     render(<App />);
     const user = userEvent.setup();
     await disableAutomation(user);
@@ -1161,17 +1211,26 @@ describe("App", () => {
     ]);
     await user.click(screen.getByRole("button", { name: "Upload and parse" }));
 
-    expect(await screen.findByRole("button", { name: "Open screenshot 3: third.png" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open screenshot 1: first.png" })).toBeInTheDocument();
-    const failedItem = screen.getByRole("button", { name: "Open screenshot 2: second.png" });
+    expect(await screen.findByRole("button", {
+      name: /Open screenshot \d+: third\.png/,
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: /Open screenshot \d+: first\.png/,
+    })).toBeInTheDocument();
+    const failedItem = screen.getByRole("button", {
+      name: /Open screenshot \d+: second\.png/,
+    });
     expect(within(failedItem).getByText("error")).toBeInTheDocument();
     expect(within(failedItem).getByText("Second image is unreadable")).toBeInTheDocument();
     expect(await screen.findByText("1 screenshot need attention. Check the highlighted queue items.")).toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
   });
 
   it("shows processing progress and aborts unprocessed screenshots", async () => {
-    fetchMock().mockImplementation((_url, options) => {
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/jobs" && options?.method !== "POST") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
       const signal = options?.signal as AbortSignal | undefined;
       return new Promise<Response>((_resolve, reject) => {
         if (signal?.aborted) {
@@ -1199,7 +1258,7 @@ describe("App", () => {
 
     expect(await screen.findByText("Import aborted. 3 unprocessed screenshots discarded.")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Stopping import" })).not.toBeInTheDocument());
-    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
   });
 
@@ -1218,7 +1277,10 @@ describe("App", () => {
   it("captures a shared screen frame and uploads it for parsing", async () => {
     const { addEventListener, getDisplayMedia } = stubDisplayMedia("browser");
     stubCanvasCapture();
-    fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "screen-capture.png" }), 201));
+    const created = jobRecord({ original_filename: "screen-capture.png" });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
     render(<App />);
     const user = userEvent.setup();
     await disableAutomation(user);
@@ -1237,7 +1299,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "View live tab" })).toBeEnabled();
     expect(screen.getByLabelText("Screenshots queue")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open screenshot 1: screen-capture.png" })).toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(getDisplayMedia).toHaveBeenCalledWith({
       audio: false,
       monitorTypeSurfaces: "exclude",
@@ -1256,18 +1318,22 @@ describe("App", () => {
   it("runs capture, approval, and recommendation through automation", async () => {
     stubDisplayMedia("window");
     stubCanvasCapture();
+    const created = jobRecord({ original_filename: "screen-capture.png" });
+    const approved = { ...approvedJob(), original_filename: "screen-capture.png" };
+    const recommended = { ...recommendedJob(), original_filename: "screen-capture.png" };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "screen-capture.png" }), 201))
-      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "screen-capture.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "screen-capture.png" }))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockResolvedValueOnce(jsonResponse(recommended))
+      .mockResolvedValueOnce(processingQueueResponse([recommended]))
       .mockResolvedValueOnce(jsonResponse({
         total: 1,
         jobs: [{
-          ...recommendedJob(),
-          original_filename: "screen-capture.png",
+          ...recommended,
           archived_at: "2026-07-10T00:01:00Z",
         }],
-      }));
+      }))
+      .mockResolvedValueOnce(processingQueueResponse([]));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1289,31 +1355,37 @@ describe("App", () => {
     expect(within(historyItem).getByText("raise")).toBeInTheDocument();
     expect(within(historyItem).getByText("A♥")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open screenshot 1: screen-capture.png" })).not.toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(4);
+    expect(fetchMock()).toHaveBeenCalledTimes(6);
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/jobs");
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
-    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/history");
-    expect(fetchMock().mock.calls[3][1]?.method).toBe("PUT");
-    expect(JSON.parse(String(fetchMock().mock.calls[3][1]?.body))).toEqual({
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs");
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/history");
+    expect(fetchMock().mock.calls[4][1]?.method).toBe("PUT");
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs");
+    expect(JSON.parse(String(fetchMock().mock.calls[4][1]?.body))).toEqual({
       job_ids: ["job-123"],
     });
     expect(JSON.parse(String(fetchMock().mock.calls[1][1]?.body)).user_approved).toBe(true);
   });
 
   it("runs upload, approval, and recommendation through automation", async () => {
+    const created = jobRecord({ original_filename: "uploaded.png" });
+    const approved = { ...approvedJob(), original_filename: "uploaded.png" };
+    const recommended = { ...recommendedJob(), original_filename: "uploaded.png" };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "uploaded.png" }), 201))
-      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "uploaded.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "uploaded.png" }))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockResolvedValueOnce(jsonResponse(recommended))
+      .mockResolvedValueOnce(processingQueueResponse([recommended]))
       .mockResolvedValueOnce(jsonResponse({
         total: 1,
         jobs: [{
-          ...recommendedJob(),
-          original_filename: "uploaded.png",
+          ...recommended,
           archived_at: "2026-07-10T00:01:00Z",
         }],
-      }));
+      }))
+      .mockResolvedValueOnce(processingQueueResponse([]));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1329,11 +1401,13 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Reopen history item 1" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open screenshot 1: uploaded.png" })).not.toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(4);
+    expect(fetchMock()).toHaveBeenCalledTimes(6);
     expect(fetchMock().mock.calls[0][0]).toBe("http://localhost:8000/api/jobs");
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
-    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/history");
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs");
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/history");
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs");
   });
 
   it("retains server approval when upload recommendation automation fails", async () => {
@@ -1398,11 +1472,16 @@ describe("App", () => {
   });
 
   it("keeps completed jobs in processing when history persistence fails", async () => {
+    const created = jobRecord({ original_filename: "retry.png" });
+    const approved = { ...approvedJob(), original_filename: "retry.png" };
+    const recommended = { ...recommendedJob(), original_filename: "retry.png" };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "retry.png" }), 201))
-      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "retry.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "retry.png" }))
-      .mockResolvedValueOnce(jsonResponse({ detail: "History storage is unavailable" }, 500));
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockResolvedValueOnce(jsonResponse(recommended))
+      .mockResolvedValueOnce(processingQueueResponse([recommended]))
+      .mockResolvedValueOnce(jsonResponse({ detail: "History storage is unavailable" }, 500))
+      .mockResolvedValueOnce(processingQueueResponse([recommended]));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1426,18 +1505,22 @@ describe("App", () => {
   });
 
   it("clears persisted jobs when the bounded browser history cache is unavailable", async () => {
+    const created = jobRecord({ original_filename: "storage-disabled.png" });
+    const approved = { ...approvedJob(), original_filename: "storage-disabled.png" };
+    const recommended = { ...recommendedJob(), original_filename: "storage-disabled.png" };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "storage-disabled.png" }), 201))
-      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), original_filename: "storage-disabled.png" }))
-      .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), original_filename: "storage-disabled.png" }))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockResolvedValueOnce(jsonResponse(recommended))
+      .mockResolvedValueOnce(processingQueueResponse([recommended]))
       .mockResolvedValueOnce(jsonResponse({
         total: 1,
         jobs: [{
-          ...recommendedJob(),
-          original_filename: "storage-disabled.png",
+          ...recommended,
           archived_at: "2026-07-10T00:01:00Z",
         }],
-      }));
+      }))
+      .mockResolvedValueOnce(processingQueueResponse([]));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1467,19 +1550,17 @@ describe("App", () => {
   it("stops automation before approval when parser warnings are not allowed", async () => {
     stubDisplayMedia("window");
     stubCanvasCapture();
-    fetchMock().mockResolvedValueOnce(
-      jsonResponse(
-        jobRecord({
-          parser_result: {
-            state: detectedState,
-            confidences: { hero_cards: 0.71, street: 0.9 },
-            warnings: ["Hero cards need manual review"],
-            raw: {},
-          },
-        }),
-        201,
-      ),
-    );
+    const created = jobRecord({
+      parser_result: {
+        state: detectedState,
+        confidences: { hero_cards: 0.71, street: 0.9 },
+        warnings: ["Hero cards need manual review"],
+        raw: {},
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
     render(<App />);
     const user = userEvent.setup();
 
@@ -1490,7 +1571,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Capture and parse" }));
 
     expect(await screen.findByText("Automation stopped: parser warnings need manual review")).toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
   });
 
@@ -1517,8 +1598,10 @@ describe("App", () => {
 
   it("clears stale recommendation access after edits until the current form is re-approved", async () => {
     const editedState = canonicalState({ pot_size: 18 });
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse(recommendedJob()))
       .mockResolvedValueOnce(jsonResponse(approvedJob(editedState)))
@@ -1541,13 +1624,13 @@ describe("App", () => {
     expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
-    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).toHaveBeenCalledTimes(4);
 
     await user.click(screen.getByRole("button", { name: "Approve state" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled());
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(5));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(6));
 
     await user.click(screen.getByRole("button", { name: "Reset to parser" }));
     expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
@@ -1567,8 +1650,10 @@ describe("App", () => {
       ...recommendedJob(),
       training_decision: trainingDecision,
     };
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse(decisionJob))
       .mockResolvedValueOnce(jsonResponse(revealedJob));
@@ -1584,8 +1669,8 @@ describe("App", () => {
 
     expect(await within(decisionPanel).findByText("Answer locked")).toBeInTheDocument();
     expect(within(decisionPanel).getByText("Saved before reveal")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
-    expect(fetchMock().mock.calls[2][1]).toMatchObject({
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
+    expect(fetchMock().mock.calls[3][1]).toMatchObject({
       method: "PUT",
       body: JSON.stringify({ action: "raise", sizing: 7.5, certainty: "high" }),
     });
@@ -1597,7 +1682,7 @@ describe("App", () => {
     expect(within(comparison).getByText("High certainty")).toBeInTheDocument();
     expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
     expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(4);
+    expect(fetchMock()).toHaveBeenCalledTimes(5);
   });
 
   it("accepts an exact alternate line from a meaningful solver mix", async () => {
@@ -1620,8 +1705,10 @@ describe("App", () => {
         ],
       },
     };
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), training_decision: trainingDecision }))
       .mockResolvedValueOnce(jsonResponse({
@@ -1670,8 +1757,10 @@ describe("App", () => {
       training_reviewed_at: null,
       training_review_note: null,
     };
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse(decisionJob))
       .mockResolvedValueOnce(jsonResponse(revealedJob))
@@ -1700,8 +1789,8 @@ describe("App", () => {
       "Call needs less equity than the raise.",
     );
     expect(await screen.findByText("Training review completed")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[4][1]).toMatchObject({
+    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[5][1]).toMatchObject({
       method: "PUT",
       body: JSON.stringify({ note: "Call needs less equity than the raise." }),
     });
@@ -1718,8 +1807,8 @@ describe("App", () => {
       "Count the bluff combinations before raising.",
     );
     expect(within(comparison).getByText("Reviewed")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[5][1]).toMatchObject({
+    expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[6][1]).toMatchObject({
       method: "PUT",
       body: JSON.stringify({ note: "Count the bluff combinations before raising." }),
     });
@@ -1732,8 +1821,8 @@ describe("App", () => {
     expect(screen.queryByLabelText("Saved training review note")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add lesson note" })).toBeInTheDocument();
     expect(within(comparison).getByText("Reviewed")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[6][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[6][1]).toMatchObject({
+    expect(fetchMock().mock.calls[7][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[7][1]).toMatchObject({
       method: "PUT",
       body: JSON.stringify({ note: null }),
     });
@@ -1744,8 +1833,8 @@ describe("App", () => {
     expect(within(comparison).queryByText("Reviewed")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Training review note")).toHaveValue("");
     expect(await screen.findByText("Training review reopened")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[7][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
-    expect(fetchMock().mock.calls[7][1]).toMatchObject({ method: "DELETE" });
+    expect(fetchMock().mock.calls[8][0]).toBe("http://localhost:8000/api/jobs/job-123/training-review");
+    expect(fetchMock().mock.calls[8][1]).toMatchObject({ method: "DELETE" });
   });
 
   it("records a selected answer automatically when recommendation is requested", async () => {
@@ -1755,8 +1844,10 @@ describe("App", () => {
       certainty: "medium" as const,
       recorded_at: "2026-07-20T12:00:00Z",
     };
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), training_decision: trainingDecision }))
       .mockResolvedValueOnce(jsonResponse({ ...recommendedJob(), training_decision: trainingDecision }));
@@ -1773,18 +1864,20 @@ describe("App", () => {
     expect(within(comparison).getByText("Call")).toBeInTheDocument();
     expect(within(comparison).getByText("Medium certainty")).toBeInTheDocument();
     expect(within(comparison).getByText("Different action")).toBeInTheDocument();
-    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
-    expect(fetchMock().mock.calls[2][1]).toMatchObject({
+    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/decision");
+    expect(fetchMock().mock.calls[3][1]).toMatchObject({
       method: "PUT",
       body: JSON.stringify({ action: "call", sizing: null, certainty: "medium" }),
     });
-    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
   it("clears an unlocked training answer when the approved state is edited", async () => {
     const editedState = canonicalState({ pot_size: 18 });
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse(approvedJob(editedState)))
       .mockResolvedValueOnce(jsonResponse(recommendedJob(editedState)));
@@ -1809,8 +1902,8 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
     expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
-    expect(fetchMock()).toHaveBeenCalledTimes(4);
-    expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
+    expect(fetchMock()).toHaveBeenCalledTimes(5);
+    expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
   });
 
   it("continues through the filtered training review queue", async () => {
@@ -5329,9 +5422,12 @@ describe("App", () => {
   });
 
   it("displays backend upload errors as queue attention items", async () => {
+    const validJob = jobRecord({ original_filename: "valid.png" });
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord({ original_filename: "valid.png" }), 201))
-      .mockResolvedValueOnce(jsonResponse({ detail: "Upload must contain supported image data" }, 400));
+      .mockResolvedValueOnce(jsonResponse(validJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([validJob]))
+      .mockResolvedValueOnce(jsonResponse({ detail: "Upload must contain supported image data" }, 400))
+      .mockResolvedValueOnce(processingQueueResponse([validJob]));
     render(<App />);
 
     await uploadScreenshot("valid.png");
@@ -5349,8 +5445,10 @@ describe("App", () => {
 
   it("sends corrected approval payload with user_approved forced true", async () => {
     const correctedState = canonicalState({ current_bet: 3.5 });
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob(correctedState)));
     render(<App />);
 
@@ -5360,11 +5458,11 @@ describe("App", () => {
     await user.type(currentBetInput, "3.5");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
-    const approveOptions = fetchMock().mock.calls[1][1];
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const approveOptions = fetchMock().mock.calls[2][1];
     const payload = JSON.parse(String(approveOptions?.body));
 
-    expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
     expect(payload.facing_action).toBe("bet");
     expect(payload.user_approved).toBe(true);
@@ -5394,6 +5492,7 @@ describe("App", () => {
     });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
       .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
     render(<App />);
 
@@ -5402,8 +5501,8 @@ describe("App", () => {
     await user.type(screen.getByLabelText(/Opening size/), "2.5");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
-    const payload = JSON.parse(String(fetchMock().mock.calls[1][1]?.body));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
     expect(payload.preflop_opener_position).toBe("button");
     expect(payload.preflop_open_size).toBe(2.5);
   });
@@ -5447,8 +5546,10 @@ describe("App", () => {
         },
       ],
     };
+    const created = jobRecord();
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse(jobRecord(), 201))
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockReturnValueOnce(pendingOverview.promise)
       .mockReturnValueOnce(pendingInclusion.promise)
@@ -5514,6 +5615,7 @@ describe("App", () => {
     await waitFor(() => expect(retainedGroundTruth).toHaveAttribute("aria-checked", "false"));
 
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs/job-123/approve",
       "http://localhost:8000/api/benchmarks",
@@ -5874,7 +5976,11 @@ describe("App", () => {
 
   it("prevents field edits while approval is pending", async () => {
     const pendingApproval = deferredResponse();
-    fetchMock().mockResolvedValueOnce(jsonResponse(jobRecord(), 201)).mockReturnValueOnce(pendingApproval.promise);
+    const created = jobRecord();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockReturnValueOnce(pendingApproval.promise);
     render(<App />);
 
     const user = await uploadScreenshot();

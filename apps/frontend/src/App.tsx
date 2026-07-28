@@ -3595,6 +3595,10 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
+      if (isPristineBenchmarkImport(job)) {
+        beginProcessingMembershipMutation();
+        endProcessingMembershipMutation();
+      }
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
       setBusy(false);

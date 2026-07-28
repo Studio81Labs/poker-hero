@@ -6023,6 +6023,103 @@ describe("App", () => {
     ]);
   });
 
+  it("restores a provider failure after recommending a pristine benchmark import", async () => {
+    const benchmarkJobId = "c".repeat(32);
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "provider-failure.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const failedImport = {
+      ...pristineImport,
+      status: "error" as const,
+      error: "provider exploded",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const benchmarkReport = {
+      id: "benchmark-provider-failure",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-20T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 10,
+      evaluated_fields: 10,
+      accuracy: 1,
+      field_metrics: [{ field: "pot_size", correct: 1, total: 1, accuracy: 1 }],
+      cases: [{
+        job_id: benchmarkJobId,
+        original_filename: "provider-failure.png",
+        status: "completed",
+        correct_fields: 10,
+        evaluated_fields: 10,
+        accuracy: 1,
+        warnings: [],
+        error: null,
+        comparisons: [],
+      }],
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        latest_report: benchmarkReport,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(jsonResponse({ detail: "provider exploded" }, 502))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [failedImport],
+        "failed-import-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle provider-failure.png benchmark details",
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    expect(await screen.findAllByText("provider exploded")).not.toHaveLength(0);
+    const failedQueueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: provider-failure.png",
+    });
+    expect(within(failedQueueItem).getByText("error")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([failedImport]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    const restoredQueueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: provider-failure.png",
+    });
+    expect(within(restoredQueueItem).getByText("provider exploded")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/recommend`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("loads historical benchmark reports and compares accuracy", async () => {
     const earlierReport = {
       id: "benchmark-earlier",

@@ -115,12 +115,13 @@ Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 Before releasing the lock, recommendation work persists an in-progress marker;
-the marker clears on every terminal success or failure. Backend startup converts
-an orphaned marker into a visible retryable error because no provider operation
-survives a process restart. A reloaded frontend keeps the processing cache
-unsynchronized and polls the projection while that marker remains, retrying
-transient projection failures so a solver result committed after the first
-reload read is not hidden by the browser cache.
+re-approval is rejected while that marker remains, and provider setup or
+execution clears it on every terminal success or failure. Backend startup
+converts an orphaned marker into a visible retryable error because no provider
+operation survives a process restart. A reloaded frontend keeps the processing
+cache unsynchronized and polls the projection while that marker remains,
+retrying transient projection failures so a solver result committed after the
+first reload read is not hidden by the browser cache.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also aggregates the recommendation

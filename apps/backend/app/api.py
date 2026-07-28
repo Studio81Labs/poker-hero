@@ -260,11 +260,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
+            if job.recommendation_pending:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Recommendation is already running",
+                )
             state.user_approved = True
             job.approved_state = state
             job.training_decision = None
             job.recommendation = None
-            job.recommendation_pending = False
             job.training_reviewed_at = None
             job.training_review_note = None
             job.status = "approved"
@@ -327,6 +331,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
 
         if missing:
             with job_lock_for(job_id):

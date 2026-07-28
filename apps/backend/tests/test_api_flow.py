@@ -1189,6 +1189,10 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
         duplicate_response = client.post(f"/api/jobs/{job_id}/recommend")
         assert duplicate_response.status_code == 409
         assert duplicate_response.json()["detail"] == "Recommendation is already running"
+        reapproval_response = approve_job(client, job_id)
+        assert reapproval_response.status_code == 409
+        assert reapproval_response.json()["detail"] == "Recommendation is already running"
+        assert FileJobStore(tmp_path).get(job_id).recommendation_pending is True
         decision_response = client.put(
             f"/api/jobs/{job_id}/decision",
             json={"action": "raise", "sizing": 7.5},
@@ -1374,6 +1378,49 @@ def test_provider_runtime_errors_are_bad_gateway_and_stored(
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "provider exploded"
+    assert job.recommendation_pending is False
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    ["build_provider", "required_fields", "validation"],
+)
+def test_unexpected_provider_setup_errors_clear_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    class SetupProvider(MockRecommendationProvider):
+        def required_fields_for(self, state):
+            if failure_stage == "required_fields":
+                raise RuntimeError("required fields exploded")
+            return super().required_fields_for(state)
+
+    def build_setup_provider(settings):
+        if failure_stage == "build_provider":
+            raise RuntimeError("provider construction exploded")
+        return SetupProvider()
+
+    def fail_required_field_validation(state, required_fields):
+        raise RuntimeError("required field validation exploded")
+
+    monkeypatch.setattr("app.api.build_provider", build_setup_provider)
+    if failure_stage == "validation":
+        monkeypatch.setattr(
+            "app.api.missing_required_fields",
+            fail_required_field_validation,
+        )
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    with pytest.raises(RuntimeError, match="exploded"):
+        client.post(f"/api/jobs/{job_id}/recommend")
+
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "error"
+    assert job.error is not None
+    assert job.error.startswith("Unexpected provider error:")
     assert job.recommendation_pending is False
 
 

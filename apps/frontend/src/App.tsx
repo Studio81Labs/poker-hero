@@ -2673,6 +2673,7 @@ export default function App() {
   const processingMembershipGenerationRef = useRef(0);
   const processingMutationCountRef = useRef(0);
   const processingRemovalCandidateIdsRef = useRef(new Set<string>());
+  const processingUpdateCandidateIdsRef = useRef(new Set<string>());
   const processingRestoreRetryRequestedRef = useRef(false);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
@@ -2842,9 +2843,13 @@ export default function App() {
 
   function beginProcessingMembershipMutation(
     removalCandidateIds: readonly string[] = [],
+    updateCandidateIds: readonly string[] = [],
   ) {
     for (const removalCandidateId of removalCandidateIds) {
       processingRemovalCandidateIdsRef.current.add(removalCandidateId);
+    }
+    for (const updateCandidateId of updateCandidateIds) {
+      processingUpdateCandidateIdsRef.current.add(updateCandidateId);
     }
     processingMutationCountRef.current += 1;
     processingMembershipGenerationRef.current += 1;
@@ -2984,9 +2989,15 @@ export default function App() {
         const reconciledActiveJob = currentActiveId === null
           ? null
           : nextJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
+        const activeJobUpdatedAuthoritatively = currentActiveJob !== null
+          && reconciledActiveJob !== null
+          && processingUpdateCandidateIdsRef.current.has(currentActiveJob.id)
+          && reconciledActiveJob !== currentActiveJob;
         const preserveDirtyForm = formDirtyRef.current
-          && reconciledActiveJob !== null;
+          && reconciledActiveJob !== null
+          && !activeJobUpdatedAuthoritatively;
         processingRemovalCandidateIdsRef.current.clear();
+        processingUpdateCandidateIdsRef.current.clear();
         jobsRef.current = nextJobs;
         setJobs(nextJobs);
         if (!preserveDirtyForm) {
@@ -3576,6 +3587,10 @@ export default function App() {
       const approved = await approveState(job.id, validation.state);
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
+      if (!changesProcessingMembership) {
+        beginProcessingMembershipMutation([], [job.id]);
+        endProcessingMembershipMutation();
+      }
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
       if (changesProcessingMembership) {

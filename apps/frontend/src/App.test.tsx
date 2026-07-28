@@ -759,6 +759,101 @@ describe("App", () => {
     )).toBe("true");
   });
 
+  it("restores a committed ordinary approval after its response is lost", async () => {
+    const parsedJob = jobRecord({
+      id: "c".repeat(32),
+      original_filename: "approval-response-lost.png",
+    });
+    const correctedState = canonicalState({ pot_size: 20 });
+    const persistedApproval: JobRecord = {
+      ...parsedJob,
+      status: "approved",
+      approved_state: correctedState,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([parsedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after approval"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedApproval],
+        "persisted-approval-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await screen.findByText("Connection lost after approval")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "Approve state",
+    })).toBeDisabled());
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedApproval]);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${parsedJob.id}/approve`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("preserves ordinary approval edits when the failed write did not commit", async () => {
+    const parsedJob = jobRecord({
+      id: "d".repeat(32),
+      original_filename: "approval-not-committed.png",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([parsedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Approval request failed"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [parsedJob],
+        "unchanged-approval-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await screen.findByText("Approval request failed")).toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true"));
+    expect(potInput).toHaveValue("20");
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([parsedJob]);
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${parsedJob.id}/approve`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("preserves a dirty form while its active job is reconciled", async () => {
     const cachedJob = jobRecord({
       id: "e".repeat(32),

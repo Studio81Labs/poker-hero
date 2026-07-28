@@ -3028,6 +3028,10 @@ export default function App() {
           return;
         }
         const currentJobs = jobsRef.current;
+        const currentJobsById = new Map(currentJobs.map((candidate) => [
+          candidate.id,
+          candidate,
+        ]));
         const currentActiveId = activeJobIdRef.current;
         const currentActiveJob = currentActiveId === null
           ? null
@@ -3038,6 +3042,23 @@ export default function App() {
           cachedIds,
           processingRemovalCandidateIdsRef.current,
         );
+        const nextJobsById = new Map(nextJobs.map((candidate) => [
+          candidate.id,
+          candidate,
+        ]));
+        const recoveredAutomationIds = new Set(queue.jobs.flatMap((incomingJob) => {
+          const currentJob = currentJobsById.get(incomingJob.id);
+          const reconciledJob = nextJobsById.get(incomingJob.id);
+          const reachedAutomationTarget = incomingJob.error === null
+            && incomingJob.approved_state !== null
+            && (!automationRecommend || incomingJob.recommendation !== null);
+          return currentJob
+            && reconciledJob !== currentJob
+            && reachedAutomationTarget
+            ? [incomingJob.id]
+            : [];
+        }));
+        clearJobAttentionEntries(recoveredAutomationIds);
         const preservedMissingDirtyJob = formDirtyRef.current
           && currentActiveJob !== null
           && !processingRemovalCandidateIdsRef.current.has(currentActiveJob.id)
@@ -3155,15 +3176,24 @@ export default function App() {
     setJobs(nextJobs);
   }
 
-  function clearJobAttention(jobId: string) {
+  function clearJobAttentionEntries(jobIds: ReadonlySet<string>) {
+    if (jobIds.size === 0) {
+      return;
+    }
     setJobAttention((current) => {
-      if (!(jobId in current)) {
+      if (![...jobIds].some((jobId) => jobId in current)) {
         return current;
       }
       const next = { ...current };
-      delete next[jobId];
+      for (const jobId of jobIds) {
+        delete next[jobId];
+      }
       return next;
     });
+  }
+
+  function clearJobAttention(jobId: string) {
+    clearJobAttentionEntries(new Set([jobId]));
   }
 
   function replaceJob(updatedJob: JobRecord) {
@@ -4478,6 +4508,9 @@ export default function App() {
             },
       );
     } catch (benchmarkError) {
+      if (!changesProcessingMembership) {
+        scheduleUncertainPersistedUpdate(job);
+      }
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
     } finally {
       if (changesProcessingMembership) {

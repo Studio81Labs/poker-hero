@@ -2033,6 +2033,70 @@ describe("App", () => {
     )).toBe("true");
   });
 
+  it("clears upload attention after reconciliation restores a completed recommendation", async () => {
+    const jobId = "3".repeat(32);
+    const created = jobRecord({
+      id: jobId,
+      original_filename: "recommendation-response-lost.png",
+    });
+    const approved = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "recommendation-response-lost.png",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const persistedRecommendation = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "recommendation-response-lost.png",
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    const pendingQueue = deferredResponse();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockRejectedValueOnce(new TypeError("Connection lost after recommendation"))
+      .mockReturnValueOnce(pendingQueue.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["lost-response"], "recommendation-response-lost.png", {
+        type: "image/png",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    const attentionItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: recommendation-response-lost.png",
+    });
+    expect(attentionItem).toHaveClass("attention");
+    expect(within(attentionItem).getByText(
+      "Connection lost after recommendation",
+    )).toBeInTheDocument();
+
+    await act(async () => {
+      pendingQueue.resolve(processingQueueResponse(
+        [persistedRecommendation],
+        "persisted-automation-recommendation",
+      ));
+      await pendingQueue.promise;
+    });
+
+    await waitFor(() => expect(within(attentionItem).getByText(
+      "recommended",
+    )).toBeInTheDocument());
+    expect(attentionItem).not.toHaveClass("attention");
+    expect(within(attentionItem).queryByText(
+      "Connection lost after recommendation",
+    )).not.toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedRecommendation]);
+  });
+
   it("keeps completed jobs in processing when history persistence fails", async () => {
     const created = jobRecord({ original_filename: "retry.png" });
     const approved = { ...approvedJob(), original_filename: "retry.png" };
@@ -7248,6 +7312,101 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       `http://localhost:8000/api/jobs/${benchmarkJobId}/approve`,
       "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it.each([
+    { operation: "include" as const },
+    { operation: "exclude" as const },
+  ])("reconciles a lost parser-backed benchmark $operation response", async ({
+    operation,
+  }) => {
+    const jobId = "8".repeat(32);
+    const initiallyIncluded = operation === "exclude";
+    const includedAfterWrite = !initiallyIncluded;
+    const parserBackedJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: `parser-backed-${operation}.png`,
+      image_filename: `${jobId}.png`,
+      benchmark_included: initiallyIncluded,
+    };
+    const persistedJob = {
+      ...parserBackedJob,
+      benchmark_included: includedAfterWrite,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
+    const emptyOverview = {
+      included_cases: 0,
+      latest_report: null,
+      recent_reports: [],
+    };
+    const includedOverview = benchmarkOverviewForJob(
+      jobId,
+      parserBackedJob.original_filename,
+    );
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([parserBackedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(
+        initiallyIncluded ? includedOverview : emptyOverview,
+      ))
+      .mockRejectedValueOnce(new TypeError(
+        `Connection lost after benchmark ${operation}`,
+      ))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedJob],
+        `parser-backed-${operation}-snapshot`,
+      ))
+      .mockResolvedValueOnce(jsonResponse(
+        includedAfterWrite ? includedOverview : emptyOverview,
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    expect(groundTruthSwitch).toHaveAttribute(
+      "aria-checked",
+      String(initiallyIncluded),
+    );
+    await user.click(groundTruthSwitch);
+
+    expect(await screen.findByText(
+      `Connection lost after benchmark ${operation}`,
+    )).toBeInTheDocument();
+    await waitFor(() => expect(groundTruthSwitch).toHaveAttribute(
+      "aria-checked",
+      String(includedAfterWrite),
+    ));
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].benchmark_included).toBe(includedAfterWrite);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const restoredDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    expect(within(restoredDialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    })).toHaveAttribute("aria-checked", String(includedAfterWrite));
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${jobId}/benchmark`,
+      "http://localhost:8000/api/jobs",
+      "http://localhost:8000/api/benchmarks",
     ]);
   });
 

@@ -2840,8 +2840,10 @@ export default function App() {
     setProcessingRestoreRequest((current) => current + 1);
   }
 
-  function beginProcessingMembershipMutation(removalCandidateId?: string) {
-    if (removalCandidateId) {
+  function beginProcessingMembershipMutation(
+    removalCandidateIds: readonly string[] = [],
+  ) {
+    for (const removalCandidateId of removalCandidateIds) {
       processingRemovalCandidateIdsRef.current.add(removalCandidateId);
     }
     processingMutationCountRef.current += 1;
@@ -3574,7 +3576,7 @@ export default function App() {
       && job.parser_result === null
       && !isPristineBenchmarkImport(job);
     if (changesProcessingMembership) {
-      beginProcessingMembershipMutation(job.id);
+      beginProcessingMembershipMutation([job.id]);
     }
     setBusy(true);
     setError(null);
@@ -4296,6 +4298,13 @@ export default function App() {
       return;
     }
 
+    const removalCandidateIds = jobsRef.current
+      .filter((candidate) => isPristineBenchmarkImport({
+        ...candidate,
+        benchmark_included: true,
+      }))
+      .map((candidate) => candidate.id);
+    beginProcessingMembershipMutation(removalCandidateIds);
     setBenchmarkImporting(true);
     setError(null);
     try {
@@ -4307,11 +4316,18 @@ export default function App() {
         recent_reports: current?.recent_reports ?? [],
       }));
       updateJobs((current) =>
-        current.map((candidate) =>
-          importedIds.has(candidate.id)
-            ? { ...candidate, benchmark_included: true }
-            : candidate,
-        ),
+        current.flatMap((candidate) => {
+          if (!importedIds.has(candidate.id)) {
+            return [candidate];
+          }
+          const includedCandidate: JobRecord = {
+            ...candidate,
+            benchmark_included: true,
+          };
+          return isPristineBenchmarkImport(includedCandidate)
+            ? []
+            : [includedCandidate];
+        }),
       );
       setHistory((current) => {
         const next = current.map((item) =>
@@ -4335,6 +4351,7 @@ export default function App() {
       setError(messageFromError(benchmarkError, "Could not import parser dataset"));
     } finally {
       input.value = "";
+      endProcessingMembershipMutation();
       setBenchmarkImporting(false);
     }
   }
@@ -4351,7 +4368,7 @@ export default function App() {
     });
     const changesProcessingMembership = isCurrentlyPristine !== willBePristine;
     if (changesProcessingMembership) {
-      beginProcessingMembershipMutation(willBePristine ? job.id : undefined);
+      beginProcessingMembershipMutation(willBePristine ? [job.id] : []);
     }
     setBenchmarkUpdating(true);
     setError(null);

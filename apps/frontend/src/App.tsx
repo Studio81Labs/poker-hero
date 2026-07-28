@@ -1914,7 +1914,7 @@ function newerHistoryItem(
   const currentUpdatedAt = Date.parse(current.job.updated_at);
   const incomingUpdatedAt = Date.parse(incoming.job.updated_at);
   return Number.isFinite(currentUpdatedAt)
-    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt >= incomingUpdatedAt)
     ? current
     : incoming;
 }
@@ -1923,7 +1923,7 @@ function newerJob(current: JobRecord, incoming: JobRecord): JobRecord {
   const currentUpdatedAt = Date.parse(current.updated_at);
   const incomingUpdatedAt = Date.parse(incoming.updated_at);
   return Number.isFinite(currentUpdatedAt)
-    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt >= incomingUpdatedAt)
     ? current
     : incoming;
 }

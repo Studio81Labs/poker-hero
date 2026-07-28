@@ -5163,6 +5163,78 @@ describe("App", () => {
     expect(form.get("file")).toBe(dataset);
   });
 
+  it("preserves a confirmed dataset import during pending queue reconciliation", async () => {
+    const cachedJob = {
+      ...approvedJob(),
+      id: "c".repeat(32),
+      original_filename: "reused-dataset-hand.png",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingQueue = deferredResponse();
+    const pendingImport = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingQueue.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockReturnValueOnce(pendingImport.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const dataset = new File(
+      ["dataset-zip"],
+      "parser-dataset.zip",
+      { type: "application/zip" },
+    );
+    await user.upload(within(dialog).getByLabelText("Parser dataset ZIP"), dataset);
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/benchmarks/import",
+      expect.objectContaining({ method: "POST" }),
+    ));
+
+    await act(async () => {
+      pendingImport.resolve(jsonResponse({
+        imported_cases: 0,
+        reused_cases: 1,
+        included_cases: 1,
+        job_ids: [cachedJob.id],
+      }));
+      await pendingImport.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+      pendingQueue.resolve(jsonResponse({
+        total: 1,
+        jobs: [cachedJob],
+        snapshot_version: "stale-processing-snapshot",
+      }));
+      await pendingQueue.promise;
+    });
+
+    await waitFor(() => expect(within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    })).toHaveAttribute("aria-checked", "true"));
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].benchmark_included).toBe(true);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
   it("updates an imported hand held only by the history search projection", async () => {
     const archivedJob: JobRecord = {
       ...recommendedJob(),

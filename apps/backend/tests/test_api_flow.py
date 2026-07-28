@@ -1160,6 +1160,10 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
+    imported_job = FileJobStore(tmp_path).get(job_id)
+    imported_job.parser_result = None
+    imported_job.benchmark_included = True
+    FileJobStore(tmp_path).save(imported_job)
     monkeypatch.setattr(
         "app.api.build_provider",
         lambda settings: SlowRecommendationProvider(),
@@ -1179,6 +1183,8 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
         assert in_progress_job.json()["recommendation_pending"] is True
         processing_jobs = client.get("/api/jobs")
         assert processing_jobs.status_code == 200
+        assert processing_jobs.json()["total"] == 1
+        assert processing_jobs.json()["jobs"][0]["id"] == job_id
         assert processing_jobs.json()["jobs"][0]["recommendation_pending"] is True
         duplicate_response = client.post(f"/api/jobs/{job_id}/recommend")
         assert duplicate_response.status_code == 409
@@ -1205,6 +1211,31 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     persisted_job = FileJobStore(tmp_path).get(job_id)
     assert persisted_job.training_decision.action == "raise"
     assert persisted_job.recommendation is not None
+
+
+def test_app_startup_recovers_interrupted_recommendation(tmp_path: Path) -> None:
+    initial_client = make_client(tmp_path)
+    job_id = upload_job(initial_client).json()["id"]
+    approve_job(initial_client, job_id)
+    store = FileJobStore(tmp_path)
+    interrupted_job = store.get(job_id)
+    interrupted_job.recommendation_pending = True
+    store.save(interrupted_job)
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{job_id}")
+    assert recovered_response.status_code == 200
+    recovered_job = recovered_response.json()
+    assert recovered_job["recommendation_pending"] is False
+    assert recovered_job["status"] == "error"
+    assert recovered_job["error"] == (
+        "Recommendation was interrupted by a backend restart; request it again"
+    )
+
+    retry_response = restarted_client.post(f"/api/jobs/{job_id}/recommend")
+    assert retry_response.status_code == 200
+    assert retry_response.json()["status"] == "recommended"
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:

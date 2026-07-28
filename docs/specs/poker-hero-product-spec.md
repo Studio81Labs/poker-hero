@@ -319,7 +319,9 @@ frequencies.
     count without changing the global reviewed count or newest-page cache.
     Shared processing-cache changes invalidate other open tabs, and a persisted
     in-progress recommendation keeps revalidating until the backend records its
-    recommendation or retryable error.
+    recommendation or retryable error, including after transient projection
+    failures. Pending benchmark-import recommendations remain processing work;
+    backend startup converts orphaned in-progress markers into retryable errors.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

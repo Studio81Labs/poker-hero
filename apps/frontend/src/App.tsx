@@ -1735,6 +1735,7 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
 function isPristineBenchmarkImport(job: JobRecord): boolean {
   return job.benchmark_included
     && job.status === "approved"
+    && !job.recommendation_pending
     && job.parser_result === null
     && job.approved_state !== null
     && job.training_decision === null
@@ -3092,6 +3093,7 @@ export default function App() {
       return getProcessingQueueExtent();
     })();
     let active = true;
+    let restoreRetryTimer: number | null = null;
     void processingRestorePromiseRef.current
       .then((queue) => {
         if (!active) {
@@ -3180,11 +3182,25 @@ export default function App() {
             processingError,
             "Could not restore processing queue",
           ));
+          if (jobsRef.current.some((candidate) => candidate.recommendation_pending)) {
+            markProcessingQueueSessionUnsynced();
+            restoreRetryTimer = window.setTimeout(() => {
+              restoreRetryTimer = null;
+              if (processingMutationCountRef.current === 0) {
+                scheduleProcessingQueueRestore();
+              } else {
+                processingRestoreRetryRequestedRef.current = true;
+              }
+            }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
+          }
         }
       });
 
     return () => {
       active = false;
+      if (restoreRetryTimer !== null) {
+        window.clearTimeout(restoreRetryTimer);
+      }
     };
   }, [processingRestoreRequest]);
 

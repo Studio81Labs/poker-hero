@@ -444,7 +444,51 @@ describe("App", () => {
     ))).toEqual([completedJob]);
   });
 
-  it("keeps mutated benchmark imports in the cached processing queue", async () => {
+  it("retries polling after a pending recommendation restore fails", async () => {
+    const jobId = "5".repeat(32);
+    const pendingJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "pending-retry.png",
+      recommendation_pending: true,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const completedJob = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "pending-retry.png",
+      recommendation_pending: false,
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([pendingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse(
+        [pendingJob],
+        "pending-before-transient-failure",
+      ))
+      .mockRejectedValueOnce(new TypeError("Network unavailable"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [completedJob],
+        "pending-retry-completed",
+      ));
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([completedJob]);
+  });
+
+  it("keeps mutated or pending benchmark imports in the cached processing queue", async () => {
     const decisionImport = {
       ...approvedJob(),
       id: "d".repeat(32),
@@ -474,11 +518,26 @@ describe("App", () => {
       parser_result: null,
       benchmark_included: true,
     };
+    const pendingImport = {
+      ...approvedJob(),
+      id: "a".repeat(32),
+      original_filename: "pending-import.png",
+      parser_result: null,
+      benchmark_included: true,
+      recommendation_pending: true,
+    };
     window.localStorage.setItem(
       "poker-training-processing-v1",
-      JSON.stringify([decisionImport, failedImport, pristineImport]),
+      JSON.stringify([
+        decisionImport,
+        failedImport,
+        pristineImport,
+        pendingImport,
+      ]),
     );
-    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+    window.localStorage.setItem("poker-training-processing-total-v1", "3");
+    const pendingQueue = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingQueue.promise);
 
     render(<App />);
 
@@ -488,10 +547,16 @@ describe("App", () => {
     expect(screen.getByRole("button", {
       name: "Open screenshot 2: failed-import.png",
     })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 3: pending-import.png",
+    })).toBeInTheDocument();
     expect(screen.queryByRole("button", {
       name: /pristine-import\.png/,
     })).not.toBeInTheDocument();
-    expect(fetchMock()).not.toHaveBeenCalled();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
   });
 
   it("reconciles malformed processing cache entries from the backend", async () => {

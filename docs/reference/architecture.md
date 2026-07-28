@@ -115,10 +115,12 @@ Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
 Before releasing the lock, recommendation work persists an in-progress marker;
-the marker clears on every terminal success or failure. A reloaded frontend
-keeps the processing cache unsynchronized and polls the projection while that
-marker remains, so a solver result committed after the first reload read is not
-hidden by the browser cache.
+the marker clears on every terminal success or failure. Backend startup converts
+an orphaned marker into a visible retryable error because no provider operation
+survives a process restart. A reloaded frontend keeps the processing cache
+unsynchronized and polls the projection while that marker remains, retrying
+transient projection failures so a solver result committed after the first
+reload read is not hidden by the browser cache.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also aggregates the recommendation
@@ -270,12 +272,12 @@ after queue membership changes. Snapshot changes restart the bounded page walk,
 while a newer in-memory mutation wins by `updated_at`. Cache writes merge
 matching records by `updated_at`, avoid no-op storage writes, and storage events
 invalidate sibling tabs so one tab cannot silently replace another tab's newer
-record. Imported benchmark-only
-jobs have approved labels but no parser result, recommendation, training
-decision, review metadata, or error, so untouched imports remain in the
-benchmark corpus without appearing as processing work. Once an imported hand
-records training state or a retryable error, it returns to the processing
-projection until that work is completed.
+record. Imported benchmark-only jobs have approved labels but no parser result,
+recommendation, training decision, review metadata, error, or active
+recommendation, so untouched imports remain in the benchmark corpus without
+appearing as processing work. Once an imported hand starts recommendation work,
+records training state, or receives a retryable error, it returns to the
+processing projection until that work is completed.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

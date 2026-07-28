@@ -4315,20 +4315,24 @@ export default function App() {
         latest_report: current?.latest_report ?? null,
         recent_reports: current?.recent_reports ?? [],
       }));
-      updateJobs((current) =>
-        current.flatMap((candidate) => {
-          if (!importedIds.has(candidate.id)) {
-            return [candidate];
-          }
-          const includedCandidate: JobRecord = {
-            ...candidate,
-            benchmark_included: true,
-          };
-          return isPristineBenchmarkImport(includedCandidate)
-            ? []
-            : [includedCandidate];
-        }),
-      );
+      const nextJobs = jobsRef.current.flatMap((candidate) => {
+        if (!importedIds.has(candidate.id)) {
+          return [candidate];
+        }
+        const includedCandidate: JobRecord = {
+          ...candidate,
+          benchmark_included: true,
+        };
+        return isPristineBenchmarkImport(includedCandidate)
+          ? []
+          : [includedCandidate];
+      });
+      const activeJobRemoved = activeJobIdRef.current !== null
+        && !nextJobs.some((candidate) => candidate.id === activeJobIdRef.current);
+      updateJobs(() => nextJobs);
+      if (activeJobRemoved) {
+        alignWorkspaceToJob(nextJobs[0] ?? null);
+      }
       setHistory((current) => {
         const next = current.map((item) =>
           importedIds.has(item.id)

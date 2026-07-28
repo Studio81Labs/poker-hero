@@ -5884,11 +5884,28 @@ describe("App", () => {
       benchmark_included: false,
       parser_result: null,
     };
+    const nextState: DetectedState = {
+      ...detectedState,
+      hero_cards: [
+        { rank: "Q", suit: "clubs" },
+        { rank: "Q", suit: "hearts" },
+      ],
+      pot_size: 8,
+    };
+    const nextJob = jobRecord({
+      id: "1".repeat(32),
+      original_filename: "next-processing-hand.png",
+      image_filename: `${"1".repeat(32)}.png`,
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: nextState,
+      },
+    });
     window.localStorage.setItem(
       "poker-training-processing-v1",
-      JSON.stringify([processingImport]),
+      JSON.stringify([processingImport, nextJob]),
     );
-    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
     const pendingQueue = deferredResponse();
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
@@ -5919,18 +5936,25 @@ describe("App", () => {
     );
 
     expect(await screen.findByText("Dataset ready: 1 hand")).toBeInTheDocument();
-    await waitFor(() => expect(
+    await waitFor(() => expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ).toBe("[]"));
+    ))).toEqual([nextJob]));
     expect(screen.queryByRole("button", {
       name: "Open screenshot 1: reused-pristine-import.png",
     })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: next-processing-hand.png",
+    })).toBeInTheDocument();
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.getByDisplayValue("Qc Qh")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("8")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Ah Kd")).not.toBeInTheDocument();
 
     pendingQueue.resolve(processingQueueResponse(
-      [],
+      [nextJob],
       "reused-pristine-import-snapshot",
     ));
 

@@ -350,6 +350,66 @@ describe("App", () => {
     expect(screen.queryByDisplayValue("Ah Kd")).not.toBeInTheDocument();
   });
 
+  it("keeps an approval that completes while queue restoration is pending", async () => {
+    const cachedJob = jobRecord({
+      id: "a".repeat(32),
+      original_filename: "approval-race.png",
+    });
+    const approved = {
+      ...cachedJob,
+      status: "approved" as const,
+      approved_state: canonicalState(),
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingQueue = deferredResponse();
+    const pendingApproval = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingQueue.promise)
+      .mockReturnValueOnce(pendingApproval.promise);
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    screen.getByRole("button", { name: "Approve state" }).click();
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      2,
+      `http://localhost:8000/api/jobs/${cachedJob.id}/approve`,
+      expect.objectContaining({ method: "POST" }),
+    ));
+
+    await act(async () => {
+      pendingApproval.resolve(jsonResponse(approved));
+      await pendingApproval.promise;
+      await Promise.resolve();
+      await Promise.resolve();
+      pendingQueue.resolve(jsonResponse({
+        total: 1,
+        jobs: [cachedJob],
+        snapshot_version: "stale-processing-snapshot",
+      }));
+      await pendingQueue.promise;
+    });
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].status).toBe("approved"));
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
   it("preserves a dirty form while its active job is reconciled", async () => {
     const cachedJob = jobRecord({
       id: "e".repeat(32),

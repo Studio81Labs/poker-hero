@@ -2838,15 +2838,25 @@ export default function App() {
     setError(null);
   }
 
+  function updateJobs(
+    updater: (current: JobRecord[]) => JobRecord[],
+  ) {
+    const nextJobs = updater(jobsRef.current);
+    jobsRef.current = nextJobs;
+    setJobs(nextJobs);
+  }
+
   function replaceJob(updatedJob: JobRecord) {
-    setJobs((current) => current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)));
+    updateJobs((current) =>
+      current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)),
+    );
     updateHistoryJob(updatedJob);
     activeJobIdRef.current = updatedJob.id;
     setActiveJobId(updatedJob.id);
   }
 
   function upsertAndActivateJob(nextJob: JobRecord) {
-    setJobs((current) => {
+    updateJobs((current) => {
       const existing = current.some((candidate) => candidate.id === nextJob.id);
       return existing
         ? current.map((candidate) => (candidate.id === nextJob.id ? nextJob : candidate))
@@ -3048,7 +3058,7 @@ export default function App() {
   }
 
   function appendJob(created: JobRecord) {
-    setJobs((current) => [...current, created]);
+    updateJobs((current) => [...current, created]);
     activateJob(created);
   }
 
@@ -3492,7 +3502,9 @@ export default function App() {
     setError(null);
     try {
       const reopenedJob = await reopenTrainingReview(jobId);
-      setJobs((current) => current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)));
+      updateJobs((current) =>
+        current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)),
+      );
       updateHistoryJob(reopenedJob);
       setTrainingProgress(await getTrainingProgress(
         trainingReviewOrder,
@@ -3531,7 +3543,9 @@ export default function App() {
       return next;
     });
     setApprovedStateKey(null);
-    setJobs((current) => current.map((candidate) => (candidate.id === job?.id ? clearApprovedResult(candidate) : candidate)));
+    updateJobs((current) =>
+      current.map((candidate) => (candidate.id === job?.id ? clearApprovedResult(candidate) : candidate)),
+    );
   }
 
   function resetToParser() {
@@ -3542,7 +3556,9 @@ export default function App() {
       setForm(parserForm);
       setError(null);
       setApprovedStateKey(null);
-      setJobs((current) => current.map((candidate) => (candidate.id === job.id ? clearApprovedResult(candidate) : candidate)));
+      updateJobs((current) =>
+        current.map((candidate) => (candidate.id === job.id ? clearApprovedResult(candidate) : candidate)),
+      );
     }
   }
 
@@ -4023,7 +4039,7 @@ export default function App() {
         latest_report: current?.latest_report ?? null,
         recent_reports: current?.recent_reports ?? [],
       }));
-      setJobs((current) =>
+      updateJobs((current) =>
         current.map((candidate) =>
           importedIds.has(candidate.id)
             ? { ...candidate, benchmark_included: true }
@@ -4153,7 +4169,7 @@ export default function App() {
   }
 
   function openHistory(item: HistoryItem) {
-    setJobs((current) => {
+    updateJobs((current) => {
       const existing = current.some((candidate) => candidate.id === item.job.id);
       if (existing) {
         return current.map((candidate) => (candidate.id === item.job.id ? item.job : candidate));
@@ -4178,7 +4194,7 @@ export default function App() {
         void revalidateHistorySearch(historySearchQuery);
       }
       const remainingJobs = jobs.filter((candidate) => !isHistoryReady(candidate));
-      setJobs(remainingJobs);
+      updateJobs(() => remainingJobs);
       if (remainingJobs.length > 0) {
         activateJob(remainingJobs.find((candidate) => candidate.id === activeJobId) ?? remainingJobs[0]);
       } else {

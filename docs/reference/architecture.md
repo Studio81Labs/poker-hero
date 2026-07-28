@@ -249,6 +249,9 @@ Re-approval, a changed training decision, or a fresh recommendation clears both
 the marker and note because the comparison inputs have changed. Deleting only
 the review marker explicitly reopens the same comparison and returns it to the
 pending queue while retaining the note for editing.
+Both the workspace and training-progress dialog reconcile the affected
+processing or history record when a review mutation response is lost, so a
+same-tab reload cannot preserve stale review metadata from browser storage.
 The frontend treats a hand opened from that queue as a review session. After
 persisting its review marker, it reloads the progress endpoint with the current
 action-pair, position, street, certainty, and order parameters and opens the

@@ -4014,6 +4014,19 @@ export default function App() {
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
+      const uncertainJob = jobsRef.current.find(
+        (candidate) => candidate.id === jobId,
+      )
+        ?? history.find((item) => item.id === jobId)?.job
+        ?? historySearchResults?.find((item) => item.id === jobId)?.job
+        ?? null;
+      if (uncertainJob) {
+        scheduleUncertainPersistedUpdate(uncertainJob);
+      } else {
+        markProcessingQueueSessionUnsynced();
+        markHistorySessionUnsynced();
+        scheduleProcessingQueueRestore();
+      }
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
       setTrainingReviewJobId(null);

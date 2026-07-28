@@ -301,7 +301,9 @@ frequencies.
     action-pair, position, street, certainty, and order filters and opens the
     next matching hand. An exhausted queue returns to its empty review view.
 18. A completed review may be reopened, returning the unchanged comparison and
-    its editable lesson note to the pending queue.
+    its editable lesson note to the pending queue. Reopen actions from either
+    the workspace or progress dialog reconcile persisted state when the response
+    is lost.
 19. Saved lessons may be filtered by street and note text, then ordered by
     recency or highest available EV loss before the bounded lesson list is
     returned. Ungraded lessons remain available after graded lessons.

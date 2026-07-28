@@ -5143,6 +5143,101 @@ describe("App", () => {
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/training/progress");
   });
 
+  it("reconciles a lost progress-dialog reopen response", async () => {
+    const jobId = "6".repeat(32);
+    const reviewedAt = "2026-07-20T12:05:00Z";
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      certainty: "medium" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const reviewedJob = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "progress-reopen-lost.png",
+      training_decision: trainingDecision,
+      training_reviewed_at: reviewedAt,
+      training_review_note: "Review this spot again.",
+      updated_at: reviewedAt,
+    };
+    const reopenedJob = {
+      ...reviewedJob,
+      training_reviewed_at: null,
+      training_review_note: null,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
+    const reviewedHand = {
+      job_id: jobId,
+      original_filename: reviewedJob.original_filename,
+      street: "turn" as const,
+      hero_cards: canonicalState().hero_cards,
+      decision_action: "call" as const,
+      decision_sizing: null,
+      recommended_action: "raise" as const,
+      recommended_sizing: 7.5,
+      outcome: "different" as const,
+      recorded_at: trainingDecision.recorded_at,
+      reviewed_at: reviewedAt,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([reviewedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        reviewed_hands: 1,
+        action_matches: 0,
+        exact_matches: 0,
+        different_actions: 1,
+        needs_review_hands: 0,
+        action_accuracy: 0,
+        exact_accuracy: 0,
+        street_summaries: [],
+        recent_hands: [reviewedHand],
+        review_queue: [],
+      }))
+      .mockRejectedValueOnce(new TypeError("Connection lost after progress reopen"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [reopenedJob],
+        "progress-reopen-persisted-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Training progress" }));
+    const dialog = await screen.findByRole("dialog", { name: "Training progress" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Reopen progress-reopen-lost.png training review",
+    }));
+
+    expect(await screen.findByText(
+      "Connection lost after progress reopen",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([reopenedJob]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    const comparison = await screen.findByLabelText(
+      "Training decision comparison",
+    );
+    expect(within(comparison).getByRole("button", {
+      name: "Mark reviewed",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/training/progress",
+      `http://localhost:8000/api/jobs/${jobId}/training-review`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("keeps completed review notes available in a dedicated lessons view", async () => {
     const recentHand = {
       job_id: "recent-job",

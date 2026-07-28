@@ -1627,6 +1627,34 @@ function isCachedRecommendation(value: unknown): value is RecommendationResult {
     && !Array.isArray(recommendation.raw);
 }
 
+function isCachedTrainingDecision(value: unknown): boolean {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const decision = value as Record<string, unknown>;
+  return typeof decision.action === "string"
+    && TRAINING_ACTIONS.some((action) => action === decision.action)
+    && (
+      decision.sizing === null
+      || (
+        typeof decision.sizing === "number"
+        && Number.isFinite(decision.sizing)
+        && decision.sizing >= 0
+      )
+    )
+    && (
+      decision.certainty === undefined
+      || decision.certainty === null
+      || (
+        typeof decision.certainty === "string"
+        && TRAINING_CERTAINTIES.some(
+          (certainty) => certainty === decision.certainty,
+        )
+      )
+    )
+    && typeof decision.recorded_at === "string";
+}
+
 function isCachedParserResult(value: unknown): boolean {
   if (value === null) {
     return true;
@@ -1678,6 +1706,18 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && (
       candidate.recommendation === null
       || isCachedRecommendation(candidate.recommendation)
+    )
+    && (
+      candidate.training_decision === null
+      || isCachedTrainingDecision(candidate.training_decision)
+    )
+    && (
+      candidate.training_reviewed_at === null
+      || typeof candidate.training_reviewed_at === "string"
+    )
+    && (
+      candidate.training_review_note === null
+      || typeof candidate.training_review_note === "string"
     )
     && (
       candidate.error === null

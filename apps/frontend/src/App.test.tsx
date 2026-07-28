@@ -349,6 +349,70 @@ describe("App", () => {
     );
   });
 
+  it.each([
+    {
+      label: "training decision",
+      invalidFields: {
+        training_decision: {
+          action: {},
+          sizing: null,
+          certainty: "medium",
+          recorded_at: "2026-07-20T12:00:00Z",
+        },
+      },
+    },
+    {
+      label: "training review note",
+      invalidFields: {
+        training_review_note: {},
+      },
+    },
+  ])("rejects malformed cached $label and restores the backend record", async ({
+    invalidFields,
+  }) => {
+    const persistedJob = {
+      ...recommendedJob(),
+      id: "a".repeat(32),
+      original_filename: "restored-training-metadata.png",
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-20T12:00:00Z",
+      },
+      training_reviewed_at: "2026-07-20T12:05:00Z",
+      training_review_note: "Review the solver comparison.",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([{ ...persistedJob, ...invalidFields }]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "valid-training-metadata-snapshot",
+    }));
+
+    render(<App />);
+
+    const restoredItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: restored-training-metadata.png",
+    });
+    expect(within(restoredItem).getByText("recommended")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0]).toMatchObject({
+      training_decision: persistedJob.training_decision,
+      training_reviewed_at: persistedJob.training_reviewed_at,
+      training_review_note: persistedJob.training_review_note,
+    }));
+  });
+
   it("rejects malformed cached errors and restores the backend record", async () => {
     const persistedJob = jobRecord({
       id: "f".repeat(32),

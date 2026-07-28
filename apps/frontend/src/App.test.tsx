@@ -815,6 +815,173 @@ describe("App", () => {
     ]);
   });
 
+  it("restores a persisted provider error after an ordinary recommendation failure", async () => {
+    const approved = {
+      ...approvedJob(),
+      id: "5".repeat(32),
+      original_filename: "ordinary-provider-failure.png",
+    };
+    const failedJob: JobRecord = {
+      ...approved,
+      status: "error",
+      error: "provider exploded",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ detail: "provider exploded" }, 502))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [failedJob],
+        "ordinary-provider-failure-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Request recommendation",
+    }));
+
+    expect(await screen.findAllByText("provider exploded")).not.toHaveLength(0);
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([failedJob]));
+    expect(within(screen.getByRole("button", {
+      name: "Open screenshot 1: ordinary-provider-failure.png",
+    })).getByText("error")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findAllByText("provider exploded")).not.toHaveLength(0);
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${approved.id}/recommend`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("restores an ordinary recommendation after its successful response is lost", async () => {
+    const approved = {
+      ...approvedJob(),
+      id: "6".repeat(32),
+      original_filename: "ordinary-recommendation-lost.png",
+    };
+    const persistedRecommendation: JobRecord = {
+      ...approved,
+      status: "recommended",
+      recommendation,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after recommendation"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedRecommendation],
+        "ordinary-recommendation-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Request recommendation",
+    }));
+
+    expect(await screen.findByText("Connection lost after recommendation")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedRecommendation]));
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeDisabled();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByText(recommendation.explanation)).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${approved.id}/recommend`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("restores an ordinary training decision after its response is lost", async () => {
+    const approved = {
+      ...approvedJob(),
+      id: "7".repeat(32),
+      original_filename: "ordinary-decision-lost.png",
+    };
+    const persistedDecision: JobRecord = {
+      ...approved,
+      training_decision: {
+        action: "call",
+        sizing: null,
+        certainty: "medium",
+        recorded_at: "2026-07-10T00:01:00Z",
+      },
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after saving answer"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedDecision],
+        "ordinary-decision-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+
+    expect(await screen.findByText("Connection lost after saving answer")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText(
+      "Your training decision",
+    )).findByText("Answer locked")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedDecision]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    const restoredDecisionPanel = await screen.findByLabelText("Your training decision");
+    expect(within(restoredDecisionPanel).getByText("Answer locked")).toBeInTheDocument();
+    expect(within(restoredDecisionPanel).getByRole("button", {
+      name: "medium",
+    })).toHaveAttribute("aria-pressed", "true");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${approved.id}/decision`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("preserves ordinary approval edits when the failed write did not commit", async () => {
     const parsedJob = jobRecord({
       id: "d".repeat(32),

@@ -2866,6 +2866,11 @@ export default function App() {
     }
   }
 
+  function scheduleUncertainProcessingUpdate(jobId: string) {
+    beginProcessingMembershipMutation([], [jobId]);
+    endProcessingMembershipMutation();
+  }
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) {
@@ -3588,8 +3593,7 @@ export default function App() {
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
       if (!changesProcessingMembership) {
-        beginProcessingMembershipMutation([], [job.id]);
-        endProcessingMembershipMutation();
+        scheduleUncertainProcessingUpdate(job.id);
       }
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
@@ -3632,6 +3636,9 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
+      if (!changesProcessingMembership) {
+        scheduleUncertainProcessingUpdate(job.id);
+      }
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
       if (changesProcessingMembership) {
@@ -3666,6 +3673,9 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
+      if (!changesProcessingMembership) {
+        scheduleUncertainProcessingUpdate(job.id);
+      }
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
       if (changesProcessingMembership) {

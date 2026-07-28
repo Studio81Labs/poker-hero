@@ -263,8 +263,11 @@ most 100 of those records for immediate reload display, retains the complete
 persisted count, and reconciles all backend pages once per browser session or
 after queue membership changes. Snapshot changes restart the bounded page walk,
 while a newer in-memory mutation wins by `updated_at`. Imported benchmark-only
-jobs have approved labels but no parser result or recommendation, so they remain
-in the benchmark corpus without appearing as processing work.
+jobs have approved labels but no parser result, recommendation, training
+decision, review metadata, or error, so untouched imports remain in the
+benchmark corpus without appearing as processing work. Once an imported hand
+records training state or a retryable error, it returns to the processing
+projection until that work is completed.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

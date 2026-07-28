@@ -259,6 +259,56 @@ describe("App", () => {
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
+  it("keeps mutated benchmark imports in the cached processing queue", async () => {
+    const decisionImport = {
+      ...approvedJob(),
+      id: "d".repeat(32),
+      original_filename: "decision-import.png",
+      parser_result: null,
+      benchmark_included: true,
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-10T00:01:00Z",
+      },
+    };
+    const failedImport = {
+      ...approvedJob(),
+      id: "e".repeat(32),
+      status: "error" as const,
+      original_filename: "failed-import.png",
+      parser_result: null,
+      benchmark_included: true,
+      error: "provider exploded",
+    };
+    const pristineImport = {
+      ...approvedJob(),
+      id: "f".repeat(32),
+      original_filename: "pristine-import.png",
+      parser_result: null,
+      benchmark_included: true,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([decisionImport, failedImport, pristineImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: decision-import.png",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 2: failed-import.png",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: /pristine-import\.png/,
+    })).not.toBeInTheDocument();
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
   it("reconciles malformed processing cache entries from the backend", async () => {
     window.localStorage.setItem(
       "poker-training-processing-v1",
@@ -1481,6 +1531,7 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse(recommended))
       .mockResolvedValueOnce(processingQueueResponse([recommended]))
       .mockResolvedValueOnce(jsonResponse({ detail: "History storage is unavailable" }, 500))
+      .mockResolvedValueOnce(jsonResponse({ detail: "History storage is unavailable" }, 500))
       .mockResolvedValueOnce(processingQueueResponse([recommended]));
     render(<App />);
     const user = userEvent.setup();
@@ -1502,6 +1553,71 @@ describe("App", () => {
     expect(screen.queryByRole("button", {
       name: "Reopen history item 1",
     })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
+  });
+
+  it("refreshes history when a later archive batch fails", async () => {
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const readyJobs = Array.from({ length: 101 }, (_, index) => ({
+      ...recommendedJob(),
+      id: index.toString(16).padStart(32, "0"),
+      original_filename: `partial-archive-${index + 1}.png`,
+    }));
+    const archivedJobs = readyJobs.slice(0, 100).map((job) => ({
+      ...job,
+      archived_at: "2026-07-10T00:02:00Z",
+    }));
+    const firstHistoryPage = {
+      total: 100,
+      jobs: archivedJobs.slice(0, 24),
+      snapshot_version: "partial-history-snapshot",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        total: 101,
+        jobs: readyJobs.slice(0, 100),
+        snapshot_version: "ready-processing-snapshot",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 101,
+        jobs: readyJobs.slice(100),
+        snapshot_version: "ready-processing-snapshot",
+      }))
+      .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
+      .mockResolvedValueOnce(jsonResponse({ detail: "Final archive batch failed" }, 500))
+      .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
+      .mockResolvedValueOnce(processingQueueResponse(
+        readyJobs.slice(100),
+        "remaining-processing-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 101: partial-archive-101.png",
+    })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+
+    expect(await screen.findByText("Final archive batch failed")).toBeInTheDocument();
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: partial-archive-101.png",
+    })).toBeInTheDocument();
+    expect(window.localStorage.getItem("poker-training-history-total-v1")).toBe("100");
+    expect(window.sessionStorage.getItem("poker-training-history-synced")).toBe("true");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/jobs",
+      "http://localhost:8000/api/jobs?offset=100",
+      "http://localhost:8000/api/history",
+      "http://localhost:8000/api/history",
+      "http://localhost:8000/api/history",
+      "http://localhost:8000/api/jobs",
+    ]);
+    expect(fetchMock().mock.calls[2][1]?.method).toBe("PUT");
+    expect(fetchMock().mock.calls[3][1]?.method).toBe("PUT");
+    expect(fetchMock().mock.calls[4][1]).toEqual({ credentials: "include" });
   });
 
   it("clears persisted jobs when the bounded browser history cache is unavailable", async () => {

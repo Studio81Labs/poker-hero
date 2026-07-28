@@ -163,6 +163,50 @@ def test_processing_queue_pages_unarchived_jobs_in_stable_order(
     assert client.get("/api/jobs?offset=-1").status_code == 422
 
 
+def test_processing_queue_keeps_mutated_benchmark_imports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingProvider:
+        name = "failing"
+        required_fields = ["hero_cards", "street"]
+
+        def required_fields_for(self, state: object):
+            return self.required_fields
+
+        def recommend(self, request: object):
+            raise ProviderError("provider exploded")
+
+    client = make_client(tmp_path)
+    pristine_id = upload_job(client, filename="pristine-import.png").json()["id"]
+    decision_id = upload_job(client, filename="decision-import.png").json()["id"]
+    failed_id = upload_job(client, filename="failed-import.png").json()["id"]
+    store = FileJobStore(tmp_path)
+    for job_id in (pristine_id, decision_id, failed_id):
+        approve_job(client, job_id)
+        imported_job = store.get(job_id)
+        imported_job.parser_result = None
+        imported_job.benchmark_included = True
+        store.save(imported_job)
+
+    decision = client.put(
+        f"/api/jobs/{decision_id}/decision",
+        json={"action": "call", "sizing": None, "certainty": "medium"},
+    )
+    monkeypatch.setattr("app.api.build_provider", lambda settings: FailingProvider())
+    failed_recommendation = client.post(f"/api/jobs/{failed_id}/recommend")
+    queue = client.get("/api/jobs")
+
+    assert decision.status_code == 200
+    assert failed_recommendation.status_code == 502
+    assert queue.status_code == 200
+    assert queue.json()["total"] == 2
+    assert [job["id"] for job in queue.json()["jobs"]] == [decision_id, failed_id]
+    assert queue.json()["jobs"][0]["training_decision"]["action"] == "call"
+    assert queue.json()["jobs"][1]["status"] == "error"
+    assert queue.json()["jobs"][1]["error"] == "provider exploded"
+
+
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     parsed_id = upload_job(client, filename="parsed.png").json()["id"]

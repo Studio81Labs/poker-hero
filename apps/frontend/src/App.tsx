@@ -1729,10 +1729,16 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && candidate.archived_at == null;
 }
 
-function isBenchmarkOnlyJob(job: JobRecord): boolean {
+function isPristineBenchmarkImport(job: JobRecord): boolean {
   return job.benchmark_included
+    && job.status === "approved"
     && job.parser_result === null
-    && job.recommendation === null;
+    && job.approved_state !== null
+    && job.training_decision === null
+    && job.recommendation === null
+    && job.training_reviewed_at === null
+    && job.training_review_note === null
+    && job.error === null;
 }
 
 function readProcessingQueue(): JobRecord[] | null {
@@ -1750,7 +1756,7 @@ function readProcessingQueue(): JobRecord[] | null {
     }
     return parsed
       .filter(isCachedJobRecord)
-      .filter((job) => !isBenchmarkOnlyJob(job));
+      .filter((job) => !isPristineBenchmarkImport(job));
   } catch {
     return null;
   }
@@ -1760,7 +1766,7 @@ function processingJobsForCache(jobs: JobRecord[]): JobRecord[] {
   return jobs.filter((job) =>
     PERSISTED_JOB_ID_PATTERN.test(job.id)
     && job.archived_at == null
-    && !isBenchmarkOnlyJob(job),
+    && !isPristineBenchmarkImport(job),
   );
 }
 
@@ -4437,7 +4443,17 @@ export default function App() {
         setError(null);
       }
     } catch (historyError) {
-      setError(messageFromError(historyError, "Could not save reviewed hands to history"));
+      const archiveErrorMessage = messageFromError(
+        historyError,
+        "Could not save reviewed hands to history",
+      );
+      const historyReconciled = await syncHistory(null, false);
+      if (historyReconciled && historySearchActive && historySearchQuery) {
+        await revalidateHistorySearch(historySearchQuery);
+      } else if (!historyReconciled) {
+        markHistorySessionUnsynced();
+      }
+      setError(archiveErrorMessage);
     } finally {
       endProcessingMembershipMutation();
       setBusy(false);

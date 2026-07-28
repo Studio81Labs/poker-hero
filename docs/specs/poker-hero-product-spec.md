@@ -555,8 +555,9 @@ Poker Hero is successful when:
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
-- Unarchived processing work survives a browser reload without mixing imported
-  benchmark-only cases into the queue.
+- Unarchived processing work survives a browser reload without mixing untouched
+  benchmark-only cases into the queue; imported hands with a decision or
+  retryable error remain visible as processing work.
 - Cleared history survives browser storage resets and can be refreshed from the
   persisted backend.
 - A user can search the complete persisted archive and page matching hands

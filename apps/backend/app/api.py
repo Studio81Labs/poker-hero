@@ -713,6 +713,20 @@ def is_history_ready(job: JobRecord) -> bool:
     )
 
 
+def is_pristine_benchmark_import(job: JobRecord) -> bool:
+    return (
+        job.benchmark_included
+        and job.status == "approved"
+        and job.parser_result is None
+        and job.approved_state is not None
+        and job.training_decision is None
+        and job.recommendation is None
+        and job.training_reviewed_at is None
+        and job.training_review_note is None
+        and job.error is None
+    )
+
+
 def build_job_queue(
     store: FileJobStore,
     limit: int,
@@ -723,11 +737,7 @@ def build_job_queue(
             job
             for job in store.list()
             if job.archived_at is None
-            and not (
-                job.benchmark_included
-                and job.parser_result is None
-                and job.recommendation is None
-            )
+            and not is_pristine_benchmark_import(job)
         ),
         key=lambda job: (job.created_at, job.id),
     )

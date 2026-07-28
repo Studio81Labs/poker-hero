@@ -143,6 +143,37 @@ function processingQueueResponse(
   });
 }
 
+function benchmarkOverviewForJob(jobId: string, originalFilename: string) {
+  return {
+    included_cases: 1,
+    latest_report: {
+      id: `benchmark-${jobId}`,
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-20T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 10,
+      evaluated_fields: 10,
+      accuracy: 1,
+      field_metrics: [{ field: "pot_size", correct: 1, total: 1, accuracy: 1 }],
+      cases: [{
+        job_id: jobId,
+        original_filename: originalFilename,
+        status: "completed",
+        correct_fields: 10,
+        evaluated_fields: 10,
+        accuracy: 1,
+        warnings: [],
+        error: null,
+        comparisons: [],
+      }],
+    },
+    recent_reports: [],
+  };
+}
+
 function deferredResponse() {
   let resolve!: (response: Response) => void;
   const promise = new Promise<Response>((resolvePromise) => {
@@ -336,6 +367,57 @@ describe("App", () => {
     expect(window.localStorage.getItem(
       "poker-training-processing-v1",
     )).toBe("[]");
+  });
+
+  it.each([
+    {
+      label: "missing",
+      malformedJob: (() => {
+        const { benchmark_included: _benchmarkIncluded, ...jobWithoutFlag } = {
+          ...approvedJob(),
+          id: "9".repeat(32),
+          original_filename: "missing-benchmark-flag.png",
+          parser_result: null,
+          benchmark_included: true,
+        };
+        return jobWithoutFlag;
+      })(),
+    },
+    {
+      label: "non-boolean",
+      malformedJob: {
+        ...approvedJob(),
+        id: "8".repeat(32),
+        original_filename: "invalid-benchmark-flag.png",
+        parser_result: null,
+        benchmark_included: "true",
+      },
+    },
+  ])("rejects a $label cached benchmark flag and restores the backend projection", async ({
+    malformedJob,
+  }) => {
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([malformedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(processingQueueResponse(
+      [],
+      "benchmark-filtered-snapshot",
+    ));
+
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    expect(screen.queryByRole("button", {
+      name: /benchmark-flag\.png/,
+    })).not.toBeInTheDocument();
+    await waitFor(() => expect(window.localStorage.getItem(
+      "poker-training-processing-v1",
+    )).toBe("[]"));
   });
 
   it("rejects malformed cached cards and restores the backend record", async () => {
@@ -6039,36 +6121,11 @@ describe("App", () => {
       error: "provider exploded",
       updated_at: "2026-07-10T00:01:00Z",
     };
-    const benchmarkReport = {
-      id: "benchmark-provider-failure",
-      parser_provider: "ocr_cv",
-      layout_profile: "fortuna",
-      created_at: "2026-07-20T12:00:00Z",
-      total_cases: 1,
-      successful_cases: 1,
-      failed_cases: 0,
-      correct_fields: 10,
-      evaluated_fields: 10,
-      accuracy: 1,
-      field_metrics: [{ field: "pot_size", correct: 1, total: 1, accuracy: 1 }],
-      cases: [{
-        job_id: benchmarkJobId,
-        original_filename: "provider-failure.png",
-        status: "completed",
-        correct_fields: 10,
-        evaluated_fields: 10,
-        accuracy: 1,
-        warnings: [],
-        error: null,
-        comparisons: [],
-      }],
-    };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse({
-        included_cases: 1,
-        latest_report: benchmarkReport,
-        recent_reports: [],
-      }))
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        "provider-failure.png",
+      )))
       .mockResolvedValueOnce(jsonResponse(pristineImport))
       .mockResolvedValueOnce(jsonResponse({ detail: "provider exploded" }, 502))
       .mockResolvedValueOnce(processingQueueResponse(
@@ -6116,6 +6173,84 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/jobs/${benchmarkJobId}`,
       `http://localhost:8000/api/jobs/${benchmarkJobId}/recommend`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("restores a lost standalone decision response for a pristine benchmark import", async () => {
+    const benchmarkJobId = "7".repeat(32);
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "decision-response-lost.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const persistedDecision = {
+      ...pristineImport,
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-20T12:05:00Z",
+      },
+      updated_at: "2026-07-20T12:05:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        "decision-response-lost.png",
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockRejectedValueOnce(new TypeError("Connection lost after saving answer"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedDecision],
+        "persisted-decision-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle decision-response-lost.png benchmark details",
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+
+    await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+
+    expect(await screen.findByText("Connection lost after saving answer")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedDecision]));
+    expect(await within(decisionPanel).findByText("Answer locked")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    const restoredQueueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: decision-response-lost.png",
+    });
+    expect(within(restoredQueueItem).getByText("approved")).toBeInTheDocument();
+    const restoredDecisionPanel = await screen.findByLabelText("Your training decision");
+    expect(within(restoredDecisionPanel).getByText("Answer locked")).toBeInTheDocument();
+    expect(within(restoredDecisionPanel).getByRole("button", {
+      name: "medium",
+    })).toHaveAttribute("aria-pressed", "true");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/decision`,
       "http://localhost:8000/api/jobs",
     ]);
   });

@@ -1724,6 +1724,7 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
       candidate.error === null
       || typeof candidate.error === "string"
     )
+    && typeof candidate.benchmark_included === "boolean"
     && typeof candidate.created_at === "string"
     && typeof candidate.updated_at === "string"
     && candidate.archived_at == null;
@@ -2854,6 +2855,14 @@ export default function App() {
     }
   }
 
+  function reconcileFailedPristineBenchmarkMutation(targetJob: JobRecord) {
+    if (!isPristineBenchmarkImport(targetJob)) {
+      return;
+    }
+    beginProcessingMembershipMutation();
+    endProcessingMembershipMutation();
+  }
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) {
@@ -3595,10 +3604,7 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
-      if (isPristineBenchmarkImport(job)) {
-        beginProcessingMembershipMutation();
-        endProcessingMembershipMutation();
-      }
+      reconcileFailedPristineBenchmarkMutation(job);
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
       setBusy(false);
@@ -3626,6 +3632,7 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
+      reconcileFailedPristineBenchmarkMutation(job);
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
       setBusy(false);

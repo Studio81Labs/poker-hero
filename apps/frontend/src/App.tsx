@@ -2861,14 +2861,6 @@ export default function App() {
     }
   }
 
-  function reconcileFailedPristineBenchmarkMutation(targetJob: JobRecord) {
-    if (!isPristineBenchmarkImport(targetJob)) {
-      return;
-    }
-    beginProcessingMembershipMutation();
-    endProcessingMembershipMutation();
-  }
-
   useEffect(() => {
     const video = videoRef.current;
     if (!video) {
@@ -3597,6 +3589,10 @@ export default function App() {
     if (!job || !canRecommend) {
       return;
     }
+    const changesProcessingMembership = isPristineBenchmarkImport(job);
+    if (changesProcessingMembership) {
+      beginProcessingMembershipMutation();
+    }
     setBusy(true);
     setError(null);
     try {
@@ -3621,9 +3617,11 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
-      reconcileFailedPristineBenchmarkMutation(job);
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
+      if (changesProcessingMembership) {
+        endProcessingMembershipMutation();
+      }
       setBusy(false);
     }
   }
@@ -3638,6 +3636,10 @@ export default function App() {
       return;
     }
 
+    const changesProcessingMembership = isPristineBenchmarkImport(job);
+    if (changesProcessingMembership) {
+      beginProcessingMembershipMutation();
+    }
     setBusy(true);
     setError(null);
     try {
@@ -3649,9 +3651,11 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
-      reconcileFailedPristineBenchmarkMutation(job);
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
+      if (changesProcessingMembership) {
+        endProcessingMembershipMutation();
+      }
       setBusy(false);
     }
   }

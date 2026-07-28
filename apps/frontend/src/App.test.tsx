@@ -6437,6 +6437,133 @@ describe("App", () => {
     ]);
   });
 
+  it.each([
+    { operation: "recommendation" as const },
+    { operation: "decision" as const },
+  ])("restores stable queue order after a successful benchmark $operation", async ({
+    operation,
+  }) => {
+    const benchmarkJobId = operation === "recommendation"
+      ? "a".repeat(32)
+      : "b".repeat(32);
+    const promotedFilename = `${operation}-promoted.png`;
+    const olderJob = jobRecord({
+      id: "0".repeat(32),
+      original_filename: `${operation}-older.png`,
+      image_filename: `${"0".repeat(32)}.png`,
+      created_at: "2026-07-20T12:00:00Z",
+      updated_at: "2026-07-20T12:00:00Z",
+    });
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: promotedFilename,
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+      created_at: "2026-07-20T12:01:00Z",
+      updated_at: "2026-07-20T12:01:00Z",
+    };
+    const newerJob = jobRecord({
+      id: "f".repeat(32),
+      original_filename: `${operation}-newer.png`,
+      image_filename: `${"f".repeat(32)}.png`,
+      created_at: "2026-07-20T12:02:00Z",
+      updated_at: "2026-07-20T12:02:00Z",
+    });
+    const promotedJob: JobRecord = operation === "recommendation"
+      ? {
+          ...pristineImport,
+          status: "recommended",
+          recommendation,
+          updated_at: "2026-07-20T12:03:00Z",
+        }
+      : {
+          ...pristineImport,
+          training_decision: {
+            action: "call",
+            sizing: null,
+            certainty: "medium",
+            recorded_at: "2026-07-20T12:03:00Z",
+          },
+          updated_at: "2026-07-20T12:03:00Z",
+        };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([olderJob, newerJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        promotedFilename,
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(jsonResponse(promotedJob))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [olderJob, promotedJob, newerJob],
+        `${operation}-promoted-snapshot`,
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: `Toggle ${promotedFilename} benchmark details`,
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 1: ${promotedFilename}`,
+    })).toBeInTheDocument();
+
+    if (operation === "recommendation") {
+      await user.click(screen.getByRole("button", {
+        name: "Request recommendation",
+      }));
+    } else {
+      const decisionPanel = await screen.findByLabelText("Your training decision");
+      await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+      await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+      await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+    }
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([olderJob, promotedJob, newerJob]));
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 1: ${operation}-older.png`,
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 2: ${promotedFilename}`,
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 3: ${operation}-newer.png`,
+    })).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 1: ${operation}-older.png`,
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: `Open screenshot 2: ${promotedFilename}`,
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/${operation === "recommendation" ? "recommend" : "decision"}`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("reconciles a lost benchmark inclusion response that removes an import from processing", async () => {
     const benchmarkJobId = "6".repeat(32);
     const processingImport = {

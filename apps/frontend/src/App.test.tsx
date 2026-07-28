@@ -462,6 +462,11 @@ describe("App", () => {
         total: 1,
         jobs: [archivedJob],
         snapshot_version: "archived-snapshot",
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "fresh-processing-snapshot",
       }));
     render(<App />);
     const user = userEvent.setup();
@@ -484,6 +489,11 @@ describe("App", () => {
       await pendingRestore.promise;
     });
 
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
     expect(screen.queryByRole("button", {
       name: "Open screenshot 1: stale-processing.png",
     })).not.toBeInTheDocument();
@@ -492,7 +502,7 @@ describe("App", () => {
     )).toBe("[]");
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
-    )).toBeNull();
+    )).toBe("true");
   });
 
   it("reconciles queues larger than the bounded browser cache", async () => {

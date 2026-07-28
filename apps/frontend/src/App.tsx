@@ -2423,6 +2423,7 @@ export default function App() {
   const [historySearchTotal, setHistorySearchTotal] = useState(0);
   const [historySearchSnapshotVersion, setHistorySearchSnapshotVersion] = useState<string | null>(null);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
+  const [processingRestoreRequest, setProcessingRestoreRequest] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
   const [errorSequence, setErrorSequence] = useState(0);
@@ -2437,6 +2438,8 @@ export default function App() {
   const formDirtyRef = useRef(false);
   const processingCacheInitializedRef = useRef(false);
   const processingMembershipGenerationRef = useRef(0);
+  const processingMutationCountRef = useRef(0);
+  const processingRestoreRetryRequestedRef = useRef(false);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
@@ -2597,6 +2600,31 @@ export default function App() {
     setErrorSequence((current) => current + 1);
   }
 
+  function scheduleProcessingQueueRestore() {
+    processingRestoreRetryRequestedRef.current = false;
+    processingRestorePromiseRef.current = null;
+    setProcessingRestoreRequest((current) => current + 1);
+  }
+
+  function beginProcessingMembershipMutation() {
+    processingMutationCountRef.current += 1;
+    processingMembershipGenerationRef.current += 1;
+    markProcessingQueueSessionUnsynced();
+  }
+
+  function endProcessingMembershipMutation() {
+    processingMutationCountRef.current = Math.max(
+      processingMutationCountRef.current - 1,
+      0,
+    );
+    if (
+      processingMutationCountRef.current === 0
+      && processingRestoreRetryRequestedRef.current
+    ) {
+      scheduleProcessingQueueRestore();
+    }
+  }
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) {
@@ -2693,6 +2721,10 @@ export default function App() {
         }
         if (processingMembershipGenerationRef.current !== restoreGeneration) {
           markProcessingQueueSessionUnsynced();
+          processingRestoreRetryRequestedRef.current = true;
+          if (processingMutationCountRef.current === 0) {
+            scheduleProcessingQueueRestore();
+          }
           return;
         }
         const currentJobs = jobsRef.current;
@@ -2739,7 +2771,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [processingRestoreRequest]);
 
   useEffect(() => {
     if (activeJobId !== null || jobs.length === 0) {
@@ -3060,8 +3092,6 @@ export default function App() {
 
   async function uploadSelectedFiles(runAutomation: boolean): Promise<JobRecord[]> {
     const selectedFiles = [...files];
-    processingMembershipGenerationRef.current += 1;
-    markProcessingQueueSessionUnsynced();
     const controller = new AbortController();
     queueAbortControllerRef.current = controller;
     queueAbortRequestedRef.current = false;
@@ -3164,11 +3194,13 @@ export default function App() {
     }
     setBusy(true);
     setError(null);
+    beginProcessingMembershipMutation();
     try {
       await uploadSelectedFiles(automationEnabled);
     } catch (uploadError) {
       setError(messageFromError(uploadError, "Upload failed"));
     } finally {
+      endProcessingMembershipMutation();
       setBusy(false);
     }
   }
@@ -3235,8 +3267,6 @@ export default function App() {
   }
 
   async function captureAndParseScreen(): Promise<JobRecord> {
-    processingMembershipGenerationRef.current += 1;
-    markProcessingQueueSessionUnsynced();
     const created = await uploadScreenshot(await captureSharedScreenFile());
     appendJob(created);
     return created;
@@ -3245,6 +3275,7 @@ export default function App() {
   async function onCaptureScreen() {
     setBusy(true);
     setError(null);
+    beginProcessingMembershipMutation();
     try {
       const created = await captureAndParseScreen();
       if (automationEnabled) {
@@ -3253,6 +3284,7 @@ export default function App() {
     } catch (captureError) {
       setError(messageFromError(captureError, "Screen capture failed"));
     } finally {
+      endProcessingMembershipMutation();
       setBusy(false);
     }
   }
@@ -4139,8 +4171,7 @@ export default function App() {
 
     setBusy(true);
     setError(null);
-    processingMembershipGenerationRef.current += 1;
-    markProcessingQueueSessionUnsynced();
+    beginProcessingMembershipMutation();
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
       if (historySearchActive && historySearchQuery) {
@@ -4157,6 +4188,7 @@ export default function App() {
     } catch (historyError) {
       setError(messageFromError(historyError, "Could not save reviewed hands to history"));
     } finally {
+      endProcessingMembershipMutation();
       setBusy(false);
     }
   }

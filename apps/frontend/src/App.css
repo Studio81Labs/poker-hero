@@ -586,6 +586,10 @@ button:disabled {
   color: var(--text);
 }
 
+.batch-item.attention {
+  border-color: var(--accent);
+}
+
 .batch-number {
   align-items: center;
   background: #d7d3d3;
@@ -601,6 +605,11 @@ button:disabled {
 .batch-item.active .batch-number {
   background: var(--accent);
   color: var(--bg);
+}
+
+.batch-item.attention:not(.active) .batch-number {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
 }
 
 .batch-text {

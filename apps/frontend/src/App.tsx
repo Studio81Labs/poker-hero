@@ -1679,6 +1679,10 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
       candidate.recommendation === null
       || isCachedRecommendation(candidate.recommendation)
     )
+    && (
+      candidate.error === null
+      || typeof candidate.error === "string"
+    )
     && typeof candidate.created_at === "string"
     && typeof candidate.updated_at === "string"
     && candidate.archived_at == null;
@@ -2451,16 +2455,10 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
   };
 }
 
-function markJobNeedsAttention(job: JobRecord, message: string): JobRecord {
-  return {
-    ...job,
-    status: "error",
-    error: message,
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function queueDetail(job: JobRecord): string {
+function queueDetail(job: JobRecord, attention: string | undefined): string {
+  if (attention) {
+    return attention;
+  }
   if (job.status === "error") {
     return job.error ?? "Needs attention";
   }
@@ -2534,6 +2532,7 @@ export default function App() {
   const [historySearchTotal, setHistorySearchTotal] = useState(0);
   const [historySearchSnapshotVersion, setHistorySearchSnapshotVersion] = useState<string | null>(null);
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
+  const [jobAttention, setJobAttention] = useState<Record<string, string>>({});
   const [processingRestoreRequest, setProcessingRestoreRequest] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
@@ -2958,10 +2957,22 @@ export default function App() {
     setJobs(nextJobs);
   }
 
+  function clearJobAttention(jobId: string) {
+    setJobAttention((current) => {
+      if (!(jobId in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[jobId];
+      return next;
+    });
+  }
+
   function replaceJob(updatedJob: JobRecord) {
     updateJobs((current) =>
       current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)),
     );
+    clearJobAttention(updatedJob.id);
     updateHistoryJob(updatedJob);
     activeJobIdRef.current = updatedJob.id;
     setActiveJobId(updatedJob.id);
@@ -3256,16 +3267,21 @@ export default function App() {
           try {
             completed = await runConfiguredAutomation(created, controller.signal);
           } catch (automationError) {
+            const confirmedJob = jobsRef.current.find(
+              (candidate) => candidate.id === created.id,
+            ) ?? created;
             if (isAbortError(automationError)) {
-              completedJobs.push(created);
+              completedJobs.push(confirmedJob);
               completedCount += 1;
               skippedCount = selectedFiles.length - completedCount;
               break;
             }
             const message = messageFromError(automationError, "Automation stopped for this screenshot");
-            const attentionJob = markJobNeedsAttention(created, message);
-            replaceJob(attentionJob);
-            completed = attentionJob;
+            setJobAttention((current) => ({
+              ...current,
+              [created.id]: message,
+            }));
+            completed = confirmedJob;
             attentionMessages.push(`${selectedFile.name}: ${message}`);
             failedCount += 1;
           }
@@ -4500,23 +4516,31 @@ export default function App() {
             </div>
             {jobs.length > 0 ? (
               <div className="batch-list">
-                {jobs.map((candidate, index) => (
-                  <button
-                    key={candidate.id}
-                    type="button"
-                    className={candidate.id === job?.id ? "batch-item active" : "batch-item"}
-                    onClick={() => activateJob(candidate)}
-                    disabled={busy}
-                    aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-                  >
-                    <span className="batch-number">{index + 1}</span>
-                    <span className="batch-text">
-                      <span>{candidate.original_filename}</span>
-                      <small>{queueDetail(candidate)}</small>
-                    </span>
-                    <StatusPill status={candidate.status} />
-                  </button>
-                ))}
+                {jobs.map((candidate, index) => {
+                  const attention = jobAttention[candidate.id];
+                  const className = [
+                    "batch-item",
+                    candidate.id === job?.id ? "active" : "",
+                    attention ? "attention" : "",
+                  ].filter(Boolean).join(" ");
+                  return (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      className={className}
+                      onClick={() => activateJob(candidate)}
+                      disabled={busy}
+                      aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
+                    >
+                      <span className="batch-number">{index + 1}</span>
+                      <span className="batch-text">
+                        <span>{candidate.original_filename}</span>
+                        <small>{queueDetail(candidate, attention)}</small>
+                      </span>
+                      <StatusPill status={candidate.status} />
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="pending-files">{files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}</div>

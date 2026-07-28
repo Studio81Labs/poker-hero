@@ -349,6 +349,40 @@ describe("App", () => {
     );
   });
 
+  it("rejects malformed cached errors and restores the backend record", async () => {
+    const persistedJob = jobRecord({
+      id: "f".repeat(32),
+      original_filename: "restored-error-state.png",
+    });
+    const malformedJob = {
+      ...persistedJob,
+      status: "error",
+      error: {},
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([malformedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "valid-error-snapshot",
+    }));
+
+    render(<App />);
+
+    const restoredItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: restored-error-state.png",
+    });
+    expect(within(restoredItem).getByText("parsed")).toBeInTheDocument();
+    expect(within(restoredItem).getByText("flop")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
+  });
+
   it("keeps unsaved form edits out of the processing cache", async () => {
     const persistedJob = {
       ...recommendedJob(),
@@ -1147,6 +1181,67 @@ describe("App", () => {
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/recommend");
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/history");
+  });
+
+  it("retains server approval when upload recommendation automation fails", async () => {
+    const jobId = "f".repeat(32);
+    const created = jobRecord({
+      id: jobId,
+      original_filename: "recommendation-failed.png",
+    });
+    const approved = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "recommendation-failed.png",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approved))
+      .mockResolvedValueOnce(jsonResponse({ detail: "Solver unavailable" }, 502))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [approved],
+        snapshot_version: "approved-processing-snapshot",
+      }));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["failed"], "recommendation-failed.png", { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    const attentionItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: recommendation-failed.png",
+    });
+    expect(within(attentionItem).getByText("approved")).toBeInTheDocument();
+    expect(within(attentionItem).getByText("Solver unavailable")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0]).toMatchObject({
+      status: "approved",
+      approved_state: approved.approved_state,
+      error: null,
+      updated_at: approved.updated_at,
+    }));
+
+    firstRender.unmount();
+    render(<App />);
+
+    const restoredItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: recommendation-failed.png",
+    });
+    expect(within(restoredItem).getByText("approved")).toBeInTheDocument();
+    expect(within(restoredItem).queryByText("Solver unavailable")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
   });
 
   it("keeps completed jobs in processing when history persistence fails", async () => {

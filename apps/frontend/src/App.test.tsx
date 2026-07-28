@@ -318,6 +318,73 @@ describe("App", () => {
     ))[0].parser_result.state.hero_cards).toEqual(detectedState.hero_cards);
   });
 
+  it("rejects malformed cached recommendations and restores the backend record", async () => {
+    const persistedJob = {
+      ...recommendedJob(),
+      id: "d".repeat(32),
+      original_filename: "restored-recommendation.png",
+    };
+    const malformedJob = {
+      ...persistedJob,
+      recommendation: {},
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([malformedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "valid-recommendation-snapshot",
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByText(recommendation.explanation)).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
+  });
+
+  it("keeps unsaved form edits out of the processing cache", async () => {
+    const persistedJob = {
+      ...recommendedJob(),
+      id: "e".repeat(32),
+      original_filename: "confirmed-recommendation.png",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([persistedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    const potInput = screen.getByLabelText(/Pot/);
+    await user.clear(potInput);
+    await user.type(potInput, "18");
+
+    expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0]).toMatchObject({
+      status: "recommended",
+      approved_state: persistedJob.approved_state,
+      recommendation: persistedJob.recommendation,
+    });
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Pot/)).toHaveValue("12.5");
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
   it("restores persisted processing jobs when the browser cache is unavailable", async () => {
     const persistedJob = jobRecord({
       id: "b".repeat(32),
@@ -646,6 +713,51 @@ describe("App", () => {
     expect(window.localStorage.getItem(
       "poker-training-processing-total-v1",
     )).toBe("101");
+  });
+
+  it("preserves the known complete count while queue reconciliation is pending", async () => {
+    const persistedJobs = Array.from({ length: 101 }, (_, index) => jobRecord({
+      id: index.toString(16).padStart(32, "0"),
+      original_filename: `persisted-${index + 1}.png`,
+    }));
+    const approved = {
+      ...persistedJobs[0],
+      status: "approved" as const,
+      approved_state: canonicalState(),
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify(persistedJobs.slice(0, 100)),
+    );
+    window.localStorage.setItem(
+      "poker-training-processing-total-v1",
+      String(persistedJobs.length),
+    );
+    const pendingQueue = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingQueue.promise)
+      .mockResolvedValueOnce(jsonResponse(approved));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    const approveButton = screen.getByRole("button", { name: "Approve state" });
+    await waitFor(() => expect(approveButton).toBeEnabled());
+    await user.click(approveButton);
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].status).toBe("approved"));
+    expect(window.localStorage.getItem(
+      "poker-training-processing-total-v1",
+    )).toBe("101");
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
   });
 
   it("renders live capture first and exposes upload mode", async () => {
@@ -5146,8 +5258,9 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
     const reopenedDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     const retainedGroundTruth = within(reopenedDialog).getByRole("switch", {
-      name: /Use current hand as ground truth.*Previous approved state remains included/,
+      name: /Use current hand as ground truth/,
     });
+    expect(retainedGroundTruth).toHaveAttribute("aria-checked", "true");
     expect(retainedGroundTruth).toBeEnabled();
     await user.click(retainedGroundTruth);
     await waitFor(() => expect(retainedGroundTruth).toHaveAttribute("aria-checked", "false"));

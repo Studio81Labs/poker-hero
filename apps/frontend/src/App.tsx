@@ -1602,6 +1602,31 @@ function isCachedCanonicalState(value: unknown): value is CanonicalState {
     && typeof (value as Partial<CanonicalState>).user_approved === "boolean";
 }
 
+function isCachedRecommendation(value: unknown): value is RecommendationResult {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const recommendation = value as Record<string, unknown>;
+  return typeof recommendation.action === "string"
+    && TRAINING_ACTIONS.some((action) => action === recommendation.action)
+    && (
+      recommendation.sizing === null
+      || (
+        typeof recommendation.sizing === "number"
+        && Number.isFinite(recommendation.sizing)
+        && recommendation.sizing >= 0
+      )
+    )
+    && typeof recommendation.confidence === "number"
+    && Number.isFinite(recommendation.confidence)
+    && recommendation.confidence >= 0
+    && recommendation.confidence <= 1
+    && typeof recommendation.explanation === "string"
+    && recommendation.raw !== null
+    && typeof recommendation.raw === "object"
+    && !Array.isArray(recommendation.raw);
+}
+
 function isCachedParserResult(value: unknown): boolean {
   if (value === null) {
     return true;
@@ -1650,6 +1675,10 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
       candidate.approved_state === null
       || isCachedCanonicalState(candidate.approved_state)
     )
+    && (
+      candidate.recommendation === null
+      || isCachedRecommendation(candidate.recommendation)
+    )
     && typeof candidate.created_at === "string"
     && typeof candidate.updated_at === "string"
     && candidate.archived_at == null;
@@ -1690,11 +1719,38 @@ function processingJobsForCache(jobs: JobRecord[]): JobRecord[] {
   );
 }
 
-function writeProcessingQueue(jobs: JobRecord[]): boolean {
+function readStoredProcessingQueueTotal(): number | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(
+      PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
+    );
+    if (raw === null) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeProcessingQueue(
+  jobs: JobRecord[],
+  preserveKnownTotal = false,
+): boolean {
   if (typeof window === "undefined") {
     return false;
   }
   const processingJobs = processingJobsForCache(jobs);
+  const storedTotal = preserveKnownTotal
+    ? readStoredProcessingQueueTotal()
+    : null;
+  const total = storedTotal === null
+    ? processingJobs.length
+    : Math.max(storedTotal, processingJobs.length);
   try {
     window.localStorage.setItem(
       PROCESSING_QUEUE_STORAGE_KEY,
@@ -1702,7 +1758,7 @@ function writeProcessingQueue(jobs: JobRecord[]): boolean {
     );
     window.localStorage.setItem(
       PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
-      String(processingJobs.length),
+      String(total),
     );
     return true;
   } catch {
@@ -1717,26 +1773,15 @@ function readCachedProcessingQueueTotal(
   if (cachedJobs === null || typeof window === "undefined") {
     return null;
   }
-  try {
-    const raw = window.localStorage.getItem(
-      PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
-    );
-    if (raw === null) {
-      return null;
-    }
-    const parsed = Number(raw);
-    if (
-      !Number.isSafeInteger(parsed)
-      || parsed < 0
-      || cachedJobs.length !== parsed
-      || cachedJobs.length > PROCESSING_QUEUE_CACHE_LIMIT
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch {
+  const storedTotal = readStoredProcessingQueueTotal();
+  if (
+    storedTotal === null
+    || cachedJobs.length !== storedTotal
+    || cachedJobs.length > PROCESSING_QUEUE_CACHE_LIMIT
+  ) {
     return null;
   }
+  return storedTotal;
 }
 
 function markProcessingQueueSessionSynced(): void {
@@ -2260,23 +2305,6 @@ function approvalKey(state: CanonicalState): string {
   });
 }
 
-function clearApprovedResult(job: JobRecord): JobRecord {
-  if (!job.approved_state && !job.recommendation) {
-    return job;
-  }
-  if (!job.parser_result) {
-    return job;
-  }
-
-  return {
-    ...job,
-    status: job.parser_result ? "parsed" : "created",
-    approved_state: null,
-    training_decision: null,
-    recommendation: null,
-  };
-}
-
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -2536,7 +2564,7 @@ export default function App() {
       processingCacheInitializedRef.current = true;
       return;
     }
-    writeProcessingQueue(jobs);
+    writeProcessingQueue(jobs, !processingQueueSessionSynced());
   }, [jobs]);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
@@ -2787,6 +2815,7 @@ export default function App() {
     ) {
       return;
     }
+    markProcessingQueueSessionUnsynced();
 
     const cachedIds = new Set((cachedJobs ?? []).map((cachedJob) => cachedJob.id));
     const restoreGeneration = processingMembershipGenerationRef.current;
@@ -3626,9 +3655,6 @@ export default function App() {
       return next;
     });
     setApprovedStateKey(null);
-    updateJobs((current) =>
-      current.map((candidate) => (candidate.id === job?.id ? clearApprovedResult(candidate) : candidate)),
-    );
   }
 
   function resetToParser() {
@@ -3639,9 +3665,6 @@ export default function App() {
       setForm(parserForm);
       setError(null);
       setApprovedStateKey(null);
-      updateJobs((current) =>
-        current.map((candidate) => (candidate.id === job.id ? clearApprovedResult(candidate) : candidate)),
-      );
     }
   }
 

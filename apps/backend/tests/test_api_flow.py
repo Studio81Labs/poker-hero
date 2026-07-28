@@ -1174,11 +1174,21 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     recommendation_thread.start()
     try:
         assert provider_started.wait(timeout=2)
+        in_progress_job = client.get(f"/api/jobs/{job_id}")
+        assert in_progress_job.status_code == 200
+        assert in_progress_job.json()["recommendation_pending"] is True
+        processing_jobs = client.get("/api/jobs")
+        assert processing_jobs.status_code == 200
+        assert processing_jobs.json()["jobs"][0]["recommendation_pending"] is True
+        duplicate_response = client.post(f"/api/jobs/{job_id}/recommend")
+        assert duplicate_response.status_code == 409
+        assert duplicate_response.json()["detail"] == "Recommendation is already running"
         decision_response = client.put(
             f"/api/jobs/{job_id}/decision",
             json={"action": "raise", "sizing": 7.5},
         )
         assert decision_response.status_code == 200
+        assert decision_response.json()["recommendation_pending"] is True
     finally:
         release_provider.set()
         recommendation_thread.join(timeout=5)
@@ -1189,6 +1199,7 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     assert recommendation_response.status_code == 200
     job = recommendation_response.json()
     assert job["status"] == "recommended"
+    assert job["recommendation_pending"] is False
     assert job["training_decision"]["action"] == "raise"
     assert job["training_decision"]["sizing"] == 7.5
     persisted_job = FileJobStore(tmp_path).get(job_id)
@@ -1332,6 +1343,7 @@ def test_provider_runtime_errors_are_bad_gateway_and_stored(
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "provider exploded"
+    assert job.recommendation_pending is False
 
 
 def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
@@ -1343,7 +1355,9 @@ def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == {"missing_fields": ["hero_cards"]}
-    assert FileJobStore(tmp_path).get(job_id).status == "approved"
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.recommendation_pending is False
 
 
 @pytest.mark.parametrize(
@@ -2072,6 +2086,7 @@ def test_provider_configuration_errors_are_http_errors(
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "Unknown required field: missing_field"
+    assert job.recommendation_pending is False
 
 
 def test_store_persists_jobs_and_rejects_invalid_job_ids(tmp_path: Path) -> None:

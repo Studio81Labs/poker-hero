@@ -99,6 +99,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     approved_state: null,
     training_decision: null,
     recommendation: null,
+    recommendation_pending: false,
     training_reviewed_at: null,
     training_review_note: null,
     benchmark_included: false,
@@ -288,6 +289,159 @@ describe("App", () => {
     })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Ah Kd")).toBeInTheDocument();
     expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite a newer processing cache record from another tab", async () => {
+    const jobId = "1".repeat(32);
+    const staleJob = jobRecord({
+      id: jobId,
+      original_filename: "shared-cache.png",
+    });
+    const newerJob = {
+      ...staleJob,
+      status: "approved" as const,
+      approved_state: canonicalState({ pot_size: 20 }),
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const archivedJob = jobRecord({
+      id: "2".repeat(32),
+      original_filename: "history-trigger.png",
+      archived_at: "2026-07-10T00:02:00Z",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: archivedJob.id,
+        job: archivedJob,
+        savedAt: archivedJob.archived_at,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([newerJob]),
+    );
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([newerJob]));
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("reconciles processing when another tab changes the shared cache", async () => {
+    const jobId = "3".repeat(32);
+    const staleJob = jobRecord({
+      id: jobId,
+      original_filename: "cross-tab-update.png",
+    });
+    const newerJob = {
+      ...staleJob,
+      status: "approved" as const,
+      approved_state: canonicalState({ pot_size: 20 }),
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(processingQueueResponse(
+      [newerJob],
+      "cross-tab-update-snapshot",
+    ));
+    render(<App />);
+
+    const serializedNewerJob = JSON.stringify([newerJob]);
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      serializedNewerJob,
+    );
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: "poker-training-processing-v1",
+      oldValue: JSON.stringify([staleJob]),
+      newValue: serializedNewerJob,
+      storageArea: window.localStorage,
+    }));
+
+    expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
+  it("polls a recommendation that was still running during reload", async () => {
+    const jobId = "4".repeat(32);
+    const pendingJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "pending-recommendation.png",
+      recommendation_pending: true,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const completedJob = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "pending-recommendation.png",
+      recommendation_pending: false,
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([pendingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingCompletion = deferredResponse();
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse(
+        [pendingJob],
+        "recommendation-still-running",
+      ))
+      .mockReturnValueOnce(pendingCompletion.promise);
+    render(<App />);
+
+    const queueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: pending-recommendation.png",
+    });
+    expect(within(queueItem).getByText("Recommendation running")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeDisabled();
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+
+    await act(async () => {
+      pendingCompletion.resolve(processingQueueResponse(
+        [completedJob],
+        "recommendation-completed",
+      ));
+      await pendingCompletion.promise;
+    });
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(within(queueItem).queryByText(
+      "Recommendation running",
+    )).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([completedJob]);
   });
 
   it("keeps mutated benchmark imports in the cached processing queue", async () => {

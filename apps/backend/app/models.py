@@ -391,6 +391,7 @@ class JobRecord(BaseModel):
     approved_state: CanonicalState | None = None
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
+    recommendation_pending: bool = False
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
     benchmark_included: bool = False

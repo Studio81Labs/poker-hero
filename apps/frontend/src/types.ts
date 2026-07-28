@@ -265,6 +265,7 @@ export interface JobRecord {
   approved_state: CanonicalState | null;
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
+  recommendation_pending: boolean;
   training_reviewed_at: string | null;
   training_review_note: string | null;
   benchmark_included: boolean;

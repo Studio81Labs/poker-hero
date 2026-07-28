@@ -232,6 +232,7 @@ const PROCESSING_QUEUE_STORAGE_KEY = "poker-training-processing-v1";
 const PROCESSING_QUEUE_TOTAL_STORAGE_KEY = "poker-training-processing-total-v1";
 const PROCESSING_QUEUE_CACHE_LIMIT = 100;
 const PROCESSING_QUEUE_SNAPSHOT_RETRY_LIMIT = 3;
+const PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS = 250;
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
@@ -1708,6 +1709,7 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
       candidate.recommendation === null
       || isCachedRecommendation(candidate.recommendation)
     )
+    && typeof candidate.recommendation_pending === "boolean"
     && (
       candidate.training_decision === null
       || isCachedTrainingDecision(candidate.training_decision)
@@ -1796,7 +1798,13 @@ function writeProcessingQueue(
   if (typeof window === "undefined") {
     return false;
   }
-  const processingJobs = processingJobsForCache(jobs);
+  const cachedJobsById = new Map(
+    (readProcessingQueue() ?? []).map((job) => [job.id, job]),
+  );
+  const processingJobs = processingJobsForCache(jobs).map((job) => {
+    const cachedJob = cachedJobsById.get(job.id);
+    return cachedJob ? newerJob(job, cachedJob) : job;
+  });
   const storedTotal = preserveKnownTotal
     ? readStoredProcessingQueueTotal()
     : null;
@@ -1804,14 +1812,19 @@ function writeProcessingQueue(
     ? processingJobs.length
     : Math.max(storedTotal, processingJobs.length);
   try {
-    window.localStorage.setItem(
-      PROCESSING_QUEUE_STORAGE_KEY,
-      JSON.stringify(processingJobs.slice(0, PROCESSING_QUEUE_CACHE_LIMIT)),
+    const serializedJobs = JSON.stringify(
+      processingJobs.slice(0, PROCESSING_QUEUE_CACHE_LIMIT),
     );
-    window.localStorage.setItem(
-      PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
-      String(total),
-    );
+    if (window.localStorage.getItem(PROCESSING_QUEUE_STORAGE_KEY) !== serializedJobs) {
+      window.localStorage.setItem(PROCESSING_QUEUE_STORAGE_KEY, serializedJobs);
+    }
+    const serializedTotal = String(total);
+    if (window.localStorage.getItem(PROCESSING_QUEUE_TOTAL_STORAGE_KEY) !== serializedTotal) {
+      window.localStorage.setItem(
+        PROCESSING_QUEUE_TOTAL_STORAGE_KEY,
+        serializedTotal,
+      );
+    }
     return true;
   } catch {
     markProcessingQueueSessionUnsynced();
@@ -2575,7 +2588,13 @@ function historyAction(job: JobRecord): string {
 }
 
 function isHistoryReady(job: JobRecord): boolean {
-  return job.status === "approved" || job.status === "recommended" || job.approved_state !== null || job.recommendation !== null;
+  return !job.recommendation_pending
+    && (
+      job.status === "approved"
+      || job.status === "recommended"
+      || job.approved_state !== null
+      || job.recommendation !== null
+    );
 }
 
 function createLocalErrorJob(file: File, message: string, index: number): JobRecord {
@@ -2591,6 +2610,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     approved_state: null,
     training_decision: null,
     recommendation: null,
+    recommendation_pending: false,
     training_reviewed_at: null,
     training_review_note: null,
     benchmark_included: false,
@@ -2606,6 +2626,9 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
   }
   if (job.status === "error") {
     return job.error ?? "Needs attention";
+  }
+  if (job.recommendation_pending) {
+    return "Recommendation running";
   }
   if (job.parser_result && job.parser_result.warnings.length > 0) {
     return "Review warnings";
@@ -2713,6 +2736,58 @@ export default function App() {
     writeProcessingQueue(jobs, !processingQueueSessionSynced());
   }, [jobs]);
 
+  useEffect(() => {
+    let restoreTimer: number | null = null;
+    const onStorage = (event: StorageEvent) => {
+      if (
+        (
+          event.key !== PROCESSING_QUEUE_STORAGE_KEY
+          && event.key !== PROCESSING_QUEUE_TOTAL_STORAGE_KEY
+        )
+        || (
+          event.storageArea !== null
+          && event.storageArea !== window.localStorage
+        )
+      ) {
+        return;
+      }
+      markProcessingQueueSessionUnsynced();
+      if (restoreTimer !== null) {
+        window.clearTimeout(restoreTimer);
+      }
+      restoreTimer = window.setTimeout(() => {
+        restoreTimer = null;
+        if (processingMutationCountRef.current === 0) {
+          scheduleProcessingQueueRestore();
+        } else {
+          processingRestoreRetryRequestedRef.current = true;
+        }
+      }, 25);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      if (restoreTimer !== null) {
+        window.clearTimeout(restoreTimer);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!jobs.some((candidate) => candidate.recommendation_pending)) {
+      return;
+    }
+    markProcessingQueueSessionUnsynced();
+    const revalidationTimer = window.setTimeout(() => {
+      if (processingMutationCountRef.current === 0) {
+        scheduleProcessingQueueRestore();
+      } else {
+        processingRestoreRetryRequestedRef.current = true;
+      }
+    }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
+    return () => window.clearTimeout(revalidationTimer);
+  }, [jobs]);
+
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
     try {
@@ -2741,7 +2816,9 @@ export default function App() {
       && validation.state.street
       && !currentStateApproved,
   );
-  const canRecommend = currentStateApproved && !job?.recommendation;
+  const canRecommend = currentStateApproved
+    && !job?.recommendation
+    && !job?.recommendation_pending;
   const stateControlsDisabled = busy;
   const screenshotUrl = useMemo(() => (job && job.image_filename !== "" ? imageUrl(job.id) : null), [job]);
   const screenSharing = screenStream !== null;
@@ -3000,6 +3077,7 @@ export default function App() {
       legacyHistoryArchive === null
       && processingQueueSessionSynced()
       && readCachedProcessingQueueTotal(cachedJobs) !== null
+      && !cachedJobs?.some((cachedJob) => cachedJob.recommendation_pending)
     ) {
       return;
     }
@@ -3083,9 +3161,16 @@ export default function App() {
         if (!preserveDirtyForm) {
           alignWorkspaceToJob(reconciledActiveJob ?? nextJobs[0] ?? null);
         }
-        if (writeProcessingQueue(nextJobs) && !preservedMissingDirtyJob) {
+        const recommendationPending = nextJobs.some(
+          (candidate) => candidate.recommendation_pending,
+        );
+        if (
+          writeProcessingQueue(nextJobs)
+          && !preservedMissingDirtyJob
+          && !recommendationPending
+        ) {
           markProcessingQueueSessionSynced();
-        } else if (preservedMissingDirtyJob) {
+        } else {
           markProcessingQueueSessionUnsynced();
         }
       })

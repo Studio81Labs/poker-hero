@@ -250,6 +250,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state = state
             job.training_decision = None
             job.recommendation = None
+            job.recommendation_pending = False
             job.training_reviewed_at = None
             job.training_review_note = None
             job.status = "approved"
@@ -291,7 +292,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job = load_job_or_404(store, job_id)
             if job.approved_state is None or not job.approved_state.user_approved:
                 raise HTTPException(status_code=409, detail="Approve corrected state before requesting recommendation")
+            if job.recommendation_pending:
+                raise HTTPException(status_code=409, detail="Recommendation is already running")
             approved_state = job.approved_state.model_copy(deep=True)
+            job.recommendation_pending = True
+            job.error = None
+            save_job(job)
 
         try:
             provider = build_provider(active_settings)
@@ -302,21 +308,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
 
         if missing:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
             raise HTTPException(status_code=422, detail={"missing_fields": missing})
 
         try:
             result = provider.recommend(RecommendationRequest(state=approved_state, provider=provider.name))
         except ProviderInputError as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
@@ -324,14 +344,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ProviderError as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(job_id, approved_state)
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
 
         with job_lock_for(job_id):
             current = current_recommendation_target(job_id, approved_state)
             current.recommendation = result
+            current.recommendation_pending = False
             current.training_reviewed_at = None
             current.training_review_note = None
             current.status = "recommended"
@@ -707,9 +737,12 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
 
 def is_history_ready(job: JobRecord) -> bool:
     return (
-        job.status in {"approved", "recommended"}
-        or job.approved_state is not None
-        or job.recommendation is not None
+        not job.recommendation_pending
+        and (
+            job.status in {"approved", "recommended"}
+            or job.approved_state is not None
+            or job.recommendation is not None
+        )
     )
 
 

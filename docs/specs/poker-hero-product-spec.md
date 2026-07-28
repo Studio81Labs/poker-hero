@@ -317,6 +317,9 @@ frequencies.
     changes to a reopened archived hand update its visible history entry
     immediately. Archive-wide search uses its own paged result set and match
     count without changing the global reviewed count or newest-page cache.
+    Shared processing-cache changes invalidate other open tabs, and a persisted
+    in-progress recommendation keeps revalidating until the backend records its
+    recommendation or retryable error.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

@@ -114,6 +114,11 @@ solver result from being recorded afterward as a supposed pre-reveal answer.
 Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
+Before releasing the lock, recommendation work persists an in-progress marker;
+the marker clears on every terminal success or failure. A reloaded frontend
+keeps the processing cache unsynchronized and polls the projection while that
+marker remains, so a solver result committed after the first reload read is not
+hidden by the browser cache.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also aggregates the recommendation
@@ -262,7 +267,10 @@ offset-paged processing projection with a snapshot hash. The frontend caches at
 most 100 of those records for immediate reload display, retains the complete
 persisted count, and reconciles all backend pages once per browser session or
 after queue membership changes. Snapshot changes restart the bounded page walk,
-while a newer in-memory mutation wins by `updated_at`. Imported benchmark-only
+while a newer in-memory mutation wins by `updated_at`. Cache writes merge
+matching records by `updated_at`, avoid no-op storage writes, and storage events
+invalidate sibling tabs so one tab cannot silently replace another tab's newer
+record. Imported benchmark-only
 jobs have approved labels but no parser result, recommendation, training
 decision, review metadata, or error, so untouched imports remain in the
 benchmark corpus without appearing as processing work. Once an imported hand

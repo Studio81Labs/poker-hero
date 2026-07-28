@@ -2181,6 +2181,7 @@ function reconcileProcessingJobs(
   current: JobRecord[],
   incoming: JobRecord[],
   cachedIds: Set<string>,
+  removalCandidateIds: ReadonlySet<string>,
 ): JobRecord[] {
   const currentById = new Map(current.map((job) => [job.id, job]));
   const incomingIds = new Set(incoming.map((job) => job.id));
@@ -2197,6 +2198,7 @@ function reconcileProcessingJobs(
     ...current.filter((job) =>
       !cachedIds.has(job.id)
       && !incomingIds.has(job.id)
+      && !removalCandidateIds.has(job.id)
       && !restoredUploadIds.has(job.id),
     ),
   ];
@@ -2983,6 +2985,7 @@ export default function App() {
           currentJobs,
           queue.jobs,
           cachedIds,
+          processingRemovalCandidateIdsRef.current,
         );
         const preservedMissingDirtyJob = formDirtyRef.current
           && currentActiveJob !== null
@@ -3741,6 +3744,7 @@ export default function App() {
         ));
       }
     } catch (reviewError) {
+      scheduleUncertainProcessingUpdate(job.id);
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
       setBusy(false);
@@ -3759,6 +3763,7 @@ export default function App() {
       replaceJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
+      scheduleUncertainProcessingUpdate(job.id);
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
       setBusy(false);
@@ -3795,6 +3800,7 @@ export default function App() {
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
+      scheduleUncertainProcessingUpdate(job.id);
       setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
       setBusy(false);

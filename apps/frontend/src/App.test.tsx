@@ -2297,6 +2297,134 @@ describe("App", () => {
     expect(fetchMock().mock.calls[8][1]).toMatchObject({ method: "DELETE" });
   });
 
+  it.each([
+    { operation: "complete" as const },
+    { operation: "reopen" as const },
+    { operation: "note" as const },
+  ])("reconciles a lost training-review $operation response", async ({
+    operation,
+  }) => {
+    const jobId = "2".repeat(32);
+    const baseJob = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: `${operation}-review-response-lost.png`,
+      image_filename: `${jobId}.png`,
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-20T12:00:00Z",
+      },
+      updated_at: "2026-07-20T12:00:00Z",
+    };
+    const initialJob = operation === "complete"
+      ? baseJob
+      : {
+          ...baseJob,
+          training_reviewed_at: "2026-07-20T12:05:00Z",
+          training_review_note: "Original lesson note.",
+        };
+    const persistedJob = operation === "complete"
+      ? {
+          ...baseJob,
+          training_reviewed_at: "2026-07-20T12:10:00Z",
+          training_review_note: "Persisted lesson note.",
+          updated_at: "2026-07-20T12:10:00Z",
+        }
+      : operation === "reopen"
+        ? {
+            ...baseJob,
+            training_reviewed_at: null,
+            training_review_note: null,
+            updated_at: "2026-07-20T12:10:00Z",
+          }
+        : {
+            ...baseJob,
+            training_reviewed_at: "2026-07-20T12:05:00Z",
+            training_review_note: "Persisted updated lesson.",
+            updated_at: "2026-07-20T12:10:00Z",
+          };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([initialJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError(`Connection lost after ${operation}`))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedJob],
+        `${operation}-review-persisted-snapshot`,
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+    const comparison = await screen.findByLabelText("Training decision comparison");
+
+    if (operation === "complete") {
+      await user.type(
+        screen.getByLabelText("Training review note"),
+        "Persisted lesson note.",
+      );
+      await user.click(within(comparison).getByRole("button", {
+        name: "Mark reviewed",
+      }));
+    } else if (operation === "reopen") {
+      await user.click(within(comparison).getByRole("button", {
+        name: "Reopen review",
+      }));
+    } else {
+      await user.click(screen.getByRole("button", {
+        name: "Edit training review note",
+      }));
+      const noteInput = screen.getByLabelText("Edit training review note");
+      await user.clear(noteInput);
+      await user.type(noteInput, "Persisted updated lesson.");
+      await user.click(screen.getByRole("button", { name: "Save note" }));
+    }
+
+    expect(await screen.findByText(
+      `Connection lost after ${operation}`,
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedJob]));
+    if (operation === "reopen") {
+      expect(await within(comparison).findByRole("button", {
+        name: "Mark reviewed",
+      })).toBeInTheDocument();
+      expect(screen.getByLabelText("Training review note")).toHaveValue("");
+    } else {
+      expect(await within(comparison).findByText("Reviewed")).toBeInTheDocument();
+      expect(screen.getByLabelText("Saved training review note")).toHaveTextContent(
+        persistedJob.training_review_note ?? "",
+      );
+    }
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    const restoredComparison = await screen.findByLabelText(
+      "Training decision comparison",
+    );
+    if (operation === "reopen") {
+      expect(within(restoredComparison).getByRole("button", {
+        name: "Mark reviewed",
+      })).toBeInTheDocument();
+    } else {
+      expect(within(restoredComparison).getByText("Reviewed")).toBeInTheDocument();
+      expect(screen.getByLabelText("Saved training review note")).toHaveTextContent(
+        persistedJob.training_review_note ?? "",
+      );
+    }
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${jobId}/training-review`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("records a selected answer automatically when recommendation is requested", async () => {
     const trainingDecision = {
       action: "call" as const,
@@ -6822,6 +6950,135 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/jobs/${benchmarkJobId}`,
       `http://localhost:8000/api/jobs/${benchmarkJobId}/${operation === "recommendation" ? "recommend" : "decision"}`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("removes an import from processing after successful benchmark inclusion", async () => {
+    const benchmarkJobId = "6".repeat(32);
+    const processingImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "include-success.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: false,
+      parser_result: null,
+    };
+    const pristineImport = {
+      ...processingImport,
+      benchmark_included: true,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "included-import-success-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    await user.click(groundTruthSwitch);
+
+    await waitFor(() => expect(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ).toBe("[]"));
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: include-success.png",
+    })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: include-success.png",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/benchmark`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("removes an import from processing after successful re-approval", async () => {
+    const benchmarkJobId = "4".repeat(32);
+    const mutatedImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "approval-success.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-20T12:05:00Z",
+      },
+    };
+    const approvedState = canonicalState({ pot_size: 20 });
+    const pristineImport = {
+      ...mutatedImport,
+      approved_state: approvedState,
+      training_decision: null,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([mutatedImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "reapproved-import-success-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ).toBe("[]"));
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: approval-success.png",
+    })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: approval-success.png",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/approve`,
       "http://localhost:8000/api/jobs",
     ]);
   });

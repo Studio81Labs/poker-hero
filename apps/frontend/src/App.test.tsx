@@ -982,6 +982,174 @@ describe("App", () => {
     ]);
   });
 
+  it.each([
+    { operation: "approval" as const },
+    { operation: "recommendation" as const },
+    { operation: "decision" as const },
+    { operation: "review" as const },
+  ])("restores an archived $operation after its response is lost", async ({
+    operation,
+  }) => {
+    const jobId = "9".repeat(32);
+    const archivedAt = "2026-07-20T12:00:00Z";
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      certainty: "medium" as const,
+      recorded_at: "2026-07-20T12:01:00Z",
+    };
+    const parsedArchivedJob = jobRecord({
+      id: jobId,
+      original_filename: `archived-${operation}-response-lost.png`,
+      image_filename: `${jobId}.png`,
+      archived_at: archivedAt,
+    });
+    const approvedArchivedJob: JobRecord = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: parsedArchivedJob.original_filename,
+      image_filename: `${jobId}.png`,
+      archived_at: archivedAt,
+    };
+    const reviewedArchivedJob: JobRecord = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: parsedArchivedJob.original_filename,
+      image_filename: `${jobId}.png`,
+      training_decision: trainingDecision,
+      archived_at: archivedAt,
+    };
+    let initialJob: JobRecord;
+    let persistedJob: JobRecord;
+    if (operation === "approval") {
+      initialJob = parsedArchivedJob;
+      persistedJob = {
+        ...parsedArchivedJob,
+        status: "approved",
+        approved_state: canonicalState({ pot_size: 20 }),
+        updated_at: "2026-07-20T12:10:00Z",
+      };
+    } else if (operation === "recommendation") {
+      initialJob = approvedArchivedJob;
+      persistedJob = {
+        ...approvedArchivedJob,
+        status: "recommended",
+        recommendation,
+        updated_at: "2026-07-20T12:10:00Z",
+      };
+    } else if (operation === "decision") {
+      initialJob = approvedArchivedJob;
+      persistedJob = {
+        ...approvedArchivedJob,
+        training_decision: trainingDecision,
+        updated_at: "2026-07-20T12:10:00Z",
+      };
+    } else {
+      initialJob = reviewedArchivedJob;
+      persistedJob = {
+        ...reviewedArchivedJob,
+        training_reviewed_at: "2026-07-20T12:10:00Z",
+        training_review_note: "Persisted archived lesson.",
+        updated_at: "2026-07-20T12:10:00Z",
+      };
+    }
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: jobId, job: initialJob, savedAt: archivedAt }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError(`Connection lost after archived ${operation}`))
+      .mockResolvedValueOnce(jsonResponse(persistedJob));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    if (operation === "approval") {
+      const potInput = await screen.findByDisplayValue("12.5");
+      await user.clear(potInput);
+      await user.type(potInput, "20");
+      await user.click(screen.getByRole("button", { name: "Approve state" }));
+    } else if (operation === "recommendation") {
+      await user.click(screen.getByRole("button", {
+        name: "Request recommendation",
+      }));
+    } else if (operation === "decision") {
+      const decisionPanel = await screen.findByLabelText("Your training decision");
+      await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+      await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+      await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+    } else {
+      const comparison = await screen.findByLabelText("Training decision comparison");
+      await user.type(
+        screen.getByLabelText("Training review note"),
+        "Persisted archived lesson.",
+      );
+      await user.click(within(comparison).getByRole("button", {
+        name: "Mark reviewed",
+      }));
+    }
+
+    expect(await screen.findByText(
+      `Connection lost after archived ${operation}`,
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].job).toEqual(persistedJob));
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-synced",
+    )).toBe("true");
+    if (operation === "approval") {
+      expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    } else if (operation === "recommendation") {
+      expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    } else if (operation === "decision") {
+      expect(await within(screen.getByLabelText(
+        "Your training decision",
+      )).findByText("Answer locked")).toBeInTheDocument();
+    } else {
+      const comparison = await screen.findByLabelText("Training decision comparison");
+      expect(within(comparison).getByText("Reviewed")).toBeInTheDocument();
+      expect(screen.getByLabelText("Saved training review note")).toHaveTextContent(
+        "Persisted archived lesson.",
+      );
+    }
+
+    firstRender.unmount();
+    render(<App />);
+    await user.click(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    }));
+
+    if (operation === "approval") {
+      expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+    } else if (operation === "recommendation") {
+      expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    } else if (operation === "decision") {
+      expect(await within(screen.getByLabelText(
+        "Your training decision",
+      )).findByText("Answer locked")).toBeInTheDocument();
+    } else {
+      expect(await screen.findByLabelText(
+        "Saved training review note",
+      )).toHaveTextContent("Persisted archived lesson.");
+    }
+    const mutationPath = operation === "approval"
+      ? "approve"
+      : operation === "decision"
+        ? "decision"
+        : operation === "review"
+          ? "training-review"
+          : "recommend";
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
+      `http://localhost:8000/api/jobs/${jobId}`,
+    ]);
+  });
+
   it("preserves ordinary approval edits when the failed write did not commit", async () => {
     const parsedJob = jobRecord({
       id: "d".repeat(32),

@@ -1945,6 +1945,26 @@ function writeHistory(items: HistoryItem[]): boolean {
   }
 }
 
+function writeHistoryJobToCache(updatedJob: JobRecord): boolean {
+  const cachedHistory = readHistory();
+  if (
+    cachedHistory === null
+    || readCachedHistoryTotal(cachedHistory) === null
+  ) {
+    return false;
+  }
+  const incomingItem: HistoryItem = {
+    id: updatedJob.id,
+    job: updatedJob,
+    savedAt: updatedJob.archived_at ?? updatedJob.updated_at,
+  };
+  return writeHistory(cachedHistory.map((item) =>
+    item.id === updatedJob.id
+      ? newerHistoryItem(item, incomingItem)
+      : item,
+  ));
+}
+
 function readCachedHistoryTotal(cachedHistory: HistoryItem[] | null): number | null {
   if (cachedHistory === null || typeof window === "undefined") {
     return null;
@@ -2868,8 +2888,39 @@ export default function App() {
     }
   }
 
-  function scheduleUncertainProcessingUpdate(jobId: string) {
-    beginProcessingMembershipMutation([], [jobId]);
+  function scheduleUncertainPersistedUpdate(uncertainJob: JobRecord) {
+    if (uncertainJob.archived_at) {
+      markHistorySessionUnsynced();
+      void getJob(uncertainJob.id)
+        .then((incomingJob) => {
+          const currentJob = jobsRef.current.find(
+            (candidate) => candidate.id === uncertainJob.id,
+          ) ?? null;
+          const reconciledJob = currentJob
+            ? newerJob(currentJob, incomingJob)
+            : incomingJob;
+          updateJobs((current) =>
+            current.map((candidate) =>
+              candidate.id === reconciledJob.id ? reconciledJob : candidate,
+            ),
+          );
+          updateHistoryJob(reconciledJob);
+          if (
+            activeJobIdRef.current === reconciledJob.id
+            && reconciledJob !== currentJob
+          ) {
+            alignWorkspaceToJob(reconciledJob);
+          }
+          if (writeHistoryJobToCache(reconciledJob)) {
+            markHistorySessionSynced();
+          }
+        })
+        .catch(() => {
+          markHistorySessionUnsynced();
+        });
+      return;
+    }
+    beginProcessingMembershipMutation([], [uncertainJob.id]);
     endProcessingMembershipMutation();
   }
 
@@ -3596,7 +3647,7 @@ export default function App() {
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
       if (!changesProcessingMembership) {
-        scheduleUncertainProcessingUpdate(job.id);
+        scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
@@ -3640,7 +3691,7 @@ export default function App() {
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
       if (!changesProcessingMembership) {
-        scheduleUncertainProcessingUpdate(job.id);
+        scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
@@ -3677,7 +3728,7 @@ export default function App() {
       toast.success("Training answer locked");
     } catch (decisionError) {
       if (!changesProcessingMembership) {
-        scheduleUncertainProcessingUpdate(job.id);
+        scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
@@ -3744,7 +3795,7 @@ export default function App() {
         ));
       }
     } catch (reviewError) {
-      scheduleUncertainProcessingUpdate(job.id);
+      scheduleUncertainPersistedUpdate(job);
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
       setBusy(false);
@@ -3763,7 +3814,7 @@ export default function App() {
       replaceJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
-      scheduleUncertainProcessingUpdate(job.id);
+      scheduleUncertainPersistedUpdate(job);
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
       setBusy(false);
@@ -3800,7 +3851,7 @@ export default function App() {
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
-      scheduleUncertainProcessingUpdate(job.id);
+      scheduleUncertainPersistedUpdate(job);
       setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
       setBusy(false);

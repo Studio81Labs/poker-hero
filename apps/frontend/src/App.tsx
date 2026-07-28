@@ -2672,6 +2672,7 @@ export default function App() {
   const processingCacheInitializedRef = useRef(false);
   const processingMembershipGenerationRef = useRef(0);
   const processingMutationCountRef = useRef(0);
+  const processingRemovalCandidateIdsRef = useRef(new Set<string>());
   const processingRestoreRetryRequestedRef = useRef(false);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
@@ -2839,7 +2840,10 @@ export default function App() {
     setProcessingRestoreRequest((current) => current + 1);
   }
 
-  function beginProcessingMembershipMutation() {
+  function beginProcessingMembershipMutation(removalCandidateId?: string) {
+    if (removalCandidateId) {
+      processingRemovalCandidateIdsRef.current.add(removalCandidateId);
+    }
     processingMutationCountRef.current += 1;
     processingMembershipGenerationRef.current += 1;
     markProcessingQueueSessionUnsynced();
@@ -2978,6 +2982,7 @@ export default function App() {
         );
         const preservedMissingDirtyJob = formDirtyRef.current
           && currentActiveJob !== null
+          && !processingRemovalCandidateIdsRef.current.has(currentActiveJob.id)
           && !nextJobs.some((candidate) => candidate.id === currentActiveJob.id);
         if (preservedMissingDirtyJob) {
           nextJobs = [currentActiveJob, ...nextJobs];
@@ -2987,6 +2992,7 @@ export default function App() {
           : nextJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
         const preserveDirtyForm = formDirtyRef.current
           && reconciledActiveJob !== null;
+        processingRemovalCandidateIdsRef.current.clear();
         jobsRef.current = nextJobs;
         setJobs(nextJobs);
         if (!preserveDirtyForm) {
@@ -3564,6 +3570,12 @@ export default function App() {
       return;
     }
 
+    const changesProcessingMembership = job.benchmark_included
+      && job.parser_result === null
+      && !isPristineBenchmarkImport(job);
+    if (changesProcessingMembership) {
+      beginProcessingMembershipMutation(job.id);
+    }
     setBusy(true);
     setError(null);
     try {
@@ -3572,6 +3584,9 @@ export default function App() {
     } catch (approveError) {
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
+      if (changesProcessingMembership) {
+        endProcessingMembershipMutation();
+      }
       setBusy(false);
     }
   }
@@ -4328,10 +4343,19 @@ export default function App() {
     if (!job || (!job.approved_state && !job.benchmark_included)) {
       return;
     }
+    const included = !job.benchmark_included;
+    const isCurrentlyPristine = isPristineBenchmarkImport(job);
+    const willBePristine = isPristineBenchmarkImport({
+      ...job,
+      benchmark_included: included,
+    });
+    const changesProcessingMembership = isCurrentlyPristine !== willBePristine;
+    if (changesProcessingMembership) {
+      beginProcessingMembershipMutation(willBePristine ? job.id : undefined);
+    }
     setBenchmarkUpdating(true);
     setError(null);
     try {
-      const included = !job.benchmark_included;
       const updated = await setBenchmarkInclusion(job.id, included);
       replaceJob(updated);
       setBenchmarkOverview((current) =>
@@ -4349,6 +4373,9 @@ export default function App() {
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
     } finally {
+      if (changesProcessingMembership) {
+        endProcessingMembershipMutation();
+      }
       setBenchmarkUpdating(false);
     }
   }

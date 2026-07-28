@@ -6255,6 +6255,196 @@ describe("App", () => {
     ]);
   });
 
+  it("reconciles a lost benchmark inclusion response that removes an import from processing", async () => {
+    const benchmarkJobId = "6".repeat(32);
+    const processingImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "include-response-lost.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: false,
+      parser_result: null,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockRejectedValueOnce(new TypeError("Connection lost after including hand"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "included-import-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    await user.click(groundTruthSwitch);
+
+    expect(await screen.findByText("Connection lost after including hand")).toBeInTheDocument();
+    await waitFor(() => expect(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ).toBe("[]"));
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: include-response-lost.png",
+    })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: include-response-lost.png",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/benchmark`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("reconciles a lost benchmark exclusion response that returns an import to processing", async () => {
+    const benchmarkJobId = "5".repeat(32);
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "exclude-response-lost.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const processingImport = {
+      ...pristineImport,
+      benchmark_included: false,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        "exclude-response-lost.png",
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        "exclude-response-lost.png",
+      )))
+      .mockRejectedValueOnce(new TypeError("Connection lost after excluding hand"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [processingImport],
+        "excluded-import-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle exclude-response-lost.png benchmark details",
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const reopenedDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(reopenedDialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    await user.click(groundTruthSwitch);
+
+    expect(await screen.findByText("Connection lost after excluding hand")).toBeInTheDocument();
+    const restoredQueueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: exclude-response-lost.png",
+    });
+    expect(within(restoredQueueItem).getByText("approved")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([processingImport]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/benchmark`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("reconciles a lost re-approval response that makes a benchmark import pristine", async () => {
+    const benchmarkJobId = "4".repeat(32);
+    const mutatedImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "approval-response-lost.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+      training_decision: {
+        action: "call" as const,
+        sizing: null,
+        certainty: "medium" as const,
+        recorded_at: "2026-07-20T12:05:00Z",
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([mutatedImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after approval"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "reapproved-import-snapshot",
+      ));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await screen.findByText("Connection lost after approval")).toBeInTheDocument();
+    await waitFor(() => expect(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ).toBe("[]"));
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: approval-response-lost.png",
+    })).not.toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: approval-response-lost.png",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/approve`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("loads historical benchmark reports and compares accuracy", async () => {
     const earlierReport = {
       id: "benchmark-earlier",

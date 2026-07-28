@@ -277,6 +277,47 @@ describe("App", () => {
     )).toBe("[]");
   });
 
+  it("rejects malformed cached cards and restores the backend record", async () => {
+    const persistedJob = jobRecord({
+      id: "c".repeat(32),
+      original_filename: "restored-valid-table.png",
+    });
+    const malformedJob = {
+      ...persistedJob,
+      parser_result: {
+        ...persistedJob.parser_result,
+        state: {
+          ...persistedJob.parser_result?.state,
+          hero_cards: [null],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([malformedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "valid-processing-snapshot",
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: restored-valid-table.png",
+    })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Ah Kd")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    );
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].parser_result.state.hero_cards).toEqual(detectedState.hero_cards);
+  });
+
   it("restores persisted processing jobs when the browser cache is unavailable", async () => {
     const persistedJob = jobRecord({
       id: "b".repeat(32),

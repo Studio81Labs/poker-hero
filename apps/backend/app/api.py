@@ -190,7 +190,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
     ) -> JobQueue:
-        return build_job_queue(store, limit, offset)
+        with history_lock:
+            return build_job_queue(store, limit, offset)
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:

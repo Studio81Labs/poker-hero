@@ -76,6 +76,9 @@ const CODE_BY_SUIT: Record<Suit, string> = {
 
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
 const RANKS = new Set<string>(RANK_VALUES);
+const SUITS = new Set<string>(Object.keys(CODE_BY_SUIT));
+const STREETS = new Set<string>(["preflop", "flop", "turn", "river"]);
+const FACING_ACTIONS = new Set<string>(["bet", "raise"]);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
 const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
@@ -1519,13 +1522,84 @@ function writeAutomationSettings(settings: AutomationSettings): void {
   }
 }
 
+function isCachedCard(value: unknown): value is Card {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const card = value as Partial<Card>;
+  return typeof card.rank === "string"
+    && RANKS.has(card.rank)
+    && typeof card.suit === "string"
+    && SUITS.has(card.suit);
+}
+
+function isNullableCachedNumber(
+  value: unknown,
+  minimum: number,
+  minimumInclusive = true,
+): value is number | null {
+  return value === null
+    || (
+      typeof value === "number"
+      && Number.isFinite(value)
+      && (minimumInclusive ? value >= minimum : value > minimum)
+    );
+}
+
+function isNullableCachedString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
 function isCachedDetectedState(value: unknown): value is DetectedState {
   if (value === null || typeof value !== "object") {
     return false;
   }
   const state = value as Partial<DetectedState>;
-  return Array.isArray(state.hero_cards)
-    && Array.isArray(state.board_cards);
+  if (
+    !Array.isArray(state.hero_cards)
+    || !state.hero_cards.every(isCachedCard)
+    || state.hero_cards.length > 2
+    || !Array.isArray(state.board_cards)
+    || !state.board_cards.every(isCachedCard)
+    || state.board_cards.length > 5
+  ) {
+    return false;
+  }
+  const cardCodes = [...state.hero_cards, ...state.board_cards]
+    .map((card) => `${card.rank}:${card.suit}`);
+  return new Set(cardCodes).size === cardCodes.length
+    && isNullableCachedNumber(state.pot_size, 0)
+    && isNullableCachedNumber(state.current_bet, 0)
+    && isNullableCachedNumber(state.hero_stack, 0)
+    && isNullableCachedNumber(state.effective_stack, 0)
+    && (
+      state.players_in_hand === null
+      || (
+        typeof state.players_in_hand === "number"
+        && Number.isInteger(state.players_in_hand)
+        && state.players_in_hand >= 1
+      )
+    )
+    && isNullableCachedString(state.hero_position)
+    && isNullableCachedString(state.preflop_opener_position)
+    && isNullableCachedNumber(state.preflop_open_size, 0, false)
+    && (
+      state.street === null
+      || (typeof state.street === "string" && STREETS.has(state.street))
+    )
+    && (
+      state.facing_action === null
+      || (
+        typeof state.facing_action === "string"
+        && FACING_ACTIONS.has(state.facing_action)
+      )
+    )
+    && isNullableCachedString(state.action_context);
+}
+
+function isCachedCanonicalState(value: unknown): value is CanonicalState {
+  return isCachedDetectedState(value)
+    && typeof (value as Partial<CanonicalState>).user_approved === "boolean";
 }
 
 function isCachedParserResult(value: unknown): boolean {
@@ -1539,9 +1613,18 @@ function isCachedParserResult(value: unknown): boolean {
   return isCachedDetectedState(parserResult.state)
     && parserResult.confidences !== null
     && typeof parserResult.confidences === "object"
+    && !Array.isArray(parserResult.confidences)
+    && Object.values(parserResult.confidences).every((confidence) =>
+      typeof confidence === "number"
+      && Number.isFinite(confidence)
+      && confidence >= 0
+      && confidence <= 1,
+    )
     && Array.isArray(parserResult.warnings)
+    && parserResult.warnings.every((warning) => typeof warning === "string")
     && parserResult.raw !== null
-    && typeof parserResult.raw === "object";
+    && typeof parserResult.raw === "object"
+    && !Array.isArray(parserResult.raw);
 }
 
 function isCachedJobRecord(value: unknown): value is JobRecord {
@@ -1565,7 +1648,7 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && isCachedParserResult(candidate.parser_result)
     && (
       candidate.approved_state === null
-      || isCachedDetectedState(candidate.approved_state)
+      || isCachedCanonicalState(candidate.approved_state)
     )
     && typeof candidate.created_at === "string"
     && typeof candidate.updated_at === "string"

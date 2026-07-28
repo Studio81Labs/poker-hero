@@ -220,6 +220,61 @@ def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None
     assert FileJobStore(tmp_path).get(job_id).archived_at is None
 
 
+def test_processing_queue_waits_for_batch_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_ids = [
+        upload_job(client, filename=f"archive-{index}.png").json()["id"]
+        for index in range(2)
+    ]
+    for job_id in job_ids:
+        approve_job(client, job_id)
+
+    first_archive_saved = Event()
+    release_archive = Event()
+    processing_finished = Event()
+    responses: dict[str, object] = {}
+    original_save = FileJobStore.save
+
+    def paused_save(store: FileJobStore, job):
+        saved = original_save(store, job)
+        if job.archived_at is not None and not first_archive_saved.is_set():
+            first_archive_saved.set()
+            assert release_archive.wait(timeout=2)
+        return saved
+
+    monkeypatch.setattr(FileJobStore, "save", paused_save)
+    archive_thread = Thread(
+        target=lambda: responses.update(
+            archive=client.put("/api/history", json={"job_ids": job_ids}),
+        ),
+    )
+
+    def read_processing_queue() -> None:
+        responses["processing"] = client.get("/api/jobs")
+        processing_finished.set()
+
+    processing_thread = Thread(target=read_processing_queue)
+    archive_thread.start()
+    try:
+        assert first_archive_saved.wait(timeout=2)
+        processing_thread.start()
+        assert not processing_finished.wait(timeout=0.1)
+    finally:
+        release_archive.set()
+        archive_thread.join(timeout=2)
+        processing_thread.join(timeout=2)
+
+    assert not archive_thread.is_alive()
+    assert not processing_thread.is_alive()
+    assert responses["archive"].status_code == 200
+    assert responses["processing"].status_code == 200
+    assert responses["processing"].json()["total"] == 0
+    assert responses["processing"].json()["jobs"] == []
+
+
 def test_history_pages_archived_jobs_in_stable_newest_first_order(
     tmp_path: Path,
 ) -> None:

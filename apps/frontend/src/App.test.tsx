@@ -858,29 +858,55 @@ describe("App", () => {
     )).toBeNull();
   });
 
-  it("replaces a matching local upload failure during queue reconciliation", async () => {
+  it.each([
+    {
+      label: "persisted parser failure",
+      filename: "parse-failed.png",
+      status: "error" as const,
+      persistedError: "Image could not be parsed",
+      localError: "Image could not be parsed",
+      responseLost: false,
+    },
+    {
+      label: "persisted successful upload",
+      filename: "parsed-response-lost.png",
+      status: "parsed" as const,
+      persistedError: null,
+      localError: "Connection lost after upload",
+      responseLost: true,
+    },
+  ])("replaces a local placeholder with the $label during queue reconciliation", async ({
+    filename,
+    localError,
+    persistedError,
+    responseLost,
+    status,
+  }) => {
     window.sessionStorage.removeItem("poker-training-processing-synced");
     const pendingQueue = deferredResponse();
     const failedAt = new Date().toISOString();
-    const persistedFailure = jobRecord({
+    const persistedJob = jobRecord({
       id: "9".repeat(32),
-      status: "error",
-      original_filename: "parse-failed.png",
-      parser_result: null,
-      error: "Image could not be parsed",
+      status,
+      original_filename: filename,
+      parser_result: status === "error" ? null : jobRecord().parser_result,
+      error: persistedError,
       created_at: failedAt,
       updated_at: failedAt,
     });
-    fetchMock()
-      .mockReturnValueOnce(pendingQueue.promise)
-      .mockResolvedValueOnce(jsonResponse({
-        detail: "Image could not be parsed",
-      }, 502))
-      .mockResolvedValueOnce(jsonResponse({
-        total: 1,
-        jobs: [persistedFailure],
-        snapshot_version: "restored-upload-failure",
-      }));
+    fetchMock().mockReturnValueOnce(pendingQueue.promise);
+    if (responseLost) {
+      fetchMock().mockRejectedValueOnce(new TypeError(localError));
+    } else {
+      fetchMock().mockResolvedValueOnce(jsonResponse({
+        detail: localError,
+      }, 502));
+    }
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      total: 1,
+      jobs: [persistedJob],
+      snapshot_version: "restored-upload",
+    }));
     render(<App />);
     const user = userEvent.setup();
 
@@ -892,14 +918,14 @@ describe("App", () => {
     await switchToUploadMode(user);
     await user.upload(
       screen.getByLabelText("Choose screenshots"),
-      new File(["failed"], "parse-failed.png", { type: "image/png" }),
+      new File(["upload"], filename, { type: "image/png" }),
     );
     await user.click(screen.getByRole("button", { name: "Upload and parse" }));
 
     const localFailure = await screen.findByRole("button", {
-      name: "Open screenshot 1: parse-failed.png",
+      name: `Open screenshot 1: ${filename}`,
     });
-    expect(within(localFailure).getByText("Image could not be parsed")).toBeInTheDocument();
+    expect(within(localFailure).getByText(localError)).toBeInTheDocument();
 
     await act(async () => {
       pendingQueue.resolve(jsonResponse({
@@ -911,11 +937,11 @@ describe("App", () => {
 
     await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(screen.getAllByRole("button", {
-      name: /Open screenshot \d+: parse-failed\.png/,
+      name: new RegExp(`Open screenshot \\d+: ${filename.replace(".", "\\.")}`),
     })).toHaveLength(1));
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([persistedFailure]);
+    ))).toEqual([persistedJob]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");

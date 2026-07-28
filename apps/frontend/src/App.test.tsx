@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -433,6 +433,63 @@ describe("App", () => {
       name: "Open screenshot 1: dirty-cached-table.png",
     })).toHaveClass("active");
     expect(heroCards).toHaveValue("7d Ah");
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+  });
+
+  it("ignores a stale restore after cached jobs move to history", async () => {
+    const staleJob: JobRecord = {
+      ...recommendedJob(),
+      id: "2".repeat(32),
+      original_filename: "stale-processing.png",
+      archived_at: null,
+    };
+    const archivedJob: JobRecord = {
+      ...staleJob,
+      archived_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    const pendingRestore = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingRestore.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [archivedJob],
+        snapshot_version: "archived-snapshot",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+
+    await act(async () => {
+      pendingRestore.resolve(jsonResponse({
+        total: 1,
+        jobs: [staleJob],
+        snapshot_version: "stale-processing-snapshot",
+      }));
+      await pendingRestore.promise;
+    });
+
+    expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: stale-processing.png",
+    })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(
+      "poker-training-processing-v1",
+    )).toBe("[]");
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBeNull();

@@ -2436,6 +2436,7 @@ export default function App() {
   const formBaselineRef = useRef(form);
   const formDirtyRef = useRef(false);
   const processingCacheInitializedRef = useRef(false);
+  const processingMembershipGenerationRef = useRef(0);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
@@ -2677,6 +2678,7 @@ export default function App() {
     }
 
     const cachedIds = new Set((cachedJobs ?? []).map((cachedJob) => cachedJob.id));
+    const restoreGeneration = processingMembershipGenerationRef.current;
     processingRestorePromiseRef.current ??= (async () => {
       if (legacyHistoryArchive !== null && !(await legacyHistoryArchive)) {
         throw new Error("Could not migrate legacy history before restoring processing");
@@ -2687,6 +2689,10 @@ export default function App() {
     void processingRestorePromiseRef.current
       .then((queue) => {
         if (!active) {
+          return;
+        }
+        if (processingMembershipGenerationRef.current !== restoreGeneration) {
+          markProcessingQueueSessionUnsynced();
           return;
         }
         const currentJobs = jobsRef.current;
@@ -3054,6 +3060,7 @@ export default function App() {
 
   async function uploadSelectedFiles(runAutomation: boolean): Promise<JobRecord[]> {
     const selectedFiles = [...files];
+    processingMembershipGenerationRef.current += 1;
     markProcessingQueueSessionUnsynced();
     const controller = new AbortController();
     queueAbortControllerRef.current = controller;
@@ -3228,6 +3235,7 @@ export default function App() {
   }
 
   async function captureAndParseScreen(): Promise<JobRecord> {
+    processingMembershipGenerationRef.current += 1;
     markProcessingQueueSessionUnsynced();
     const created = await uploadScreenshot(await captureSharedScreenFile());
     appendJob(created);
@@ -4131,6 +4139,7 @@ export default function App() {
 
     setBusy(true);
     setError(null);
+    processingMembershipGenerationRef.current += 1;
     markProcessingQueueSessionUnsynced();
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));

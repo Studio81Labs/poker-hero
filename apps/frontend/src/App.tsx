@@ -233,6 +233,7 @@ const PROCESSING_QUEUE_TOTAL_STORAGE_KEY = "poker-training-processing-total-v1";
 const PROCESSING_QUEUE_CACHE_LIMIT = 100;
 const PROCESSING_QUEUE_SNAPSHOT_RETRY_LIMIT = 3;
 const PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS = 250;
+const PROCESSING_CACHE_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const HISTORY_STORAGE_KEY = "poker-training-history-v1";
 const HISTORY_TOTAL_STORAGE_KEY = "poker-training-history-total-v1";
 const HISTORY_CACHE_LIMIT = 24;
@@ -1727,9 +1728,18 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
       || typeof candidate.error === "string"
     )
     && typeof candidate.benchmark_included === "boolean"
-    && typeof candidate.created_at === "string"
-    && typeof candidate.updated_at === "string"
+    && isSafeProcessingCacheTimestamp(candidate.created_at)
+    && isSafeProcessingCacheTimestamp(candidate.updated_at)
     && candidate.archived_at == null;
+}
+
+function isSafeProcessingCacheTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp)
+    && timestamp <= Date.now() + PROCESSING_CACHE_FUTURE_SKEW_MS;
 }
 
 function isPristineBenchmarkImport(job: JobRecord): boolean {

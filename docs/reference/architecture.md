@@ -276,12 +276,14 @@ after queue membership changes. Snapshot changes restart the bounded page walk,
 while a newer in-memory mutation wins by `updated_at`. Cache writes merge
 matching records by `updated_at`, avoid no-op storage writes, and storage events
 invalidate sibling tabs so one tab cannot silently replace another tab's newer
-record. Imported benchmark-only jobs have approved labels but no parser result,
-recommendation, training decision, review metadata, error, or active
-recommendation, so untouched imports remain in the benchmark corpus without
-appearing as processing work. Once an imported hand starts recommendation work,
-records training state, or receives a retryable error, it returns to the
-processing projection until that work is completed.
+record. Invalid or substantially future-dated processing timestamps invalidate
+the browser snapshot and force an authoritative reload instead of outranking
+terminal server state. Imported benchmark-only jobs have approved labels but no
+parser result, recommendation, training decision, review metadata, error, or
+active recommendation, so untouched imports remain in the benchmark corpus
+without appearing as processing work. Once an imported hand starts
+recommendation work, records training state, or receives a retryable error, it
+returns to the processing projection until that work is completed.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

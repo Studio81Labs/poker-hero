@@ -444,6 +444,50 @@ describe("App", () => {
     ))).toEqual([completedJob]);
   });
 
+  it(
+    "rejects a future-dated pending cache record in favor of terminal server state",
+    async () => {
+      const jobId = "9".repeat(32);
+      const poisonedPendingJob = {
+        ...approvedJob(),
+        id: jobId,
+        original_filename: "future-pending.png",
+        recommendation_pending: true,
+        updated_at: "9999-01-01T00:00:00Z",
+      };
+      const completedJob = {
+        ...recommendedJob(),
+        id: jobId,
+        original_filename: "future-pending.png",
+        recommendation_pending: false,
+        updated_at: "2026-07-28T20:00:00Z",
+      };
+      window.localStorage.setItem(
+        "poker-training-processing-v1",
+        JSON.stringify([poisonedPendingJob]),
+      );
+      window.localStorage.setItem("poker-training-processing-total-v1", "1");
+      fetchMock().mockResolvedValueOnce(processingQueueResponse(
+        [completedJob],
+        "future-pending-recovered",
+      ));
+
+      render(<App />);
+
+      expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+      expect(screen.getByRole("button", {
+        name: "Request recommendation",
+      })).toBeDisabled();
+      expect(fetchMock()).toHaveBeenCalledTimes(1);
+      expect(window.sessionStorage.getItem(
+        "poker-training-processing-synced",
+      )).toBe("true");
+      expect(JSON.parse(String(
+        window.localStorage.getItem("poker-training-processing-v1"),
+      ))).toEqual([completedJob]);
+    },
+  );
+
   it("retries polling after a pending recommendation restore fails", async () => {
     const jobId = "5".repeat(32);
     const pendingJob = {

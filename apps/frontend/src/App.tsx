@@ -84,6 +84,7 @@ const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "hi
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+const LOCAL_ERROR_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
 const PROCESSING_QUEUE_SESSION_SYNC_KEY = "poker-training-processing-synced";
 
@@ -2100,6 +2101,72 @@ function newerJob(current: JobRecord, incoming: JobRecord): JobRecord {
     : incoming;
 }
 
+function localErrorMatchDistance(
+  localJob: JobRecord,
+  incomingJob: JobRecord,
+): number | null {
+  if (
+    !localJob.id.startsWith("local-error-")
+    || localJob.parser_provider !== "client"
+    || localJob.status !== "error"
+    || incomingJob.status !== "error"
+    || !PERSISTED_JOB_ID_PATTERN.test(incomingJob.id)
+    || localJob.original_filename !== incomingJob.original_filename
+    || localJob.error === null
+    || incomingJob.error === null
+    || (
+      localJob.error !== incomingJob.error
+      && !localJob.error.endsWith(`: ${incomingJob.error}`)
+    )
+  ) {
+    return null;
+  }
+
+  const localUpdatedAt = Date.parse(localJob.updated_at);
+  const incomingUpdatedAt = Date.parse(incomingJob.updated_at);
+  if (!Number.isFinite(localUpdatedAt) || !Number.isFinite(incomingUpdatedAt)) {
+    return null;
+  }
+  const distance = Math.abs(localUpdatedAt - incomingUpdatedAt);
+  return distance <= LOCAL_ERROR_RECONCILIATION_WINDOW_MS ? distance : null;
+}
+
+function restoredLocalErrorIds(
+  current: JobRecord[],
+  incoming: JobRecord[],
+  currentById: Map<string, JobRecord>,
+): Set<string> {
+  const localErrors = current.filter((job) =>
+    job.id.startsWith("local-error-")
+    && job.parser_provider === "client"
+    && job.status === "error",
+  );
+  const matchedIds = new Set<string>();
+
+  for (const incomingJob of incoming) {
+    if (currentById.has(incomingJob.id)) {
+      continue;
+    }
+    let closestMatch: JobRecord | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    for (const localJob of localErrors) {
+      if (matchedIds.has(localJob.id)) {
+        continue;
+      }
+      const distance = localErrorMatchDistance(localJob, incomingJob);
+      if (distance !== null && distance < closestDistance) {
+        closestMatch = localJob;
+        closestDistance = distance;
+      }
+    }
+    if (closestMatch !== null) {
+      matchedIds.add(closestMatch.id);
+    }
+  }
+
+  return matchedIds;
+}
+
 function reconcileProcessingJobs(
   current: JobRecord[],
   incoming: JobRecord[],
@@ -2107,6 +2174,11 @@ function reconcileProcessingJobs(
 ): JobRecord[] {
   const currentById = new Map(current.map((job) => [job.id, job]));
   const incomingIds = new Set(incoming.map((job) => job.id));
+  const restoredErrorIds = restoredLocalErrorIds(
+    current,
+    incoming,
+    currentById,
+  );
   return [
     ...incoming.map((job) => {
       const currentJob = currentById.get(job.id);
@@ -2114,7 +2186,8 @@ function reconcileProcessingJobs(
     }),
     ...current.filter((job) =>
       !cachedIds.has(job.id)
-      && !incomingIds.has(job.id),
+      && !incomingIds.has(job.id)
+      && !restoredErrorIds.has(job.id),
     ),
   ];
 }

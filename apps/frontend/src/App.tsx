@@ -3561,10 +3561,7 @@ export default function App() {
             processingLease,
             benchmarkImportRequestId,
           )
-          && (
-            processingLease.benchmarkImportReceiptObserved
-            || benchmarkImportRecoveryPromiseRef.current !== null
-          );
+          && processingLease.benchmarkImportReceiptObserved;
         if (
           Date.now() >= processingLease.expiresAt
           && !retainedImportLease
@@ -3601,10 +3598,7 @@ export default function App() {
             historyLease,
             benchmarkImportRequestId,
           )
-          && (
-            historyLease.benchmarkImportReceiptObserved
-            || benchmarkImportRecoveryPromiseRef.current !== null
-          );
+          && historyLease.benchmarkImportReceiptObserved;
         if (
           Date.now() >= historyLease.expiresAt
           && !retainedImportLease
@@ -5726,7 +5720,9 @@ export default function App() {
       const approved = await approveState(job.id, validation.state);
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(approveError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(approveError, "Approval failed"));
     } finally {

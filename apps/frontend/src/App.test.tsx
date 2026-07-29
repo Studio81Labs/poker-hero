@@ -2247,6 +2247,52 @@ describe("App", () => {
     ]);
   });
 
+  it("releases an approval lease after another tab starts a recommendation", async () => {
+    const parsedJob = jobRecord({
+      id: "d".repeat(32),
+      original_filename: "approval-conflict.png",
+    });
+    const competingAttempt: JobRecord = {
+      ...parsedJob,
+      recommendation_pending: true,
+      recommendation_request_id: "other-tab-attempt",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([parsedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Recommendation is already running",
+      }, 409))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [competingAttempt],
+        "approval-conflict-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await screen.findByText(
+      "Recommendation is already running",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([competingAttempt]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(screen.getByRole("button", {
+      name: "Approve state",
+    })).toBeEnabled();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeDisabled();
+  });
+
   it("restores an upload that commits after a replacement page reads a stale queue", async () => {
     const created = jobRecord({
       id: "a".repeat(32),
@@ -9638,6 +9684,64 @@ describe("App", () => {
       "poker-training-history-mutation-v1",
     )).toBeNull();
     expect(recoveryAttempts).toBe(2);
+  });
+
+  it("expires unobserved dataset import leases after recovery request failures", async () => {
+    const importRequestId = "expired-unobserved-import";
+    const expiredLease = {
+      kind: "projection",
+      ownerId: "previous-page",
+      baselineJobIds: [],
+      expectedRemovalJobIds: [],
+      benchmarkImportRequestId: importRequestId,
+      benchmarkImportReceiptObserved: false,
+      expectedUploads: [],
+      expiresAt: Date.now() - 1,
+    };
+    window.localStorage.setItem("poker-training-processing-v1", "[]");
+    window.localStorage.setItem("poker-training-processing-total-v1", "0");
+    window.localStorage.setItem("poker-training-history-v1", "[]");
+    window.localStorage.setItem("poker-training-history-total-v1", "0");
+    window.sessionStorage.setItem(
+      "poker-training-processing-mutation-v1",
+      JSON.stringify(expiredLease),
+    );
+    window.sessionStorage.setItem(
+      "poker-training-history-mutation-v1",
+      JSON.stringify(expiredLease),
+    );
+    let receiptAttempts = 0;
+    fetchMock().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("http://localhost:8000/api/benchmarks/imports/")) {
+        receiptAttempts += 1;
+        return Promise.reject(new TypeError("Receipt endpoint unavailable"));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse(
+          [],
+          "expired-import-processing-snapshot",
+        ));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "expired-import-history-snapshot",
+        }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(receiptAttempts).toBeGreaterThan(0));
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
   });
 
   it("preserves a confirmed dataset import during pending queue reconciliation", async () => {

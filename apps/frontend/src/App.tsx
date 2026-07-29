@@ -1806,6 +1806,7 @@ function readStoredProcessingQueueTotal(): number | null {
 function writeProcessingQueue(
   jobs: JobRecord[],
   preserveKnownTotal = false,
+  authoritativeJobIds: ReadonlySet<string> = new Set(),
 ): boolean {
   if (typeof window === "undefined") {
     return false;
@@ -1814,6 +1815,9 @@ function writeProcessingQueue(
     (readProcessingQueue() ?? []).map((job) => [job.id, job]),
   );
   const processingJobs = processingJobsForCache(jobs).map((job) => {
+    if (authoritativeJobIds.has(job.id)) {
+      return job;
+    }
     const cachedJob = cachedJobsById.get(job.id);
     return cachedJob ? newerJob(job, cachedJob) : job;
   });
@@ -2140,6 +2144,19 @@ function newerHistoryJob(
   return newerJob(current, incoming);
 }
 
+function newerAuthoritativeProcessingJob(
+  current: JobRecord,
+  incoming: JobRecord,
+): JobRecord {
+  if (
+    isProcessingJobInProgress(current)
+    && !isProcessingJobInProgress(incoming)
+  ) {
+    return incoming;
+  }
+  return newerJob(current, incoming);
+}
+
 function localUploadMatchDistance(
   localJob: JobRecord,
   incomingJob: JobRecord,
@@ -2227,7 +2244,9 @@ function reconcileProcessingJobs(
   return [
     ...incoming.map((job) => {
       const currentJob = currentById.get(job.id);
-      return currentJob ? newerJob(currentJob, job) : job;
+      return currentJob
+        ? newerAuthoritativeProcessingJob(currentJob, job)
+        : job;
     }),
     ...current.filter((job) => {
       if (job.archived_at !== null) {
@@ -3412,8 +3431,11 @@ export default function App() {
           alignWorkspaceToJob(reconciledActiveJob ?? nextJobs[0] ?? null);
         }
         const processingInProgress = nextJobs.some(isProcessingJobInProgress);
+        const authoritativeJobIds = new Set(
+          queue.jobs.map((candidate) => candidate.id),
+        );
         if (
-          writeProcessingQueue(nextJobs)
+          writeProcessingQueue(nextJobs, false, authoritativeJobIds)
           && !preservedMissingDirtyJob
           && !processingInProgress
         ) {
@@ -3879,6 +3901,13 @@ export default function App() {
           historyFullRestoreRequestedRef.current = true;
         }
         historyRestoreRetryRequestedRef.current = true;
+        if (
+          historyMutationCountRef.current === 0
+          && historyRestorePromiseRef.current === null
+        ) {
+          historyRestoreRetryRequestedRef.current = false;
+          requestDeferredHistoryRestore();
+        }
         return false;
       }
       applyHistoryPage(page);
@@ -5113,6 +5142,8 @@ export default function App() {
     setBusy(true);
     setError(null);
     beginProcessingMembershipMutation();
+    beginHistoryMutation();
+    let historyMutationActive = true;
     try {
       applyHistoryPage(await archiveJobs(readyJobs.map((candidate) => candidate.id)));
       if (historySearchActive && historySearchQuery) {
@@ -5131,6 +5162,8 @@ export default function App() {
         historyError,
         "Could not save reviewed hands to history",
       );
+      endHistoryMutation();
+      historyMutationActive = false;
       const historyReconciled = await syncHistory(null, false);
       if (historyReconciled && historySearchActive && historySearchQuery) {
         await revalidateHistorySearch(historySearchQuery);
@@ -5139,6 +5172,9 @@ export default function App() {
       }
       setError(archiveErrorMessage);
     } finally {
+      if (historyMutationActive) {
+        endHistoryMutation();
+      }
       endProcessingMembershipMutation();
       setBusy(false);
     }

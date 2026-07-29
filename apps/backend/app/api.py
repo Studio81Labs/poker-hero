@@ -5,7 +5,17 @@ from io import BytesIO
 import re
 from threading import Lock, RLock
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -22,11 +32,13 @@ from app.dataset_export import (
 )
 from app.dataset_import import (
     DatasetImportError,
+    ParsedParserDataset,
     import_parser_dataset,
     parse_parser_dataset_archive,
 )
 from app.models import (
     ArchiveJobsRequest,
+    BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
@@ -150,6 +162,61 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="A newer recommendation request replaced this attempt",
             )
         return current
+
+    def execute_pending_benchmark_import(
+        request_id: str,
+        dataset: ParsedParserDataset | None = None,
+    ) -> BenchmarkDatasetImportResult:
+        receipt = benchmark_store.get_import(request_id)
+        if receipt.status == "completed" and receipt.result is not None:
+            return receipt.result
+        if receipt.status == "failed":
+            raise DatasetImportError(receipt.error or "Dataset import failed")
+        if dataset is None:
+            archive_bytes = benchmark_store.get_import_archive(request_id)
+            dataset = parse_parser_dataset_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=(
+                    active_settings.max_dataset_upload_bytes
+                    * MAX_DATASET_EXPANSION_RATIO
+                ),
+            )
+        lock_indexes = sorted(
+            {job_lock_index(case.job_id) for case in dataset.cases}
+        )
+        with benchmark_corpus_lock, ExitStack() as job_lock_stack:
+            for lock_index in lock_indexes:
+                job_lock_stack.enter_context(job_locks[lock_index])
+            with history_lock:
+                result = import_parser_dataset(
+                    dataset,
+                    store,
+                    recommendation_provider=active_settings.recommendation_provider,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
+                    import_request_id=request_id,
+                )
+                benchmark_store.complete_import(request_id, result)
+                return result
+
+    def resume_benchmark_import(request_id: str) -> None:
+        with dataset_import_lock:
+            try:
+                receipt = benchmark_store.get_import(request_id)
+                if receipt.status != "pending":
+                    return
+                execute_pending_benchmark_import(request_id)
+            except DatasetImportError as exc:
+                benchmark_store.fail_import(
+                    request_id,
+                    str(exc),
+                    exc.status_code,
+                )
+            except (BenchmarkImportNotFoundError, OSError):
+                # A later poll can retry an interrupted or temporarily unavailable journal.
+                return
 
     app = FastAPI(title="Poker Training Analyzer API")
     app.add_middleware(
@@ -782,25 +849,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     * MAX_DATASET_EXPANSION_RATIO
                 ),
             )
-            lock_indexes = sorted(
-                {job_lock_index(case.job_id) for case in dataset.cases}
-            )
-            with (
-                dataset_import_lock,
-                benchmark_corpus_lock,
-                ExitStack() as job_lock_stack,
-            ):
-                if benchmark_import_request_id is not None:
+            if benchmark_import_request_id is not None:
+                with dataset_import_lock:
                     try:
-                        return benchmark_store.get_import(
+                        receipt = benchmark_store.get_import(
                             benchmark_import_request_id,
                         )
                     except BenchmarkImportNotFoundError:
-                        pass
+                        receipt = benchmark_store.begin_import(
+                            benchmark_import_request_id,
+                            archive_bytes,
+                        )
+                    if receipt.archive_sha256 != sha256(archive_bytes).hexdigest():
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Import request ID belongs to another dataset",
+                        )
+                    if receipt.status == "completed" and receipt.result is not None:
+                        return receipt.result
+                    if receipt.status == "failed":
+                        raise HTTPException(
+                            status_code=receipt.error_status or 409,
+                            detail=receipt.error or "Dataset import failed",
+                        )
+                    try:
+                        return execute_pending_benchmark_import(
+                            benchmark_import_request_id,
+                            dataset,
+                        )
+                    except DatasetImportError as exc:
+                        benchmark_store.fail_import(
+                            benchmark_import_request_id,
+                            str(exc),
+                            exc.status_code,
+                        )
+                        raise
+
+            lock_indexes = sorted(
+                {job_lock_index(case.job_id) for case in dataset.cases}
+            )
+            with benchmark_corpus_lock, ExitStack() as job_lock_stack:
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 with history_lock:
-                    result = import_parser_dataset(
+                    return import_parser_dataset(
                         dataset,
                         store,
                         recommendation_provider=active_settings.recommendation_provider,
@@ -808,29 +900,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         layout_profile=active_settings.parser_layout_profile,
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
-                    if benchmark_import_request_id is not None:
-                        benchmark_store.save_import(
-                            benchmark_import_request_id,
-                            result,
-                        )
-                    return result
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     @app.get(
         "/api/benchmarks/imports/{request_id}",
-        response_model=BenchmarkDatasetImportResult,
+        response_model=BenchmarkDatasetImportReceipt,
     )
     def get_benchmark_dataset_import(
         request_id: str,
-    ) -> BenchmarkDatasetImportResult:
+        background_tasks: BackgroundTasks,
+    ) -> BenchmarkDatasetImportReceipt:
         try:
-            return benchmark_store.get_import(request_id)
+            receipt = benchmark_store.get_import(request_id)
         except BenchmarkImportNotFoundError as exc:
             raise HTTPException(
                 status_code=404,
                 detail="Benchmark dataset import not found",
             ) from exc
+        if receipt.status == "pending" and not dataset_import_lock.locked():
+            background_tasks.add_task(resume_benchmark_import, request_id)
+        return receipt
 
     @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
     def get_benchmark_report(report_id: str) -> BenchmarkReport:

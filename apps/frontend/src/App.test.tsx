@@ -3081,6 +3081,51 @@ describe("App", () => {
     ]);
   });
 
+  it("releases a training-decision lease after a deterministic conflict", async () => {
+    const approved = {
+      ...approvedJob(),
+      id: "8".repeat(32),
+      original_filename: "decision-conflict.png",
+    };
+    const competingRecommendation: JobRecord = {
+      ...approved,
+      status: "recommended",
+      recommendation,
+      recommendation_request_id: "other-tab-recommendation",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Your decision must be recorded before revealing the recommendation",
+      }, 409))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [competingRecommendation],
+        "decision-conflict-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+    await user.click(within(decisionPanel).getByRole("button", {
+      name: "Lock answer",
+    }));
+
+    expect(await screen.findByText(
+      "Your decision must be recorded before revealing the recommendation",
+    )).toBeInTheDocument();
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+  });
+
   it.each([
     { operation: "approval" as const },
     { operation: "recommendation" as const },
@@ -9412,10 +9457,17 @@ describe("App", () => {
       }))
       .mockRejectedValueOnce(new TypeError("Connection lost after dataset import"))
       .mockResolvedValueOnce(jsonResponse({
-        imported_cases: 0,
-        reused_cases: 1,
-        included_cases: 1,
-        job_ids: [benchmarkJobId],
+        request_id: "reused-import-recovery",
+        archive_sha256: "a".repeat(64),
+        status: "completed",
+        result: {
+          imported_cases: 0,
+          reused_cases: 1,
+          included_cases: 1,
+          job_ids: [benchmarkJobId],
+        },
+        error: null,
+        error_status: null,
       }))
       .mockResolvedValueOnce(processingQueueResponse(
         [],
@@ -9471,7 +9523,6 @@ describe("App", () => {
 
   it("recovers a new dataset-only case by request identity after reload", async () => {
     const importedJobId = "7".repeat(32);
-    const pendingFirstRecovery = deferredResponse();
     let recoveryAttempts = 0;
     fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -9490,13 +9541,28 @@ describe("App", () => {
       }
       if (url.startsWith("http://localhost:8000/api/benchmarks/imports/")) {
         recoveryAttempts += 1;
+        const requestId = decodeURIComponent(url.split("/").pop() ?? "");
         return recoveryAttempts === 1
-          ? pendingFirstRecovery.promise
+          ? Promise.resolve(jsonResponse({
+              request_id: requestId,
+              archive_sha256: "b".repeat(64),
+              status: "pending",
+              result: null,
+              error: null,
+              error_status: null,
+            }))
           : Promise.resolve(jsonResponse({
-              imported_cases: 1,
-              reused_cases: 0,
-              included_cases: 1,
-              job_ids: [importedJobId],
+              request_id: requestId,
+              archive_sha256: "b".repeat(64),
+              status: "completed",
+              result: {
+                imported_cases: 1,
+                reused_cases: 0,
+                included_cases: 1,
+                job_ids: [importedJobId],
+              },
+              error: null,
+              error_status: null,
             }));
       }
       if (url === "http://localhost:8000/api/jobs") {
@@ -9545,10 +9611,23 @@ describe("App", () => {
       "poker-training-processing-mutation-v1",
     )).toContain(importRequestId);
     expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toContain("\"benchmarkImportReceiptObserved\":true");
+    expect(window.sessionStorage.getItem(
       "poker-training-history-mutation-v1",
     )).toContain(importRequestId);
 
     firstRender.unmount();
+    for (const leaseKey of [
+      "poker-training-processing-mutation-v1",
+      "poker-training-history-mutation-v1",
+    ]) {
+      const lease = JSON.parse(String(window.sessionStorage.getItem(leaseKey)));
+      window.sessionStorage.setItem(
+        leaseKey,
+        JSON.stringify({ ...lease, expiresAt: Date.now() - 1 }),
+      );
+    }
     render(<App />);
 
     expect(await screen.findByText("Dataset recovered: 1 hand")).toBeInTheDocument();

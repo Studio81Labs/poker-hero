@@ -135,6 +135,7 @@ def import_parser_dataset(
     parser_provider: str,
     layout_profile: str,
     max_archive_bytes: int,
+    import_request_id: str | None = None,
 ) -> BenchmarkDatasetImportResult:
     current_jobs = store.list()
     included_job_ids = {job.id for job in current_jobs if job.benchmark_included}
@@ -150,27 +151,49 @@ def import_parser_dataset(
             existing = store.get(case.job_id)
         except JobNotFoundError:
             continue
+        same_import = (
+            import_request_id is not None
+            and existing.benchmark_import_request_id == import_request_id
+        )
         try:
             existing_image = store.image_path(existing).read_bytes()
         except (JobNotFoundError, OSError) as exc:
-            raise DatasetImportConflictError(
-                f"Existing job {case.job_id} does not have its source image"
-            ) from exc
-        if existing.approved_state != case.approved_state or existing_image != case.image_bytes:
+            if not same_import:
+                raise DatasetImportConflictError(
+                    f"Existing job {case.job_id} does not have its source image"
+                ) from exc
+            existing_image = None
+        resumable_state = same_import and existing.approved_state is None
+        if (
+            (existing.approved_state != case.approved_state and not resumable_state)
+            or (
+                existing_image is not None
+                and existing_image != case.image_bytes
+            )
+        ):
             raise DatasetImportConflictError(
                 f"Imported case {case.job_id} conflicts with an existing job"
             )
         existing_jobs[case.job_id] = existing
 
+    resumable_job_ids = {
+        job_id
+        for job_id, job in existing_jobs.items()
+        if (
+            import_request_id is not None
+            and job.benchmark_import_request_id == import_request_id
+        )
+    }
     try:
         prospective_cases = [
             parser_dataset_archive_case(job, store.image_path)
             for job in current_jobs
             if job.benchmark_included or job.id in existing_jobs
+            if job.id not in resumable_job_ids
         ]
         for case in dataset.cases:
             existing = existing_jobs.get(case.job_id)
-            if existing is not None:
+            if existing is not None and case.job_id not in resumable_job_ids:
                 continue
             prospective_cases.append(
                 ParserDatasetArchiveCase(
@@ -198,27 +221,50 @@ def import_parser_dataset(
     for case in dataset.cases:
         existing = existing_jobs.get(case.job_id)
         if existing is not None:
+            if (
+                import_request_id is not None
+                and existing.benchmark_import_request_id == import_request_id
+            ):
+                existing.approved_state = case.approved_state
+                existing.benchmark_included = True
+                existing.status = "approved"
+                existing.error = None
+                store.write_image(existing, case.image_bytes)
+                store.save(existing)
+                imported_cases += 1
+                continue
             existing.benchmark_included = True
             store.save(existing)
             reused_cases += 1
             continue
 
         try:
-            job = store.create_job(
-                original_filename=case.original_filename,
-                image_bytes=case.image_bytes,
-                parser_provider=dataset.parser_provider,
-                recommendation_provider=recommendation_provider,
-                job_id=case.job_id,
-            )
+            if import_request_id is None:
+                job = store.create_job(
+                    original_filename=case.original_filename,
+                    image_bytes=case.image_bytes,
+                    parser_provider=dataset.parser_provider,
+                    recommendation_provider=recommendation_provider,
+                    job_id=case.job_id,
+                )
+                job.approved_state = case.approved_state
+                job.benchmark_included = True
+                job.status = "approved"
+                store.save(job)
+            else:
+                store.create_benchmark_import_job(
+                    job_id=case.job_id,
+                    original_filename=case.original_filename,
+                    image_bytes=case.image_bytes,
+                    parser_provider=dataset.parser_provider,
+                    recommendation_provider=recommendation_provider,
+                    approved_state=case.approved_state,
+                    import_request_id=import_request_id,
+                )
         except FileExistsError as exc:
             raise DatasetImportConflictError(
                 f"Imported case {case.job_id} conflicts with an existing job"
             ) from exc
-        job.approved_state = case.approved_state
-        job.benchmark_included = True
-        job.status = "approved"
-        store.save(job)
         imported_cases += 1
 
     return BenchmarkDatasetImportResult(

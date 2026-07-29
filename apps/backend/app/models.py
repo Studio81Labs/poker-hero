@@ -404,6 +404,12 @@ class JobRecord(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
+    benchmark_import_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
     benchmark_included: bool = False
@@ -449,6 +455,41 @@ class BenchmarkDatasetImportResult(BaseModel):
     reused_cases: int = Field(ge=0)
     included_cases: int = Field(ge=0)
     job_ids: list[str] = Field(default_factory=list)
+
+
+class BenchmarkDatasetImportReceipt(BaseModel):
+    request_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
+    archive_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["pending", "completed", "failed"]
+    result: BenchmarkDatasetImportResult | None = None
+    error: str | None = None
+    error_status: int | None = Field(default=None, ge=400, le=599)
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        if self.status == "completed" and (
+            self.result is None
+            or self.error is not None
+            or self.error_status is not None
+        ):
+            raise ValueError("completed import receipts require a result")
+        if self.status == "failed" and (
+            self.result is not None
+            or self.error is None
+            or self.error_status is None
+        ):
+            raise ValueError("failed import receipts require an error")
+        if self.status == "pending" and (
+            self.result is not None
+            or self.error is not None
+            or self.error_status is not None
+        ):
+            raise ValueError("pending import receipts cannot contain a result")
+        return self
 
 
 class BenchmarkFieldComparison(BaseModel):

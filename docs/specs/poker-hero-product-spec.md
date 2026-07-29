@@ -328,11 +328,15 @@ frequencies.
     Upload and capture leases wait for every expected new queue item and
     required automation stage; a batch records all selected upload and
     recommendation request identities before its first request. Dataset imports
-    record a distinct request identity before upload, persist the completed
-    result on the backend, and recover that exact receipt after a lost response
-    or reload, including when every imported hand is benchmark-only and absent
-    from processing and history. Deterministic import rejections release their
-    recovery leases immediately. A benchmark-only hand with a recorded solver
+    record a distinct request identity before upload. The backend atomically
+    journals the validated archive before corpus changes, marks the receipt
+    complete afterward, and can resume partial request-owned cases after an
+    interruption. The frontend recovers that exact pending or completed receipt
+    after a lost response or reload, including when every imported hand is
+    benchmark-only and absent from processing and history. Observed pending
+    receipts keep recovery alive beyond the ordinary lease window.
+    Deterministic import rejections release their recovery leases immediately.
+    A benchmark-only hand with a recorded solver
     attempt remains in processing across reloads so correctable provider
     responses do not hide the workspace. A recommendation
     that first saves the player's decision carries that decision expectation

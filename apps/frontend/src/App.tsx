@@ -156,6 +156,7 @@ type ProjectionMutationLease = MutationLeaseBase & {
   baselineJobIds: string[];
   expectedRemovalJobIds: string[];
   benchmarkImportRequestId: string | null;
+  benchmarkImportReceiptObserved: boolean;
   expectedUploads: Array<{
     requestId: string;
     target: ProjectionMutationTarget;
@@ -2193,6 +2194,12 @@ function readPersistedMutationLease(
       parsed.benchmarkImportRequestId = null;
     }
     if (
+      parsed.kind === "projection"
+      && parsed.benchmarkImportReceiptObserved === undefined
+    ) {
+      parsed.benchmarkImportReceiptObserved = false;
+    }
+    if (
       typeof parsed.ownerId !== "string"
       || typeof parsed.expiresAt !== "number"
       || !Number.isFinite(parsed.expiresAt)
@@ -2236,6 +2243,7 @@ function readPersistedMutationLease(
           parsed.benchmarkImportRequestId !== null
           && typeof parsed.benchmarkImportRequestId !== "string"
         )
+        || typeof parsed.benchmarkImportReceiptObserved !== "boolean"
         || !parsed.expectedUploads.every((value) =>
           typeof value === "object"
           && value !== null
@@ -2375,6 +2383,7 @@ function startProjectionMutationLease(
     baselineJobIds: baselineJobs.map((job) => job.id),
     expectedRemovalJobIds: [...expectedRemovalJobIds],
     benchmarkImportRequestId,
+    benchmarkImportReceiptObserved: false,
     expectedUploads: [...expectedUploads],
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
@@ -3465,7 +3474,7 @@ export default function App() {
         && benchmarkImportRecoveryPromiseRef.current === null
       ) {
         const recovery = getBenchmarkDatasetImport(benchmarkImportRequestId)
-          .then((result) => {
+          .then((receipt) => {
             if (
               !appMountedRef.current
               || benchmarkImportLeaseRequestId(
@@ -3475,19 +3484,25 @@ export default function App() {
             ) {
               return;
             }
-            const readyCases = applyBenchmarkDatasetImportResult(result);
-            if (isBenchmarkImportLease(
-              processingMutationLeaseRef.current,
-              benchmarkImportRequestId,
-            )) {
-              clearOwnedMutationLease("processing");
+            if (receipt.status === "pending") {
+              markBenchmarkImportReceiptObserved(benchmarkImportRequestId);
+              return;
             }
-            if (isBenchmarkImportLease(
-              historyMutationLeaseRef.current,
-              benchmarkImportRequestId,
-            )) {
-              clearOwnedMutationLease("history");
+            if (receipt.status === "failed" || receipt.result === null) {
+              clearBenchmarkImportLeases(
+                benchmarkImportRequestId,
+                true,
+              );
+              setBenchmarkImporting(false);
+              setError(receipt.error ?? "Could not recover parser dataset import");
+              markProcessingQueueSessionUnsynced();
+              scheduleProcessingQueueRestore();
+              markHistorySessionUnsynced();
+              void requestHistoryRestore(null, true);
+              return;
             }
+            const readyCases = applyBenchmarkDatasetImportResult(receipt.result);
+            clearBenchmarkImportLeases(benchmarkImportRequestId);
             setBenchmarkImporting(false);
             setError(null);
             toast.success(
@@ -3503,6 +3518,31 @@ export default function App() {
               recoveryError instanceof ApiResponseError
               && recoveryError.status === 404
             ) {
+              const importLeases = [
+                processingMutationLeaseRef.current,
+                historyMutationLeaseRef.current,
+              ].flatMap((lease) =>
+                isBenchmarkImportLease(lease, benchmarkImportRequestId)
+                  ? [lease]
+                  : []
+              );
+              if (
+                importLeases.length > 0
+                && importLeases.every(
+                  (lease) =>
+                    !lease.benchmarkImportReceiptObserved
+                    && Date.now() >= lease.expiresAt,
+                )
+              ) {
+                clearBenchmarkImportLeases(
+                  benchmarkImportRequestId,
+                  true,
+                );
+                markProcessingQueueSessionUnsynced();
+                scheduleProcessingQueueRestore();
+                markHistorySessionUnsynced();
+                void requestHistoryRestore(null, true);
+              }
               return;
             }
             // Network failures remain recoverable for the lifetime of the lease.
@@ -3516,7 +3556,19 @@ export default function App() {
       }
       const processingLease = processingMutationLeaseRef.current;
       if (processingLease !== null) {
-        if (Date.now() >= processingLease.expiresAt) {
+        const retainedImportLease = benchmarkImportRequestId !== null
+          && isBenchmarkImportLease(
+            processingLease,
+            benchmarkImportRequestId,
+          )
+          && (
+            processingLease.benchmarkImportReceiptObserved
+            || benchmarkImportRecoveryPromiseRef.current !== null
+          );
+        if (
+          Date.now() >= processingLease.expiresAt
+          && !retainedImportLease
+        ) {
           clearPersistedMutationLease("processing", mutationOwnerId);
           processingMutationLeaseRef.current = null;
           markProcessingQueueSessionUnsynced();
@@ -3544,7 +3596,19 @@ export default function App() {
       const historyLease = historyMutationLeaseRef.current;
       if (historyLease !== null) {
         const historyLeaseJobIds = mutationLeaseJobIds(historyLease);
-        if (Date.now() >= historyLease.expiresAt) {
+        const retainedImportLease = benchmarkImportRequestId !== null
+          && isBenchmarkImportLease(
+            historyLease,
+            benchmarkImportRequestId,
+          )
+          && (
+            historyLease.benchmarkImportReceiptObserved
+            || benchmarkImportRecoveryPromiseRef.current !== null
+          );
+        if (
+          Date.now() >= historyLease.expiresAt
+          && !retainedImportLease
+        ) {
           clearPersistedMutationLease("history", mutationOwnerId);
           historyMutationLeaseRef.current = null;
           for (const jobId of historyLeaseJobIds) {
@@ -3779,6 +3843,47 @@ export default function App() {
         historyUpdateCandidateIdsRef.current.delete(jobId);
       }
       historyMutationLeaseRef.current = null;
+    }
+  }
+
+  function markBenchmarkImportReceiptObserved(requestId: string) {
+    for (const scope of ["processing", "history"] as const) {
+      const leaseRef = scope === "processing"
+        ? processingMutationLeaseRef
+        : historyMutationLeaseRef;
+      const lease = leaseRef.current;
+      if (!isBenchmarkImportLease(lease, requestId)) {
+        continue;
+      }
+      const updatedLease: ProjectionMutationLease = {
+        ...lease,
+        benchmarkImportReceiptObserved: true,
+        expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
+      };
+      if (replacePersistedMutationLease(scope, lease, updatedLease)) {
+        leaseRef.current = updatedLease;
+      }
+    }
+  }
+
+  function clearBenchmarkImportLeases(
+    requestId: string,
+    releaseRemovalCandidates = false,
+  ) {
+    const processingLease = processingMutationLeaseRef.current;
+    if (isBenchmarkImportLease(processingLease, requestId)) {
+      if (releaseRemovalCandidates) {
+        for (const jobId of processingLease.expectedRemovalJobIds) {
+          processingRemovalCandidateIdsRef.current.delete(jobId);
+        }
+      }
+      clearOwnedMutationLease("processing");
+    }
+    if (isBenchmarkImportLease(
+      historyMutationLeaseRef.current,
+      requestId,
+    )) {
+      clearOwnedMutationLease("history");
     }
   }
 
@@ -5736,7 +5841,9 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(decisionError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {

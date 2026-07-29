@@ -361,3 +361,12 @@ export interface BenchmarkDatasetImportResult {
   included_cases: number;
   job_ids: string[];
 }
+
+export interface BenchmarkDatasetImportReceipt {
+  request_id: string;
+  archive_sha256: string;
+  status: "pending" | "completed" | "failed";
+  result: BenchmarkDatasetImportResult | null;
+  error: string | null;
+  error_status: number | null;
+}

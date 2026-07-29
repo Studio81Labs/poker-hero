@@ -1,4 +1,5 @@
 import type {
+  BenchmarkDatasetImportReceipt,
   BenchmarkDatasetImportResult,
   BenchmarkOverview,
   BenchmarkReport,
@@ -319,12 +320,12 @@ export async function importBenchmarkDataset(
 
 export async function getBenchmarkDatasetImport(
   requestId: string,
-): Promise<BenchmarkDatasetImportResult> {
+): Promise<BenchmarkDatasetImportReceipt> {
   const response = await fetch(
     `${API_BASE_URL}/api/benchmarks/imports/${encodeURIComponent(requestId)}`,
     { credentials: "include" },
   );
-  return readJson<BenchmarkDatasetImportResult>(response);
+  return readJson<BenchmarkDatasetImportReceipt>(response);
 }
 
 export async function getBenchmarkReport(reportId: string): Promise<BenchmarkReport> {

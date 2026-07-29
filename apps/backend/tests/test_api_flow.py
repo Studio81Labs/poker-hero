@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock as ThreadLock, Thread
@@ -1929,11 +1930,83 @@ def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
         "job_ids": [source_job_id],
     }
     assert recovered.status_code == 200
-    assert recovered.json() == imported.json()
+    assert recovered.json() == {
+        "request_id": request_id,
+        "archive_sha256": sha256(archive).hexdigest(),
+        "status": "completed",
+        "result": imported.json(),
+        "error": None,
+        "error_status": None,
+    }
     assert repeated.status_code == 200
     assert repeated.json() == imported.json()
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Benchmark dataset import not found"
+
+
+def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="interrupted.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    request_id = "interrupted-import-request"
+    original_write_image = FileJobStore.write_image
+    interrupted = False
+
+    def interrupt_first_import_image(
+        self: FileJobStore,
+        job,
+        image_bytes: bytes,
+    ) -> None:
+        nonlocal interrupted
+        if (
+            not interrupted
+            and job.benchmark_import_request_id == request_id
+        ):
+            interrupted = True
+            raise OSError("simulated process interruption")
+        original_write_image(self, job, image_bytes)
+
+    monkeypatch.setattr(FileJobStore, "write_image", interrupt_first_import_image)
+    with pytest.raises(OSError, match="simulated process interruption"):
+        target_client.post(
+            "/api/benchmarks/import",
+            headers={"X-Benchmark-Import-Request-ID": request_id},
+            files={"file": ("dataset.zip", archive, "application/zip")},
+        )
+
+    interrupted_store = FileJobStore(target_dir)
+    partial_job = interrupted_store.get(source_job_id)
+    assert partial_job.benchmark_import_request_id == request_id
+    assert not interrupted_store.image_path(partial_job).exists()
+    assert FileBenchmarkStore(target_dir).get_import(request_id).status == "pending"
+
+    monkeypatch.setattr(FileJobStore, "write_image", original_write_image)
+    recovery_client = make_client(target_dir)
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    completed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["result"] == {
+        "imported_cases": 1,
+        "reused_cases": 0,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    recovered_job = FileJobStore(target_dir).get(source_job_id)
+    assert FileJobStore(target_dir).image_path(recovered_job).read_bytes() == VALID_PNG
 
 
 def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(

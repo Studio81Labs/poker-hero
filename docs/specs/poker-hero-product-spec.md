@@ -327,12 +327,14 @@ frequencies.
     selected upload and recommendation request identities before its first
     request. A recommendation that first saves the player's decision does not
     arm its solver identity until that save is confirmed, and a superseded
-    provider call cannot write over a newer solver identity. Batch archive
-    leases cover all target IDs in both projections, so a stale first reload
-    cannot leave a hand duplicated in processing or missing from history.
-    Unchanged projections after an ambiguous failure do not release these
-    leases, and a recovered lease blocks a second mutation from replacing it in
-    the same projection.
+    provider call cannot write over a newer solver identity. A deterministic
+    recommendation conflict releases the losing identity and refreshes the
+    competing state; ambiguous and correctable attempts retain recovery.
+    Batch archive leases cover all target IDs in both projections, so a stale
+    first reload cannot leave a hand duplicated in processing or missing from
+    history. Unchanged projections after an ambiguous failure do not release
+    these leases, and a recovered lease blocks a second mutation from replacing
+    it in the same projection.
     Separately, a persisted in-progress
     recommendation keeps revalidating until the backend records its
     recommendation or retryable error, including after transient projection

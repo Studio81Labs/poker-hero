@@ -2591,6 +2591,63 @@ describe("App", () => {
     ]);
   });
 
+  it("releases a recommendation lease after another tab wins the conflict", async () => {
+    const recommendationRequestId = "44444444-4444-4444-8444-444444444444";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
+    const approved = {
+      ...approvedJob(),
+      id: "a".repeat(32),
+      original_filename: "competing-recommendation.png",
+    };
+    const competingAttempt: JobRecord = {
+      ...approved,
+      recommendation_pending: true,
+      recommendation_request_id: "other-tab-attempt",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Recommendation is already running",
+      }, 409))
+      .mockResolvedValue(processingQueueResponse(
+        [competingAttempt],
+        "competing-recommendation-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Request recommendation",
+    }));
+
+    expect(await screen.findByText(
+      "Recommendation is already running",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([competingAttempt]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeDisabled();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+    expect(fetchMock().mock.calls.slice(0, 2).map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${approved.id}/recommend`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("restores an ordinary recommendation after its successful response is lost", async () => {
     const recommendationRequestId = "22222222-2222-4222-8222-222222222222";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(

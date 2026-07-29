@@ -2918,6 +2918,13 @@ function mutationFailureMayHavePersistedSideEffect(error: unknown): boolean {
     || (error instanceof ApiResponseError && error.status >= 500);
 }
 
+function recommendationAttemptMayHavePersistedSideEffect(
+  error: unknown,
+): boolean {
+  return mutationFailureMayHavePersistedSideEffect(error)
+    || (error instanceof ApiResponseError && error.status === 422);
+}
+
 function selectedFilesLabel(files: File[]): string {
   if (files.length === 0) {
     return "Choose screenshots";
@@ -5435,11 +5442,12 @@ export default function App() {
     } catch (recommendError) {
       if (
         recommendationStarted
-        || mutationFailureMayHavePersistedSideEffect(recommendError)
+          ? recommendationAttemptMayHavePersistedSideEffect(recommendError)
+          : mutationFailureMayHavePersistedSideEffect(recommendError)
       ) {
         markPersistedJobMutationUncertain(mutationScope, job.id);
-        restoreAfterMutation = true;
       }
+      restoreAfterMutation = restoreAfterMutation || recommendationStarted;
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
       endPersistedJobMutation(mutationScope, restoreAfterMutation);

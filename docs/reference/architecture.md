@@ -281,11 +281,14 @@ browser-session mutation leases before persisted operations begin. Single-job
 writes carry the job ID, baseline revision, and whether queue removal is
 expected. Recommendation actions keep that lease generic while an optional
 training-decision write is unresolved, then atomically arm it with the solver
-request ID before starting the solver. If an ordinary leased job is missing
-from processing, the frontend revalidates it by ID before settling or removing
-it from the workspace. Upload and capture leases carry the baseline queue plus
-client-generated upload and solver request IDs and the last required automation
-stage for each file. The upload ID is sent with the multipart request and both
+request ID before starting the solver. Ambiguous failures and correctable solver
+responses retain that exact-ID lease, while a deterministic conflict releases
+it and immediately refreshes the authoritative queue so the competing attempt
+becomes visible. If an ordinary leased job is missing from processing, the
+frontend revalidates it by ID before settling or removing it from the workspace.
+Upload and capture leases carry the baseline queue plus client-generated upload
+and solver request IDs and the last required automation stage for each file.
+The upload ID is sent with the multipart request and both
 identities are persisted on the backend job, allowing a replacement document to
 distinguish a completed correctable solver attempt from work that never began.
 Backend solver completions and failures must still match that persisted solver

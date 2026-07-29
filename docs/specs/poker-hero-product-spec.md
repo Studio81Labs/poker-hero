@@ -324,11 +324,15 @@ frequencies.
     projection unsynchronized until a changed server revision is observed or a
     bounded recovery lease expires. Upload and capture leases wait for every
     expected new queue item and required automation stage; a batch records all
-    selected files before its first request. Batch archive leases cover all
-    target IDs in both projections, so a stale first reload cannot leave a hand
-    duplicated in processing or missing from history. Unchanged projections
-    after an ambiguous failure do not release these leases, and a recovered
-    lease blocks a second mutation from replacing it in the same projection.
+    selected upload and recommendation request identities before its first
+    request. A recommendation that first saves the player's decision does not
+    arm its solver identity until that save is confirmed, and a superseded
+    provider call cannot write over a newer solver identity. Batch archive
+    leases cover all target IDs in both projections, so a stale first reload
+    cannot leave a hand duplicated in processing or missing from history.
+    Unchanged projections after an ambiguous failure do not release these
+    leases, and a recovered lease blocks a second mutation from replacing it in
+    the same projection.
     Separately, a persisted in-progress
     recommendation keeps revalidating until the backend records its
     recommendation or retryable error, including after transient projection
@@ -337,7 +341,10 @@ frequencies.
     require an explicit unarchived marker. Pending benchmark-import
     recommendations remain processing work; re-approval is blocked until active
     work finishes, and backend startup converts orphaned in-progress markers
-    into retryable errors.
+    into retryable errors. An untouched benchmark-only hand opened for review
+    remains visible as workspace-only state during processing refreshes; if it
+    later becomes processing work, the queue record replaces it without a
+    duplicate.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

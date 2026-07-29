@@ -135,12 +135,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def current_recommendation_target(
         job_id: str,
         expected_state: CanonicalState,
+        expected_request_id: str | None,
     ) -> JobRecord:
         current = load_job_or_404(store, job_id)
         if current.approved_state != expected_state:
             raise HTTPException(
                 status_code=409,
                 detail="Approved state changed while the recommendation was running",
+            )
+        if current.recommendation_request_id != expected_request_id:
+            raise HTTPException(
+                status_code=409,
+                detail="A newer recommendation request replaced this attempt",
             )
         return current
 
@@ -357,7 +363,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
@@ -365,7 +375,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except Exception as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "error"
                 current.error = f"Unexpected provider error: {exc}"
@@ -374,7 +388,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         if missing:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "approved"
                 current.error = None
@@ -385,7 +403,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result = provider.recommend(RecommendationRequest(state=approved_state, provider=provider.name))
         except ProviderInputError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "approved"
                 current.error = None
@@ -393,7 +415,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
@@ -401,7 +427,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except ProviderError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
@@ -409,7 +439,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except Exception as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
                 current.recommendation_pending = False
                 current.status = "error"
                 current.error = f"Unexpected provider error: {exc}"
@@ -417,7 +451,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise
 
         with job_lock_for(job_id):
-            current = current_recommendation_target(job_id, approved_state)
+            current = current_recommendation_target(
+                job_id,
+                approved_state,
+                recommendation_request_id,
+            )
             current.recommendation = result
             current.recommendation_pending = False
             current.training_reviewed_at = None

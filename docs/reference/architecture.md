@@ -279,13 +279,20 @@ active form values remain separate until a persisted revision confirms the
 user's uncertain mutation committed. The frontend records bounded,
 browser-session mutation leases before persisted operations begin. Single-job
 writes carry the job ID, baseline revision, and whether queue removal is
-expected. If an ordinary leased job is missing from processing, the frontend
-revalidates it by ID before settling or removing it from the workspace. Upload
-and capture leases carry the baseline queue plus a client-generated request ID
-and last required automation stage for each file. The request ID is sent with
-the multipart upload, persisted on the backend job, and used instead of the
-display filename when matching a restored queue. Dataset imports may also carry
-processing IDs expected to disappear. Batch
+expected. Recommendation actions keep that lease generic while an optional
+training-decision write is unresolved, then atomically arm it with the solver
+request ID before starting the solver. If an ordinary leased job is missing
+from processing, the frontend revalidates it by ID before settling or removing
+it from the workspace. Upload and capture leases carry the baseline queue plus
+client-generated upload and solver request IDs and the last required automation
+stage for each file. The upload ID is sent with the multipart request and both
+identities are persisted on the backend job, allowing a replacement document to
+distinguish a completed correctable solver attempt from work that never began.
+Backend solver completions and failures must still match that persisted solver
+identity before changing the job, so a superseded provider call cannot clear or
+overwrite a newer attempt.
+The upload ID is used instead of the display filename when matching a restored
+queue. Dataset imports may also carry processing IDs expected to disappear. Batch
 archive leases carry every target ID and baseline revision in both processing
 and history scopes. A replacement document claims the leases, keeps the
 affected projections unsynchronized, and revalidates with bounded backoff until
@@ -308,7 +315,11 @@ training decision, review metadata, error, or active recommendation, so
 untouched imports remain in the benchmark corpus without appearing as
 processing work. Once an imported hand starts recommendation work, records
 training state, or receives a retryable error, it returns to the processing
-projection until that work is completed.
+projection until that work is completed. An untouched import explicitly opened
+for review remains workspace-only across processing reconciliations even though
+it stays excluded from the processing projection and browser queue cache. If
+the same job later enters the processing projection, its authoritative record
+replaces that workspace-only copy without creating a duplicate.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

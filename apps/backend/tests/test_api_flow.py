@@ -1247,6 +1247,73 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     assert persisted_job.recommendation is not None
 
 
+def test_superseded_recommendation_cannot_overwrite_newer_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_provider_started = Event()
+    release_first_provider = Event()
+    provider_calls = 0
+    provider_calls_lock = ThreadLock()
+
+    class SupersededRecommendationProvider(MockRecommendationProvider):
+        def recommend(self, request):
+            nonlocal provider_calls
+            with provider_calls_lock:
+                provider_calls += 1
+                call_number = provider_calls
+            if call_number == 1:
+                first_provider_started.set()
+                if not release_first_provider.wait(timeout=5):
+                    raise ProviderError("test provider timed out")
+            return super().recommend(request)
+
+    provider = SupersededRecommendationProvider()
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    monkeypatch.setattr("app.api.build_provider", lambda settings: provider)
+    first_responses = []
+    first_thread = Thread(
+        target=lambda: first_responses.append(client.post(
+            f"/api/jobs/{job_id}/recommend",
+            headers={"X-Recommendation-Request-ID": "first-attempt"},
+        ))
+    )
+
+    first_thread.start()
+    try:
+        assert first_provider_started.wait(timeout=2)
+        store = FileJobStore(tmp_path)
+        recovered_job = store.get(job_id)
+        recovered_job.recommendation_pending = False
+        recovered_job.status = "error"
+        recovered_job.error = "Recommendation was recovered elsewhere"
+        store.save(recovered_job)
+
+        newer_response = client.post(
+            f"/api/jobs/{job_id}/recommend",
+            headers={"X-Recommendation-Request-ID": "newer-attempt"},
+        )
+        assert newer_response.status_code == 200
+        assert newer_response.json()["recommendation_request_id"] == "newer-attempt"
+    finally:
+        release_first_provider.set()
+        first_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert len(first_responses) == 1
+    assert first_responses[0].status_code == 409
+    assert first_responses[0].json()["detail"] == (
+        "A newer recommendation request replaced this attempt"
+    )
+    persisted_job = FileJobStore(tmp_path).get(job_id)
+    assert persisted_job.recommendation_request_id == "newer-attempt"
+    assert persisted_job.recommendation_pending is False
+    assert persisted_job.status == "recommended"
+    assert persisted_job.recommendation is not None
+
+
 def test_app_startup_recovers_interrupted_recommendation(tmp_path: Path) -> None:
     initial_client = make_client(tmp_path)
     job_id = upload_job(initial_client).json()["id"]

@@ -135,6 +135,7 @@ type ProjectionMutationLease = MutationLeaseBase & {
   expectedUploads: Array<{
     requestId: string;
     target: ProjectionMutationTarget;
+    recommendationRequestId: string | null;
   }>;
 };
 type ArchiveMutationLease = MutationLeaseBase & {
@@ -1924,6 +1925,7 @@ function mutationLeaseOwnerId(): string {
 function projectionMutationTargetReached(
   job: JobRecord,
   target: ProjectionMutationTarget,
+  recommendationRequestId: string | null,
 ): boolean {
   if (target === "failed") {
     return false;
@@ -1932,7 +1934,12 @@ function projectionMutationTargetReached(
     return true;
   }
   if (target === "recommended") {
-    return job.recommendation !== null;
+    return job.recommendation !== null
+      || (
+        recommendationRequestId !== null
+        && job.recommendation_request_id === recommendationRequestId
+        && !job.recommendation_pending
+      );
   }
   if (target === "approved") {
     return job.approved_state !== null;
@@ -1940,6 +1947,22 @@ function projectionMutationTargetReached(
   return job.parser_result !== null
     || job.approved_state !== null
     || job.recommendation !== null;
+}
+
+function projectionMutationLeaseTargetReached(
+  lease: ProjectionMutationLease,
+  job: JobRecord,
+): boolean | null {
+  const expectedUpload = lease.expectedUploads.find(
+    (candidate) => job.upload_request_id === candidate.requestId,
+  );
+  return expectedUpload
+    ? projectionMutationTargetReached(
+        job,
+        expectedUpload.target,
+        expectedUpload.recommendationRequestId,
+      )
+    : null;
 }
 
 function projectionMutationTarget(
@@ -2017,6 +2040,22 @@ function readPersistedMutationLease(
       parsed.confirmationJobIds = scope === "processing" ? parsed.jobIds : [];
     }
     if (
+      parsed.kind === "projection"
+      && Array.isArray(parsed.expectedUploads)
+    ) {
+      for (const expectedUpload of parsed.expectedUploads) {
+        if (
+          typeof expectedUpload === "object"
+          && expectedUpload !== null
+          && (expectedUpload as Record<string, unknown>)
+            .recommendationRequestId === undefined
+        ) {
+          (expectedUpload as Record<string, unknown>)
+            .recommendationRequestId = null;
+        }
+      }
+    }
+    if (
       typeof parsed.ownerId !== "string"
       || typeof parsed.expiresAt !== "number"
       || !Number.isFinite(parsed.expiresAt)
@@ -2056,6 +2095,11 @@ function readPersistedMutationLease(
           typeof value === "object"
           && value !== null
           && typeof (value as Record<string, unknown>).requestId === "string"
+          && (
+            (value as Record<string, unknown>).recommendationRequestId === null
+            || typeof (value as Record<string, unknown>)
+              .recommendationRequestId === "string"
+          )
           && ["failed", "parsed", "approved", "recommended"].includes(String(
             (value as Record<string, unknown>).target,
           ))
@@ -2157,7 +2201,6 @@ function startPersistedMutationLease(
   ownerId: string,
   job: JobRecord,
   expectsRemoval = false,
-  expectedRecommendationRequestId: string | null = null,
 ): PersistedMutationLease | null {
   const lease: PersistedMutationLease = {
     kind: "job",
@@ -2165,7 +2208,7 @@ function startPersistedMutationLease(
     jobId: job.id,
     baselineUpdatedAt: job.updated_at,
     expectsRemoval,
-    expectedRecommendationRequestId,
+    expectedRecommendationRequestId: null,
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
   return writePersistedMutationLease(scope, lease) ? lease : null;
@@ -2616,8 +2659,12 @@ function reconcileProcessingJobs(
   return [
     ...incoming,
     ...current.filter((job) => {
-      if (job.archived_at !== null) {
-        return !removalCandidateIds.has(job.id);
+      if (
+        job.archived_at !== null
+        || isPristineBenchmarkImport(job)
+      ) {
+        return !incomingIds.has(job.id)
+          && !removalCandidateIds.has(job.id);
       }
       return isLocalUploadError(job)
         && !cachedIds.has(job.id)
@@ -3528,6 +3575,7 @@ export default function App() {
   function trackExpectedUpload(
     requestId: string,
     target: ProjectionMutationTarget,
+    recommendationRequestId: string | null,
   ): number | null {
     const lease = processingMutationLeaseRef.current;
     if (lease?.kind !== "projection") {
@@ -3535,7 +3583,10 @@ export default function App() {
     }
     const updatedLease: ProjectionMutationLease = {
       ...lease,
-      expectedUploads: [...lease.expectedUploads, { requestId, target }],
+      expectedUploads: [
+        ...lease.expectedUploads,
+        { requestId, target, recommendationRequestId },
+      ],
       expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
     };
     if (replacePersistedMutationLease("processing", lease, updatedLease)) {
@@ -3561,6 +3612,9 @@ export default function App() {
     expectedUploads[expectedUploadIndex] = {
       ...expectedUploads[expectedUploadIndex],
       target,
+      recommendationRequestId: target === "recommended"
+        ? expectedUploads[expectedUploadIndex].recommendationRequestId
+        : null,
     };
     const updatedLease: ProjectionMutationLease = {
       ...lease,
@@ -3626,7 +3680,11 @@ export default function App() {
           }
           const matchingIndex = availableJobs.findIndex((job) =>
             job.upload_request_id === expectedUpload.requestId
-            && projectionMutationTargetReached(job, expectedUpload.target)
+            && projectionMutationTargetReached(
+              job,
+              expectedUpload.target,
+              expectedUpload.recommendationRequestId,
+            )
           );
           if (matchingIndex === -1) {
             return false;
@@ -3912,7 +3970,6 @@ export default function App() {
   function beginPersistedJobMutation(
     persistedJob: JobRecord,
     removalCandidateIds: readonly string[] = [],
-    expectedRecommendationRequestId: string | null = null,
   ): PersistedJobMutationScope {
     const scope = persistedJobMutationScope(persistedJob);
     const lease = startPersistedMutationLease(
@@ -3920,7 +3977,6 @@ export default function App() {
       mutationOwnerId,
       persistedJob,
       removalCandidateIds.includes(persistedJob.id),
-      expectedRecommendationRequestId,
     );
     if (scope === "history") {
       historyMutationLeaseRef.current = lease;
@@ -3930,6 +3986,37 @@ export default function App() {
     processingMutationLeaseRef.current = lease;
     beginProcessingMembershipMutation(removalCandidateIds);
     return "processing";
+  }
+
+  function armPersistedRecommendationLease(
+    mutationScope: PersistedJobMutationScope,
+    jobId: string,
+    recommendationRequestId: string,
+  ): boolean {
+    const leaseRef = mutationScope === "processing"
+      ? processingMutationLeaseRef
+      : historyMutationLeaseRef;
+    const lease = leaseRef.current;
+    if (lease === null) {
+      return true;
+    }
+    if (
+      lease.kind !== "job"
+      || lease.jobId !== jobId
+      || lease.ownerId !== mutationOwnerId
+    ) {
+      return false;
+    }
+    const armedLease: JobMutationLease = {
+      ...lease,
+      expectedRecommendationRequestId: recommendationRequestId,
+      expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
+    };
+    if (!replacePersistedMutationLease(mutationScope, lease, armedLease)) {
+      return false;
+    }
+    leaseRef.current = armedLease;
+    return true;
   }
 
   function persistedJobMutationScope(
@@ -4189,8 +4276,9 @@ export default function App() {
         const incomingJobs = revalidatedLeaseJob?.archived_at === null
           ? settlementJobs
           : projectionJobs;
+        const processingLease = processingMutationLeaseRef.current;
         const authoritativeMutationJobIds = new Set(
-          mutationLeaseJobIds(processingMutationLeaseRef.current),
+          mutationLeaseJobIds(processingLease),
         );
         const mutationLeaseSettled = settlePersistedMutationLease(
           "processing",
@@ -4214,9 +4302,16 @@ export default function App() {
         const recoveredAutomationIds = new Set(incomingJobs.flatMap((incomingJob) => {
           const currentJob = currentJobsById.get(incomingJob.id);
           const reconciledJob = nextJobsById.get(incomingJob.id);
-          const reachedAutomationTarget = incomingJob.error === null
-            && incomingJob.approved_state !== null
+          const reachedPersistedProjectionTarget = processingLease?.kind === "projection"
+            ? projectionMutationLeaseTargetReached(processingLease, incomingJob)
+            : null;
+          const reachedCurrentAutomationTarget = incomingJob.approved_state !== null
             && (!automationRecommend || incomingJob.recommendation !== null);
+          const reachedAutomationTarget = incomingJob.error === null
+            && (
+              reachedPersistedProjectionTarget
+              ?? reachedCurrentAutomationTarget
+            );
           return currentJob
             && reconciledJob !== currentJob
             && reachedAutomationTarget
@@ -4868,7 +4963,11 @@ export default function App() {
     }
   }
 
-  async function runConfiguredAutomation(created: JobRecord, signal?: AbortSignal): Promise<JobRecord> {
+  async function runConfiguredAutomation(
+    created: JobRecord,
+    recommendationRequestId: string | null,
+    signal?: AbortSignal,
+  ): Promise<JobRecord> {
     if (!automationApprove) {
       return created;
     }
@@ -4890,7 +4989,11 @@ export default function App() {
 
     markPersistedJobSessionUnsynced(approved);
     const recommended = preserveUploadRequestId(
-      await requestRecommendation(approved.id, createMutationRequestId(), signal),
+      await requestRecommendation(
+        approved.id,
+        recommendationRequestId ?? createMutationRequestId(),
+        signal,
+      ),
       approved,
     );
     applyRecommendedJob(recommended);
@@ -4962,7 +5065,11 @@ export default function App() {
         let completed = created;
         if (runAutomation) {
           try {
-            completed = await runConfiguredAutomation(created, controller.signal);
+            completed = await runConfiguredAutomation(
+              created,
+              expectedUpload.recommendationRequestId,
+              controller.signal,
+            );
           } catch (automationError) {
             const confirmedJob = jobsRef.current.find(
               (candidate) => candidate.id === created.id,
@@ -5064,6 +5171,9 @@ export default function App() {
     const expectedUploads = files.map(() => ({
       requestId: createMutationRequestId(),
       target: uploadTarget,
+      recommendationRequestId: uploadTarget === "recommended"
+        ? createMutationRequestId()
+        : null,
     }));
     installMutationLease(
       "processing",
@@ -5187,7 +5297,14 @@ export default function App() {
         automationRecommend,
       );
       const uploadRequestId = createMutationRequestId();
-      expectedUploadIndex = trackExpectedUpload(uploadRequestId, uploadTarget);
+      const recommendationRequestId = uploadTarget === "recommended"
+        ? createMutationRequestId()
+        : null;
+      expectedUploadIndex = trackExpectedUpload(
+        uploadRequestId,
+        uploadTarget,
+        recommendationRequestId,
+      );
       const created = await captureAndParseScreen(captureFile, uploadRequestId);
       capturedJobId = created.id;
       updateExpectedUpload(
@@ -5196,7 +5313,10 @@ export default function App() {
       );
       let completed = created;
       if (automationEnabled) {
-        completed = await runConfiguredAutomation(created);
+        completed = await runConfiguredAutomation(
+          created,
+          recommendationRequestId,
+        );
       }
       settlePersistedMutationLease("processing", [completed], false);
       if (processingMutationLeaseRef.current !== null) {
@@ -5275,11 +5395,8 @@ export default function App() {
     }
     const changesProcessingMembership = isPristineBenchmarkImport(job);
     const recommendationRequestId = createMutationRequestId();
-    const mutationScope = beginPersistedJobMutation(
-      job,
-      [],
-      recommendationRequestId,
-    );
+    const mutationScope = beginPersistedJobMutation(job);
+    let recommendationStarted = false;
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
@@ -5303,13 +5420,26 @@ export default function App() {
           ));
         }
       }
+      if (!armPersistedRecommendationLease(
+        mutationScope,
+        job.id,
+        recommendationRequestId,
+      )) {
+        return;
+      }
+      recommendationStarted = true;
       applyRecommendedJob(await requestRecommendation(
         job.id,
         recommendationRequestId,
       ));
     } catch (recommendError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
-      restoreAfterMutation = true;
+      if (
+        recommendationStarted
+        || mutationFailureMayHavePersistedSideEffect(recommendError)
+      ) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+        restoreAfterMutation = true;
+      }
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
       endPersistedJobMutation(mutationScope, restoreAfterMutation);

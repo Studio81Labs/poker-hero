@@ -402,6 +402,142 @@ describe("App", () => {
     )).toBe("true");
   });
 
+  it("preserves a pristine benchmark workspace omitted from processing", async () => {
+    const processingJob = jobRecord({
+      id: "5".repeat(32),
+      original_filename: "benchmark-processing-sibling.png",
+    });
+    const benchmarkJobId = "6".repeat(32);
+    const pristineBenchmark = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "pristine-benchmark-workspace.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        pristineBenchmark.original_filename,
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineBenchmark))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [processingJob],
+        "processing-with-omitted-pristine-workspace",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: `Toggle ${pristineBenchmark.original_filename} benchmark details`,
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: "poker-training-processing-v1",
+      oldValue: "[]",
+      newValue: JSON.stringify([processingJob]),
+      storageArea: window.localStorage,
+    }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 2: pristine-benchmark-workspace.png",
+    })).toHaveClass("active");
+    expect(screen.getByDisplayValue("Ah Kd")).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([processingJob]);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
+  it("does not duplicate a pristine benchmark workspace returned by processing", async () => {
+    const processingJob = jobRecord({
+      id: "7".repeat(32),
+      original_filename: "benchmark-return-sibling.png",
+    });
+    const benchmarkJobId = "8".repeat(32);
+    const pristineBenchmark = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "returning-benchmark-workspace.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const promotedBenchmark: JobRecord = {
+      ...pristineBenchmark,
+      status: "recommended",
+      recommendation,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        pristineBenchmark.original_filename,
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineBenchmark))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [processingJob, promotedBenchmark],
+        "processing-with-promoted-benchmark",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: `Toggle ${pristineBenchmark.original_filename} benchmark details`,
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: "poker-training-processing-v1",
+      oldValue: "[]",
+      newValue: JSON.stringify([processingJob, promotedBenchmark]),
+      storageArea: window.localStorage,
+    }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    expect(await screen.findAllByRole("button", {
+      name: /Open screenshot \d+: returning-benchmark-workspace\.png/,
+    })).toHaveLength(1);
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 2: returning-benchmark-workspace.png",
+    })).toHaveClass("active");
+    expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([processingJob, promotedBenchmark]);
+  });
+
   it("reconciles processing when another tab changes the shared cache", async () => {
     const jobId = "3".repeat(32);
     const staleJob = jobRecord({
@@ -1720,6 +1856,48 @@ describe("App", () => {
     ]);
   });
 
+  it("restores and upgrades a legacy recommended upload lease", async () => {
+    const uploadRequestId = "legacy-upload-request";
+    const persistedJob = {
+      ...recommendedJob(),
+      id: "f".repeat(32),
+      original_filename: "legacy-recommended-upload.png",
+      upload_request_id: uploadRequestId,
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    window.sessionStorage.setItem(
+      "poker-training-processing-mutation-v1",
+      JSON.stringify({
+        kind: "projection",
+        ownerId: "previous-page",
+        baselineJobIds: [],
+        expectedRemovalJobIds: [],
+        expectedUploads: [{
+          requestId: uploadRequestId,
+          target: "recommended",
+        }],
+        expiresAt: Date.now() + 30_000,
+      }),
+    );
+    fetchMock().mockResolvedValueOnce(processingQueueResponse(
+      [persistedJob],
+      "legacy-recommended-upload-snapshot",
+    ));
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: legacy-recommended-upload.png",
+    })).toBeInTheDocument();
+    expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
   it("does not replace a claimed recovery lease with a new mutation", async () => {
     const jobId = "9".repeat(32);
     const initialJob = jobRecord({
@@ -2064,8 +2242,16 @@ describe("App", () => {
     expect(JSON.parse(String(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
     ))).expectedUploads).toEqual([
-      { requestId: expect.any(String), target: "recommended" },
-      { requestId: expect.any(String), target: "recommended" },
+      {
+        requestId: expect.any(String),
+        target: "recommended",
+        recommendationRequestId: expect.any(String),
+      },
+      {
+        requestId: expect.any(String),
+        target: "recommended",
+        recommendationRequestId: expect.any(String),
+      },
     ]);
 
     await act(async () => {
@@ -2126,6 +2312,7 @@ describe("App", () => {
     expect(retainedLease.expectedUploads).toEqual([{
       requestId: expect.any(String),
       target: "recommended",
+      recommendationRequestId: expect.any(String),
     }]);
   });
 
@@ -2553,6 +2740,57 @@ describe("App", () => {
     });
 
     expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+  });
+
+  it("does not arm or start a recommendation when its decision response is lost", async () => {
+    const approved = {
+      ...approvedJob(),
+      id: "d".repeat(32),
+      original_filename: "recommend-after-decision-lost.png",
+    };
+    const persistedDecision: JobRecord = {
+      ...approved,
+      training_decision: {
+        action: "call",
+        sizing: null,
+        certainty: "medium",
+        recorded_at: "2026-07-10T00:01:00Z",
+      },
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Connection lost after saving answer"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedDecision],
+        "decision-before-recommendation-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    expect(await screen.findByText("Connection lost after saving answer")).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedDecision]));
+    expect(await within(screen.getByLabelText(
+      "Your training decision",
+    )).findByText("Answer locked")).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      `http://localhost:8000/api/jobs/${approved.id}/decision`,
+      "http://localhost:8000/api/jobs",
+    ]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
     )).toBeNull();
@@ -3770,6 +4008,133 @@ describe("App", () => {
       ...persistedRecommendation,
       upload_request_id: expect.any(String),
     }]);
+  });
+
+  it("settles upload recovery after a lost correctable recommendation response", async () => {
+    const jobId = "4".repeat(32);
+    const created = jobRecord({
+      id: jobId,
+      original_filename: "correctable-response-lost.png",
+    });
+    const approved = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: created.original_filename,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const pendingQueue = deferredResponse();
+    const finalQueue = deferredResponse();
+    let uploadRequestId = "";
+    let recommendationRequestId = "";
+    let processingReads = 0;
+    fetchMock().mockImplementation((url, request) => {
+      if (url === "http://localhost:8000/api/jobs") {
+        if (request?.method === "POST") {
+          uploadRequestId = String(
+            (request.body as FormData).get("upload_request_id"),
+          );
+          return Promise.resolve(jsonResponse(created, 201));
+        }
+        processingReads += 1;
+        return processingReads === 1
+          ? pendingQueue.promise
+          : finalQueue.promise;
+      }
+      if (url === `http://localhost:8000/api/jobs/${jobId}/approve`) {
+        return Promise.resolve(jsonResponse(approved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${jobId}/recommend`) {
+        recommendationRequestId = String(
+          (request?.headers as Record<string, string>)["X-Recommendation-Request-ID"],
+        );
+        return Promise.reject(new TypeError(
+          "Connection lost after correctable recommendation",
+        ));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["lost-response"], created.original_filename, {
+        type: "image/png",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    expect(await screen.findByText(
+      "Connection lost after correctable recommendation",
+    )).toBeInTheDocument();
+    const persistedLease = JSON.parse(String(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )));
+    expect(uploadRequestId).not.toBe("");
+    expect(recommendationRequestId).not.toBe("");
+    expect(persistedLease.expectedUploads).toEqual([{
+      requestId: uploadRequestId,
+      target: "recommended",
+      recommendationRequestId,
+    }]);
+
+    await user.click(screen.getByRole("button", { name: "Automation On" }));
+    const pendingAttempt: JobRecord = {
+      ...approved,
+      upload_request_id: uploadRequestId,
+      recommendation_request_id: recommendationRequestId,
+      recommendation_pending: true,
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    await act(async () => {
+      pendingQueue.resolve(processingQueueResponse(
+        [pendingAttempt],
+        "pending-automation-attempt",
+      ));
+      await pendingQueue.promise;
+    });
+
+    const pendingItem = screen.getByRole("button", {
+      name: "Open screenshot 1: correctable-response-lost.png",
+    });
+    expect(pendingItem).toHaveClass("attention");
+    expect(within(pendingItem).getByText(
+      "Connection lost after correctable recommendation",
+    )).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+    await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(2));
+
+    const persistedAttempt: JobRecord = {
+      ...approved,
+      upload_request_id: uploadRequestId,
+      recommendation_request_id: recommendationRequestId,
+      recommendation_pending: false,
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    await act(async () => {
+      finalQueue.resolve(processingQueueResponse(
+        [persistedAttempt],
+        "correctable-automation-attempt",
+      ));
+      await finalQueue.promise;
+    });
+
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    const recoveredItem = screen.getByRole("button", {
+      name: "Open screenshot 1: correctable-response-lost.png",
+    });
+    expect(recoveredItem).not.toHaveClass("attention");
+    expect(within(recoveredItem).queryByText(
+      "Connection lost after correctable recommendation",
+    )).not.toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedAttempt]);
   });
 
   it("invalidates an older history restore while clearing reviewed jobs", async () => {

@@ -6282,6 +6282,7 @@ describe("App", () => {
         snapshot_version: "older-write-target",
       }))
       .mockRejectedValueOnce(new TypeError("Connection lost after archived approval"))
+      .mockRejectedValueOnce(new TypeError("Temporary archived job restore failure"))
       .mockResolvedValueOnce(jsonResponse(persistedJob));
     render(<App />);
     const user = userEvent.setup();
@@ -6308,15 +6309,132 @@ describe("App", () => {
       "Connection lost after archived approval",
     )).toBeInTheDocument();
     expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "Approve state",
+    })).toBeDisabled());
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/history?query=older+target",
       `http://localhost:8000/api/jobs/${targetJob.id}/approve`,
+      `http://localhost:8000/api/jobs/${targetJob.id}`,
       `http://localhost:8000/api/jobs/${targetJob.id}`,
     ]);
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-history-v1"),
     ))[0].id).toBe(cachedJob.id);
+  });
+
+  it("completes a queued full history restore after targeted archived recovery", async () => {
+    const targetJob = jobRecord({
+      id: "queued-full-restore-target",
+      original_filename: "queued-full-restore-target.png",
+      archived_at: "2026-06-01T00:00:00Z",
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-01T00:01:00Z",
+    });
+    const persistedTarget: JobRecord = {
+      ...targetJob,
+      status: "approved",
+      approved_state: canonicalState({ pot_size: 20 }),
+      updated_at: "2026-06-01T00:02:00Z",
+    };
+    const staleSibling: JobRecord = {
+      ...recommendedJob(),
+      id: "stale-history-sibling",
+      original_filename: "stale-history-sibling.png",
+      archived_at: "2026-07-10T00:00:00Z",
+      updated_at: "2026-07-10T00:00:00Z",
+    };
+    const refreshedSibling: JobRecord = {
+      ...staleSibling,
+      original_filename: "refreshed-history-sibling.png",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([
+        {
+          id: targetJob.id,
+          job: targetJob,
+          savedAt: targetJob.archived_at,
+        },
+        {
+          id: staleSibling.id,
+          job: staleSibling,
+          savedAt: staleSibling.archived_at,
+        },
+      ]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "2");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    const pendingFullRestore = deferredResponse();
+    const pendingTargetRestore = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingFullRestore.promise)
+      .mockRejectedValueOnce(new TypeError("Connection lost after archived approval"))
+      .mockReturnValueOnce(pendingTargetRestore.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        total: 2,
+        jobs: [refreshedSibling, persistedTarget],
+        snapshot_version: "reconciled-full-history",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      `http://localhost:8000/api/jobs/${targetJob.id}`,
+      { credentials: "include" },
+    ));
+
+    await act(async () => {
+      pendingFullRestore.resolve(jsonResponse({
+        total: 1,
+        jobs: [targetJob],
+        snapshot_version: "invalidated-full-history",
+      }));
+      await pendingFullRestore.promise;
+    });
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-synced",
+    )).toBeNull();
+
+    await act(async () => {
+      pendingTargetRestore.resolve(jsonResponse(persistedTarget));
+      await pendingTargetRestore.promise;
+    });
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    ));
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    )).map((item: { job: JobRecord }) => item.job.original_filename)).toEqual([
+      "refreshed-history-sibling.png",
+      "queued-full-restore-target.png",
+    ]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-synced",
+    )).toBe("true");
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/history",
+      `http://localhost:8000/api/jobs/${targetJob.id}/approve`,
+      `http://localhost:8000/api/jobs/${targetJob.id}`,
+      "http://localhost:8000/api/history",
+    ]);
   });
 
   it("revalidates the active history search after an archived hand changes", async () => {

@@ -2721,7 +2721,9 @@ export default function App() {
   const historyJobRestoreActiveIdsRef = useRef(new Set<string>());
   const historyJobRestoreIdsRef = useRef(new Set<string>());
   const historyJobRestorePromiseRef = useRef<Promise<void> | null>(null);
+  const historyJobRestoreRetryTimerRef = useRef<number | null>(null);
   const historyUpdateCandidateIdsRef = useRef(new Set<string>());
+  const historyFullRestoreRequestedRef = useRef(false);
   const historyRestoreRetryRequestedRef = useRef(false);
   const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
@@ -2953,11 +2955,17 @@ export default function App() {
     const activeRestore = historyRestorePromiseRef.current;
     if (activeRestore) {
       if (queueAfterActive) {
+        if (jobIds === null) {
+          historyFullRestoreRequestedRef.current = true;
+        }
         historyRestoreRetryRequestedRef.current = true;
       }
       return activeRestore;
     }
 
+    if (jobIds === null) {
+      historyFullRestoreRequestedRef.current = false;
+    }
     historyRestoreRetryRequestedRef.current = false;
     const restore = syncHistory(jobIds, false);
     historyRestorePromiseRef.current = restore;
@@ -2983,10 +2991,49 @@ export default function App() {
       ...historyUpdateCandidateIdsRef.current,
     ]);
     if (targetJobIds.size > 0) {
+      if (historyJobRestoreRetryTimerRef.current !== null) {
+        if (historyFullRestoreRequestedRef.current) {
+          historyFullRestoreRequestedRef.current = false;
+          void requestHistoryRestore(null, true);
+        }
+        return;
+      }
+      if (historyFullRestoreRequestedRef.current) {
+        historyRestoreRetryRequestedRef.current = true;
+      }
       requestHistoryJobRestore([...targetJobIds]);
       return;
     }
+    historyFullRestoreRequestedRef.current = false;
     void requestHistoryRestore(null, true);
+  }
+
+  function scheduleHistoryJobRestoreRetry() {
+    if (historyJobRestoreRetryTimerRef.current !== null) {
+      return;
+    }
+    historyJobRestoreRetryTimerRef.current = window.setTimeout(() => {
+      historyJobRestoreRetryTimerRef.current = null;
+      if (
+        historyMutationCountRef.current > 0
+        || historyRestorePromiseRef.current
+        || historyJobRestorePromiseRef.current
+      ) {
+        historyRestoreRetryRequestedRef.current = true;
+        return;
+      }
+      requestDeferredHistoryRestore();
+    }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
+  }
+
+  function hasPendingHistoryJobRestore(
+    resolvedJobIds: ReadonlySet<string>,
+  ): boolean {
+    return [
+      ...historyUpdateCandidateIdsRef.current,
+      ...historyJobRestoreIdsRef.current,
+      ...historyJobRestoreActiveIdsRef.current,
+    ].some((jobId) => !resolvedJobIds.has(jobId));
   }
 
   function requestHistoryJobRestore(jobIds: readonly string[]) {
@@ -3038,6 +3085,9 @@ export default function App() {
           historyJobRestoreIdsRef.current.add(jobId);
         }
         markHistorySessionUnsynced();
+        historyRestoreRetryRequestedRef.current =
+          historyFullRestoreRequestedRef.current;
+        scheduleHistoryJobRestoreRetry();
       });
     historyJobRestorePromiseRef.current = restore;
     void restore.finally(() => {
@@ -3219,6 +3269,13 @@ export default function App() {
       return;
     }
     void requestHistoryRestore();
+  }, []);
+
+  useEffect(() => () => {
+    if (historyJobRestoreRetryTimerRef.current !== null) {
+      window.clearTimeout(historyJobRestoreRetryTimerRef.current);
+      historyJobRestoreRetryTimerRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -3520,6 +3577,7 @@ export default function App() {
     const incomingJobsById = new Map(
       incomingJobs.map((incomingJob) => [incomingJob.id, incomingJob]),
     );
+    const resolvedJobIds = new Set(incomingJobsById.keys());
     const currentActiveId = activeJobIdRef.current;
     const currentActiveJob = currentActiveId === null
       ? null
@@ -3568,6 +3626,8 @@ export default function App() {
       if (
         historyCached
         && readCachedHistoryTotal(cachedHistory) !== null
+        && !historyFullRestoreRequestedRef.current
+        && !hasPendingHistoryJobRestore(resolvedJobIds)
         && !next.some((item) => item.job.recommendation_pending)
         && !pendingSearchResult
         && !pendingWorkspaceJob
@@ -3594,6 +3654,7 @@ export default function App() {
 
   function applyHistoryPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
+    const resolvedJobIds = new Set(pageItems.map((item) => item.id));
     const incomingJobsById = new Map(
       pageItems.map((item) => [item.id, item.job]),
     );
@@ -3628,6 +3689,7 @@ export default function App() {
     }
     for (const item of pageItems) {
       historyUpdateCandidateIdsRef.current.delete(item.id);
+      historyJobRestoreIdsRef.current.delete(item.id);
     }
     setHistoryTotal(page.total);
     setHistory((current) => {
@@ -3639,6 +3701,7 @@ export default function App() {
       if (
         historyCached
         && totalCached
+        && !hasPendingHistoryJobRestore(resolvedJobIds)
         && !items.some((item) => item.job.recommendation_pending)
       ) {
         markHistorySessionSynced();
@@ -3795,6 +3858,9 @@ export default function App() {
         || historyMutationCountRef.current > 0
       ) {
         markHistorySessionUnsynced();
+        if (jobIds === null) {
+          historyFullRestoreRequestedRef.current = true;
+        }
         historyRestoreRetryRequestedRef.current = true;
         return false;
       }

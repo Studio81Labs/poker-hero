@@ -202,7 +202,10 @@ or lesson text without replacing that newest-page cache.
 Unarchived upload and capture jobs also survive reloads: the browser renders a
 bounded local queue cache immediately, then reconciles the complete oldest-first
 processing projection from the backend. Dataset-only benchmark imports stay out
-of that operational queue.
+of that operational queue. Bounded browser-session mutation leases keep
+uncertain writes, uploads, and batch archives unsynchronized across a same-tab
+reload until the backend projection proves the operation completed or the
+recovery window expires.
 
 ### Offline Parser Benchmarks
 

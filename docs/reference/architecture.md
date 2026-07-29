@@ -276,16 +276,26 @@ after queue membership changes. Snapshot changes restart the bounded page walk.
 Once that authoritative backend projection completes, its matching processing
 records replace in-memory and cached records regardless of `updated_at`; dirty
 active form values remain separate until a persisted revision confirms the
-user's uncertain mutation committed. Approval, recommendation, training, and
-benchmark writes also create a bounded session mutation lease with the affected
-job ID and baseline revision. A replacement document claims that lease, keeps
-the relevant projection unsynchronized, and revalidates with bounded backoff
-until the server revision changes or the lease expires. Ordinary cache writes
+user's uncertain mutation committed. The frontend records bounded,
+browser-session mutation leases before persisted operations begin. Single-job
+writes carry the job ID and baseline revision; upload and capture leases carry
+the baseline queue plus each filename and last required automation stage;
+dataset imports may also carry processing IDs expected to disappear. Batch
+archive leases carry every target ID and baseline revision in both processing
+and history scopes. A replacement document claims the leases, keeps the
+affected projections unsynchronized, and revalidates with bounded backoff until
+the required revision, queue appearance, removal, or archive membership is
+observed. Batch upload leases record every selected filename before the first
+request. Ambiguous write failures retain their lease through unchanged
+projections, and a replacement document cannot overwrite a claimed lease with a
+second mutation in the same projection. Verified archives additionally refresh
+the full newest-history projection so newly added membership appears in the
+rail. Ordinary cache writes
 still merge matching records by `updated_at`, avoid no-op storage writes, and
-emit storage events so one tab cannot silently replace another tab's newer local
-record. Invalid or substantially future-dated processing timestamps invalidate
-the browser snapshot and force an authoritative reload instead of outranking
-server state.
+emit storage events so one tab cannot silently replace another tab's newer
+local record. Invalid or substantially future-dated processing timestamps
+invalidate the browser snapshot and force an authoritative reload instead of
+outranking server state.
 Processing records must also carry an explicit null archive marker; missing or
 non-null markers are reconciled rather than treated as active work. Imported
 benchmark-only jobs have approved labels but no parser result, recommendation,

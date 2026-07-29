@@ -319,10 +319,17 @@ frequencies.
     changes to a reopened archived hand update its visible history entry
     immediately. Archive-wide search uses its own paged result set and match
     count without changing the global reviewed count or newest-page cache.
-    Shared processing-cache changes invalidate other open tabs, and a persisted
+    Shared processing-cache changes invalidate other open tabs. A persisted
     write that spans a same-tab reload keeps its processing or history
     projection unsynchronized until a changed server revision is observed or a
-    bounded recovery lease expires. Separately, a persisted in-progress
+    bounded recovery lease expires. Upload and capture leases wait for every
+    expected new queue item and required automation stage; a batch records all
+    selected files before its first request. Batch archive leases cover all
+    target IDs in both projections, so a stale first reload cannot leave a hand
+    duplicated in processing or missing from history. Unchanged projections
+    after an ambiguous failure do not release these leases, and a recovered
+    lease blocks a second mutation from replacing it in the same projection.
+    Separately, a persisted in-progress
     recommendation keeps revalidating until the backend records its
     recommendation or retryable error, including after transient projection
     failures. Unsafe future-dated cache records force an authoritative reload

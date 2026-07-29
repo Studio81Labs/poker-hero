@@ -29,6 +29,16 @@ const API_BASE_URL =
 
 const HISTORY_ARCHIVE_BATCH_SIZE = 100;
 
+export class ApiResponseError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
@@ -38,7 +48,7 @@ async function readJson<T>(response: Response): Promise<T> {
     } catch {
       detail = response.statusText;
     }
-    throw new Error(detail);
+    throw new ApiResponseError(detail, response.status);
   }
   return response.json() as Promise<T>;
 }

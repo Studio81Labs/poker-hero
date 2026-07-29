@@ -2977,6 +2977,14 @@ export default function App() {
     }
   }
 
+  function markPersistedJobSessionUnsynced(persistedJob: JobRecord) {
+    if (persistedJob.archived_at) {
+      markHistorySessionUnsynced();
+      return;
+    }
+    markProcessingQueueSessionUnsynced();
+  }
+
   function scheduleUncertainPersistedUpdate(uncertainJob: JobRecord) {
     if (uncertainJob.archived_at) {
       markHistorySessionUnsynced();
@@ -3551,6 +3559,7 @@ export default function App() {
     }
 
     const approvalState = autoApprovalState(created, automationAllowWarnings);
+    markPersistedJobSessionUnsynced(created);
     const approved = await approveState(created.id, approvalState, signal);
     applyApprovedJob(approved, approvalState);
 
@@ -3558,6 +3567,7 @@ export default function App() {
       return approved;
     }
 
+    markPersistedJobSessionUnsynced(approved);
     const recommended = await requestRecommendation(approved.id, signal);
     applyRecommendedJob(recommended);
     return recommended;
@@ -3781,6 +3791,8 @@ export default function App() {
       && !isPristineBenchmarkImport(job);
     if (changesProcessingMembership) {
       beginProcessingMembershipMutation([job.id]);
+    } else {
+      markPersistedJobSessionUnsynced(job);
     }
     setBusy(true);
     setError(null);
@@ -3807,6 +3819,8 @@ export default function App() {
     const changesProcessingMembership = isPristineBenchmarkImport(job);
     if (changesProcessingMembership) {
       beginProcessingMembershipMutation();
+    } else {
+      markPersistedJobSessionUnsynced(job);
     }
     setBusy(true);
     setError(null);
@@ -3857,6 +3871,8 @@ export default function App() {
     const changesProcessingMembership = isPristineBenchmarkImport(job);
     if (changesProcessingMembership) {
       beginProcessingMembershipMutation();
+    } else {
+      markPersistedJobSessionUnsynced(job);
     }
     setBusy(true);
     setError(null);
@@ -3887,6 +3903,7 @@ export default function App() {
     }
 
     const continueReviewQueue = trainingReviewQueueJobId === job.id;
+    markPersistedJobSessionUnsynced(job);
     setBusy(true);
     setError(null);
     try {
@@ -3949,6 +3966,7 @@ export default function App() {
       return;
     }
 
+    markPersistedJobSessionUnsynced(job);
     setBusy(true);
     setError(null);
     try {
@@ -3985,6 +4003,7 @@ export default function App() {
     }
 
     const note = trainingReviewNote.trim() || null;
+    markPersistedJobSessionUnsynced(job);
     setBusy(true);
     setError(null);
     try {
@@ -4001,6 +4020,18 @@ export default function App() {
   }
 
   async function reopenTrainingReviewFromProgress(jobId: string) {
+    const persistedJob = jobsRef.current.find(
+      (candidate) => candidate.id === jobId,
+    )
+      ?? history.find((item) => item.id === jobId)?.job
+      ?? historySearchResults?.find((item) => item.id === jobId)?.job
+      ?? null;
+    if (persistedJob) {
+      markPersistedJobSessionUnsynced(persistedJob);
+    } else {
+      markProcessingQueueSessionUnsynced();
+      markHistorySessionUnsynced();
+    }
     setTrainingReviewJobId(jobId);
     setError(null);
     try {
@@ -4025,14 +4056,8 @@ export default function App() {
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
-      const uncertainJob = jobsRef.current.find(
-        (candidate) => candidate.id === jobId,
-      )
-        ?? history.find((item) => item.id === jobId)?.job
-        ?? historySearchResults?.find((item) => item.id === jobId)?.job
-        ?? null;
-      if (uncertainJob) {
-        scheduleUncertainPersistedUpdate(uncertainJob);
+      if (persistedJob) {
+        scheduleUncertainPersistedUpdate(persistedJob);
       } else {
         markProcessingQueueSessionUnsynced();
         markHistorySessionUnsynced();
@@ -4614,6 +4639,8 @@ export default function App() {
     const changesProcessingMembership = isCurrentlyPristine !== willBePristine;
     if (changesProcessingMembership) {
       beginProcessingMembershipMutation(willBePristine ? [job.id] : []);
+    } else {
+      markPersistedJobSessionUnsynced(job);
     }
     setBenchmarkUpdating(true);
     setError(null);

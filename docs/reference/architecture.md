@@ -272,20 +272,23 @@ Unarchived upload and capture jobs are exposed through a stable oldest-first,
 offset-paged processing projection with a snapshot hash. The frontend caches at
 most 100 of those records for immediate reload display, retains the complete
 persisted count, and reconciles all backend pages once per browser session or
-after queue membership changes. Snapshot changes restart the bounded page walk,
-while a newer in-memory mutation wins by `updated_at`. Cache writes merge
-matching records by `updated_at`, avoid no-op storage writes, and storage events
-invalidate sibling tabs so one tab cannot silently replace another tab's newer
-record. Invalid or substantially future-dated processing timestamps invalidate
-the browser snapshot and force an authoritative reload instead of outranking
-terminal server state. Processing records must also carry an explicit null
-archive marker; missing or non-null markers are reconciled rather than treated
-as active work. Imported benchmark-only jobs have approved labels but no parser
-result, recommendation, training decision, review metadata, error, or active
-recommendation, so untouched imports remain in the benchmark corpus without
-appearing as processing work. Once an imported hand starts recommendation work,
-records training state, or receives a retryable error, it returns to the
-processing projection until that work is completed.
+after queue membership changes. Snapshot changes restart the bounded page walk.
+Once that authoritative backend projection completes, its matching processing
+records replace in-memory and cached records regardless of `updated_at`; dirty
+active form values remain separate until a persisted revision confirms the
+user's uncertain mutation committed. Ordinary cache writes still merge matching
+records by `updated_at`, avoid no-op storage writes, and emit storage events so
+one tab cannot silently replace another tab's newer local record. Invalid or
+substantially future-dated processing timestamps invalidate the browser
+snapshot and force an authoritative reload instead of outranking server state.
+Processing records must also carry an explicit null archive marker; missing or
+non-null markers are reconciled rather than treated as active work. Imported
+benchmark-only jobs have approved labels but no parser result, recommendation,
+training decision, review metadata, error, or active recommendation, so
+untouched imports remain in the benchmark corpus without appearing as
+processing work. Once an imported hand starts recommendation work, records
+training state, or receives a retryable error, it returns to the processing
+projection until that work is completed.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

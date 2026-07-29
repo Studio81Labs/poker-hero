@@ -2166,16 +2166,18 @@ function localUploadMatchDistance(
   return distance <= LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS ? distance : null;
 }
 
+function isLocalUploadError(job: JobRecord): boolean {
+  return job.id.startsWith("local-error-")
+    && job.parser_provider === "client"
+    && job.status === "error";
+}
+
 function restoredLocalUploadIds(
   current: JobRecord[],
   incoming: JobRecord[],
   currentById: Map<string, JobRecord>,
 ): Set<string> {
-  const localErrors = current.filter((job) =>
-    job.id.startsWith("local-error-")
-    && job.parser_provider === "client"
-    && job.status === "error",
-  );
+  const localErrors = current.filter(isLocalUploadError);
   const matchedIds = new Set<string>();
 
   for (const incomingJob of incoming) {
@@ -2221,7 +2223,8 @@ function reconcileProcessingJobs(
       return currentJob ? newerJob(currentJob, job) : job;
     }),
     ...current.filter((job) =>
-      !cachedIds.has(job.id)
+      isLocalUploadError(job)
+      && !cachedIds.has(job.id)
       && !incomingIds.has(job.id)
       && !removalCandidateIds.has(job.id)
       && !restoredUploadIds.has(job.id),
@@ -2715,6 +2718,9 @@ export default function App() {
   const processingRestoreRetryRequestedRef = useRef(false);
   const historyMutationGenerationRef = useRef(0);
   const historyMutationCountRef = useRef(0);
+  const historyJobRestoreActiveIdsRef = useRef(new Set<string>());
+  const historyJobRestoreIdsRef = useRef(new Set<string>());
+  const historyJobRestorePromiseRef = useRef<Promise<void> | null>(null);
   const historyUpdateCandidateIdsRef = useRef(new Set<string>());
   const historyRestoreRetryRequestedRef = useRef(false);
   const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
@@ -2787,21 +2793,6 @@ export default function App() {
     }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
     return () => window.clearTimeout(revalidationTimer);
   }, [jobs]);
-
-  useEffect(() => {
-    if (!history.some((item) => item.job.recommendation_pending)) {
-      return;
-    }
-    markHistorySessionUnsynced();
-    const revalidationTimer = window.setInterval(() => {
-      if (historyMutationCountRef.current === 0) {
-        void requestHistoryRestore();
-      } else {
-        historyRestoreRetryRequestedRef.current = true;
-      }
-    }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
-    return () => window.clearInterval(revalidationTimer);
-  }, [history]);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2980,10 +2971,89 @@ export default function App() {
         && historyMutationCountRef.current === 0
       ) {
         historyRestoreRetryRequestedRef.current = false;
-        void requestHistoryRestore();
+        requestDeferredHistoryRestore();
       }
     });
     return restore;
+  }
+
+  function requestDeferredHistoryRestore() {
+    const targetJobIds = new Set([
+      ...historyJobRestoreIdsRef.current,
+      ...historyUpdateCandidateIdsRef.current,
+    ]);
+    if (targetJobIds.size > 0) {
+      requestHistoryJobRestore([...targetJobIds]);
+      return;
+    }
+    void requestHistoryRestore(null, true);
+  }
+
+  function requestHistoryJobRestore(jobIds: readonly string[]) {
+    let queuedNewTarget = false;
+    for (const jobId of jobIds) {
+      if (
+        !historyJobRestoreActiveIdsRef.current.has(jobId)
+        && !historyJobRestoreIdsRef.current.has(jobId)
+      ) {
+        historyJobRestoreIdsRef.current.add(jobId);
+        queuedNewTarget = true;
+      }
+    }
+    if (historyMutationCountRef.current > 0) {
+      historyRestoreRetryRequestedRef.current = true;
+      return;
+    }
+    if (historyJobRestorePromiseRef.current) {
+      if (queuedNewTarget) {
+        historyRestoreRetryRequestedRef.current = true;
+      }
+      return;
+    }
+
+    const requestedJobIds = [...historyJobRestoreIdsRef.current];
+    if (requestedJobIds.length === 0) {
+      return;
+    }
+    historyJobRestoreIdsRef.current.clear();
+    historyJobRestoreActiveIdsRef.current = new Set(requestedJobIds);
+    const restoreGeneration = historyMutationGenerationRef.current;
+    const restore = Promise.all(requestedJobIds.map((jobId) => getJob(jobId)))
+      .then((incomingJobs) => {
+        if (
+          historyMutationGenerationRef.current !== restoreGeneration
+          || historyMutationCountRef.current > 0
+        ) {
+          for (const jobId of requestedJobIds) {
+            historyJobRestoreIdsRef.current.add(jobId);
+          }
+          markHistorySessionUnsynced();
+          historyRestoreRetryRequestedRef.current = true;
+          return;
+        }
+        applyHistoryJobUpdates(incomingJobs);
+      })
+      .catch(() => {
+        for (const jobId of requestedJobIds) {
+          historyJobRestoreIdsRef.current.add(jobId);
+        }
+        markHistorySessionUnsynced();
+      });
+    historyJobRestorePromiseRef.current = restore;
+    void restore.finally(() => {
+      if (historyJobRestorePromiseRef.current !== restore) {
+        return;
+      }
+      historyJobRestorePromiseRef.current = null;
+      historyJobRestoreActiveIdsRef.current.clear();
+      if (
+        historyRestoreRetryRequestedRef.current
+        && historyMutationCountRef.current === 0
+      ) {
+        historyRestoreRetryRequestedRef.current = false;
+        requestDeferredHistoryRestore();
+      }
+    });
   }
 
   function beginHistoryMutation() {
@@ -3005,7 +3075,7 @@ export default function App() {
       )
     ) {
       historyRestoreRetryRequestedRef.current = false;
-      void requestHistoryRestore(null, true);
+      requestDeferredHistoryRestore();
     }
   }
 
@@ -3152,6 +3222,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const pendingArchivedJobIds = new Set([
+      ...history.flatMap((item) =>
+        item.job.recommendation_pending ? [item.id] : [],
+      ),
+      ...(historySearchResults ?? []).flatMap((item) =>
+        item.job.recommendation_pending ? [item.id] : [],
+      ),
+      ...jobs.flatMap((candidate) =>
+        candidate.archived_at && candidate.recommendation_pending
+          ? [candidate.id]
+          : [],
+      ),
+    ]);
+    if (pendingArchivedJobIds.size === 0) {
+      return;
+    }
+    markHistorySessionUnsynced();
+    const revalidationTimer = window.setInterval(() => {
+      requestHistoryJobRestore([...pendingArchivedJobIds]);
+    }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
+    return () => window.clearInterval(revalidationTimer);
+  }, [history, historySearchResults, jobs]);
+
+  useEffect(() => {
     const cachedJobs = readProcessingQueue();
     const legacyHistoryArchive = legacyHistoryArchivePromiseRef.current;
     if (
@@ -3221,6 +3315,7 @@ export default function App() {
         clearJobAttentionEntries(recoveredAutomationIds);
         const preservedMissingDirtyJob = formDirtyRef.current
           && currentActiveJob !== null
+          && cachedIds.has(currentActiveJob.id)
           && !processingRemovalCandidateIdsRef.current.has(currentActiveJob.id)
           && !nextJobs.some((candidate) => candidate.id === currentActiveJob.id);
         if (preservedMissingDirtyJob) {
@@ -3418,6 +3513,82 @@ export default function App() {
       && historySearchQuery
     ) {
       void revalidateHistorySearch(historySearchQuery);
+    }
+  }
+
+  function applyHistoryJobUpdates(incomingJobs: JobRecord[]) {
+    const incomingJobsById = new Map(
+      incomingJobs.map((incomingJob) => [incomingJob.id, incomingJob]),
+    );
+    const currentActiveId = activeJobIdRef.current;
+    const currentActiveJob = currentActiveId === null
+      ? null
+      : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
+    const nextJobs = jobsRef.current.map((candidate) => {
+      const incomingJob = incomingJobsById.get(candidate.id);
+      return incomingJob ? newerJob(candidate, incomingJob) : candidate;
+    });
+    const reconciledActiveJob = currentActiveId === null
+      ? null
+      : nextJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
+    const activeJobUpdated = currentActiveJob !== null
+      && reconciledActiveJob !== null
+      && reconciledActiveJob !== currentActiveJob;
+    if (nextJobs.some((candidate, index) => candidate !== jobsRef.current[index])) {
+      updateJobs(() => nextJobs);
+    }
+    if (
+      activeJobUpdated
+      && (
+        !formDirtyRef.current
+        || (
+          currentActiveId !== null
+          && historyUpdateCandidateIdsRef.current.has(currentActiveId)
+        )
+      )
+    ) {
+      alignWorkspaceToJob(reconciledActiveJob);
+    }
+
+    setHistory((current) => {
+      const next = current.map((item) => {
+        const incomingJob = incomingJobsById.get(item.id);
+        return incomingJob
+          ? { ...item, job: newerJob(item.job, incomingJob) }
+          : item;
+      });
+      const historyCached = writeHistory(next);
+      const cachedHistory = historyCached ? readHistory() : null;
+      const pendingSearchResult = (historySearchResults ?? []).some((item) =>
+        (incomingJobsById.get(item.id) ?? item.job).recommendation_pending,
+      );
+      const pendingWorkspaceJob = nextJobs.some(
+        (candidate) => candidate.archived_at && candidate.recommendation_pending,
+      );
+      if (
+        historyCached
+        && readCachedHistoryTotal(cachedHistory) !== null
+        && !next.some((item) => item.job.recommendation_pending)
+        && !pendingSearchResult
+        && !pendingWorkspaceJob
+      ) {
+        markHistorySessionSynced();
+      } else {
+        markHistorySessionUnsynced();
+      }
+      return next;
+    });
+    setHistorySearchResults((current) =>
+      current?.map((item) => {
+        const incomingJob = incomingJobsById.get(item.id);
+        return incomingJob
+          ? { ...item, job: newerJob(item.job, incomingJob) }
+          : item;
+      }) ?? null,
+    );
+    for (const incomingJob of incomingJobs) {
+      historyUpdateCandidateIdsRef.current.delete(incomingJob.id);
+      historyJobRestoreIdsRef.current.delete(incomingJob.id);
     }
   }
 

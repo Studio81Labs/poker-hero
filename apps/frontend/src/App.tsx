@@ -2229,13 +2229,16 @@ function reconcileProcessingJobs(
       const currentJob = currentById.get(job.id);
       return currentJob ? newerJob(currentJob, job) : job;
     }),
-    ...current.filter((job) =>
-      isLocalUploadError(job)
-      && !cachedIds.has(job.id)
-      && !incomingIds.has(job.id)
-      && !removalCandidateIds.has(job.id)
-      && !restoredUploadIds.has(job.id),
-    ),
+    ...current.filter((job) => {
+      if (job.archived_at !== null) {
+        return true;
+      }
+      return isLocalUploadError(job)
+        && !cachedIds.has(job.id)
+        && !incomingIds.has(job.id)
+        && !removalCandidateIds.has(job.id)
+        && !restoredUploadIds.has(job.id);
+    }),
   ];
 }
 
@@ -3403,7 +3406,8 @@ export default function App() {
           alignWorkspaceToJob(reconciledActiveJob ?? nextJobs[0] ?? null);
         }
         const recommendationPending = nextJobs.some(
-          (candidate) => candidate.recommendation_pending,
+          (candidate) =>
+            !candidate.archived_at && candidate.recommendation_pending,
         );
         if (
           writeProcessingQueue(nextJobs)
@@ -3421,7 +3425,10 @@ export default function App() {
             processingError,
             "Could not restore processing queue",
           ));
-          if (jobsRef.current.some((candidate) => candidate.recommendation_pending)) {
+          if (jobsRef.current.some(
+            (candidate) =>
+              !candidate.archived_at && candidate.recommendation_pending,
+          )) {
             markProcessingQueueSessionUnsynced();
             restoreRetryTimer = window.setTimeout(() => {
               restoreRetryTimer = null;

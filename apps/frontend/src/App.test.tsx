@@ -340,6 +340,66 @@ describe("App", () => {
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
+  it("preserves a dirty archived workspace during processing reconciliation", async () => {
+    const processingJob = jobRecord({
+      id: "3".repeat(32),
+      original_filename: "processing-sibling.png",
+    });
+    const archivedJob = jobRecord({
+      id: "4".repeat(32),
+      original_filename: "archived-workspace.png",
+      archived_at: "2026-07-10T00:02:00Z",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: archivedJob.id,
+        job: archivedJob,
+        savedAt: archivedJob.archived_at,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(processingQueueResponse(
+      [processingJob],
+      "processing-refresh-with-archived-workspace",
+    ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    const heroCards = screen.getByLabelText(/Hero cards/);
+    await user.clear(heroCards);
+    await user.type(heroCards, "7d Ah");
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: "poker-training-processing-v1",
+      oldValue: "[]",
+      newValue: JSON.stringify([processingJob]),
+      storageArea: window.localStorage,
+    }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    expect(await screen.findByDisplayValue("7d Ah")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 2: archived-workspace.png",
+    })).toHaveClass("active");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([processingJob]);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
   it("reconciles processing when another tab changes the shared cache", async () => {
     const jobId = "3".repeat(32);
     const staleJob = jobRecord({

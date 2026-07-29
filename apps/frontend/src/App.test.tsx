@@ -489,6 +489,52 @@ describe("App", () => {
     ]);
   });
 
+  it("polls a parser job that was still running during reload", async () => {
+    const jobId = "5".repeat(32);
+    const createdJob = jobRecord({
+      id: jobId,
+      status: "created",
+      original_filename: "parser-still-running.png",
+      parser_result: null,
+      updated_at: "2026-07-10T00:01:00Z",
+    });
+    const parsedJob = jobRecord({
+      id: jobId,
+      original_filename: "parser-still-running.png",
+      updated_at: "2026-07-10T00:02:00Z",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([createdJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse(
+        [createdJob],
+        "parser-still-running",
+      ))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [parsedJob],
+        "parser-completed",
+      ));
+
+    render(<App />);
+
+    const queueItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: parser-still-running.png",
+    });
+    expect(within(queueItem).getByText("Parsing screenshot")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Ah Kd")).toBeInTheDocument();
+    expect(within(queueItem).queryByText("Parsing screenshot")).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([parsedJob]);
+  });
+
   it("polls a recommendation that was still running during reload", async () => {
     const jobId = "4".repeat(32);
     const pendingJob = {

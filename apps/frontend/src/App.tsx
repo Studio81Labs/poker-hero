@@ -2602,6 +2602,11 @@ function isHistoryReady(job: JobRecord): boolean {
     );
 }
 
+function isProcessingJobInProgress(job: JobRecord): boolean {
+  return job.archived_at === null
+    && (job.status === "created" || job.recommendation_pending);
+}
+
 function createLocalErrorJob(file: File, message: string, index: number): JobRecord {
   const timestamp = new Date().toISOString();
   return {
@@ -2632,6 +2637,9 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
   }
   if (job.status === "error") {
     return job.error ?? "Needs attention";
+  }
+  if (job.status === "created") {
+    return "Parsing screenshot";
   }
   if (job.recommendation_pending) {
     return "Recommendation running";
@@ -2790,9 +2798,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!jobs.some(
-      (candidate) => !candidate.archived_at && candidate.recommendation_pending,
-    )) {
+    if (!jobs.some(isProcessingJobInProgress)) {
       return;
     }
     markProcessingQueueSessionUnsynced();
@@ -3319,7 +3325,7 @@ export default function App() {
       legacyHistoryArchive === null
       && processingQueueSessionSynced()
       && readCachedProcessingQueueTotal(cachedJobs) !== null
-      && !cachedJobs?.some((cachedJob) => cachedJob.recommendation_pending)
+      && !cachedJobs?.some(isProcessingJobInProgress)
     ) {
       return;
     }
@@ -3405,14 +3411,11 @@ export default function App() {
         if (!preserveDirtyForm) {
           alignWorkspaceToJob(reconciledActiveJob ?? nextJobs[0] ?? null);
         }
-        const recommendationPending = nextJobs.some(
-          (candidate) =>
-            !candidate.archived_at && candidate.recommendation_pending,
-        );
+        const processingInProgress = nextJobs.some(isProcessingJobInProgress);
         if (
           writeProcessingQueue(nextJobs)
           && !preservedMissingDirtyJob
-          && !recommendationPending
+          && !processingInProgress
         ) {
           markProcessingQueueSessionSynced();
         } else {
@@ -3425,10 +3428,7 @@ export default function App() {
             processingError,
             "Could not restore processing queue",
           ));
-          if (jobsRef.current.some(
-            (candidate) =>
-              !candidate.archived_at && candidate.recommendation_pending,
-          )) {
+          if (jobsRef.current.some(isProcessingJobInProgress)) {
             markProcessingQueueSessionUnsynced();
             restoreRetryTimer = window.setTimeout(() => {
               restoreRetryTimer = null;

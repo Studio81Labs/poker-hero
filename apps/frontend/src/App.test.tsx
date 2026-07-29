@@ -1806,7 +1806,167 @@ describe("App", () => {
     ]);
   });
 
-  it("restores and upgrades a legacy ordinary mutation lease", async () => {
+  it("does not settle an approval lease from an unrelated cross-tab revision", async () => {
+    const jobId = "7".repeat(32);
+    const initialJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "cross-tab-approval.png",
+    };
+    const interveningJob: JobRecord = {
+      ...initialJob,
+      approved_state: canonicalState({ pot_size: 20 }),
+      training_decision: {
+        action: "call",
+        sizing: null,
+        certainty: "medium",
+        recorded_at: "2026-07-20T12:01:00Z",
+      },
+      updated_at: "2026-07-20T12:01:00Z",
+    };
+    const correctedState = canonicalState({ pot_size: 20 });
+    const persistedApproval: JobRecord = {
+      ...interveningJob,
+      status: "approved",
+      approved_state: correctedState,
+      training_decision: null,
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([initialJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingApproval = deferredResponse();
+    const pendingFinalQueue = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingApproval.promise)
+      .mockResolvedValueOnce(processingQueueResponse(
+        [interveningJob],
+        "intervening-decision-snapshot",
+      ))
+      .mockReturnValueOnce(pendingFinalQueue.promise);
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${jobId}/approve`,
+      expect.objectContaining({ method: "POST" }),
+    ));
+    firstRender.unmount();
+    render(<App />);
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([interveningJob]));
+    expect(JSON.parse(String(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )))).toEqual(expect.objectContaining({
+      kind: "job",
+      jobId,
+      expectedMutation: {
+        kind: "approval",
+        approvedStateKey: expect.any(String),
+      },
+    }));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    await act(async () => {
+      pendingApproval.resolve(jsonResponse(persistedApproval));
+      await pendingApproval.promise;
+      pendingFinalQueue.resolve(processingQueueResponse(
+        [persistedApproval],
+        "persisted-approval-snapshot",
+      ));
+      await pendingFinalQueue.promise;
+    });
+
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedApproval]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
+  it("does not settle a benchmark lease from an unrelated cross-tab revision", async () => {
+    const jobId = "8".repeat(32);
+    const initialJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "cross-tab-benchmark.png",
+    };
+    const interveningJob: JobRecord = {
+      ...initialJob,
+      training_decision: {
+        action: "call",
+        sizing: null,
+        certainty: "medium",
+        recorded_at: "2026-07-20T12:01:00Z",
+      },
+      updated_at: "2026-07-20T12:01:00Z",
+    };
+    const persistedInclusion: JobRecord = {
+      ...interveningJob,
+      benchmark_included: true,
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([initialJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.setItem(
+      "poker-training-processing-mutation-v1",
+      JSON.stringify({
+        kind: "job",
+        ownerId: "previous-page",
+        jobId,
+        baselineUpdatedAt: initialJob.updated_at,
+        expectsRemoval: false,
+        expectedRecommendationRequestId: null,
+        expectedMutation: {
+          kind: "benchmark-inclusion",
+          included: true,
+        },
+        expiresAt: Date.now() + 30_000,
+      }),
+    );
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse(
+        [interveningJob],
+        "intervening-decision-snapshot",
+      ))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedInclusion],
+        "persisted-benchmark-snapshot",
+      ));
+
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedInclusion]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+  });
+
+  it("retains a legacy ordinary mutation lease without specific evidence", async () => {
     const jobId = "e".repeat(32);
     const initialJob = jobRecord({
       id: jobId,
@@ -1832,10 +1992,13 @@ describe("App", () => {
         expiresAt: Date.now() + 30_000,
       }),
     );
-    fetchMock().mockResolvedValueOnce(processingQueueResponse(
-      [persistedJob],
-      "legacy-lease-commit-snapshot",
-    ));
+    const pendingRetry = deferredResponse();
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedJob],
+        "legacy-lease-commit-snapshot",
+      ))
+      .mockReturnValue(pendingRetry.promise);
 
     render(<App />);
 
@@ -1847,13 +2010,13 @@ describe("App", () => {
     ))).toEqual([persistedJob]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
-    )).toBeNull();
+    )).not.toBeNull();
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
-    )).toBe("true");
-    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+    )).toBeNull();
+    expect(fetchMock().mock.calls[0]?.[0]).toBe(
       "http://localhost:8000/api/jobs",
-    ]);
+    );
   });
 
   it("restores and upgrades a legacy recommended upload lease", async () => {
@@ -1964,8 +2127,13 @@ describe("App", () => {
         recorded_at: "2026-07-20T12:01:00Z",
       },
     };
-    const persistedJob: JobRecord = {
+    const interveningJob: JobRecord = {
       ...initialJob,
+      benchmark_included: true,
+      updated_at: "2026-07-20T12:01:30Z",
+    };
+    const persistedJob: JobRecord = {
+      ...interveningJob,
       training_reviewed_at: "2026-07-20T12:02:00Z",
       updated_at: "2026-07-20T12:02:00Z",
     };
@@ -1982,8 +2150,8 @@ describe("App", () => {
     fetchMock()
       .mockReturnValueOnce(pendingMutation.promise)
       .mockResolvedValueOnce(processingQueueResponse(
-        [initialJob],
-        "pre-commit-history-snapshot",
+        [interveningJob],
+        "intervening-benchmark-snapshot",
       ))
       .mockResolvedValueOnce(jsonResponse(persistedJob));
     const firstRender = render(<App />);
@@ -10044,6 +10212,11 @@ describe("App", () => {
       benchmark_included: false,
       parser_result: null,
     };
+    const persistedInclusion: JobRecord = {
+      ...processingImport,
+      benchmark_included: true,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
     window.localStorage.setItem(
       "poker-training-processing-v1",
       JSON.stringify([processingImport]),
@@ -10059,7 +10232,8 @@ describe("App", () => {
       .mockResolvedValueOnce(processingQueueResponse(
         [],
         "included-import-snapshot",
-      ));
+      ))
+      .mockResolvedValueOnce(jsonResponse(persistedInclusion));
     const firstRender = render(<App />);
     const user = userEvent.setup();
 
@@ -10092,6 +10266,7 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/jobs/${benchmarkJobId}/benchmark`,
       "http://localhost:8000/api/jobs",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
   });
 
@@ -10182,6 +10357,12 @@ describe("App", () => {
         recorded_at: "2026-07-20T12:05:00Z",
       },
     };
+    const persistedApproval: JobRecord = {
+      ...mutatedImport,
+      approved_state: canonicalState({ pot_size: 20 }),
+      training_decision: null,
+      updated_at: "2026-07-20T12:10:00Z",
+    };
     window.localStorage.setItem(
       "poker-training-processing-v1",
       JSON.stringify([mutatedImport]),
@@ -10192,7 +10373,8 @@ describe("App", () => {
       .mockResolvedValueOnce(processingQueueResponse(
         [],
         "reapproved-import-snapshot",
-      ));
+      ))
+      .mockResolvedValueOnce(jsonResponse(persistedApproval));
     const firstRender = render(<App />);
     const user = userEvent.setup();
 
@@ -10221,6 +10403,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       `http://localhost:8000/api/jobs/${benchmarkJobId}/approve`,
       "http://localhost:8000/api/jobs",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
   });
 

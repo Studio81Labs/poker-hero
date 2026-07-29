@@ -321,15 +321,18 @@ frequencies.
     count without changing the global reviewed count or newest-page cache.
     Shared processing-cache changes invalidate other open tabs. A persisted
     write that spans a same-tab reload keeps its processing or history
-    projection unsynchronized until a changed server revision is observed or a
-    bounded recovery lease expires. Upload and capture leases wait for every
-    expected new queue item and required automation stage; a batch records all
-    selected upload and recommendation request identities before its first
-    request. A recommendation that first saves the player's decision does not
-    arm its solver identity until that save is confirmed, and a superseded
-    provider call cannot write over a newer solver identity. A deterministic
-    recommendation conflict releases the losing identity and refreshes the
-    competing state; ambiguous and correctable attempts retain recovery.
+    projection unsynchronized until the leased approval, decision, review, or
+    benchmark effect is observed or a bounded recovery lease expires. Another
+    tab's unrelated revision does not settle the lease, and a job omitted from
+    processing is revalidated directly before its expected removal is accepted.
+    Upload and capture leases wait for every expected new queue item and
+    required automation stage; a batch records all selected upload and
+    recommendation request identities before its first request. A recommendation
+    that first saves the player's decision carries that decision expectation
+    until the solver identity is armed, and a superseded provider call cannot
+    write over a newer solver identity. A deterministic recommendation conflict
+    releases the losing identity and refreshes the competing state; ambiguous
+    and correctable attempts retain recovery.
     Batch archive leases cover all target IDs in both projections, so a stale
     first reload cannot leave a hand duplicated in processing or missing from
     history. Unchanged projections after an ambiguous failure do not release

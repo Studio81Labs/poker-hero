@@ -2967,14 +2967,36 @@ export default function App() {
     markProcessingQueueSessionUnsynced();
   }
 
-  function endProcessingMembershipMutation() {
+  function endProcessingMembershipMutation(restoreAfterMutation = true) {
     processingMutationCountRef.current = Math.max(
       processingMutationCountRef.current - 1,
       0,
     );
-    if (processingMutationCountRef.current === 0) {
+    if (
+      processingMutationCountRef.current === 0
+      && (
+        restoreAfterMutation
+        || processingRestoreRetryRequestedRef.current
+      )
+    ) {
       scheduleProcessingQueueRestore();
     }
+  }
+
+  function beginPersistedJobMutation(
+    persistedJob: JobRecord,
+    removalCandidateIds: readonly string[] = [],
+  ): boolean {
+    if (persistedJob.archived_at) {
+      markHistorySessionUnsynced();
+      return false;
+    }
+    beginProcessingMembershipMutation(removalCandidateIds);
+    return true;
+  }
+
+  function markProcessingMutationUncertain(persistedJobId: string) {
+    processingUpdateCandidateIdsRef.current.add(persistedJobId);
   }
 
   function markPersistedJobSessionUnsynced(persistedJob: JobRecord) {
@@ -3789,24 +3811,27 @@ export default function App() {
     const changesProcessingMembership = job.benchmark_included
       && job.parser_result === null
       && !isPristineBenchmarkImport(job);
-    if (changesProcessingMembership) {
-      beginProcessingMembershipMutation([job.id]);
-    } else {
-      markPersistedJobSessionUnsynced(job);
-    }
+    const tracksProcessingMutation = beginPersistedJobMutation(
+      job,
+      changesProcessingMembership ? [job.id] : [],
+    );
+    let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
     try {
       const approved = await approveState(job.id, validation.state);
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
-      if (!changesProcessingMembership) {
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
         scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
-      if (changesProcessingMembership) {
-        endProcessingMembershipMutation();
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
       }
       setBusy(false);
     }
@@ -3817,11 +3842,8 @@ export default function App() {
       return;
     }
     const changesProcessingMembership = isPristineBenchmarkImport(job);
-    if (changesProcessingMembership) {
-      beginProcessingMembershipMutation();
-    } else {
-      markPersistedJobSessionUnsynced(job);
-    }
+    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
     try {
@@ -3846,13 +3868,16 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
-      if (!changesProcessingMembership) {
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
         scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
-      if (changesProcessingMembership) {
-        endProcessingMembershipMutation();
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
       }
       setBusy(false);
     }
@@ -3869,11 +3894,8 @@ export default function App() {
     }
 
     const changesProcessingMembership = isPristineBenchmarkImport(job);
-    if (changesProcessingMembership) {
-      beginProcessingMembershipMutation();
-    } else {
-      markPersistedJobSessionUnsynced(job);
-    }
+    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
     try {
@@ -3885,13 +3907,16 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
-      if (!changesProcessingMembership) {
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
         scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
-      if (changesProcessingMembership) {
-        endProcessingMembershipMutation();
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
       }
       setBusy(false);
     }
@@ -3903,7 +3928,8 @@ export default function App() {
     }
 
     const continueReviewQueue = trainingReviewQueueJobId === job.id;
-    markPersistedJobSessionUnsynced(job);
+    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
     try {
@@ -3954,9 +3980,17 @@ export default function App() {
         ));
       }
     } catch (reviewError) {
-      scheduleUncertainPersistedUpdate(job);
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
+        scheduleUncertainPersistedUpdate(job);
+      }
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      }
       setBusy(false);
     }
   }
@@ -3966,7 +4000,8 @@ export default function App() {
       return;
     }
 
-    markPersistedJobSessionUnsynced(job);
+    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
     try {
@@ -3974,9 +4009,17 @@ export default function App() {
       replaceJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
-      scheduleUncertainPersistedUpdate(job);
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
+        scheduleUncertainPersistedUpdate(job);
+      }
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      }
       setBusy(false);
     }
   }
@@ -4003,7 +4046,8 @@ export default function App() {
     }
 
     const note = trainingReviewNote.trim() || null;
-    markPersistedJobSessionUnsynced(job);
+    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
     try {
@@ -4012,9 +4056,17 @@ export default function App() {
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
-      scheduleUncertainPersistedUpdate(job);
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
+        scheduleUncertainPersistedUpdate(job);
+      }
       setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      }
       setBusy(false);
     }
   }
@@ -4026,12 +4078,14 @@ export default function App() {
       ?? history.find((item) => item.id === jobId)?.job
       ?? historySearchResults?.find((item) => item.id === jobId)?.job
       ?? null;
-    if (persistedJob) {
-      markPersistedJobSessionUnsynced(persistedJob);
-    } else {
-      markProcessingQueueSessionUnsynced();
+    const tracksProcessingMutation = persistedJob
+      ? beginPersistedJobMutation(persistedJob)
+      : true;
+    if (!persistedJob) {
+      beginProcessingMembershipMutation();
       markHistorySessionUnsynced();
     }
+    let restoreAfterMutation = false;
     setTrainingReviewJobId(jobId);
     setError(null);
     try {
@@ -4056,7 +4110,10 @@ export default function App() {
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
-      if (persistedJob) {
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(jobId);
+        restoreAfterMutation = true;
+      } else if (persistedJob) {
         scheduleUncertainPersistedUpdate(persistedJob);
       } else {
         markProcessingQueueSessionUnsynced();
@@ -4065,6 +4122,9 @@ export default function App() {
       }
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      }
       setTrainingReviewJobId(null);
     }
   }
@@ -4637,11 +4697,11 @@ export default function App() {
       benchmark_included: included,
     });
     const changesProcessingMembership = isCurrentlyPristine !== willBePristine;
-    if (changesProcessingMembership) {
-      beginProcessingMembershipMutation(willBePristine ? [job.id] : []);
-    } else {
-      markPersistedJobSessionUnsynced(job);
-    }
+    const tracksProcessingMutation = beginPersistedJobMutation(
+      job,
+      changesProcessingMembership && willBePristine ? [job.id] : [],
+    );
+    let restoreAfterMutation = changesProcessingMembership;
     setBenchmarkUpdating(true);
     setError(null);
     try {
@@ -4660,13 +4720,16 @@ export default function App() {
             },
       );
     } catch (benchmarkError) {
-      if (!changesProcessingMembership) {
+      if (tracksProcessingMutation) {
+        markProcessingMutationUncertain(job.id);
+        restoreAfterMutation = true;
+      } else {
         scheduleUncertainPersistedUpdate(job);
       }
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
     } finally {
-      if (changesProcessingMembership) {
-        endProcessingMembershipMutation();
+      if (tracksProcessingMutation) {
+        endProcessingMembershipMutation(restoreAfterMutation);
       }
       setBenchmarkUpdating(false);
     }

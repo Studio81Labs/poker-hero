@@ -1023,7 +1023,11 @@ describe("App", () => {
     const pendingApproval = deferredResponse();
     fetchMock()
       .mockReturnValueOnce(pendingQueue.promise)
-      .mockReturnValueOnce(pendingApproval.promise);
+      .mockReturnValueOnce(pendingApproval.promise)
+      .mockResolvedValueOnce(processingQueueResponse(
+        [approved],
+        "approved-after-stale-restore",
+      ));
     render(<App />);
 
     await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
@@ -1057,115 +1061,133 @@ describe("App", () => {
     expect(screen.getByRole("button", {
       name: "Request recommendation",
     })).toBeEnabled();
-    expect(window.sessionStorage.getItem(
+    await waitFor(() => expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
-    )).toBe("true");
+    )).toBe("true"));
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
   });
 
   it.each([
     "approval",
     "recommendation",
     "decision",
-  ] as const)("reloads backend state while an ordinary %s request is still in flight", async (
-    operation,
-  ) => {
-    const jobId = "b".repeat(32);
-    const initialJob = operation === "approval"
-      ? jobRecord({
-          id: jobId,
-          original_filename: `pending-${operation}.png`,
-        })
-      : {
-          ...approvedJob(),
-          id: jobId,
-          original_filename: `pending-${operation}.png`,
-        };
-    const persistedJob: JobRecord = operation === "approval"
-      ? {
-          ...initialJob,
-          status: "approved",
-          approved_state: canonicalState(),
-          updated_at: "2026-07-10T00:01:00Z",
-        }
-      : operation === "recommendation"
+  ] as const)(
+    "reloads backend state when an older restore finishes during an ordinary %s request",
+    async (operation) => {
+      const jobId = "b".repeat(32);
+      const initialJob = operation === "approval"
+        ? jobRecord({
+            id: jobId,
+            original_filename: `pending-${operation}.png`,
+          })
+        : {
+            ...approvedJob(),
+            id: jobId,
+            original_filename: `pending-${operation}.png`,
+          };
+      const persistedJob: JobRecord = operation === "approval"
         ? {
             ...initialJob,
-            status: "recommended",
-            recommendation,
+            status: "approved",
+            approved_state: canonicalState(),
             updated_at: "2026-07-10T00:01:00Z",
           }
-        : {
-            ...initialJob,
-            training_decision: {
-              action: "call",
-              sizing: null,
-              certainty: "medium",
-              recorded_at: "2026-07-10T00:01:00Z",
-            },
-            updated_at: "2026-07-10T00:01:00Z",
-          };
-    window.localStorage.setItem(
-      "poker-training-processing-v1",
-      JSON.stringify([initialJob]),
-    );
-    window.localStorage.setItem("poker-training-processing-total-v1", "1");
-    const pendingMutation = deferredResponse();
-    fetchMock()
-      .mockReturnValueOnce(pendingMutation.promise)
-      .mockResolvedValueOnce(processingQueueResponse(
-        [persistedJob],
-        `pending-${operation}-snapshot`,
+        : operation === "recommendation"
+          ? {
+              ...initialJob,
+              status: "recommended",
+              recommendation,
+              updated_at: "2026-07-10T00:01:00Z",
+            }
+          : {
+              ...initialJob,
+              training_decision: {
+                action: "call",
+                sizing: null,
+                certainty: "medium",
+                recorded_at: "2026-07-10T00:01:00Z",
+              },
+              updated_at: "2026-07-10T00:01:00Z",
+            };
+      window.localStorage.setItem(
+        "poker-training-processing-v1",
+        JSON.stringify([initialJob]),
+      );
+      window.localStorage.setItem("poker-training-processing-total-v1", "1");
+      window.sessionStorage.removeItem("poker-training-processing-synced");
+      const pendingRestore = deferredResponse();
+      const pendingMutation = deferredResponse();
+      fetchMock()
+        .mockReturnValueOnce(pendingRestore.promise)
+        .mockReturnValueOnce(pendingMutation.promise)
+        .mockResolvedValueOnce(processingQueueResponse(
+          [persistedJob],
+          `pending-${operation}-snapshot`,
+        ));
+      const firstRender = render(<App />);
+      const user = userEvent.setup();
+
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+        "http://localhost:8000/api/jobs",
+        { credentials: "include" },
       ));
-    const firstRender = render(<App />);
-    const user = userEvent.setup();
+      if (operation === "approval") {
+        await user.click(screen.getByRole("button", { name: "Approve state" }));
+      } else if (operation === "recommendation") {
+        await user.click(screen.getByRole("button", {
+          name: "Request recommendation",
+        }));
+      } else {
+        const decisionPanel = await screen.findByLabelText("Your training decision");
+        await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+        await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+        await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+      }
 
-    if (operation === "approval") {
-      await user.click(screen.getByRole("button", { name: "Approve state" }));
-    } else if (operation === "recommendation") {
-      await user.click(screen.getByRole("button", {
-        name: "Request recommendation",
-      }));
-    } else {
-      const decisionPanel = await screen.findByLabelText("Your training decision");
-      await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
-      await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
-      await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
-    }
+      const mutationPath = operation === "approval"
+        ? "approve"
+        : operation === "decision"
+          ? "decision"
+          : "recommend";
+      const mutationMethod = operation === "decision" ? "PUT" : "POST";
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+        `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
+        expect.objectContaining({ method: mutationMethod }),
+      ));
+      await act(async () => {
+        pendingRestore.resolve(processingQueueResponse(
+          [initialJob],
+          `stale-${operation}-snapshot`,
+        ));
+        await pendingRestore.promise;
+      });
+      expect(window.sessionStorage.getItem(
+        "poker-training-processing-synced",
+      )).toBeNull();
+      expect(fetchMock()).toHaveBeenCalledTimes(2);
 
-    const mutationPath = operation === "approval"
-      ? "approve"
-      : operation === "decision"
-        ? "decision"
-        : "recommend";
-    const mutationMethod = operation === "decision" ? "PUT" : "POST";
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
-      `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
-      expect.objectContaining({ method: mutationMethod }),
-    ));
-    expect(window.sessionStorage.getItem(
-      "poker-training-processing-synced",
-    )).toBeNull();
+      firstRender.unmount();
+      render(<App />);
 
-    firstRender.unmount();
-    render(<App />);
-
-    await waitFor(() => expect(JSON.parse(String(
-      window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([persistedJob]));
-    if (operation === "approval") {
-      expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
-    } else if (operation === "recommendation") {
-      expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
-    } else {
-      expect(await within(screen.getByLabelText(
-        "Your training decision",
-      )).findByText("Answer locked")).toBeInTheDocument();
-    }
-    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
-      `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
-      "http://localhost:8000/api/jobs",
-    ]);
-  });
+      await waitFor(() => expect(JSON.parse(String(
+        window.localStorage.getItem("poker-training-processing-v1"),
+      ))).toEqual([persistedJob]));
+      if (operation === "approval") {
+        expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+      } else if (operation === "recommendation") {
+        expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+      } else {
+        expect(await within(screen.getByLabelText(
+          "Your training decision",
+        )).findByText("Answer locked")).toBeInTheDocument();
+      }
+      expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:8000/api/jobs",
+        `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
+        "http://localhost:8000/api/jobs",
+      ]);
+    },
+  );
 
   it("restores a committed ordinary approval after its response is lost", async () => {
     const parsedJob = jobRecord({

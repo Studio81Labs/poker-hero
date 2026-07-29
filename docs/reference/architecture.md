@@ -305,6 +305,11 @@ receipt through a recovery endpoint. This is the authoritative completion
 evidence for imports because newly created pristine benchmark cases are
 deliberately absent from processing and history. Replaying the same import
 identity returns the stored result without changing the corpus again.
+Deterministic non-timeout 4xx responses release both import leases immediately;
+ambiguous failures keep polling for the receipt. Once a benchmark hand records
+a solver request identity, including a correctable 422 attempt, it is no longer
+pristine and remains in the processing projection and browser cache for
+correction across reloads.
 The upload ID is used instead of the display filename when matching a restored
 queue. Dataset imports may also carry processing IDs expected to disappear. Batch
 archive leases carry every target ID and baseline revision in both processing

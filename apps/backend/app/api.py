@@ -887,6 +887,7 @@ def is_pristine_benchmark_import(job: JobRecord) -> bool:
         and job.approved_state is not None
         and job.training_decision is None
         and job.recommendation is None
+        and job.recommendation_request_id is None
         and job.training_reviewed_at is None
         and job.training_review_note is None
         and job.error is None

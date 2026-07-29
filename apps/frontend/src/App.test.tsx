@@ -9215,6 +9215,55 @@ describe("App", () => {
     ));
   });
 
+  it("releases dataset import leases after a deterministic rejection", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Dataset ZIP exceeds maximum size",
+      }, 413))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "rejected-dataset-import-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(
+      within(dialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(dialog).getByLabelText("Parser dataset ZIP"),
+      new File(["oversized-dataset"], "oversized.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    expect(await screen.findByText(
+      "Dataset ZIP exceeds maximum size",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+    expect(within(dialog).getByRole("button", {
+      name: "Import dataset",
+    })).toBeEnabled();
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks/import",
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("removes a reused pristine dataset case from processing immediately", async () => {
     const benchmarkJobId = "3".repeat(32);
     const processingImport = {
@@ -9812,7 +9861,7 @@ describe("App", () => {
     ]);
   });
 
-  it("revalidates a pristine benchmark import omitted after a correctable recommendation", async () => {
+  it("keeps a correctable benchmark recommendation in processing across reloads", async () => {
     const benchmarkJobId = "e".repeat(32);
     const recommendationRequestId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
@@ -9841,11 +9890,10 @@ describe("App", () => {
         detail: { missing_fields: ["effective_stack"] },
       }, 422))
       .mockResolvedValueOnce(processingQueueResponse(
-        [],
-        "omitted-pristine-import-snapshot",
-      ))
-      .mockResolvedValueOnce(jsonResponse(revalidatedImport));
-    render(<App />);
+        [revalidatedImport],
+        "correctable-import-snapshot",
+      ));
+    const firstRender = render(<App />);
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
@@ -9870,12 +9918,21 @@ describe("App", () => {
     await waitFor(() => expect(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
     )).toBeNull());
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: correctable-recommendation.png",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/jobs/${benchmarkJobId}`,
       `http://localhost:8000/api/jobs/${benchmarkJobId}/recommend`,
       "http://localhost:8000/api/jobs",
-      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
   });
 

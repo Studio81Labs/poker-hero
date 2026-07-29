@@ -16,7 +16,7 @@ from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, ProviderInputError
 from app.providers.mock import MockRecommendationProvider
 from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
 
@@ -235,6 +235,45 @@ def test_processing_queue_keeps_mutated_benchmark_imports(
     assert queue.json()["jobs"][0]["training_decision"]["action"] == "call"
     assert queue.json()["jobs"][1]["status"] == "error"
     assert queue.json()["jobs"][1]["error"] == "provider exploded"
+
+
+def test_processing_queue_keeps_correctable_benchmark_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CorrectableProvider:
+        name = "correctable"
+        required_fields = ["hero_cards", "street"]
+
+        def required_fields_for(self, state: object):
+            return self.required_fields
+
+        def recommend(self, request: object):
+            raise ProviderInputError("Add the missing table context")
+
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="correctable-import.png").json()["id"]
+    approve_job(client, job_id)
+    store = FileJobStore(tmp_path)
+    imported_job = store.get(job_id)
+    imported_job.parser_result = None
+    imported_job.benchmark_included = True
+    store.save(imported_job)
+    monkeypatch.setattr("app.api.build_provider", lambda settings: CorrectableProvider())
+
+    recommendation = client.post(
+        f"/api/jobs/{job_id}/recommend",
+        headers={"X-Recommendation-Request-ID": "correctable-attempt"},
+    )
+    queue = client.get("/api/jobs")
+
+    assert recommendation.status_code == 422
+    assert queue.status_code == 200
+    assert queue.json()["total"] == 1
+    assert queue.json()["jobs"][0]["id"] == job_id
+    assert queue.json()["jobs"][0]["recommendation_request_id"] == (
+        "correctable-attempt"
+    )
 
 
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:

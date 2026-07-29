@@ -1820,6 +1820,7 @@ function isPristineBenchmarkImport(job: JobRecord): boolean {
     && job.approved_state !== null
     && job.training_decision === null
     && job.recommendation === null
+    && job.recommendation_request_id === null
     && job.training_reviewed_at === null
     && job.training_review_note === null
     && job.error === null;
@@ -6529,23 +6530,33 @@ export default function App() {
     beginProcessingMembershipMutation(removalCandidateIds);
     setBenchmarkImporting(true);
     setError(null);
-    let importConfirmed = false;
+    let restoreAfterImport = false;
     try {
       const result = await importBenchmarkDataset(
         datasetFile,
         benchmarkImportRequestId,
       );
       const readyCases = applyBenchmarkDatasetImportResult(result);
-      importConfirmed = true;
+      restoreAfterImport = true;
       clearOwnedMutationLease("processing");
       clearOwnedMutationLease("history");
       toast.success(`Dataset ready: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`);
     } catch (benchmarkError) {
-      scheduleMutationLeaseRevalidation();
+      const deterministicRejection = benchmarkError instanceof ApiResponseError
+        && benchmarkError.status >= 400
+        && benchmarkError.status < 500
+        && benchmarkError.status !== 408;
+      if (deterministicRejection) {
+        clearOwnedMutationLease("processing");
+        clearOwnedMutationLease("history");
+        restoreAfterImport = true;
+      } else {
+        scheduleMutationLeaseRevalidation();
+      }
       setError(messageFromError(benchmarkError, "Could not import parser dataset"));
     } finally {
       input.value = "";
-      endProcessingMembershipMutation(importConfirmed);
+      endProcessingMembershipMutation(restoreAfterImport);
       setBenchmarkImporting(false);
     }
   }

@@ -267,6 +267,7 @@ export interface JobRecord {
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
   recommendation_pending: boolean;
+  recommendation_request_id?: string | null;
   training_reviewed_at: string | null;
   training_review_note: string | null;
   benchmark_included: boolean;

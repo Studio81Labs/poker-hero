@@ -398,6 +398,12 @@ class JobRecord(BaseModel):
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
     recommendation_pending: bool = False
+    recommendation_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
     benchmark_included: bool = False

@@ -108,6 +108,7 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
 
 def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     client = make_client(tmp_path)
+    recommendation_request_id = "recommendation-request-123"
 
     upload = upload_job(client)
 
@@ -122,13 +123,21 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert approve.status_code == 200
     assert approve.json()["status"] == "approved"
 
-    recommend = client.post(f"/api/jobs/{job['id']}/recommend")
+    recommend = client.post(
+        f"/api/jobs/{job['id']}/recommend",
+        headers={"X-Recommendation-Request-ID": recommendation_request_id},
+    )
 
     assert recommend.status_code == 200
     result = recommend.json()
     assert result["status"] == "recommended"
+    assert result["recommendation_request_id"] == recommendation_request_id
     assert result["recommendation"]["action"] == "call"
     assert result["recommendation"]["sizing"] is None
+    assert (
+        FileJobStore(tmp_path).get(job["id"]).recommendation_request_id
+        == recommendation_request_id
+    )
 
 
 def test_upload_persists_client_request_identity(tmp_path: Path) -> None:

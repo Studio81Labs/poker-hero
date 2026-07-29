@@ -5,7 +5,7 @@ from io import BytesIO
 import re
 from threading import Lock, RLock
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -327,7 +327,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return save_job(job)
 
     @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
-    def recommend(job_id: str) -> JobRecord:
+    def recommend(
+        job_id: str,
+        recommendation_request_id: str | None = Header(
+            default=None,
+            alias="X-Recommendation-Request-ID",
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+    ) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
             if job.approved_state is None or not job.approved_state.user_approved:
@@ -336,6 +345,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail="Recommendation is already running")
             approved_state = job.approved_state.model_copy(deep=True)
             job.recommendation_pending = True
+            job.recommendation_request_id = recommendation_request_id
             job.error = None
             save_job(job)
 

@@ -155,9 +155,14 @@ export async function approveState(jobId: string, state: CanonicalState, signal?
   return readJson<JobRecord>(response);
 }
 
-export async function requestRecommendation(jobId: string, signal?: AbortSignal): Promise<JobRecord> {
+export async function requestRecommendation(
+  jobId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<JobRecord> {
   const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/recommend`, {
     method: "POST",
+    headers: { "X-Recommendation-Request-ID": requestId },
     signal,
     credentials: "include",
   });

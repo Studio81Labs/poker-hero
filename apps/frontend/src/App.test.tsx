@@ -101,6 +101,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     training_decision: null,
     recommendation: null,
     recommendation_pending: false,
+    recommendation_request_id: null,
     training_reviewed_at: null,
     training_review_note: null,
     benchmark_included: false,
@@ -2225,7 +2226,130 @@ describe("App", () => {
     )).toBe("true");
   });
 
+  it("confirms an omitted benchmark hand before settling archive recovery", async () => {
+    const readyJob = {
+      ...recommendedJob(),
+      id: "c".repeat(32),
+      original_filename: "queued-archive.png",
+    };
+    const benchmarkJobId = "d".repeat(32);
+    const pristineBenchmark = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "omitted-benchmark.png",
+      image_filename: `${benchmarkJobId}.png`,
+      parser_result: null,
+      benchmark_included: true,
+    };
+    const archivedReadyJob: JobRecord = {
+      ...readyJob,
+      archived_at: "2026-07-20T12:02:00Z",
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    const archivedBenchmark: JobRecord = {
+      ...pristineBenchmark,
+      archived_at: "2026-07-20T12:02:00Z",
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([readyJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingArchive = deferredResponse();
+    let archiveCommitted = false;
+    let processingReads = 0;
+    let benchmarkReads = 0;
+    fetchMock().mockImplementation((url, init) => {
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return Promise.resolve(jsonResponse(benchmarkOverviewForJob(
+          benchmarkJobId,
+          pristineBenchmark.original_filename,
+        )));
+      }
+      if (url === `http://localhost:8000/api/jobs/${benchmarkJobId}`) {
+        benchmarkReads += 1;
+        return Promise.resolve(jsonResponse(
+          archiveCommitted ? archivedBenchmark : pristineBenchmark,
+        ));
+      }
+      if (url === "http://localhost:8000/api/history" && init?.method === "PUT") {
+        return pendingArchive.promise;
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        processingReads += 1;
+        return Promise.resolve(processingQueueResponse(
+          archiveCommitted ? [] : [readyJob],
+          `omitted-archive-processing-${processingReads}`,
+        ));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: archiveCommitted ? 2 : 0,
+          jobs: archiveCommitted
+            ? [archivedBenchmark, archivedReadyJob]
+            : [],
+          snapshot_version: archiveCommitted
+            ? "omitted-archive-committed"
+            : "omitted-archive-stale",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: `Toggle ${pristineBenchmark.original_filename} benchmark details`,
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      expect.objectContaining({ method: "PUT" }),
+    ));
+    firstRender.unmount();
+    render(<App />);
+
+    await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(1));
+    await waitFor(() => expect(benchmarkReads).toBeGreaterThanOrEqual(2));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).not.toBeNull();
+
+    archiveCommitted = true;
+    await act(async () => {
+      pendingArchive.resolve(jsonResponse({
+        total: 2,
+        jobs: [archivedBenchmark, archivedReadyJob],
+        snapshot_version: "omitted-archive-response",
+      }));
+      await pendingArchive.promise;
+    });
+
+    await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(benchmarkReads).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+    expect(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    })).toBeInTheDocument();
+  });
+
   it("restores a persisted provider error after an ordinary recommendation failure", async () => {
+    const recommendationRequestId = "11111111-1111-4111-8111-111111111111";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
     const approved = {
       ...approvedJob(),
       id: "5".repeat(32),
@@ -2235,6 +2359,7 @@ describe("App", () => {
       ...approved,
       status: "error",
       error: "provider exploded",
+      recommendation_request_id: recommendationRequestId,
       updated_at: "2026-07-10T00:01:00Z",
     };
     window.localStorage.setItem(
@@ -2280,6 +2405,10 @@ describe("App", () => {
   });
 
   it("restores an ordinary recommendation after its successful response is lost", async () => {
+    const recommendationRequestId = "22222222-2222-4222-8222-222222222222";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
     const approved = {
       ...approvedJob(),
       id: "6".repeat(32),
@@ -2289,6 +2418,7 @@ describe("App", () => {
       ...approved,
       status: "recommended",
       recommendation,
+      recommendation_request_id: recommendationRequestId,
       updated_at: "2026-07-10T00:01:00Z",
     };
     window.localStorage.setItem(
@@ -2330,6 +2460,102 @@ describe("App", () => {
       `http://localhost:8000/api/jobs/${approved.id}/recommend`,
       "http://localhost:8000/api/jobs",
     ]);
+  });
+
+  it("keeps a recommendation lease through an intermediate decision revision", async () => {
+    const jobId = "8".repeat(32);
+    const recommendationRequestId = "88888888-8888-4888-8888-888888888888";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
+    const approved = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "decision-before-recommendation.png",
+    };
+    const trainingDecision = {
+      action: "call" as const,
+      sizing: null,
+      certainty: "medium" as const,
+      recorded_at: "2026-07-20T12:01:00Z",
+    };
+    const decisionSaved: JobRecord = {
+      ...approved,
+      training_decision: trainingDecision,
+      updated_at: "2026-07-20T12:01:00Z",
+    };
+    const recommendationSaved: JobRecord = {
+      ...decisionSaved,
+      status: "recommended",
+      recommendation,
+      recommendation_request_id: recommendationRequestId,
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([approved]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingRecommendation = deferredResponse();
+    const pendingFinalQueue = deferredResponse();
+    let processingReads = 0;
+    fetchMock().mockImplementation((url, init) => {
+      if (url === `http://localhost:8000/api/jobs/${jobId}/decision`) {
+        return Promise.resolve(jsonResponse(decisionSaved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${jobId}/recommend`) {
+        expect(init?.headers).toEqual({
+          "X-Recommendation-Request-ID": recommendationRequestId,
+        });
+        return pendingRecommendation.promise;
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        processingReads += 1;
+        return processingReads === 1
+          ? Promise.resolve(processingQueueResponse(
+              [decisionSaved],
+              "intermediate-decision-revision",
+            ))
+          : pendingFinalQueue.promise;
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+
+    await user.click(within(decisionPanel).getByRole("button", { name: "call" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "medium" }));
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${jobId}/recommend`,
+      expect.objectContaining({ method: "POST" }),
+    ));
+    firstRender.unmount();
+    render(<App />);
+
+    await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(2));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+    expect(screen.queryByLabelText("Recommendation")).not.toBeInTheDocument();
+
+    await act(async () => {
+      pendingFinalQueue.resolve(processingQueueResponse(
+        [recommendationSaved],
+        "completed-recommendation-revision",
+      ));
+      pendingRecommendation.resolve(jsonResponse(recommendationSaved));
+      await Promise.all([
+        pendingFinalQueue.promise,
+        pendingRecommendation.promise,
+      ]);
+    });
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
   });
 
   it("restores an ordinary training decision after its response is lost", async () => {
@@ -2440,11 +2666,16 @@ describe("App", () => {
         updated_at: "2026-07-20T12:10:00Z",
       };
     } else if (operation === "recommendation") {
+      const recommendationRequestId = "33333333-3333-4333-8333-333333333333";
+      vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+        recommendationRequestId,
+      );
       initialJob = approvedArchivedJob;
       persistedJob = {
         ...approvedArchivedJob,
         status: "recommended",
         recommendation,
+        recommendation_request_id: recommendationRequestId,
         updated_at: "2026-07-20T12:10:00Z",
       };
     } else if (operation === "decision") {
@@ -8810,6 +9041,10 @@ describe("App", () => {
 
   it("restores a provider failure after recommending a pristine benchmark import", async () => {
     const benchmarkJobId = "c".repeat(32);
+    const recommendationRequestId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
     const pristineImport = {
       ...approvedJob(),
       id: benchmarkJobId,
@@ -8822,6 +9057,7 @@ describe("App", () => {
       ...pristineImport,
       status: "error" as const,
       error: "provider exploded",
+      recommendation_request_id: recommendationRequestId,
       updated_at: "2026-07-10T00:01:00Z",
     };
     fetchMock()
@@ -8882,6 +9118,10 @@ describe("App", () => {
 
   it("revalidates a pristine benchmark import omitted after a correctable recommendation", async () => {
     const benchmarkJobId = "e".repeat(32);
+    const recommendationRequestId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      recommendationRequestId,
+    );
     const pristineImport = {
       ...approvedJob(),
       id: benchmarkJobId,
@@ -8892,6 +9132,7 @@ describe("App", () => {
     };
     const revalidatedImport = {
       ...pristineImport,
+      recommendation_request_id: recommendationRequestId,
       updated_at: "2026-07-10T00:01:00Z",
     };
     fetchMock()

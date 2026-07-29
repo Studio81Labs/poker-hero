@@ -125,6 +125,7 @@ type JobMutationLease = MutationLeaseBase & {
   jobId: string;
   baselineUpdatedAt: string;
   expectsRemoval: boolean;
+  expectedRecommendationRequestId: string | null;
 };
 type ProjectionMutationTarget = "failed" | "parsed" | "approved" | "recommended";
 type ProjectionMutationLease = MutationLeaseBase & {
@@ -140,6 +141,7 @@ type ArchiveMutationLease = MutationLeaseBase & {
   kind: "archive";
   jobIds: string[];
   baselineUpdatedAt: Record<string, string>;
+  confirmationJobIds: string[];
 };
 type PersistedMutationLease =
   | JobMutationLease
@@ -147,6 +149,7 @@ type PersistedMutationLease =
   | ArchiveMutationLease;
 type ProcessingQueueRestore = JobQueue & {
   revalidatedLeaseJob?: JobRecord;
+  revalidatedArchiveJobs?: JobRecord[];
 };
 type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
@@ -1749,6 +1752,11 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     )
     && typeof candidate.recommendation_pending === "boolean"
     && (
+      candidate.recommendation_request_id === undefined
+      || candidate.recommendation_request_id === null
+      || typeof candidate.recommendation_request_id === "string"
+    )
+    && (
       candidate.training_decision === null
       || isCachedTrainingDecision(candidate.training_decision)
     )
@@ -1945,7 +1953,7 @@ function projectionMutationTarget(
   return autoRecommend ? "recommended" : "approved";
 }
 
-function createUploadRequestId(): string {
+function createMutationRequestId(): string {
   return globalThis.crypto.randomUUID();
 }
 
@@ -2000,6 +2008,15 @@ function readPersistedMutationLease(
       parsed.expectsRemoval = false;
     }
     if (
+      parsed.kind === "job"
+      && parsed.expectedRecommendationRequestId === undefined
+    ) {
+      parsed.expectedRecommendationRequestId = null;
+    }
+    if (parsed.kind === "archive" && parsed.confirmationJobIds === undefined) {
+      parsed.confirmationJobIds = scope === "processing" ? parsed.jobIds : [];
+    }
+    if (
       typeof parsed.ownerId !== "string"
       || typeof parsed.expiresAt !== "number"
       || !Number.isFinite(parsed.expiresAt)
@@ -2014,6 +2031,10 @@ function readPersistedMutationLease(
         typeof parsed.jobId !== "string"
         || typeof parsed.baselineUpdatedAt !== "string"
         || typeof parsed.expectsRemoval !== "boolean"
+        || (
+          parsed.expectedRecommendationRequestId !== null
+          && typeof parsed.expectedRecommendationRequestId !== "string"
+        )
       )
     ) {
       window.sessionStorage.removeItem(mutationLeaseStorageKey(scope));
@@ -2059,6 +2080,12 @@ function readPersistedMutationLease(
           (jobId) =>
             typeof (parsed.baselineUpdatedAt as Record<string, unknown>)[jobId]
               === "string",
+        )
+        || !Array.isArray(parsed.confirmationJobIds)
+        || !parsed.confirmationJobIds.every(
+          (jobId) =>
+            typeof jobId === "string"
+            && (parsed.jobIds as unknown[]).includes(jobId),
         )
       )
     ) {
@@ -2130,6 +2157,7 @@ function startPersistedMutationLease(
   ownerId: string,
   job: JobRecord,
   expectsRemoval = false,
+  expectedRecommendationRequestId: string | null = null,
 ): PersistedMutationLease | null {
   const lease: PersistedMutationLease = {
     kind: "job",
@@ -2137,6 +2165,7 @@ function startPersistedMutationLease(
     jobId: job.id,
     baselineUpdatedAt: job.updated_at,
     expectsRemoval,
+    expectedRecommendationRequestId,
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
   return writePersistedMutationLease(scope, lease) ? lease : null;
@@ -2164,6 +2193,7 @@ function startArchiveMutationLease(
   scope: PersistedJobMutationScope,
   ownerId: string,
   jobs: readonly JobRecord[],
+  processingJobIds: ReadonlySet<string> = new Set(),
 ): PersistedMutationLease | null {
   const lease: ArchiveMutationLease = {
     kind: "archive",
@@ -2172,6 +2202,11 @@ function startArchiveMutationLease(
     baselineUpdatedAt: Object.fromEntries(
       jobs.map((job) => [job.id, job.updated_at]),
     ),
+    confirmationJobIds: scope === "processing"
+      ? jobs
+          .filter((job) => !processingJobIds.has(job.id))
+          .map((job) => job.id)
+      : [],
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
   return writePersistedMutationLease(scope, lease) ? lease : null;
@@ -2949,7 +2984,8 @@ function historyAction(job: JobRecord): string {
 }
 
 function isHistoryReady(job: JobRecord): boolean {
-  return !job.recommendation_pending
+  return job.archived_at === null
+    && !job.recommendation_pending
     && (
       job.status === "approved"
       || job.status === "recommended"
@@ -3564,9 +3600,20 @@ export default function App() {
       const incomingJob = incomingJobs.find(
         (candidate) => candidate.id === lease.jobId,
       );
-      settled = incomingJob !== undefined
-        ? incomingJob.updated_at !== lease.baselineUpdatedAt
-        : completeProcessingProjection && lease.expectsRemoval;
+      if (
+        incomingJob !== undefined
+        && lease.expectedRecommendationRequestId !== null
+      ) {
+        settled = (
+          incomingJob.recommendation_request_id
+            === lease.expectedRecommendationRequestId
+          && !incomingJob.recommendation_pending
+        );
+      } else {
+        settled = incomingJob !== undefined
+          ? incomingJob.updated_at !== lease.baselineUpdatedAt
+          : completeProcessingProjection && lease.expectsRemoval;
+      }
     } else if (lease.kind === "projection") {
       if (lease.expectedUploads.length > 0) {
         const baselineIds = new Set(lease.baselineJobIds);
@@ -3593,9 +3640,18 @@ export default function App() {
           && lease.expectedRemovalJobIds.every((jobId) => !incomingIds.has(jobId));
       }
     } else if (scope === "processing") {
-      const incomingIds = new Set(incomingJobs.map((job) => job.id));
+      const incomingById = new Map(incomingJobs.map((job) => [job.id, job]));
+      const confirmationIds = new Set(lease.confirmationJobIds);
       settled = completeProcessingProjection
-        && lease.jobIds.every((jobId) => !incomingIds.has(jobId));
+        && lease.jobIds.every((jobId) => {
+          const incomingJob = incomingById.get(jobId);
+          if (!confirmationIds.has(jobId)) {
+            return incomingJob === undefined;
+          }
+          return incomingJob !== undefined
+            && incomingJob.archived_at !== null
+            && incomingJob.updated_at !== lease.baselineUpdatedAt[jobId];
+        });
     } else {
       const incomingById = new Map(incomingJobs.map((job) => [job.id, job]));
       settled = lease.jobIds.every((jobId) => {
@@ -3856,6 +3912,7 @@ export default function App() {
   function beginPersistedJobMutation(
     persistedJob: JobRecord,
     removalCandidateIds: readonly string[] = [],
+    expectedRecommendationRequestId: string | null = null,
   ): PersistedJobMutationScope {
     const scope = persistedJobMutationScope(persistedJob);
     const lease = startPersistedMutationLease(
@@ -3863,6 +3920,7 @@ export default function App() {
       mutationOwnerId,
       persistedJob,
       removalCandidateIds.includes(persistedJob.id),
+      expectedRecommendationRequestId,
     );
     if (scope === "history") {
       historyMutationLeaseRef.current = lease;
@@ -4079,6 +4137,18 @@ export default function App() {
           revalidatedLeaseJob: leasedJob,
         };
       }
+      if (lease?.kind === "archive" && lease.confirmationJobIds.length > 0) {
+        const queueIds = new Set(queue.jobs.map((candidate) => candidate.id));
+        const confirmationJobs = await Promise.all(
+          lease.confirmationJobIds
+            .filter((jobId) => !queueIds.has(jobId))
+            .map((jobId) => getJob(jobId)),
+        );
+        return {
+          ...queue,
+          revalidatedArchiveJobs: confirmationJobs,
+        };
+      }
       return queue;
     })();
     let active = true;
@@ -4112,7 +4182,10 @@ export default function App() {
           : null;
         const settlementJobs = revalidatedLeaseJob
           ? [revalidatedLeaseJob, ...projectionJobs]
-          : projectionJobs;
+          : [
+              ...(queue.revalidatedArchiveJobs ?? []),
+              ...projectionJobs,
+            ];
         const incomingJobs = revalidatedLeaseJob?.archived_at === null
           ? settlementJobs
           : projectionJobs;
@@ -4817,7 +4890,7 @@ export default function App() {
 
     markPersistedJobSessionUnsynced(approved);
     const recommended = preserveUploadRequestId(
-      await requestRecommendation(approved.id, signal),
+      await requestRecommendation(approved.id, createMutationRequestId(), signal),
       approved,
     );
     applyRecommendedJob(recommended);
@@ -4989,7 +5062,7 @@ export default function App() {
       automationRecommend,
     );
     const expectedUploads = files.map(() => ({
-      requestId: createUploadRequestId(),
+      requestId: createMutationRequestId(),
       target: uploadTarget,
     }));
     installMutationLease(
@@ -5113,7 +5186,7 @@ export default function App() {
         automationApprove,
         automationRecommend,
       );
-      const uploadRequestId = createUploadRequestId();
+      const uploadRequestId = createMutationRequestId();
       expectedUploadIndex = trackExpectedUpload(uploadRequestId, uploadTarget);
       const created = await captureAndParseScreen(captureFile, uploadRequestId);
       capturedJobId = created.id;
@@ -5201,7 +5274,12 @@ export default function App() {
       return;
     }
     const changesProcessingMembership = isPristineBenchmarkImport(job);
-    const mutationScope = beginPersistedJobMutation(job);
+    const recommendationRequestId = createMutationRequestId();
+    const mutationScope = beginPersistedJobMutation(
+      job,
+      [],
+      recommendationRequestId,
+    );
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
@@ -5225,7 +5303,10 @@ export default function App() {
           ));
         }
       }
-      applyRecommendedJob(await requestRecommendation(job.id));
+      applyRecommendedJob(await requestRecommendation(
+        job.id,
+        recommendationRequestId,
+      ));
     } catch (recommendError) {
       markPersistedJobMutationUncertain(mutationScope, job.id);
       restoreAfterMutation = true;
@@ -6186,6 +6267,11 @@ export default function App() {
         "processing",
         mutationOwnerId,
         readyJobs,
+        new Set(
+          processingJobsForCache(jobsRef.current).map(
+            (candidate) => candidate.id,
+          ),
+        ),
       ),
     );
     installMutationLease(

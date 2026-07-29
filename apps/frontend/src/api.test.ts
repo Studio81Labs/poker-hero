@@ -4,6 +4,7 @@ import {
   archiveJobs,
   getHistory,
   getProcessingJobs,
+  requestRecommendation,
   uploadScreenshot,
 } from "./api";
 
@@ -111,5 +112,29 @@ describe("uploadScreenshot", () => {
       "upload-request-123",
     );
     expect(job.upload_request_id).toBe("upload-request-123");
+  });
+});
+
+describe("requestRecommendation", () => {
+  it("sends the client recommendation identity", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      id: "job-123",
+      status: "recommended",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestRecommendation("job-123", "recommendation-request-123");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs/job-123/recommend",
+      {
+        method: "POST",
+        headers: {
+          "X-Recommendation-Request-ID": "recommendation-request-123",
+        },
+        signal: undefined,
+        credentials: "include",
+      },
+    );
   });
 });

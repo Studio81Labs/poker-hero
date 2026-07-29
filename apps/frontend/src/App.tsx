@@ -3428,17 +3428,15 @@ export default function App() {
             processingError,
             "Could not restore processing queue",
           ));
-          if (jobsRef.current.some(isProcessingJobInProgress)) {
-            markProcessingQueueSessionUnsynced();
-            restoreRetryTimer = window.setTimeout(() => {
-              restoreRetryTimer = null;
-              if (processingMutationCountRef.current === 0) {
-                scheduleProcessingQueueRestore();
-              } else {
-                processingRestoreRetryRequestedRef.current = true;
-              }
-            }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
-          }
+          markProcessingQueueSessionUnsynced();
+          restoreRetryTimer = window.setTimeout(() => {
+            restoreRetryTimer = null;
+            if (processingMutationCountRef.current === 0) {
+              scheduleProcessingQueueRestore();
+            } else {
+              processingRestoreRetryRequestedRef.current = true;
+            }
+          }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
         }
       });
 

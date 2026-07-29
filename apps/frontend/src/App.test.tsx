@@ -705,6 +705,45 @@ describe("App", () => {
     },
   );
 
+  it("retries a failed authoritative restore for an ordinary cached job", async () => {
+    const jobId = "6".repeat(32);
+    const cachedJob = jobRecord({
+      id: jobId,
+      original_filename: "ordinary-restore-retry.png",
+      updated_at: "2026-07-10T00:01:00Z",
+    });
+    const persistedJob: JobRecord = {
+      ...cachedJob,
+      status: "approved",
+      approved_state: canonicalState({ pot_size: 20 }),
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    fetchMock()
+      .mockRejectedValueOnce(new TypeError("Temporary queue restore failure"))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedJob],
+        "ordinary-restore-recovered",
+      ));
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([persistedJob]);
+  });
+
   it("retries polling after a pending recommendation restore fails", async () => {
     const jobId = "5".repeat(32);
     const pendingJob = {

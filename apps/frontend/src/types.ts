@@ -257,6 +257,7 @@ export interface TrainingProgress {
 export interface JobRecord {
   id: string;
   status: "created" | "parsed" | "approved" | "recommended" | "error";
+  upload_request_id?: string | null;
   original_filename: string;
   image_filename: string;
   parser_provider: string;

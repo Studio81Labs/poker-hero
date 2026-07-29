@@ -124,6 +124,7 @@ type JobMutationLease = MutationLeaseBase & {
   kind: "job";
   jobId: string;
   baselineUpdatedAt: string;
+  expectsRemoval: boolean;
 };
 type ProjectionMutationTarget = "failed" | "parsed" | "approved" | "recommended";
 type ProjectionMutationLease = MutationLeaseBase & {
@@ -131,7 +132,7 @@ type ProjectionMutationLease = MutationLeaseBase & {
   baselineJobIds: string[];
   expectedRemovalJobIds: string[];
   expectedUploads: Array<{
-    filename: string;
+    requestId: string;
     target: ProjectionMutationTarget;
   }>;
 };
@@ -144,6 +145,9 @@ type PersistedMutationLease =
   | JobMutationLease
   | ProjectionMutationLease
   | ArchiveMutationLease;
+type ProcessingQueueRestore = JobQueue & {
+  revalidatedLeaseJob?: JobRecord;
+};
 type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
 type TrainingCertaintyFocus = {
@@ -1941,6 +1945,10 @@ function projectionMutationTarget(
   return autoRecommend ? "recommended" : "approved";
 }
 
+function createUploadRequestId(): string {
+  return globalThis.crypto.randomUUID();
+}
+
 function mutationLeaseJobIds(
   lease: PersistedMutationLease | null,
 ): string[] {
@@ -1988,6 +1996,9 @@ function readPersistedMutationLease(
     ) {
       parsed.kind = "job";
     }
+    if (parsed.kind === "job" && parsed.expectsRemoval === undefined) {
+      parsed.expectsRemoval = false;
+    }
     if (
       typeof parsed.ownerId !== "string"
       || typeof parsed.expiresAt !== "number"
@@ -2002,6 +2013,7 @@ function readPersistedMutationLease(
       && (
         typeof parsed.jobId !== "string"
         || typeof parsed.baselineUpdatedAt !== "string"
+        || typeof parsed.expectsRemoval !== "boolean"
       )
     ) {
       window.sessionStorage.removeItem(mutationLeaseStorageKey(scope));
@@ -2022,7 +2034,7 @@ function readPersistedMutationLease(
         || !parsed.expectedUploads.every((value) =>
           typeof value === "object"
           && value !== null
-          && typeof (value as Record<string, unknown>).filename === "string"
+          && typeof (value as Record<string, unknown>).requestId === "string"
           && ["failed", "parsed", "approved", "recommended"].includes(String(
             (value as Record<string, unknown>).target,
           ))
@@ -2117,12 +2129,14 @@ function startPersistedMutationLease(
   scope: PersistedJobMutationScope,
   ownerId: string,
   job: JobRecord,
+  expectsRemoval = false,
 ): PersistedMutationLease | null {
   const lease: PersistedMutationLease = {
     kind: "job",
     ownerId,
     jobId: job.id,
     baselineUpdatedAt: job.updated_at,
+    expectsRemoval,
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
   return writePersistedMutationLease(scope, lease) ? lease : null;
@@ -2456,6 +2470,15 @@ function newerJob(current: JobRecord, incoming: JobRecord): JobRecord {
     : incoming;
 }
 
+function preserveUploadRequestId(
+  incoming: JobRecord,
+  current: JobRecord | undefined,
+): JobRecord {
+  return incoming.upload_request_id || !current?.upload_request_id
+    ? incoming
+    : { ...incoming, upload_request_id: current.upload_request_id };
+}
+
 function newerHistoryJob(
   current: JobRecord,
   incoming: JobRecord,
@@ -2484,9 +2507,14 @@ function localUploadMatchDistance(
     || localJob.parser_provider !== "client"
     || localJob.status !== "error"
     || !PERSISTED_JOB_ID_PATTERN.test(incomingJob.id)
-    || localJob.original_filename !== incomingJob.original_filename
     || (!matchingPersistedFailure && !matchingPersistedSuccess)
   ) {
+    return null;
+  }
+  if (localJob.upload_request_id) {
+    return incomingJob.upload_request_id === localJob.upload_request_id ? 0 : null;
+  }
+  if (localJob.original_filename !== incomingJob.original_filename) {
     return null;
   }
 
@@ -2935,11 +2963,17 @@ function isProcessingJobInProgress(job: JobRecord): boolean {
     && (job.status === "created" || job.recommendation_pending);
 }
 
-function createLocalErrorJob(file: File, message: string, index: number): JobRecord {
+function createLocalErrorJob(
+  file: File,
+  message: string,
+  index: number,
+  uploadRequestId: string,
+): JobRecord {
   const timestamp = new Date().toISOString();
   return {
     id: `local-error-${Date.now()}-${index}`,
     status: "error",
+    upload_request_id: uploadRequestId,
     original_filename: file.name,
     image_filename: "",
     parser_provider: "client",
@@ -3090,7 +3124,9 @@ export default function App() {
   const historyRestoreRetryRequestedRef = useRef(false);
   const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
-  const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
+  const processingRestorePromiseRef = useRef<Promise<ProcessingQueueRestore> | null>(
+    null,
+  );
 
   useEffect(() => {
     appMountedRef.current = true;
@@ -3454,7 +3490,7 @@ export default function App() {
   }
 
   function trackExpectedUpload(
-    filename: string,
+    requestId: string,
     target: ProjectionMutationTarget,
   ): number | null {
     const lease = processingMutationLeaseRef.current;
@@ -3463,7 +3499,7 @@ export default function App() {
     }
     const updatedLease: ProjectionMutationLease = {
       ...lease,
-      expectedUploads: [...lease.expectedUploads, { filename, target }],
+      expectedUploads: [...lease.expectedUploads, { requestId, target }],
       expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
     };
     if (replacePersistedMutationLease("processing", lease, updatedLease)) {
@@ -3476,7 +3512,6 @@ export default function App() {
   function updateExpectedUpload(
     expectedUploadIndex: number | null,
     target: ProjectionMutationTarget,
-    filename?: string,
   ) {
     const lease = processingMutationLeaseRef.current;
     if (
@@ -3489,7 +3524,6 @@ export default function App() {
     const expectedUploads = [...lease.expectedUploads];
     expectedUploads[expectedUploadIndex] = {
       ...expectedUploads[expectedUploadIndex],
-      filename: filename ?? expectedUploads[expectedUploadIndex].filename,
       target,
     };
     const updatedLease: ProjectionMutationLease = {
@@ -3532,7 +3566,7 @@ export default function App() {
       );
       settled = incomingJob !== undefined
         ? incomingJob.updated_at !== lease.baselineUpdatedAt
-        : completeProcessingProjection;
+        : completeProcessingProjection && lease.expectsRemoval;
     } else if (lease.kind === "projection") {
       if (lease.expectedUploads.length > 0) {
         const baselineIds = new Set(lease.baselineJobIds);
@@ -3544,7 +3578,7 @@ export default function App() {
             return true;
           }
           const matchingIndex = availableJobs.findIndex((job) =>
-            job.original_filename === expectedUpload.filename
+            job.upload_request_id === expectedUpload.requestId
             && projectionMutationTargetReached(job, expectedUpload.target)
           );
           if (matchingIndex === -1) {
@@ -3828,6 +3862,7 @@ export default function App() {
       scope,
       mutationOwnerId,
       persistedJob,
+      removalCandidateIds.includes(persistedJob.id),
     );
     if (scope === "history") {
       historyMutationLeaseRef.current = lease;
@@ -4031,7 +4066,20 @@ export default function App() {
       if (legacyHistoryArchive !== null && !(await legacyHistoryArchive)) {
         throw new Error("Could not migrate legacy history before restoring processing");
       }
-      return getProcessingQueueExtent();
+      const queue = await getProcessingQueueExtent();
+      const lease = processingMutationLeaseRef.current;
+      if (
+        lease?.kind === "job"
+        && !lease.expectsRemoval
+        && !queue.jobs.some((candidate) => candidate.id === lease.jobId)
+      ) {
+        const leasedJob = await getJob(lease.jobId);
+        return {
+          ...queue,
+          revalidatedLeaseJob: leasedJob,
+        };
+      }
+      return queue;
     })();
     let active = true;
     let restoreRetryTimer: number | null = null;
@@ -4048,26 +4096,41 @@ export default function App() {
           }
           return;
         }
-        const authoritativeMutationJobIds = new Set(
-          mutationLeaseJobIds(processingMutationLeaseRef.current),
-        );
-        const mutationLeaseSettled = settlePersistedMutationLease(
-          "processing",
-          queue.jobs,
-          true,
-        );
         const currentJobs = jobsRef.current;
         const currentJobsById = new Map(currentJobs.map((candidate) => [
           candidate.id,
           candidate,
         ]));
+        const projectionJobs = queue.jobs.map((candidate) =>
+          preserveUploadRequestId(candidate, currentJobsById.get(candidate.id))
+        );
+        const revalidatedLeaseJob = queue.revalidatedLeaseJob
+          ? preserveUploadRequestId(
+              queue.revalidatedLeaseJob,
+              currentJobsById.get(queue.revalidatedLeaseJob.id),
+            )
+          : null;
+        const settlementJobs = revalidatedLeaseJob
+          ? [revalidatedLeaseJob, ...projectionJobs]
+          : projectionJobs;
+        const incomingJobs = revalidatedLeaseJob?.archived_at === null
+          ? settlementJobs
+          : projectionJobs;
+        const authoritativeMutationJobIds = new Set(
+          mutationLeaseJobIds(processingMutationLeaseRef.current),
+        );
+        const mutationLeaseSettled = settlePersistedMutationLease(
+          "processing",
+          settlementJobs,
+          true,
+        );
         const currentActiveId = activeJobIdRef.current;
         const currentActiveJob = currentActiveId === null
           ? null
           : currentJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
         let nextJobs = reconcileProcessingJobs(
           currentJobs,
-          queue.jobs,
+          incomingJobs,
           cachedIds,
           processingRemovalCandidateIdsRef.current,
         );
@@ -4075,7 +4138,7 @@ export default function App() {
           candidate.id,
           candidate,
         ]));
-        const recoveredAutomationIds = new Set(queue.jobs.flatMap((incomingJob) => {
+        const recoveredAutomationIds = new Set(incomingJobs.flatMap((incomingJob) => {
           const currentJob = currentJobsById.get(incomingJob.id);
           const reconciledJob = nextJobsById.get(incomingJob.id);
           const reachedAutomationTarget = incomingJob.error === null
@@ -4138,7 +4201,7 @@ export default function App() {
         }
         const processingInProgress = nextJobs.some(isProcessingJobInProgress);
         const authoritativeJobIds = new Set(
-          queue.jobs.map((candidate) => candidate.id),
+          incomingJobs.map((candidate) => candidate.id),
         );
         if (
           writeProcessingQueue(nextJobs, false, authoritativeJobIds)
@@ -4271,11 +4334,17 @@ export default function App() {
   }
 
   function replaceJob(updatedJob: JobRecord) {
+    const currentJob = jobsRef.current.find(
+      (candidate) => candidate.id === updatedJob.id,
+    );
+    const normalizedJob = preserveUploadRequestId(updatedJob, currentJob);
     updateJobs((current) =>
-      current.map((candidate) => (candidate.id === updatedJob.id ? updatedJob : candidate)),
+      current.map((candidate) =>
+        candidate.id === normalizedJob.id ? normalizedJob : candidate
+      ),
     );
     clearJobAttention(updatedJob.id);
-    updateHistoryJob(updatedJob);
+    updateHistoryJob(normalizedJob);
     activeJobIdRef.current = updatedJob.id;
     setActiveJobId(updatedJob.id);
   }
@@ -4736,7 +4805,10 @@ export default function App() {
 
     const approvalState = autoApprovalState(created, automationAllowWarnings);
     markPersistedJobSessionUnsynced(created);
-    const approved = await approveState(created.id, approvalState, signal);
+    const approved = preserveUploadRequestId(
+      await approveState(created.id, approvalState, signal),
+      created,
+    );
     applyApprovedJob(approved, approvalState);
 
     if (!automationRecommend) {
@@ -4744,12 +4816,18 @@ export default function App() {
     }
 
     markPersistedJobSessionUnsynced(approved);
-    const recommended = await requestRecommendation(approved.id, signal);
+    const recommended = preserveUploadRequestId(
+      await requestRecommendation(approved.id, signal),
+      approved,
+    );
     applyRecommendedJob(recommended);
     return recommended;
   }
 
-  async function uploadSelectedFiles(runAutomation: boolean): Promise<JobRecord[]> {
+  async function uploadSelectedFiles(
+    runAutomation: boolean,
+    expectedUploads: ProjectionMutationLease["expectedUploads"],
+  ): Promise<JobRecord[]> {
     const selectedFiles = [...files];
     const controller = new AbortController();
     queueAbortControllerRef.current = controller;
@@ -4792,8 +4870,13 @@ export default function App() {
       });
 
       const expectedUploadIndex = index;
+      const expectedUpload = expectedUploads[index];
       try {
-        const created = await uploadScreenshot(selectedFile, controller.signal);
+        const created = await uploadScreenshot(
+          selectedFile,
+          expectedUpload.requestId,
+          controller.signal,
+        );
         updateExpectedUpload(
           expectedUploadIndex,
           projectionMutationTarget(
@@ -4801,7 +4884,6 @@ export default function App() {
             automationApprove,
             automationRecommend,
           ),
-          created.original_filename,
         );
         appendJob(created);
         let completed = created;
@@ -4854,7 +4936,12 @@ export default function App() {
           updateExpectedUpload(expectedUploadIndex, "failed");
         }
         const message = messageFromError(uploadError, "Upload failed");
-        const errorJob = createLocalErrorJob(selectedFile, message, index);
+        const errorJob = createLocalErrorJob(
+          selectedFile,
+          message,
+          index,
+          expectedUpload.requestId,
+        );
         appendJob(errorJob);
         completedJobs.push(errorJob);
         attentionMessages.push(`${selectedFile.name}: ${message}`);
@@ -4901,17 +4988,24 @@ export default function App() {
       automationApprove,
       automationRecommend,
     );
+    const expectedUploads = files.map(() => ({
+      requestId: createUploadRequestId(),
+      target: uploadTarget,
+    }));
     installMutationLease(
       "processing",
       startProjectionMutationLease(
         "processing",
         mutationOwnerId,
         processingJobsForCache(jobsRef.current),
-        files.map((file) => ({ filename: file.name, target: uploadTarget })),
+        expectedUploads,
       ),
     );
     try {
-      const completedJobs = await uploadSelectedFiles(automationEnabled);
+      const completedJobs = await uploadSelectedFiles(
+        automationEnabled,
+        expectedUploads,
+      );
       settlePersistedMutationLease("processing", completedJobs, false);
       if (processingMutationLeaseRef.current !== null) {
         scheduleMutationLeaseRevalidation();
@@ -4986,8 +5080,11 @@ export default function App() {
     return new File([blob], captureName(), { type: "image/png" });
   }
 
-  async function captureAndParseScreen(file: File): Promise<JobRecord> {
-    const created = await uploadScreenshot(file);
+  async function captureAndParseScreen(
+    file: File,
+    uploadRequestId: string,
+  ): Promise<JobRecord> {
+    const created = await uploadScreenshot(file, uploadRequestId);
     appendJob(created);
     return created;
   }
@@ -5016,13 +5113,13 @@ export default function App() {
         automationApprove,
         automationRecommend,
       );
-      expectedUploadIndex = trackExpectedUpload(captureFile.name, uploadTarget);
-      const created = await captureAndParseScreen(captureFile);
+      const uploadRequestId = createUploadRequestId();
+      expectedUploadIndex = trackExpectedUpload(uploadRequestId, uploadTarget);
+      const created = await captureAndParseScreen(captureFile, uploadRequestId);
       capturedJobId = created.id;
       updateExpectedUpload(
         expectedUploadIndex,
         uploadTarget,
-        created.original_filename,
       );
       let completed = created;
       if (automationEnabled) {

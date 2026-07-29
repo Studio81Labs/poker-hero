@@ -75,6 +75,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
   return {
     id: "job-123",
     status: "parsed",
+    upload_request_id: null,
     original_filename: "table.png",
     image_filename: "job-123.png",
     parser_provider: "mock",
@@ -1911,16 +1912,22 @@ describe("App", () => {
     window.sessionStorage.setItem("poker-training-processing-synced", "true");
     window.sessionStorage.setItem("poker-training-history-synced", "true");
     const pendingUpload = deferredResponse();
+    let uploadRequestId = "";
     fetchMock()
-      .mockReturnValueOnce(pendingUpload.promise)
+      .mockImplementationOnce((_url, request) => {
+        uploadRequestId = String(
+          (request?.body as FormData).get("upload_request_id"),
+        );
+        return pendingUpload.promise;
+      })
       .mockResolvedValueOnce(processingQueueResponse(
         [],
         "stale-upload-snapshot",
       ))
-      .mockResolvedValueOnce(processingQueueResponse(
-        [created],
+      .mockImplementationOnce(() => Promise.resolve(processingQueueResponse(
+        [{ ...created, upload_request_id: uploadRequestId }],
         "committed-upload-snapshot",
-      ));
+      )));
     const firstRender = render(<App />);
     const user = userEvent.setup();
 
@@ -1932,6 +1939,7 @@ describe("App", () => {
     );
     await user.click(screen.getByRole("button", { name: "Upload and parse" }));
     await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    expect(uploadRequestId).not.toBe("");
     firstRender.unmount();
 
     render(<App />);
@@ -1964,6 +1972,75 @@ describe("App", () => {
     ]);
   });
 
+  it("does not settle a reload-spanning upload from another job with the same filename", async () => {
+    const filename = "duplicate-name.png";
+    const created = jobRecord({
+      id: "a".repeat(32),
+      original_filename: filename,
+    });
+    const foreignJob = jobRecord({
+      id: "b".repeat(32),
+      original_filename: filename,
+      upload_request_id: "foreign-upload-request",
+    });
+    window.localStorage.setItem("poker-training-processing-v1", "[]");
+    window.localStorage.setItem("poker-training-processing-total-v1", "0");
+    window.localStorage.setItem("poker-training-history-v1", "[]");
+    window.localStorage.setItem("poker-training-history-total-v1", "0");
+    window.sessionStorage.setItem("poker-training-processing-synced", "true");
+    window.sessionStorage.setItem("poker-training-history-synced", "true");
+    const pendingUpload = deferredResponse();
+    let uploadRequestId = "";
+    fetchMock()
+      .mockImplementationOnce((_url, request) => {
+        uploadRequestId = String(
+          (request?.body as FormData).get("upload_request_id"),
+        );
+        return pendingUpload.promise;
+      })
+      .mockResolvedValueOnce(processingQueueResponse(
+        [foreignJob],
+        "foreign-upload-snapshot",
+      ))
+      .mockImplementationOnce(() => Promise.resolve(processingQueueResponse(
+        [
+          foreignJob,
+          { ...created, upload_request_id: uploadRequestId },
+        ],
+        "committed-upload-snapshot",
+      )));
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await disableAutomation(user);
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["upload"], filename, { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    firstRender.unmount();
+
+    render(<App />);
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+
+    await act(async () => {
+      pendingUpload.resolve(jsonResponse(created, 201));
+      await pendingUpload.promise;
+    });
+
+    await waitFor(() => expect(screen.getAllByRole("button", {
+      name: /Open screenshot \d+: duplicate-name\.png/,
+    })).toHaveLength(2));
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+  });
+
   it("persists every selected file before starting a batch upload", async () => {
     const pendingUpload = deferredResponse();
     fetchMock()
@@ -1986,8 +2063,8 @@ describe("App", () => {
     expect(JSON.parse(String(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
     ))).expectedUploads).toEqual([
-      { filename: "batch-first.png", target: "recommended" },
-      { filename: "batch-second.png", target: "recommended" },
+      { requestId: expect.any(String), target: "recommended" },
+      { requestId: expect.any(String), target: "recommended" },
     ]);
 
     await act(async () => {
@@ -2046,7 +2123,7 @@ describe("App", () => {
     )));
     expect(retainedLease.ownerId).toBe(replacementLease.ownerId);
     expect(retainedLease.expectedUploads).toEqual([{
-      filename: "reload-spanning-failure.png",
+      requestId: expect.any(String),
       target: "recommended",
     }]);
   });
@@ -2807,19 +2884,30 @@ describe("App", () => {
       created_at: failedAt,
       updated_at: failedAt,
     });
+    let uploadRequestId = "";
     fetchMock().mockReturnValueOnce(pendingQueue.promise);
     if (responseLost) {
-      fetchMock().mockRejectedValueOnce(new TypeError(localError));
+      fetchMock().mockImplementationOnce((_url, request) => {
+        uploadRequestId = String(
+          (request?.body as FormData).get("upload_request_id"),
+        );
+        return Promise.reject(new TypeError(localError));
+      });
     } else {
-      fetchMock().mockResolvedValueOnce(jsonResponse({
-        detail: localError,
-      }, 502));
+      fetchMock().mockImplementationOnce((_url, request) => {
+        uploadRequestId = String(
+          (request?.body as FormData).get("upload_request_id"),
+        );
+        return Promise.resolve(jsonResponse({
+          detail: localError,
+        }, 502));
+      });
     }
-    fetchMock().mockResolvedValueOnce(jsonResponse({
+    fetchMock().mockImplementationOnce(() => Promise.resolve(jsonResponse({
       total: 1,
-      jobs: [persistedJob],
+      jobs: [{ ...persistedJob, upload_request_id: uploadRequestId }],
       snapshot_version: "restored-upload",
-    }));
+    })));
     render(<App />);
     const user = userEvent.setup();
 
@@ -2841,7 +2929,7 @@ describe("App", () => {
     })).toHaveLength(1));
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([persistedJob]);
+    ))).toEqual([{ ...persistedJob, upload_request_id: uploadRequestId }]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");
@@ -2863,13 +2951,19 @@ describe("App", () => {
       created_at: persistedAt,
       updated_at: persistedAt,
     });
+    let uploadRequestId = "";
     fetchMock()
-      .mockRejectedValueOnce(new TypeError("Connection lost after upload"))
-      .mockResolvedValueOnce(jsonResponse({
+      .mockImplementationOnce((_url, request) => {
+        uploadRequestId = String(
+          (request?.body as FormData).get("upload_request_id"),
+        );
+        return Promise.reject(new TypeError("Connection lost after upload"));
+      })
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse({
         total: 1,
-        jobs: [persistedJob],
+        jobs: [{ ...persistedJob, upload_request_id: uploadRequestId }],
         snapshot_version: "post-mutation-snapshot",
-      }));
+      })));
     render(<App />);
     const user = userEvent.setup();
 
@@ -2888,7 +2982,7 @@ describe("App", () => {
     })).toHaveLength(1));
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([persistedJob]);
+    ))).toEqual([{ ...persistedJob, upload_request_id: uploadRequestId }]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");
@@ -3359,7 +3453,10 @@ describe("App", () => {
     expect(within(attentionItem).getByText("Solver unavailable")).toBeInTheDocument();
     await waitFor(() => expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([failedJob]));
+    ))).toEqual([{
+      ...failedJob,
+      upload_request_id: expect.any(String),
+    }]));
 
     firstRender.unmount();
     render(<App />);
@@ -3438,7 +3535,10 @@ describe("App", () => {
     )).not.toBeInTheDocument();
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([persistedRecommendation]);
+    ))).toEqual([{
+      ...persistedRecommendation,
+      upload_request_id: expect.any(String),
+    }]);
   });
 
   it("invalidates an older history restore while clearing reviewed jobs", async () => {
@@ -8777,6 +8877,68 @@ describe("App", () => {
       `http://localhost:8000/api/jobs/${benchmarkJobId}`,
       `http://localhost:8000/api/jobs/${benchmarkJobId}/recommend`,
       "http://localhost:8000/api/jobs",
+    ]);
+  });
+
+  it("revalidates a pristine benchmark import omitted after a correctable recommendation", async () => {
+    const benchmarkJobId = "e".repeat(32);
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "correctable-recommendation.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const revalidatedImport = {
+      ...pristineImport,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(benchmarkOverviewForJob(
+        benchmarkJobId,
+        "correctable-recommendation.png",
+      )))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: { missing_fields: ["effective_stack"] },
+      }, 422))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "omitted-pristine-import-snapshot",
+      ))
+      .mockResolvedValueOnce(jsonResponse(revalidatedImport));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle correctable-recommendation.png benchmark details",
+    }));
+    await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
+    await waitFor(() => expect(
+      screen.queryByRole("dialog", { name: "Parser benchmark" }),
+    ).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    expect(await screen.findAllByText(/effective_stack/)).not.toHaveLength(0);
+    expect(await screen.findByRole("button", {
+      name: "Open screenshot 1: correctable-recommendation.png",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeEnabled();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
+      `http://localhost:8000/api/jobs/${benchmarkJobId}/recommend`,
+      "http://localhost:8000/api/jobs",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
   });
 

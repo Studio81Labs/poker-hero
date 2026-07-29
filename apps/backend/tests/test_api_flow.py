@@ -64,8 +64,18 @@ def upload_job(
     content: bytes = VALID_PNG,
     content_type: str = "image/png",
     filename: str = "table.png",
+    upload_request_id: str | None = None,
 ):
-    return client.post("/api/jobs", files={"file": (filename, content, content_type)})
+    data = (
+        {"upload_request_id": upload_request_id}
+        if upload_request_id is not None
+        else None
+    )
+    return client.post(
+        "/api/jobs",
+        files={"file": (filename, content, content_type)},
+        data=data,
+    )
 
 
 def approve_job(client: TestClient, job_id: str, state: dict[str, object] | None = None):
@@ -119,6 +129,17 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert result["status"] == "recommended"
     assert result["recommendation"]["action"] == "call"
     assert result["recommendation"]["sizing"] is None
+
+
+def test_upload_persists_client_request_identity(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"
+
+    response = upload_job(client, upload_request_id=request_id)
+
+    assert response.status_code == 201
+    assert response.json()["upload_request_id"] == request_id
+    assert load_only_job(tmp_path).upload_request_id == request_id
 
 
 def test_processing_queue_pages_unarchived_jobs_in_stable_order(

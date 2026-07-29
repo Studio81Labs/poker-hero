@@ -383,6 +383,12 @@ class JobRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid4().hex)
     status: Literal["created", "parsed", "approved", "recommended", "error"] = "created"
+    upload_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     original_filename: str
     image_filename: str
     parser_provider: str

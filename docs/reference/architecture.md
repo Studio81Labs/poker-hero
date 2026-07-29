@@ -278,14 +278,19 @@ records replace in-memory and cached records regardless of `updated_at`; dirty
 active form values remain separate until a persisted revision confirms the
 user's uncertain mutation committed. The frontend records bounded,
 browser-session mutation leases before persisted operations begin. Single-job
-writes carry the job ID and baseline revision; upload and capture leases carry
-the baseline queue plus each filename and last required automation stage;
-dataset imports may also carry processing IDs expected to disappear. Batch
+writes carry the job ID, baseline revision, and whether queue removal is
+expected. If an ordinary leased job is missing from processing, the frontend
+revalidates it by ID before settling or removing it from the workspace. Upload
+and capture leases carry the baseline queue plus a client-generated request ID
+and last required automation stage for each file. The request ID is sent with
+the multipart upload, persisted on the backend job, and used instead of the
+display filename when matching a restored queue. Dataset imports may also carry
+processing IDs expected to disappear. Batch
 archive leases carry every target ID and baseline revision in both processing
 and history scopes. A replacement document claims the leases, keeps the
 affected projections unsynchronized, and revalidates with bounded backoff until
 the required revision, queue appearance, removal, or archive membership is
-observed. Batch upload leases record every selected filename before the first
+observed. Batch upload leases record every selected request ID before the first
 request. Ambiguous write failures retain their lease through unchanged
 projections, and a replacement document cannot overwrite a claimed lease with a
 second mutation in the same projection. Verified archives additionally refresh

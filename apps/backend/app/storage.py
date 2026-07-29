@@ -30,6 +30,7 @@ class FileJobStore:
         parser_provider: str,
         recommendation_provider: str,
         job_id: str | None = None,
+        upload_request_id: str | None = None,
     ) -> JobRecord:
         image_suffix = Path(original_filename).suffix or ".png"
         job_values = {
@@ -37,6 +38,7 @@ class FileJobStore:
             "image_filename": f"original{image_suffix}",
             "parser_provider": parser_provider,
             "recommendation_provider": recommendation_provider,
+            "upload_request_id": upload_request_id,
         }
         if job_id is not None:
             job_values["id"] = job_id

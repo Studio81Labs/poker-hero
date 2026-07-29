@@ -5,7 +5,7 @@ from io import BytesIO
 import re
 from threading import Lock, RLock
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -172,7 +172,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
-    async def create_job(file: UploadFile = File(...)) -> JobRecord:
+    async def create_job(
+        file: UploadFile = File(...),
+        upload_request_id: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+    ) -> JobRecord:
         image_bytes = await file.read(active_settings.max_upload_bytes + 1)
         if len(image_bytes) > active_settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
@@ -184,6 +192,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             image_bytes=image_bytes,
             parser_provider=active_settings.parser_provider,
             recommendation_provider=active_settings.recommendation_provider,
+            upload_request_id=upload_request_id,
         )
         try:
             parser = build_parser(active_settings)

@@ -124,16 +124,24 @@ export async function archiveJobs(jobIds: string[]): Promise<JobHistory> {
   return history;
 }
 
-export async function uploadScreenshot(file: File, signal?: AbortSignal): Promise<JobRecord> {
+export async function uploadScreenshot(
+  file: File,
+  uploadRequestId: string,
+  signal?: AbortSignal,
+): Promise<JobRecord> {
   const form = new FormData();
   form.append("file", file);
+  form.append("upload_request_id", uploadRequestId);
   const response = await fetch(`${API_BASE_URL}/api/jobs`, {
     method: "POST",
     body: form,
     signal,
     credentials: "include",
   });
-  return readJson<JobRecord>(response);
+  const job = await readJson<JobRecord>(response);
+  return job.upload_request_id
+    ? job
+    : { ...job, upload_request_id: uploadRequestId };
 }
 
 export async function approveState(jobId: string, state: CanonicalState, signal?: AbortSignal): Promise<JobRecord> {

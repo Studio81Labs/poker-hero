@@ -1242,6 +1242,27 @@ def test_app_startup_recovers_interrupted_recommendation(tmp_path: Path) -> None
     assert retry_response.json()["status"] == "recommended"
 
 
+def test_app_startup_recovers_interrupted_parser_job(tmp_path: Path) -> None:
+    store = FileJobStore(tmp_path)
+    interrupted_job = store.create_job(
+        original_filename="interrupted-parser.png",
+        image_bytes=VALID_PNG,
+        parser_provider="mock",
+        recommendation_provider="mock",
+    )
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{interrupted_job.id}")
+    assert recovered_response.status_code == 200
+    recovered_job = recovered_response.json()
+    assert recovered_job["recommendation_pending"] is False
+    assert recovered_job["status"] == "error"
+    assert recovered_job["error"] == (
+        "Parsing was interrupted by a backend restart; upload the screenshot again"
+    )
+
+
 def test_recommend_requires_approval(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     upload = upload_job(client)
@@ -1351,6 +1372,29 @@ def test_parser_runtime_errors_are_bad_gateway_and_stored(
     job = load_only_job(tmp_path)
     assert job.status == "error"
     assert job.error == "parser exploded"
+
+
+def test_unexpected_parser_errors_are_http_errors_and_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FailingParser:
+        name = "failing"
+
+        def parse(self, image_path: Path):
+            raise RuntimeError("unexpected parser crash")
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: FailingParser())
+    client = make_client(tmp_path)
+
+    response = upload_job(client)
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Unexpected parser error: unexpected parser crash"
+    )
+    job = load_only_job(tmp_path)
+    assert job.status == "error"
+    assert job.error == "Unexpected parser error: unexpected parser crash"
 
 
 def test_provider_runtime_errors_are_bad_gateway_and_stored(

@@ -69,6 +69,9 @@ from app.training import (
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
+INTERRUPTED_PARSER_ERROR = (
+    "Parsing was interrupted by a backend restart; upload the screenshot again"
+)
 INTERRUPTED_RECOMMENDATION_ERROR = (
     "Recommendation was interrupted by a backend restart; request it again"
 )
@@ -91,20 +94,25 @@ HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
 
-def recover_interrupted_recommendations(store: FileJobStore) -> None:
+def recover_interrupted_jobs(store: FileJobStore) -> None:
     for job in store.list():
-        if not job.recommendation_pending:
+        if job.status == "created":
+            job.recommendation_pending = False
+            job.status = "error"
+            job.error = INTERRUPTED_PARSER_ERROR
+            store.save(job)
             continue
-        job.recommendation_pending = False
-        job.status = "error"
-        job.error = INTERRUPTED_RECOMMENDATION_ERROR
-        store.save(job)
+        if job.recommendation_pending:
+            job.recommendation_pending = False
+            job.status = "error"
+            job.error = INTERRUPTED_RECOMMENDATION_ERROR
+            store.save(job)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
-    recover_interrupted_recommendations(store)
+    recover_interrupted_jobs(store)
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
@@ -190,6 +198,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.error = str(exc)
             save_job(job)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            job.status = "error"
+            job.error = f"Unexpected parser error: {exc}"
+            save_job(job)
+            raise HTTPException(status_code=500, detail=job.error) from exc
 
         job.parser_result = parser_result
         job.status = "parsed"

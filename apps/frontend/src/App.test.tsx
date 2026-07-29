@@ -491,7 +491,7 @@ describe("App", () => {
     ))).toEqual([completedJob]);
   });
 
-  it("polls a recommendation that was still running in archived history", async () => {
+  it("lets terminal history state replace a future-dated pending cache", async () => {
     const jobId = "8".repeat(32);
     const archivedAt = "2026-07-10T00:00:30Z";
     const pendingJob = {
@@ -500,7 +500,7 @@ describe("App", () => {
       original_filename: "archived-pending-recommendation.png",
       recommendation_pending: true,
       archived_at: archivedAt,
-      updated_at: "2026-07-10T00:01:00Z",
+      updated_at: "9999-01-01T00:00:00Z",
     };
     const completedJob = {
       ...recommendedJob(),

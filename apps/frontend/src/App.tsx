@@ -2116,10 +2116,7 @@ function newerHistoryItem(
   current: HistoryItem,
   incoming: HistoryItem,
 ): HistoryItem {
-  const currentUpdatedAt = Date.parse(current.job.updated_at);
-  const incomingUpdatedAt = Date.parse(incoming.job.updated_at);
-  return Number.isFinite(currentUpdatedAt)
-    && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt >= incomingUpdatedAt)
+  return newerHistoryJob(current.job, incoming.job) === current.job
     ? current
     : incoming;
 }
@@ -2131,6 +2128,16 @@ function newerJob(current: JobRecord, incoming: JobRecord): JobRecord {
     && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt >= incomingUpdatedAt)
     ? current
     : incoming;
+}
+
+function newerHistoryJob(
+  current: JobRecord,
+  incoming: JobRecord,
+): JobRecord {
+  if (current.recommendation_pending && !incoming.recommendation_pending) {
+    return incoming;
+  }
+  return newerJob(current, incoming);
 }
 
 function localUploadMatchDistance(
@@ -3584,7 +3591,7 @@ export default function App() {
       : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
     const nextJobs = jobsRef.current.map((candidate) => {
       const incomingJob = incomingJobsById.get(candidate.id);
-      return incomingJob ? newerJob(candidate, incomingJob) : candidate;
+      return incomingJob ? newerHistoryJob(candidate, incomingJob) : candidate;
     });
     const reconciledActiveJob = currentActiveId === null
       ? null
@@ -3612,14 +3619,19 @@ export default function App() {
       const next = current.map((item) => {
         const incomingJob = incomingJobsById.get(item.id);
         return incomingJob
-          ? { ...item, job: newerJob(item.job, incomingJob) }
+          ? { ...item, job: newerHistoryJob(item.job, incomingJob) }
           : item;
       });
       const historyCached = writeHistory(next);
       const cachedHistory = historyCached ? readHistory() : null;
-      const pendingSearchResult = (historySearchResults ?? []).some((item) =>
-        (incomingJobsById.get(item.id) ?? item.job).recommendation_pending,
-      );
+      const pendingSearchResult = (historySearchResults ?? []).some((item) => {
+        const incomingJob = incomingJobsById.get(item.id);
+        return (
+          incomingJob
+            ? newerHistoryJob(item.job, incomingJob)
+            : item.job
+        ).recommendation_pending;
+      });
       const pendingWorkspaceJob = nextJobs.some(
         (candidate) => candidate.archived_at && candidate.recommendation_pending,
       );
@@ -3642,7 +3654,7 @@ export default function App() {
       current?.map((item) => {
         const incomingJob = incomingJobsById.get(item.id);
         return incomingJob
-          ? { ...item, job: newerJob(item.job, incomingJob) }
+          ? { ...item, job: newerHistoryJob(item.job, incomingJob) }
           : item;
       }) ?? null,
     );
@@ -3664,7 +3676,7 @@ export default function App() {
       : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
     const nextJobs = jobsRef.current.map((candidate) => {
       const incomingJob = incomingJobsById.get(candidate.id);
-      return incomingJob ? newerJob(candidate, incomingJob) : candidate;
+      return incomingJob ? newerHistoryJob(candidate, incomingJob) : candidate;
     });
     const reconciledActiveJob = currentActiveId === null
       ? null

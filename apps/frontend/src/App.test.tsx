@@ -445,6 +445,73 @@ describe("App", () => {
     ))).toEqual([completedJob]);
   });
 
+  it("polls a recommendation that was still running in archived history", async () => {
+    const jobId = "8".repeat(32);
+    const archivedAt = "2026-07-10T00:00:30Z";
+    const pendingJob = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: "archived-pending-recommendation.png",
+      recommendation_pending: true,
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    const completedJob = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "archived-pending-recommendation.png",
+      recommendation_pending: false,
+      archived_at: archivedAt,
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: jobId,
+        job: pendingJob,
+        savedAt: archivedAt,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    const pendingHistoryRestore = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingHistoryRestore.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", {
+      name: "Reopen history item 1",
+    }));
+    expect(screen.getByRole("button", {
+      name: "Request recommendation",
+    })).toBeDisabled();
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    ));
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-synced",
+    )).toBeNull();
+    await act(async () => {
+      pendingHistoryRestore.resolve(processingQueueResponse(
+        [completedJob],
+        "archived-recommendation-completed",
+      ));
+      await pendingHistoryRestore.promise;
+    });
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.getByText(recommendation.explanation)).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-history-v1"),
+    ))[0].job).toEqual(completedJob);
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-synced",
+    )).toBe("true");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/history",
+    ]);
+  });
+
   it(
     "rejects a future-dated pending cache record in favor of terminal server state",
     async () => {
@@ -1189,6 +1256,125 @@ describe("App", () => {
     },
   );
 
+  it.each([
+    "approval",
+    "review",
+  ] as const)(
+    "reloads archived %s state when an older history restore finishes during the request",
+    async (operation) => {
+      const jobId = "f".repeat(32);
+      const archivedAt = "2026-07-20T12:00:00Z";
+      const initialJob = operation === "approval"
+        ? jobRecord({
+            id: jobId,
+            original_filename: `archived-pending-${operation}.png`,
+            archived_at: archivedAt,
+          })
+        : {
+            ...recommendedJob(),
+            id: jobId,
+            original_filename: `archived-pending-${operation}.png`,
+            archived_at: archivedAt,
+            training_decision: {
+              action: "call" as const,
+              sizing: null,
+              certainty: "medium" as const,
+              recorded_at: "2026-07-20T12:01:00Z",
+            },
+          };
+      const persistedJob: JobRecord = operation === "approval"
+        ? {
+            ...initialJob,
+            status: "approved",
+            approved_state: canonicalState(),
+            updated_at: "2026-07-20T12:02:00Z",
+          }
+        : {
+            ...initialJob,
+            training_reviewed_at: "2026-07-20T12:02:00Z",
+            updated_at: "2026-07-20T12:02:00Z",
+          };
+      window.localStorage.setItem(
+        "poker-training-history-v1",
+        JSON.stringify([{
+          id: jobId,
+          job: initialJob,
+          savedAt: archivedAt,
+        }]),
+      );
+      window.localStorage.setItem("poker-training-history-total-v1", "1");
+      window.sessionStorage.removeItem("poker-training-history-synced");
+      const pendingHistoryRestore = deferredResponse();
+      const pendingMutation = deferredResponse();
+      fetchMock()
+        .mockReturnValueOnce(pendingHistoryRestore.promise)
+        .mockReturnValueOnce(pendingMutation.promise)
+        .mockResolvedValueOnce(processingQueueResponse(
+          [persistedJob],
+          `archived-${operation}-completed`,
+        ));
+      const firstRender = render(<App />);
+      const user = userEvent.setup();
+
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+        "http://localhost:8000/api/history",
+        { credentials: "include" },
+      ));
+      await user.click(screen.getByRole("button", {
+        name: "Reopen history item 1",
+      }));
+      if (operation === "approval") {
+        await user.click(screen.getByRole("button", { name: "Approve state" }));
+      } else {
+        await user.click(within(
+          await screen.findByLabelText("Training decision comparison"),
+        ).getByRole("button", { name: "Mark reviewed" }));
+      }
+
+      const mutationPath = operation === "approval"
+        ? "approve"
+        : "training-review";
+      const mutationMethod = operation === "approval" ? "POST" : "PUT";
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+        `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
+        expect.objectContaining({ method: mutationMethod }),
+      ));
+      await act(async () => {
+        pendingHistoryRestore.resolve(processingQueueResponse(
+          [initialJob],
+          `stale-archived-${operation}`,
+        ));
+        await pendingHistoryRestore.promise;
+      });
+      expect(window.sessionStorage.getItem(
+        "poker-training-history-synced",
+      )).toBeNull();
+      expect(fetchMock()).toHaveBeenCalledTimes(2);
+
+      firstRender.unmount();
+      render(<App />);
+
+      await waitFor(() => expect(JSON.parse(String(
+        window.localStorage.getItem("poker-training-history-v1"),
+      ))[0].job).toEqual(persistedJob));
+      await user.click(await screen.findByRole("button", {
+        name: "Reopen history item 1",
+      }));
+      if (operation === "approval") {
+        expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+      } else {
+        expect(within(await screen.findByLabelText(
+          "Training decision comparison",
+        )).getByText("Reviewed")).toBeInTheDocument();
+      }
+      expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:8000/api/history",
+        `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
+        "http://localhost:8000/api/history",
+      ]);
+    },
+  );
+
   it("restores a committed ordinary approval after its response is lost", async () => {
     const parsedJob = jobRecord({
       id: "c".repeat(32),
@@ -1490,7 +1676,10 @@ describe("App", () => {
     window.localStorage.setItem("poker-training-history-total-v1", "1");
     fetchMock()
       .mockRejectedValueOnce(new TypeError(`Connection lost after archived ${operation}`))
-      .mockResolvedValueOnce(jsonResponse(persistedJob));
+      .mockResolvedValueOnce(processingQueueResponse(
+        [persistedJob],
+        `archived-${operation}-reconciled`,
+      ));
     const firstRender = render(<App />);
     const user = userEvent.setup();
 
@@ -1576,7 +1765,7 @@ describe("App", () => {
           : "recommend";
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       `http://localhost:8000/api/jobs/${jobId}/${mutationPath}`,
-      `http://localhost:8000/api/jobs/${jobId}`,
+      "http://localhost:8000/api/history",
     ]);
   });
 

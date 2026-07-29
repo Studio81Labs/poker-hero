@@ -111,6 +111,7 @@ type TrainingActionOption = "" | RecommendationAction;
 type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
+type PersistedJobMutationScope = "processing" | "history";
 type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
 type TrainingCertaintyFocus = {
@@ -1969,26 +1970,6 @@ function writeHistory(items: HistoryItem[]): boolean {
   }
 }
 
-function writeHistoryJobToCache(updatedJob: JobRecord): boolean {
-  const cachedHistory = readHistory();
-  if (
-    cachedHistory === null
-    || readCachedHistoryTotal(cachedHistory) === null
-  ) {
-    return false;
-  }
-  const incomingItem: HistoryItem = {
-    id: updatedJob.id,
-    job: updatedJob,
-    savedAt: updatedJob.archived_at ?? updatedJob.updated_at,
-  };
-  return writeHistory(cachedHistory.map((item) =>
-    item.id === updatedJob.id
-      ? newerHistoryItem(item, incomingItem)
-      : item,
-  ));
-}
-
 function readCachedHistoryTotal(cachedHistory: HistoryItem[] | null): number | null {
   if (cachedHistory === null || typeof window === "undefined") {
     return null;
@@ -2732,6 +2713,11 @@ export default function App() {
   const processingRemovalCandidateIdsRef = useRef(new Set<string>());
   const processingUpdateCandidateIdsRef = useRef(new Set<string>());
   const processingRestoreRetryRequestedRef = useRef(false);
+  const historyMutationGenerationRef = useRef(0);
+  const historyMutationCountRef = useRef(0);
+  const historyUpdateCandidateIdsRef = useRef(new Set<string>());
+  const historyRestoreRetryRequestedRef = useRef(false);
+  const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
 
@@ -2786,7 +2772,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!jobs.some((candidate) => candidate.recommendation_pending)) {
+    if (!jobs.some(
+      (candidate) => !candidate.archived_at && candidate.recommendation_pending,
+    )) {
       return;
     }
     markProcessingQueueSessionUnsynced();
@@ -2799,6 +2787,21 @@ export default function App() {
     }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
     return () => window.clearTimeout(revalidationTimer);
   }, [jobs]);
+
+  useEffect(() => {
+    if (!history.some((item) => item.job.recommendation_pending)) {
+      return;
+    }
+    markHistorySessionUnsynced();
+    const revalidationTimer = window.setInterval(() => {
+      if (historyMutationCountRef.current === 0) {
+        void requestHistoryRestore();
+      } else {
+        historyRestoreRetryRequestedRef.current = true;
+      }
+    }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
+    return () => window.clearInterval(revalidationTimer);
+  }, [history]);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2952,6 +2955,60 @@ export default function App() {
     setProcessingRestoreRequest((current) => current + 1);
   }
 
+  function requestHistoryRestore(
+    jobIds: string[] | null = null,
+    queueAfterActive = false,
+  ): Promise<boolean> {
+    const activeRestore = historyRestorePromiseRef.current;
+    if (activeRestore) {
+      if (queueAfterActive) {
+        historyRestoreRetryRequestedRef.current = true;
+      }
+      return activeRestore;
+    }
+
+    historyRestoreRetryRequestedRef.current = false;
+    const restore = syncHistory(jobIds, false);
+    historyRestorePromiseRef.current = restore;
+    void restore.finally(() => {
+      if (historyRestorePromiseRef.current !== restore) {
+        return;
+      }
+      historyRestorePromiseRef.current = null;
+      if (
+        historyRestoreRetryRequestedRef.current
+        && historyMutationCountRef.current === 0
+      ) {
+        historyRestoreRetryRequestedRef.current = false;
+        void requestHistoryRestore();
+      }
+    });
+    return restore;
+  }
+
+  function beginHistoryMutation() {
+    historyMutationCountRef.current += 1;
+    historyMutationGenerationRef.current += 1;
+    markHistorySessionUnsynced();
+  }
+
+  function endHistoryMutation(restoreAfterMutation = false) {
+    historyMutationCountRef.current = Math.max(
+      historyMutationCountRef.current - 1,
+      0,
+    );
+    if (
+      historyMutationCountRef.current === 0
+      && (
+        restoreAfterMutation
+        || historyRestoreRetryRequestedRef.current
+      )
+    ) {
+      historyRestoreRetryRequestedRef.current = false;
+      void requestHistoryRestore(null, true);
+    }
+  }
+
   function beginProcessingMembershipMutation(
     removalCandidateIds: readonly string[] = [],
     updateCandidateIds: readonly string[] = [],
@@ -2986,17 +3043,35 @@ export default function App() {
   function beginPersistedJobMutation(
     persistedJob: JobRecord,
     removalCandidateIds: readonly string[] = [],
-  ): boolean {
+  ): PersistedJobMutationScope {
     if (persistedJob.archived_at) {
-      markHistorySessionUnsynced();
-      return false;
+      beginHistoryMutation();
+      return "history";
     }
     beginProcessingMembershipMutation(removalCandidateIds);
-    return true;
+    return "processing";
   }
 
-  function markProcessingMutationUncertain(persistedJobId: string) {
-    processingUpdateCandidateIdsRef.current.add(persistedJobId);
+  function markPersistedJobMutationUncertain(
+    mutationScope: PersistedJobMutationScope,
+    persistedJobId: string,
+  ) {
+    if (mutationScope === "processing") {
+      processingUpdateCandidateIdsRef.current.add(persistedJobId);
+      return;
+    }
+    historyUpdateCandidateIdsRef.current.add(persistedJobId);
+  }
+
+  function endPersistedJobMutation(
+    mutationScope: PersistedJobMutationScope,
+    restoreAfterMutation: boolean,
+  ) {
+    if (mutationScope === "processing") {
+      endProcessingMembershipMutation(restoreAfterMutation);
+      return;
+    }
+    endHistoryMutation(restoreAfterMutation);
   }
 
   function markPersistedJobSessionUnsynced(persistedJob: JobRecord) {
@@ -3005,42 +3080,6 @@ export default function App() {
       return;
     }
     markProcessingQueueSessionUnsynced();
-  }
-
-  function scheduleUncertainPersistedUpdate(uncertainJob: JobRecord) {
-    if (uncertainJob.archived_at) {
-      markHistorySessionUnsynced();
-      void getJob(uncertainJob.id)
-        .then((incomingJob) => {
-          const currentJob = jobsRef.current.find(
-            (candidate) => candidate.id === uncertainJob.id,
-          ) ?? null;
-          const reconciledJob = currentJob
-            ? newerJob(currentJob, incomingJob)
-            : incomingJob;
-          updateJobs((current) =>
-            current.map((candidate) =>
-              candidate.id === reconciledJob.id ? reconciledJob : candidate,
-            ),
-          );
-          updateHistoryJob(reconciledJob);
-          if (
-            activeJobIdRef.current === reconciledJob.id
-            && reconciledJob !== currentJob
-          ) {
-            alignWorkspaceToJob(reconciledJob);
-          }
-          if (writeHistoryJobToCache(reconciledJob)) {
-            markHistorySessionSynced();
-          }
-        })
-        .catch(() => {
-          markHistorySessionUnsynced();
-        });
-      return;
-    }
-    beginProcessingMembershipMutation([], [uncertainJob.id]);
-    endProcessingMembershipMutation();
   }
 
   useEffect(() => {
@@ -3104,12 +3143,12 @@ export default function App() {
       )
       .map((item) => item.id);
     if (legacyJobIds.length > 0) {
-      const migration = syncHistory(legacyJobIds, false);
+      const migration = requestHistoryRestore(legacyJobIds);
       legacyHistoryArchivePromiseRef.current = migration;
       void migration;
       return;
     }
-    void syncHistory(null, false);
+    void requestHistoryRestore();
   }, []);
 
   useEffect(() => {
@@ -3384,6 +3423,41 @@ export default function App() {
 
   function applyHistoryPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
+    const incomingJobsById = new Map(
+      pageItems.map((item) => [item.id, item.job]),
+    );
+    const currentActiveId = activeJobIdRef.current;
+    const currentActiveJob = currentActiveId === null
+      ? null
+      : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
+    const nextJobs = jobsRef.current.map((candidate) => {
+      const incomingJob = incomingJobsById.get(candidate.id);
+      return incomingJob ? newerJob(candidate, incomingJob) : candidate;
+    });
+    const reconciledActiveJob = currentActiveId === null
+      ? null
+      : nextJobs.find((candidate) => candidate.id === currentActiveId) ?? null;
+    const activeJobUpdated = currentActiveJob !== null
+      && reconciledActiveJob !== null
+      && reconciledActiveJob !== currentActiveJob;
+    if (nextJobs.some((candidate, index) => candidate !== jobsRef.current[index])) {
+      updateJobs(() => nextJobs);
+    }
+    if (
+      activeJobUpdated
+      && (
+        !formDirtyRef.current
+        || (
+          currentActiveId !== null
+          && historyUpdateCandidateIdsRef.current.has(currentActiveId)
+        )
+      )
+    ) {
+      alignWorkspaceToJob(reconciledActiveJob);
+    }
+    for (const item of pageItems) {
+      historyUpdateCandidateIdsRef.current.delete(item.id);
+    }
     setHistoryTotal(page.total);
     setHistory((current) => {
       const items = append
@@ -3391,8 +3465,14 @@ export default function App() {
         : reconcileHistoryItems(current, pageItems);
       const historyCached = writeHistory(items);
       const totalCached = writeHistoryTotal(page.total);
-      if (historyCached && totalCached) {
+      if (
+        historyCached
+        && totalCached
+        && !items.some((item) => item.job.recommendation_pending)
+      ) {
         markHistorySessionSynced();
+      } else {
+        markHistorySessionUnsynced();
       }
       return items;
     });
@@ -3535,9 +3615,18 @@ export default function App() {
     jobIds: string[] | null = null,
     reportErrors = true,
   ): Promise<boolean> {
+    const restoreGeneration = historyMutationGenerationRef.current;
     setHistoryLoading(true);
     try {
       const page = jobIds ? await archiveJobs(jobIds) : await getHistory();
+      if (
+        historyMutationGenerationRef.current !== restoreGeneration
+        || historyMutationCountRef.current > 0
+      ) {
+        markHistorySessionUnsynced();
+        historyRestoreRetryRequestedRef.current = true;
+        return false;
+      }
       applyHistoryPage(page);
       return true;
     } catch (historyError) {
@@ -3811,7 +3900,7 @@ export default function App() {
     const changesProcessingMembership = job.benchmark_included
       && job.parser_result === null
       && !isPristineBenchmarkImport(job);
-    const tracksProcessingMutation = beginPersistedJobMutation(
+    const mutationScope = beginPersistedJobMutation(
       job,
       changesProcessingMembership ? [job.id] : [],
     );
@@ -3822,17 +3911,11 @@ export default function App() {
       const approved = await approveState(job.id, validation.state);
       applyApprovedJob(approved, validation.state);
     } catch (approveError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(approveError, "Approval failed"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -3842,7 +3925,7 @@ export default function App() {
       return;
     }
     const changesProcessingMembership = isPristineBenchmarkImport(job);
-    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    const mutationScope = beginPersistedJobMutation(job);
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
@@ -3868,17 +3951,11 @@ export default function App() {
       }
       applyRecommendedJob(await requestRecommendation(job.id));
     } catch (recommendError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(recommendError, "Recommendation failed"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -3894,7 +3971,7 @@ export default function App() {
     }
 
     const changesProcessingMembership = isPristineBenchmarkImport(job);
-    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    const mutationScope = beginPersistedJobMutation(job);
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
@@ -3907,17 +3984,11 @@ export default function App() {
       ));
       toast.success("Training answer locked");
     } catch (decisionError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(decisionError, "Could not save your training answer"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -3928,7 +3999,7 @@ export default function App() {
     }
 
     const continueReviewQueue = trainingReviewQueueJobId === job.id;
-    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    const mutationScope = beginPersistedJobMutation(job);
     let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
@@ -3980,17 +4051,11 @@ export default function App() {
         ));
       }
     } catch (reviewError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -4000,7 +4065,7 @@ export default function App() {
       return;
     }
 
-    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    const mutationScope = beginPersistedJobMutation(job);
     let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
@@ -4009,17 +4074,11 @@ export default function App() {
       replaceJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -4046,7 +4105,7 @@ export default function App() {
     }
 
     const note = trainingReviewNote.trim() || null;
-    const tracksProcessingMutation = beginPersistedJobMutation(job);
+    const mutationScope = beginPersistedJobMutation(job);
     let restoreAfterMutation = false;
     setBusy(true);
     setError(null);
@@ -4056,17 +4115,11 @@ export default function App() {
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
   }
@@ -4078,9 +4131,9 @@ export default function App() {
       ?? history.find((item) => item.id === jobId)?.job
       ?? historySearchResults?.find((item) => item.id === jobId)?.job
       ?? null;
-    const tracksProcessingMutation = persistedJob
+    const mutationScope: PersistedJobMutationScope = persistedJob
       ? beginPersistedJobMutation(persistedJob)
-      : true;
+      : "processing";
     if (!persistedJob) {
       beginProcessingMembershipMutation();
       markHistorySessionUnsynced();
@@ -4110,21 +4163,11 @@ export default function App() {
       ));
       toast.success("Training review reopened");
     } catch (reviewError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(jobId);
-        restoreAfterMutation = true;
-      } else if (persistedJob) {
-        scheduleUncertainPersistedUpdate(persistedJob);
-      } else {
-        markProcessingQueueSessionUnsynced();
-        markHistorySessionUnsynced();
-        scheduleProcessingQueueRestore();
-      }
+      markPersistedJobMutationUncertain(mutationScope, jobId);
+      restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setTrainingReviewJobId(null);
     }
   }
@@ -4697,7 +4740,7 @@ export default function App() {
       benchmark_included: included,
     });
     const changesProcessingMembership = isCurrentlyPristine !== willBePristine;
-    const tracksProcessingMutation = beginPersistedJobMutation(
+    const mutationScope = beginPersistedJobMutation(
       job,
       changesProcessingMembership && willBePristine ? [job.id] : [],
     );
@@ -4720,17 +4763,11 @@ export default function App() {
             },
       );
     } catch (benchmarkError) {
-      if (tracksProcessingMutation) {
-        markProcessingMutationUncertain(job.id);
-        restoreAfterMutation = true;
-      } else {
-        scheduleUncertainPersistedUpdate(job);
-      }
+      markPersistedJobMutationUncertain(mutationScope, job.id);
+      restoreAfterMutation = true;
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
     } finally {
-      if (tracksProcessingMutation) {
-        endProcessingMembershipMutation(restoreAfterMutation);
-      }
+      endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBenchmarkUpdating(false);
     }
   }

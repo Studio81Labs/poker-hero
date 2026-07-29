@@ -2144,19 +2144,6 @@ function newerHistoryJob(
   return newerJob(current, incoming);
 }
 
-function newerAuthoritativeProcessingJob(
-  current: JobRecord,
-  incoming: JobRecord,
-): JobRecord {
-  if (
-    isProcessingJobInProgress(current)
-    && !isProcessingJobInProgress(incoming)
-  ) {
-    return incoming;
-  }
-  return newerJob(current, incoming);
-}
-
 function localUploadMatchDistance(
   localJob: JobRecord,
   incomingJob: JobRecord,
@@ -2242,12 +2229,7 @@ function reconcileProcessingJobs(
     currentById,
   );
   return [
-    ...incoming.map((job) => {
-      const currentJob = currentById.get(job.id);
-      return currentJob
-        ? newerAuthoritativeProcessingJob(currentJob, job)
-        : job;
-    }),
+    ...incoming,
     ...current.filter((job) => {
       if (job.archived_at !== null) {
         return true;
@@ -3407,7 +3389,6 @@ export default function App() {
         clearJobAttentionEntries(recoveredAutomationIds);
         const preservedMissingDirtyJob = formDirtyRef.current
           && currentActiveJob !== null
-          && cachedIds.has(currentActiveJob.id)
           && !processingRemovalCandidateIdsRef.current.has(currentActiveJob.id)
           && !nextJobs.some((candidate) => candidate.id === currentActiveJob.id);
         if (preservedMissingDirtyJob) {
@@ -3419,7 +3400,7 @@ export default function App() {
         const activeJobUpdatedAuthoritatively = currentActiveJob !== null
           && reconciledActiveJob !== null
           && processingUpdateCandidateIdsRef.current.has(currentActiveJob.id)
-          && reconciledActiveJob !== currentActiveJob;
+          && reconciledActiveJob.updated_at !== currentActiveJob.updated_at;
         const preserveDirtyForm = formDirtyRef.current
           && reconciledActiveJob !== null
           && !activeJobUpdatedAuthoritatively;

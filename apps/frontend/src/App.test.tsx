@@ -443,7 +443,7 @@ describe("App", () => {
     )).toBe("true");
   });
 
-  it("drops persisted processing jobs removed by another tab", async () => {
+  it("preserves dirty processing jobs removed by another tab", async () => {
     const removedJob = jobRecord({
       id: "0".repeat(32),
       original_filename: "archived-in-another-tab.png",
@@ -475,15 +475,17 @@ describe("App", () => {
       storageArea: window.localStorage,
     }));
 
-    await waitFor(() => expect(screen.queryByRole("button", {
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", {
       name: "Open screenshot 1: archived-in-another-tab.png",
-    })).not.toBeInTheDocument());
+    })).toHaveClass("active");
+    expect(heroCards).toHaveValue("7d Ah");
     expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
-    ))).toEqual([]);
+    ))).toEqual([removedJob]);
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
-    )).toBe("true");
+    )).toBeNull();
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/jobs",
     ]);
@@ -705,6 +707,43 @@ describe("App", () => {
       ))).toEqual([completedJob]);
     },
   );
+
+  it("lets authoritative processing state replace a future-dated ordinary cache", async () => {
+    const jobId = "7".repeat(32);
+    const futureCachedJob = jobRecord({
+      id: jobId,
+      original_filename: "future-ordinary.png",
+      updated_at: "9999-01-01T00:00:00Z",
+    });
+    const approvedServerJob: JobRecord = {
+      ...futureCachedJob,
+      status: "approved",
+      approved_state: canonicalState({ pot_size: 20 }),
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([futureCachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-processing-synced");
+    fetchMock().mockResolvedValueOnce(processingQueueResponse(
+      [approvedServerJob],
+      "future-ordinary-recovered",
+    ));
+
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve state" })).toBeDisabled();
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true");
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([approvedServerJob]);
+  });
 
   it("retries a failed authoritative restore for an ordinary cached job", async () => {
     const jobId = "6".repeat(32);

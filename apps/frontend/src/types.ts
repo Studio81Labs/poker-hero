@@ -269,7 +269,7 @@ export interface JobRecord {
   training_reviewed_at: string | null;
   training_review_note: string | null;
   benchmark_included: boolean;
-  archived_at?: string | null;
+  archived_at: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;

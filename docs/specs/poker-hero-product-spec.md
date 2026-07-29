@@ -323,7 +323,8 @@ frequencies.
     in-progress recommendation keeps revalidating until the backend records its
     recommendation or retryable error, including after transient projection
     failures. Unsafe future-dated cache records force an authoritative reload
-    rather than outranking terminal server state. Pending benchmark-import
+    rather than outranking terminal server state, and processing cache records
+    require an explicit unarchived marker. Pending benchmark-import
     recommendations remain processing work; re-approval is blocked until active
     work finishes, and backend startup converts orphaned in-progress markers
     into retryable errors.

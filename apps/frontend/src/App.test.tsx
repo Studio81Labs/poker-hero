@@ -103,6 +103,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
     training_reviewed_at: null,
     training_review_note: null,
     benchmark_included: false,
+    archived_at: null,
     error: null,
     created_at: "2026-07-10T00:00:00Z",
     updated_at: "2026-07-10T00:00:00Z",
@@ -631,6 +632,45 @@ describe("App", () => {
       "poker-training-processing-v1",
     )).toBe("[]");
   });
+
+  it(
+    "rejects a cached processing job without an explicit archive state",
+    async () => {
+      const cachedJob = jobRecord({
+        id: "7".repeat(32),
+        original_filename: "missing-archive-state.png",
+      });
+      const { archived_at: _archivedAt, ...jobWithoutArchiveState } = cachedJob;
+      window.localStorage.setItem(
+        "poker-training-processing-v1",
+        JSON.stringify([jobWithoutArchiveState]),
+      );
+      window.localStorage.setItem("poker-training-processing-total-v1", "1");
+      fetchMock().mockResolvedValueOnce(processingQueueResponse(
+        [],
+        "missing-archive-state-reconciled",
+      ));
+
+      render(<App />);
+
+      await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+        "http://localhost:8000/api/jobs",
+        { credentials: "include" },
+      ));
+      expect(screen.queryByRole("button", {
+        name: /missing-archive-state\.png/,
+      })).not.toBeInTheDocument();
+      expect(window.localStorage.getItem(
+        "poker-training-processing-v1",
+      )).toBe("[]");
+      expect(window.localStorage.getItem(
+        "poker-training-processing-total-v1",
+      )).toBe("0");
+      expect(window.sessionStorage.getItem(
+        "poker-training-processing-synced",
+      )).toBe("true");
+    },
+  );
 
   it.each([
     {

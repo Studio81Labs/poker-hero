@@ -1730,7 +1730,7 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && typeof candidate.benchmark_included === "boolean"
     && isSafeProcessingCacheTimestamp(candidate.created_at)
     && isSafeProcessingCacheTimestamp(candidate.updated_at)
-    && candidate.archived_at == null;
+    && candidate.archived_at === null;
 }
 
 function isSafeProcessingCacheTimestamp(value: unknown): value is string {
@@ -1779,7 +1779,7 @@ function readProcessingQueue(): JobRecord[] | null {
 function processingJobsForCache(jobs: JobRecord[]): JobRecord[] {
   return jobs.filter((job) =>
     PERSISTED_JOB_ID_PATTERN.test(job.id)
-    && job.archived_at == null
+    && job.archived_at === null
     && !isPristineBenchmarkImport(job),
   );
 }
@@ -2625,6 +2625,7 @@ function createLocalErrorJob(file: File, message: string, index: number): JobRec
     training_reviewed_at: null,
     training_review_note: null,
     benchmark_included: false,
+    archived_at: null,
     error: message,
     created_at: timestamp,
     updated_at: timestamp,

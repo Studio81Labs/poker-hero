@@ -6444,6 +6444,14 @@ export default function App() {
     result: BenchmarkDatasetImportResult,
   ): number {
     const importedIds = new Set(result.job_ids);
+    for (
+      const removalCandidateId
+      of processingRemovalCandidateIdsRef.current
+    ) {
+      if (!importedIds.has(removalCandidateId)) {
+        processingRemovalCandidateIdsRef.current.delete(removalCandidateId);
+      }
+    }
     setBenchmarkOverview((current) => ({
       included_cases: result.included_cases,
       latest_report: current?.latest_report ?? null,
@@ -6549,6 +6557,9 @@ export default function App() {
       if (deterministicRejection) {
         clearOwnedMutationLease("processing");
         clearOwnedMutationLease("history");
+        for (const removalCandidateId of removalCandidateIds) {
+          processingRemovalCandidateIdsRef.current.delete(removalCandidateId);
+        }
         restoreAfterImport = true;
       } else {
         scheduleMutationLeaseRevalidation();

@@ -9216,12 +9216,23 @@ describe("App", () => {
   });
 
   it("releases dataset import leases after a deterministic rejection", async () => {
+    const benchmarkJobId = "6".repeat(32);
+    const pristineImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "unrelated-benchmark-hand.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: true,
+      parser_result: null,
+    };
+    const overview = benchmarkOverviewForJob(
+      benchmarkJobId,
+      pristineImport.original_filename,
+    );
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse({
-        included_cases: 0,
-        latest_report: null,
-        recent_reports: [],
-      }))
+      .mockResolvedValueOnce(jsonResponse(overview))
+      .mockResolvedValueOnce(jsonResponse(pristineImport))
+      .mockResolvedValueOnce(jsonResponse(overview))
       .mockResolvedValueOnce(jsonResponse({
         detail: "Dataset ZIP exceeds maximum size",
       }, 413))
@@ -9233,7 +9244,22 @@ describe("App", () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
-    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const reviewDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    await user.click(within(reviewDialog).getByRole("button", {
+      name: "Toggle unrelated-benchmark-hand.png benchmark details",
+    }));
+    await user.click(within(reviewDialog).getByRole("button", {
+      name: "Review hand",
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog", {
+      name: "Parser benchmark",
+    })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
     await waitFor(() => expect(
       within(dialog).getByRole("button", { name: "Import dataset" }),
     ).toBeEnabled());
@@ -9256,8 +9282,13 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", {
       name: "Import dataset",
     })).toBeEnabled();
-    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: unrelated-benchmark-hand.png",
+    })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(5));
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${benchmarkJobId}`,
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/import",
       "http://localhost:8000/api/jobs",

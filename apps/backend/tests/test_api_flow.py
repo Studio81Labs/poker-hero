@@ -1854,6 +1854,49 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
 
 
+def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="recoverable.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_client = make_client(tmp_path / "target")
+    request_id = "benchmark-import-request-123"
+    headers = {"X-Benchmark-Import-Request-ID": request_id}
+
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        headers=headers,
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    recovered = target_client.get(f"/api/benchmarks/imports/{request_id}")
+    repeated = target_client.post(
+        "/api/benchmarks/import",
+        headers=headers,
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    missing = target_client.get("/api/benchmarks/imports/unknown-request")
+
+    assert imported.status_code == 200
+    assert imported.json() == {
+        "imported_cases": 1,
+        "reused_cases": 0,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    assert recovered.status_code == 200
+    assert recovered.json() == imported.json()
+    assert repeated.status_code == 200
+    assert repeated.json() == imported.json()
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Benchmark dataset import not found"
+
+
 def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
     tmp_path: Path,
 ) -> None:

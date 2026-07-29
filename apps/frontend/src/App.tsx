@@ -10,6 +10,7 @@ import {
   archiveJobs,
   benchmarkDatasetUrl,
   completeTrainingReview,
+  getBenchmarkDatasetImport,
   getBenchmarkOverview,
   getBenchmarkReport,
   getHistory,
@@ -28,6 +29,7 @@ import {
   uploadScreenshot,
 } from "./api";
 import type {
+  BenchmarkDatasetImportResult,
   BenchmarkFieldComparison,
   BenchmarkFieldMetric,
   BenchmarkOverview,
@@ -153,6 +155,7 @@ type ProjectionMutationLease = MutationLeaseBase & {
   kind: "projection";
   baselineJobIds: string[];
   expectedRemovalJobIds: string[];
+  benchmarkImportRequestId: string | null;
   expectedUploads: Array<{
     requestId: string;
     target: ProjectionMutationTarget;
@@ -2066,6 +2069,30 @@ function matchingArchiveLeaseTargets(
     && first.jobIds.every((jobId) => secondIds.has(jobId));
 }
 
+function benchmarkImportLeaseRequestId(
+  first: PersistedMutationLease | null,
+  second: PersistedMutationLease | null,
+): string | null {
+  const requestIds = [first, second].flatMap((lease) =>
+    lease?.kind === "projection" && lease.benchmarkImportRequestId !== null
+      ? [lease.benchmarkImportRequestId]
+      : []
+  );
+  return requestIds.length > 0 && requestIds.every(
+    (requestId) => requestId === requestIds[0],
+  )
+    ? requestIds[0]
+    : null;
+}
+
+function isBenchmarkImportLease(
+  lease: PersistedMutationLease | null,
+  requestId: string,
+): lease is ProjectionMutationLease {
+  return lease?.kind === "projection"
+    && lease.benchmarkImportRequestId === requestId;
+}
+
 function isJobMutationExpectation(
   value: unknown,
 ): value is JobMutationExpectation {
@@ -2159,6 +2186,12 @@ function readPersistedMutationLease(
       }
     }
     if (
+      parsed.kind === "projection"
+      && parsed.benchmarkImportRequestId === undefined
+    ) {
+      parsed.benchmarkImportRequestId = null;
+    }
+    if (
       typeof parsed.ownerId !== "string"
       || typeof parsed.expiresAt !== "number"
       || !Number.isFinite(parsed.expiresAt)
@@ -2198,6 +2231,10 @@ function readPersistedMutationLease(
             && (parsed.baselineJobIds as unknown[]).includes(value),
         )
         || !Array.isArray(parsed.expectedUploads)
+        || (
+          parsed.benchmarkImportRequestId !== null
+          && typeof parsed.benchmarkImportRequestId !== "string"
+        )
         || !parsed.expectedUploads.every((value) =>
           typeof value === "object"
           && value !== null
@@ -2329,12 +2366,14 @@ function startProjectionMutationLease(
   baselineJobs: readonly JobRecord[],
   expectedUploads: ProjectionMutationLease["expectedUploads"] = [],
   expectedRemovalJobIds: readonly string[] = [],
+  benchmarkImportRequestId: string | null = null,
 ): PersistedMutationLease | null {
   const lease: ProjectionMutationLease = {
     kind: "projection",
     ownerId,
     baselineJobIds: baselineJobs.map((job) => job.id),
     expectedRemovalJobIds: [...expectedRemovalJobIds],
+    benchmarkImportRequestId,
     expectedUploads: [...expectedUploads],
     expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
   };
@@ -3323,6 +3362,7 @@ export default function App() {
   const historyRestoreRetryRequestedRef = useRef(false);
   const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
+  const benchmarkImportRecoveryPromiseRef = useRef<Promise<void> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<ProcessingQueueRestore> | null>(
     null,
   );
@@ -3415,6 +3455,64 @@ export default function App() {
         processingMutationLeaseRef.current,
         historyMutationLeaseRef.current,
       );
+      const benchmarkImportRequestId = benchmarkImportLeaseRequestId(
+        processingMutationLeaseRef.current,
+        historyMutationLeaseRef.current,
+      );
+      if (
+        benchmarkImportRequestId !== null
+        && benchmarkImportRecoveryPromiseRef.current === null
+      ) {
+        const recovery = getBenchmarkDatasetImport(benchmarkImportRequestId)
+          .then((result) => {
+            if (
+              !appMountedRef.current
+              || benchmarkImportLeaseRequestId(
+                processingMutationLeaseRef.current,
+                historyMutationLeaseRef.current,
+              ) !== benchmarkImportRequestId
+            ) {
+              return;
+            }
+            const readyCases = applyBenchmarkDatasetImportResult(result);
+            if (isBenchmarkImportLease(
+              processingMutationLeaseRef.current,
+              benchmarkImportRequestId,
+            )) {
+              clearOwnedMutationLease("processing");
+            }
+            if (isBenchmarkImportLease(
+              historyMutationLeaseRef.current,
+              benchmarkImportRequestId,
+            )) {
+              clearOwnedMutationLease("history");
+            }
+            setBenchmarkImporting(false);
+            setError(null);
+            toast.success(
+              `Dataset recovered: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`,
+            );
+            markProcessingQueueSessionUnsynced();
+            scheduleProcessingQueueRestore();
+            markHistorySessionUnsynced();
+            void requestHistoryRestore(null, true);
+          })
+          .catch((recoveryError) => {
+            if (
+              recoveryError instanceof ApiResponseError
+              && recoveryError.status === 404
+            ) {
+              return;
+            }
+            // Network failures remain recoverable for the lifetime of the lease.
+          })
+          .finally(() => {
+            if (benchmarkImportRecoveryPromiseRef.current === recovery) {
+              benchmarkImportRecoveryPromiseRef.current = null;
+            }
+          });
+        benchmarkImportRecoveryPromiseRef.current = recovery;
+      }
       const processingLease = processingMutationLeaseRef.current;
       if (processingLease !== null) {
         if (Date.now() >= processingLease.expiresAt) {
@@ -3429,10 +3527,15 @@ export default function App() {
         } else {
           leasePending = true;
           markProcessingQueueSessionUnsynced();
-          if (processingMutationCountRef.current === 0) {
-            scheduleProcessingQueueRestore();
-          } else {
-            processingRestoreRetryRequestedRef.current = true;
+          if (!isBenchmarkImportLease(
+            processingLease,
+            benchmarkImportRequestId ?? "",
+          )) {
+            if (processingMutationCountRef.current === 0) {
+              scheduleProcessingQueueRestore();
+            } else {
+              processingRestoreRetryRequestedRef.current = true;
+            }
           }
         }
       }
@@ -3457,7 +3560,13 @@ export default function App() {
         } else {
           leasePending = true;
           markHistorySessionUnsynced();
-          if (!linkedArchiveLeases) {
+          if (
+            !linkedArchiveLeases
+            && !isBenchmarkImportLease(
+              historyLease,
+              benchmarkImportRequestId ?? "",
+            )
+          ) {
             if (historyLeaseJobIds.length > 0) {
               requestHistoryJobRestore(historyLeaseJobIds);
             } else {
@@ -3791,7 +3900,9 @@ export default function App() {
         settled = false;
       }
     } else if (lease.kind === "projection") {
-      if (lease.expectedUploads.length > 0) {
+      if (lease.benchmarkImportRequestId !== null) {
+        settled = false;
+      } else if (lease.expectedUploads.length > 0) {
         const baselineIds = new Set(lease.baselineJobIds);
         const availableJobs = incomingJobs.filter(
           (job) => !baselineIds.has(job.id) && !isLocalUploadError(job),
@@ -6328,6 +6439,52 @@ export default function App() {
       .finally(() => setBenchmarkLoading(false));
   }
 
+  function applyBenchmarkDatasetImportResult(
+    result: BenchmarkDatasetImportResult,
+  ): number {
+    const importedIds = new Set(result.job_ids);
+    setBenchmarkOverview((current) => ({
+      included_cases: result.included_cases,
+      latest_report: current?.latest_report ?? null,
+      recent_reports: current?.recent_reports ?? [],
+    }));
+    const nextJobs = jobsRef.current.flatMap((candidate) => {
+      if (!importedIds.has(candidate.id)) {
+        return [candidate];
+      }
+      const includedCandidate: JobRecord = {
+        ...candidate,
+        benchmark_included: true,
+      };
+      return isPristineBenchmarkImport(includedCandidate)
+        ? []
+        : [includedCandidate];
+    });
+    const activeJobRemoved = activeJobIdRef.current !== null
+      && !nextJobs.some((candidate) => candidate.id === activeJobIdRef.current);
+    updateJobs(() => nextJobs);
+    if (activeJobRemoved) {
+      alignWorkspaceToJob(nextJobs[0] ?? null);
+    }
+    setHistory((current) => {
+      const next = current.map((item) =>
+        importedIds.has(item.id)
+          ? { ...item, job: { ...item.job, benchmark_included: true } }
+          : item,
+      );
+      writeHistory(next);
+      return next;
+    });
+    setHistorySearchResults((current) =>
+      current?.map((item) =>
+        importedIds.has(item.id)
+          ? { ...item, job: { ...item.job, benchmark_included: true } }
+          : item,
+      ) ?? null,
+    );
+    return result.imported_cases + result.reused_cases;
+  }
+
   async function onBenchmarkDatasetImport(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const datasetFile = input.files?.[0];
@@ -6346,6 +6503,7 @@ export default function App() {
         benchmark_included: true,
       }))
       .map((candidate) => candidate.id);
+    const benchmarkImportRequestId = createMutationRequestId();
     installMutationLease(
       "processing",
       startProjectionMutationLease(
@@ -6354,6 +6512,7 @@ export default function App() {
         processingJobsForCache(jobsRef.current),
         [],
         removalCandidateIds,
+        benchmarkImportRequestId,
       ),
     );
     installMutationLease(
@@ -6362,63 +6521,31 @@ export default function App() {
         "history",
         mutationOwnerId,
         history.map((item) => item.job),
+        [],
+        [],
+        benchmarkImportRequestId,
       ),
     );
     beginProcessingMembershipMutation(removalCandidateIds);
     setBenchmarkImporting(true);
     setError(null);
+    let importConfirmed = false;
     try {
-      const result = await importBenchmarkDataset(datasetFile);
-      const importedIds = new Set(result.job_ids);
-      setBenchmarkOverview((current) => ({
-        included_cases: result.included_cases,
-        latest_report: current?.latest_report ?? null,
-        recent_reports: current?.recent_reports ?? [],
-      }));
-      const nextJobs = jobsRef.current.flatMap((candidate) => {
-        if (!importedIds.has(candidate.id)) {
-          return [candidate];
-        }
-        const includedCandidate: JobRecord = {
-          ...candidate,
-          benchmark_included: true,
-        };
-        return isPristineBenchmarkImport(includedCandidate)
-          ? []
-          : [includedCandidate];
-      });
-      const activeJobRemoved = activeJobIdRef.current !== null
-        && !nextJobs.some((candidate) => candidate.id === activeJobIdRef.current);
-      updateJobs(() => nextJobs);
-      if (activeJobRemoved) {
-        alignWorkspaceToJob(nextJobs[0] ?? null);
-      }
-      setHistory((current) => {
-        const next = current.map((item) =>
-          importedIds.has(item.id)
-            ? { ...item, job: { ...item.job, benchmark_included: true } }
-            : item,
-        );
-        writeHistory(next);
-        return next;
-      });
-      setHistorySearchResults((current) =>
-        current?.map((item) =>
-          importedIds.has(item.id)
-            ? { ...item, job: { ...item.job, benchmark_included: true } }
-            : item,
-        ) ?? null,
+      const result = await importBenchmarkDataset(
+        datasetFile,
+        benchmarkImportRequestId,
       );
+      const readyCases = applyBenchmarkDatasetImportResult(result);
+      importConfirmed = true;
       clearOwnedMutationLease("processing");
       clearOwnedMutationLease("history");
-      const readyCases = result.imported_cases + result.reused_cases;
       toast.success(`Dataset ready: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`);
     } catch (benchmarkError) {
       scheduleMutationLeaseRevalidation();
       setError(messageFromError(benchmarkError, "Could not import parser dataset"));
     } finally {
       input.value = "";
-      endProcessingMembershipMutation();
+      endProcessingMembershipMutation(importConfirmed);
       setBenchmarkImporting(false);
     }
   }

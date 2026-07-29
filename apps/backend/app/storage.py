@@ -3,10 +3,11 @@ import re
 import tempfile
 from pathlib import Path
 
-from app.models import BenchmarkReport, JobRecord
+from app.models import BenchmarkDatasetImportResult, BenchmarkReport, JobRecord
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
+BENCHMARK_IMPORT_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 class JobNotFoundError(KeyError):
@@ -14,6 +15,10 @@ class JobNotFoundError(KeyError):
 
 
 class BenchmarkNotFoundError(KeyError):
+    pass
+
+
+class BenchmarkImportNotFoundError(KeyError):
     pass
 
 
@@ -115,6 +120,8 @@ class FileBenchmarkStore:
     def __init__(self, data_dir: Path) -> None:
         self.benchmarks_dir = (data_dir / "benchmarks").resolve()
         self.benchmarks_dir.mkdir(parents=True, exist_ok=True)
+        self.imports_dir = (self.benchmarks_dir / "imports").resolve()
+        self.imports_dir.mkdir(parents=True, exist_ok=True)
 
     def get_latest(self) -> BenchmarkReport | None:
         path = self.benchmarks_dir / "latest.json"
@@ -153,10 +160,32 @@ class FileBenchmarkStore:
         self._atomic_write(self.benchmarks_dir / "latest.json", payload)
         return report
 
+    def get_import(self, request_id: str) -> BenchmarkDatasetImportResult:
+        path = self._import_path(request_id)
+        if not path.exists():
+            raise BenchmarkImportNotFoundError(request_id)
+        return BenchmarkDatasetImportResult.model_validate_json(path.read_text())
+
+    def save_import(
+        self,
+        request_id: str,
+        result: BenchmarkDatasetImportResult,
+    ) -> BenchmarkDatasetImportResult:
+        self._atomic_write(
+            self._import_path(request_id),
+            result.model_dump_json(indent=2),
+        )
+        return result
+
     def _report_path(self, report_id: str) -> Path:
         if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
             raise BenchmarkNotFoundError(report_id)
         return self.benchmarks_dir / f"{report_id}.json"
+
+    def _import_path(self, request_id: str) -> Path:
+        if BENCHMARK_IMPORT_REQUEST_ID_PATTERN.fullmatch(request_id) is None:
+            raise BenchmarkImportNotFoundError(request_id)
+        return self.imports_dir / f"{request_id}.json"
 
     def _atomic_write(self, path: Path, payload: str) -> None:
         temp_path: Path | None = None

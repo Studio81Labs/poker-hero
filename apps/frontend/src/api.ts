@@ -302,14 +302,28 @@ export function benchmarkDatasetUrl(): string {
   return `${API_BASE_URL}/api/benchmarks/export`;
 }
 
-export async function importBenchmarkDataset(file: File): Promise<BenchmarkDatasetImportResult> {
+export async function importBenchmarkDataset(
+  file: File,
+  requestId: string,
+): Promise<BenchmarkDatasetImportResult> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch(`${API_BASE_URL}/api/benchmarks/import`, {
     method: "POST",
+    headers: { "X-Benchmark-Import-Request-ID": requestId },
     body: form,
     credentials: "include",
   });
+  return readJson<BenchmarkDatasetImportResult>(response);
+}
+
+export async function getBenchmarkDatasetImport(
+  requestId: string,
+): Promise<BenchmarkDatasetImportResult> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/benchmarks/imports/${encodeURIComponent(requestId)}`,
+    { credentials: "include" },
+  );
   return readJson<BenchmarkDatasetImportResult>(response);
 }
 

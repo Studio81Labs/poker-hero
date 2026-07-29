@@ -56,6 +56,7 @@ from app.providers.base import (
 )
 from app.providers.registry import build_provider
 from app.storage import (
+    BenchmarkImportNotFoundError,
     BenchmarkNotFoundError,
     FileBenchmarkStore,
     FileJobStore,
@@ -761,6 +762,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def import_benchmark_dataset(
         file: UploadFile = File(...),
+        benchmark_import_request_id: str | None = Header(
+            default=None,
+            alias="X-Benchmark-Import-Request-ID",
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
     ) -> BenchmarkDatasetImportResult:
         archive_bytes = await file.read(active_settings.max_dataset_upload_bytes + 1)
         if len(archive_bytes) > active_settings.max_dataset_upload_bytes:
@@ -782,10 +790,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 benchmark_corpus_lock,
                 ExitStack() as job_lock_stack,
             ):
+                if benchmark_import_request_id is not None:
+                    try:
+                        return benchmark_store.get_import(
+                            benchmark_import_request_id,
+                        )
+                    except BenchmarkImportNotFoundError:
+                        pass
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 with history_lock:
-                    return import_parser_dataset(
+                    result = import_parser_dataset(
                         dataset,
                         store,
                         recommendation_provider=active_settings.recommendation_provider,
@@ -793,8 +808,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         layout_profile=active_settings.parser_layout_profile,
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
+                    if benchmark_import_request_id is not None:
+                        benchmark_store.save_import(
+                            benchmark_import_request_id,
+                            result,
+                        )
+                    return result
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    @app.get(
+        "/api/benchmarks/imports/{request_id}",
+        response_model=BenchmarkDatasetImportResult,
+    )
+    def get_benchmark_dataset_import(
+        request_id: str,
+    ) -> BenchmarkDatasetImportResult:
+        try:
+            return benchmark_store.get_import(request_id)
+        except BenchmarkImportNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Benchmark dataset import not found",
+            ) from exc
 
     @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
     def get_benchmark_report(report_id: str) -> BenchmarkReport:

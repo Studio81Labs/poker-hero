@@ -9200,7 +9200,12 @@ describe("App", () => {
     expect(importDataset).toBeEnabled();
 
     expect(fetchMock().mock.calls[1][0]).toBe("http://localhost:8000/api/benchmarks/import");
-    expect(fetchMock().mock.calls[1][1]).toMatchObject({ method: "POST" });
+    expect(fetchMock().mock.calls[1][1]).toMatchObject({
+      method: "POST",
+      headers: {
+        "X-Benchmark-Import-Request-ID": expect.any(String),
+      },
+    });
     const form = fetchMock().mock.calls[1][1]?.body as FormData;
     expect(form.get("file")).toBe(dataset);
     await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
@@ -9326,6 +9331,12 @@ describe("App", () => {
         recent_reports: [],
       }))
       .mockRejectedValueOnce(new TypeError("Connection lost after dataset import"))
+      .mockResolvedValueOnce(jsonResponse({
+        imported_cases: 0,
+        reused_cases: 1,
+        included_cases: 1,
+        job_ids: [benchmarkJobId],
+      }))
       .mockResolvedValueOnce(processingQueueResponse(
         [],
         "lost-dataset-import-snapshot",
@@ -9350,7 +9361,7 @@ describe("App", () => {
       }),
     );
 
-    expect(await screen.findByText("Connection lost after dataset import")).toBeInTheDocument();
+    expect(await screen.findByText("Dataset recovered: 1 hand")).toBeInTheDocument();
     await waitFor(() => expect(
       window.localStorage.getItem("poker-training-processing-v1"),
     ).toBe("[]"));
@@ -9370,9 +9381,104 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/import",
-      "http://localhost:8000/api/jobs",
+      expect.stringMatching(
+        /^http:\/\/localhost:8000\/api\/benchmarks\/imports\/.+/,
+      ),
       "http://localhost:8000/api/history",
+      "http://localhost:8000/api/jobs",
     ]);
+  });
+
+  it("recovers a new dataset-only case by request identity after reload", async () => {
+    const importedJobId = "7".repeat(32);
+    const pendingFirstRecovery = deferredResponse();
+    let recoveryAttempts = 0;
+    fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return Promise.resolve(jsonResponse({
+          included_cases: 0,
+          latest_report: null,
+          recent_reports: [],
+        }));
+      }
+      if (
+        url === "http://localhost:8000/api/benchmarks/import"
+        && init?.method === "POST"
+      ) {
+        return Promise.reject(new TypeError("Connection lost after dataset import"));
+      }
+      if (url.startsWith("http://localhost:8000/api/benchmarks/imports/")) {
+        recoveryAttempts += 1;
+        return recoveryAttempts === 1
+          ? pendingFirstRecovery.promise
+          : Promise.resolve(jsonResponse({
+              imported_cases: 1,
+              reused_cases: 0,
+              included_cases: 1,
+              job_ids: [importedJobId],
+            }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse(
+          [],
+          "new-dataset-import-processing-snapshot",
+        ));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "new-dataset-import-history-snapshot",
+        }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const firstRender = render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(
+      within(dialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(dialog).getByLabelText("Parser dataset ZIP"),
+      new File(["dataset-zip"], "parser-dataset.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    await waitFor(() => expect(recoveryAttempts).toBe(1));
+    const importRequest = fetchMock().mock.calls.find(
+      ([url]) => String(url) === "http://localhost:8000/api/benchmarks/import",
+    );
+    const importRequestId = (
+      importRequest?.[1]?.headers as Record<string, string>
+    )["X-Benchmark-Import-Request-ID"];
+    expect(importRequestId).toEqual(expect.any(String));
+    expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/benchmarks/imports/${importRequestId}`,
+      { credentials: "include" },
+    );
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toContain(importRequestId);
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toContain(importRequestId);
+
+    firstRender.unmount();
+    render(<App />);
+
+    expect(await screen.findByText("Dataset recovered: 1 hand")).toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+    expect(recoveryAttempts).toBe(2);
   });
 
   it("preserves a confirmed dataset import during pending queue reconciliation", async () => {

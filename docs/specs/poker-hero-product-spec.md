@@ -327,7 +327,11 @@ frequencies.
     processing is revalidated directly before its expected removal is accepted.
     Upload and capture leases wait for every expected new queue item and
     required automation stage; a batch records all selected upload and
-    recommendation request identities before its first request. A recommendation
+    recommendation request identities before its first request. Dataset imports
+    record a distinct request identity before upload, persist the completed
+    result on the backend, and recover that exact receipt after a lost response
+    or reload, including when every imported hand is benchmark-only and absent
+    from processing and history. A recommendation
     that first saves the player's decision carries that decision expectation
     until the solver identity is armed, and a superseded provider call cannot
     write over a newer solver identity. A deterministic recommendation conflict

@@ -205,7 +205,11 @@ processing projection from the backend. Dataset-only benchmark imports stay out
 of that operational queue. Bounded browser-session mutation leases keep
 uncertain writes, uploads, and batch archives unsynchronized across a same-tab
 reload until the backend projection proves the operation completed or the
-recovery window expires.
+recovery window expires. Benchmark dataset imports additionally carry a
+client-generated request ID. The backend persists the completed import receipt,
+so a dropped response or same-tab reload can recover newly created
+benchmark-only cases that intentionally appear in neither operational
+projection.
 
 ### Offline Parser Benchmarks
 

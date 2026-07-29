@@ -298,6 +298,13 @@ distinguish a completed correctable solver attempt from work that never began.
 Backend solver completions and failures must still match that persisted solver
 identity before changing the job, so a superseded provider call cannot clear or
 overwrite a newer attempt.
+Benchmark dataset imports use a separate client-generated request identity in
+both projection leases and the multipart request. The backend serializes the
+import, atomically persists its result under that identity, and exposes the
+receipt through a recovery endpoint. This is the authoritative completion
+evidence for imports because newly created pristine benchmark cases are
+deliberately absent from processing and history. Replaying the same import
+identity returns the stored result without changing the corpus again.
 The upload ID is used instead of the display filename when matching a restored
 queue. Dataset imports may also carry processing IDs expected to disappear. Batch
 archive leases carry every target ID and baseline revision in both processing

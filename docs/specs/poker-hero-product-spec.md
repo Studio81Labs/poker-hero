@@ -320,7 +320,10 @@ frequencies.
     immediately. Archive-wide search uses its own paged result set and match
     count without changing the global reviewed count or newest-page cache.
     Shared processing-cache changes invalidate other open tabs, and a persisted
-    in-progress recommendation keeps revalidating until the backend records its
+    write that spans a same-tab reload keeps its processing or history
+    projection unsynchronized until a changed server revision is observed or a
+    bounded recovery lease expires. Separately, a persisted in-progress
+    recommendation keeps revalidating until the backend records its
     recommendation or retryable error, including after transient projection
     failures. Unsafe future-dated cache records force an authoritative reload
     rather than outranking terminal server state, and processing cache records

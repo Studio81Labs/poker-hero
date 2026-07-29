@@ -87,6 +87,9 @@ const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
 const PROCESSING_QUEUE_SESSION_SYNC_KEY = "poker-training-processing-synced";
+const HISTORY_MUTATION_LEASE_KEY = "poker-training-history-mutation-v1";
+const PROCESSING_MUTATION_LEASE_KEY = "poker-training-processing-mutation-v1";
+const PERSISTED_MUTATION_LEASE_MS = 30 * 1000;
 
 const EMPTY_STATE: CanonicalState = {
   hero_cards: [],
@@ -112,6 +115,12 @@ type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type PersistedJobMutationScope = "processing" | "history";
+type PersistedMutationLease = {
+  ownerId: string;
+  jobId: string;
+  baselineUpdatedAt: string;
+  expiresAt: number;
+};
 type TrainingProgressView = "recent" | "review" | "lessons";
 type TrainingFocus = { street: Street; reason: string };
 type TrainingCertaintyFocus = {
@@ -1865,11 +1874,117 @@ function readCachedProcessingQueueTotal(
   return storedTotal;
 }
 
+function mutationLeaseStorageKey(
+  scope: PersistedJobMutationScope,
+): string {
+  return scope === "processing"
+    ? PROCESSING_MUTATION_LEASE_KEY
+    : HISTORY_MUTATION_LEASE_KEY;
+}
+
+function mutationLeaseOwnerId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function readPersistedMutationLease(
+  scope: PersistedJobMutationScope,
+): PersistedMutationLease | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(mutationLeaseStorageKey(scope));
+    if (raw === null) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<PersistedMutationLease>;
+    if (
+      typeof parsed.ownerId !== "string"
+      || typeof parsed.jobId !== "string"
+      || typeof parsed.baselineUpdatedAt !== "string"
+      || typeof parsed.expiresAt !== "number"
+      || !Number.isFinite(parsed.expiresAt)
+    ) {
+      window.sessionStorage.removeItem(mutationLeaseStorageKey(scope));
+      return null;
+    }
+    return parsed as PersistedMutationLease;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedMutationLease(
+  scope: PersistedJobMutationScope,
+  lease: PersistedMutationLease,
+): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    window.sessionStorage.setItem(
+      mutationLeaseStorageKey(scope),
+      JSON.stringify(lease),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function claimPersistedMutationLease(
+  scope: PersistedJobMutationScope,
+  ownerId: string,
+): PersistedMutationLease | null {
+  const lease = readPersistedMutationLease(scope);
+  if (lease === null) {
+    return null;
+  }
+  const claimedLease = { ...lease, ownerId };
+  return writePersistedMutationLease(scope, claimedLease)
+    ? claimedLease
+    : null;
+}
+
+function startPersistedMutationLease(
+  scope: PersistedJobMutationScope,
+  ownerId: string,
+  job: JobRecord,
+): PersistedMutationLease | null {
+  const lease: PersistedMutationLease = {
+    ownerId,
+    jobId: job.id,
+    baselineUpdatedAt: job.updated_at,
+    expiresAt: Date.now() + PERSISTED_MUTATION_LEASE_MS,
+  };
+  return writePersistedMutationLease(scope, lease) ? lease : null;
+}
+
+function clearPersistedMutationLease(
+  scope: PersistedJobMutationScope,
+  ownerId: string,
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (readPersistedMutationLease(scope)?.ownerId === ownerId) {
+      window.sessionStorage.removeItem(mutationLeaseStorageKey(scope));
+    }
+  } catch {
+    // An unavailable session store already forces authoritative reloads.
+  }
+}
+
 function markProcessingQueueSessionSynced(): void {
   if (typeof window === "undefined") {
     return;
   }
   try {
+    if (readPersistedMutationLease("processing") !== null) {
+      window.sessionStorage.removeItem(PROCESSING_QUEUE_SESSION_SYNC_KEY);
+      return;
+    }
     window.sessionStorage.setItem(PROCESSING_QUEUE_SESSION_SYNC_KEY, "true");
   } catch {
     // Persisted jobs remain available when browser session storage is unavailable.
@@ -2021,6 +2136,10 @@ function markHistorySessionSynced(): void {
     return;
   }
   try {
+    if (readPersistedMutationLease("history") !== null) {
+      window.sessionStorage.removeItem(HISTORY_SESSION_SYNC_KEY);
+      return;
+    }
     window.sessionStorage.setItem(HISTORY_SESSION_SYNC_KEY, "true");
   } catch {
     // The persisted endpoint remains usable when browser storage is unavailable.
@@ -2720,6 +2839,14 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setErrorMessage] = useState<string | null>(null);
   const [errorSequence, setErrorSequence] = useState(0);
+  const [mutationOwnerId] = useState(mutationLeaseOwnerId);
+  const [initialProcessingMutationLease] = useState(() =>
+    claimPersistedMutationLease("processing", mutationOwnerId),
+  );
+  const [initialHistoryMutationLease] = useState(() =>
+    claimPersistedMutationLease("history", mutationOwnerId),
+  );
+  const appMountedRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
@@ -2735,18 +2862,29 @@ export default function App() {
   const processingRemovalCandidateIdsRef = useRef(new Set<string>());
   const processingUpdateCandidateIdsRef = useRef(new Set<string>());
   const processingRestoreRetryRequestedRef = useRef(false);
+  const processingMutationLeaseRef = useRef(initialProcessingMutationLease);
   const historyMutationGenerationRef = useRef(0);
   const historyMutationCountRef = useRef(0);
   const historyJobRestoreActiveIdsRef = useRef(new Set<string>());
   const historyJobRestoreIdsRef = useRef(new Set<string>());
   const historyJobRestorePromiseRef = useRef<Promise<void> | null>(null);
   const historyJobRestoreRetryTimerRef = useRef<number | null>(null);
-  const historyUpdateCandidateIdsRef = useRef(new Set<string>());
+  const historyUpdateCandidateIdsRef = useRef(new Set(
+    initialHistoryMutationLease ? [initialHistoryMutationLease.jobId] : [],
+  ));
+  const historyMutationLeaseRef = useRef(initialHistoryMutationLease);
   const historyFullRestoreRequestedRef = useRef(false);
   const historyRestoreRetryRequestedRef = useRef(false);
   const historyRestorePromiseRef = useRef<Promise<boolean> | null>(null);
   const legacyHistoryArchivePromiseRef = useRef<Promise<boolean> | null>(null);
   const processingRestorePromiseRef = useRef<Promise<JobQueue> | null>(null);
+
+  useEffect(() => {
+    appMountedRef.current = true;
+    return () => {
+      appMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     writeAutomationSettings(automationSettings);
@@ -2812,6 +2950,68 @@ export default function App() {
     }, PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS);
     return () => window.clearTimeout(revalidationTimer);
   }, [jobs]);
+
+  useEffect(() => {
+    if (
+      initialProcessingMutationLease === null
+      && initialHistoryMutationLease === null
+    ) {
+      return;
+    }
+    let retryTimer: number | null = null;
+    let retryDelay = PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS;
+    const revalidateLeases = () => {
+      retryTimer = null;
+      let leasePending = false;
+      const processingLease = processingMutationLeaseRef.current;
+      if (processingLease !== null) {
+        if (Date.now() >= processingLease.expiresAt) {
+          clearPersistedMutationLease("processing", mutationOwnerId);
+          processingMutationLeaseRef.current = null;
+          markProcessingQueueSessionUnsynced();
+          if (processingMutationCountRef.current === 0) {
+            scheduleProcessingQueueRestore();
+          } else {
+            processingRestoreRetryRequestedRef.current = true;
+          }
+        } else {
+          leasePending = true;
+          markProcessingQueueSessionUnsynced();
+          if (processingMutationCountRef.current === 0) {
+            scheduleProcessingQueueRestore();
+          } else {
+            processingRestoreRetryRequestedRef.current = true;
+          }
+        }
+      }
+
+      const historyLease = historyMutationLeaseRef.current;
+      if (historyLease !== null) {
+        if (Date.now() >= historyLease.expiresAt) {
+          clearPersistedMutationLease("history", mutationOwnerId);
+          historyMutationLeaseRef.current = null;
+          historyUpdateCandidateIdsRef.current.delete(historyLease.jobId);
+          markHistorySessionUnsynced();
+          requestHistoryJobRestore([historyLease.jobId]);
+        } else {
+          leasePending = true;
+          markHistorySessionUnsynced();
+          requestHistoryJobRestore([historyLease.jobId]);
+        }
+      }
+
+      if (leasePending) {
+        retryDelay = Math.min(retryDelay * 2, 2_000);
+        retryTimer = window.setTimeout(revalidateLeases, retryDelay);
+      }
+    };
+    retryTimer = window.setTimeout(revalidateLeases, retryDelay);
+    return () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+    };
+  }, []);
 
   const job = useMemo(() => jobs.find((candidate) => candidate.id === activeJobId) ?? jobs[0] ?? null, [activeJobId, jobs]);
   const validation = useMemo(() => {
@@ -2963,6 +3163,46 @@ export default function App() {
     processingRestoreRetryRequestedRef.current = false;
     processingRestorePromiseRef.current = null;
     setProcessingRestoreRequest((current) => current + 1);
+  }
+
+  function settlePersistedMutationLease(
+    scope: PersistedJobMutationScope,
+    incomingJobs: readonly JobRecord[],
+    missingJobSettles: boolean,
+  ): boolean {
+    const leaseRef = scope === "processing"
+      ? processingMutationLeaseRef
+      : historyMutationLeaseRef;
+    const lease = leaseRef.current;
+    if (lease === null) {
+      return false;
+    }
+    const storedLease = readPersistedMutationLease(scope);
+    if (
+      storedLease === null
+      || storedLease.ownerId !== mutationOwnerId
+      || storedLease.jobId !== lease.jobId
+    ) {
+      leaseRef.current = null;
+      return false;
+    }
+    const incomingJob = incomingJobs.find(
+      (candidate) => candidate.id === lease.jobId,
+    );
+    if (
+      incomingJob !== undefined
+        ? incomingJob.updated_at === lease.baselineUpdatedAt
+        : !missingJobSettles
+    ) {
+      return false;
+    }
+    clearPersistedMutationLease(scope, mutationOwnerId);
+    leaseRef.current = null;
+    if (scope === "history") {
+      historyMutationGenerationRef.current += 1;
+      historyUpdateCandidateIdsRef.current.delete(lease.jobId);
+    }
+    return true;
   }
 
   function requestHistoryRestore(
@@ -3181,10 +3421,18 @@ export default function App() {
     persistedJob: JobRecord,
     removalCandidateIds: readonly string[] = [],
   ): PersistedJobMutationScope {
-    if (persistedJob.archived_at) {
+    const scope = persistedJob.archived_at ? "history" : "processing";
+    const lease = startPersistedMutationLease(
+      scope,
+      mutationOwnerId,
+      persistedJob,
+    );
+    if (scope === "history") {
+      historyMutationLeaseRef.current = lease;
       beginHistoryMutation();
       return "history";
     }
+    processingMutationLeaseRef.current = lease;
     beginProcessingMembershipMutation(removalCandidateIds);
     return "processing";
   }
@@ -3204,9 +3452,19 @@ export default function App() {
     mutationScope: PersistedJobMutationScope,
     restoreAfterMutation: boolean,
   ) {
+    if (!appMountedRef.current) {
+      return;
+    }
+    clearPersistedMutationLease(mutationScope, mutationOwnerId);
     if (mutationScope === "processing") {
+      if (processingMutationLeaseRef.current?.ownerId === mutationOwnerId) {
+        processingMutationLeaseRef.current = null;
+      }
       endProcessingMembershipMutation(restoreAfterMutation);
       return;
+    }
+    if (historyMutationLeaseRef.current?.ownerId === mutationOwnerId) {
+      historyMutationLeaseRef.current = null;
     }
     endHistoryMutation(restoreAfterMutation);
   }
@@ -3355,6 +3613,7 @@ export default function App() {
           }
           return;
         }
+        settlePersistedMutationLease("processing", queue.jobs, true);
         const currentJobs = jobsRef.current;
         const currentJobsById = new Map(currentJobs.map((candidate) => [
           candidate.id,
@@ -3419,6 +3678,7 @@ export default function App() {
           writeProcessingQueue(nextJobs, false, authoritativeJobIds)
           && !preservedMissingDirtyJob
           && !processingInProgress
+          && processingMutationLeaseRef.current === null
         ) {
           markProcessingQueueSessionSynced();
         } else {
@@ -3589,9 +3849,21 @@ export default function App() {
   }
 
   function applyHistoryJobUpdates(incomingJobs: JobRecord[]) {
+    const mutationLeaseJobId = historyMutationLeaseRef.current?.jobId ?? null;
+    const mutationLeaseSettled = settlePersistedMutationLease(
+      "history",
+      incomingJobs,
+      false,
+    );
     const incomingJobsById = new Map(
       incomingJobs.map((incomingJob) => [incomingJob.id, incomingJob]),
     );
+    const reconciledHistoryJob = (
+      currentJob: JobRecord,
+      incomingJob: JobRecord,
+    ) => mutationLeaseSettled && incomingJob.id === mutationLeaseJobId
+      ? incomingJob
+      : newerHistoryJob(currentJob, incomingJob);
     const resolvedJobIds = new Set(incomingJobsById.keys());
     const currentActiveId = activeJobIdRef.current;
     const currentActiveJob = currentActiveId === null
@@ -3599,7 +3871,9 @@ export default function App() {
       : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
     const nextJobs = jobsRef.current.map((candidate) => {
       const incomingJob = incomingJobsById.get(candidate.id);
-      return incomingJob ? newerHistoryJob(candidate, incomingJob) : candidate;
+      return incomingJob
+        ? reconciledHistoryJob(candidate, incomingJob)
+        : candidate;
     });
     const reconciledActiveJob = currentActiveId === null
       ? null
@@ -3627,7 +3901,7 @@ export default function App() {
       const next = current.map((item) => {
         const incomingJob = incomingJobsById.get(item.id);
         return incomingJob
-          ? { ...item, job: newerHistoryJob(item.job, incomingJob) }
+          ? { ...item, job: reconciledHistoryJob(item.job, incomingJob) }
           : item;
       });
       const historyCached = writeHistory(next);
@@ -3636,7 +3910,7 @@ export default function App() {
         const incomingJob = incomingJobsById.get(item.id);
         return (
           incomingJob
-            ? newerHistoryJob(item.job, incomingJob)
+            ? reconciledHistoryJob(item.job, incomingJob)
             : item.job
         ).recommendation_pending;
       });
@@ -3651,6 +3925,7 @@ export default function App() {
         && !next.some((item) => item.job.recommendation_pending)
         && !pendingSearchResult
         && !pendingWorkspaceJob
+        && historyMutationLeaseRef.current === null
       ) {
         markHistorySessionSynced();
       } else {
@@ -3662,18 +3937,26 @@ export default function App() {
       current?.map((item) => {
         const incomingJob = incomingJobsById.get(item.id);
         return incomingJob
-          ? { ...item, job: newerHistoryJob(item.job, incomingJob) }
+          ? { ...item, job: reconciledHistoryJob(item.job, incomingJob) }
           : item;
       }) ?? null,
     );
     for (const incomingJob of incomingJobs) {
-      historyUpdateCandidateIdsRef.current.delete(incomingJob.id);
+      if (historyMutationLeaseRef.current?.jobId !== incomingJob.id) {
+        historyUpdateCandidateIdsRef.current.delete(incomingJob.id);
+      }
       historyJobRestoreIdsRef.current.delete(incomingJob.id);
     }
   }
 
   function applyHistoryPage(page: JobHistory, append = false) {
     const pageItems = historyItemsFromPage(page);
+    const mutationLeaseJobId = historyMutationLeaseRef.current?.jobId ?? null;
+    const mutationLeaseSettled = settlePersistedMutationLease(
+      "history",
+      pageItems.map((item) => item.job),
+      false,
+    );
     const resolvedJobIds = new Set(pageItems.map((item) => item.id));
     const incomingJobsById = new Map(
       pageItems.map((item) => [item.id, item.job]),
@@ -3684,7 +3967,13 @@ export default function App() {
       : jobsRef.current.find((candidate) => candidate.id === currentActiveId) ?? null;
     const nextJobs = jobsRef.current.map((candidate) => {
       const incomingJob = incomingJobsById.get(candidate.id);
-      return incomingJob ? newerHistoryJob(candidate, incomingJob) : candidate;
+      return incomingJob
+        ? (
+            mutationLeaseSettled && incomingJob.id === mutationLeaseJobId
+              ? incomingJob
+              : newerHistoryJob(candidate, incomingJob)
+          )
+        : candidate;
     });
     const reconciledActiveJob = currentActiveId === null
       ? null
@@ -3708,14 +3997,26 @@ export default function App() {
       alignWorkspaceToJob(reconciledActiveJob);
     }
     for (const item of pageItems) {
-      historyUpdateCandidateIdsRef.current.delete(item.id);
+      if (historyMutationLeaseRef.current?.jobId !== item.id) {
+        historyUpdateCandidateIdsRef.current.delete(item.id);
+      }
       historyJobRestoreIdsRef.current.delete(item.id);
     }
     setHistoryTotal(page.total);
     setHistory((current) => {
-      const items = append
+      let items = append
         ? mergeHistoryItems(current, pageItems)
         : reconcileHistoryItems(current, pageItems);
+      if (mutationLeaseSettled && mutationLeaseJobId !== null) {
+        const authoritativeItem = pageItems.find(
+          (item) => item.id === mutationLeaseJobId,
+        );
+        if (authoritativeItem) {
+          items = items.map((item) =>
+            item.id === mutationLeaseJobId ? authoritativeItem : item,
+          );
+        }
+      }
       const historyCached = writeHistory(items);
       const totalCached = writeHistoryTotal(page.total);
       if (
@@ -3723,6 +4024,7 @@ export default function App() {
         && totalCached
         && !hasPendingHistoryJobRestore(resolvedJobIds)
         && !items.some((item) => item.job.recommendation_pending)
+        && historyMutationLeaseRef.current === null
       ) {
         markHistorySessionSynced();
       } else {
@@ -3934,18 +4236,29 @@ export default function App() {
     }
 
     const approvalState = autoApprovalState(created, automationAllowWarnings);
-    markPersistedJobSessionUnsynced(created);
-    const approved = await approveState(created.id, approvalState, signal);
-    applyApprovedJob(approved, approvalState);
+    const approvalMutationScope = beginPersistedJobMutation(created);
+    let approved: JobRecord;
+    try {
+      markPersistedJobSessionUnsynced(created);
+      approved = await approveState(created.id, approvalState, signal);
+      applyApprovedJob(approved, approvalState);
+    } finally {
+      endPersistedJobMutation(approvalMutationScope, false);
+    }
 
     if (!automationRecommend) {
       return approved;
     }
 
-    markPersistedJobSessionUnsynced(approved);
-    const recommended = await requestRecommendation(approved.id, signal);
-    applyRecommendedJob(recommended);
-    return recommended;
+    const recommendationMutationScope = beginPersistedJobMutation(approved);
+    try {
+      markPersistedJobSessionUnsynced(approved);
+      const recommended = await requestRecommendation(approved.id, signal);
+      applyRecommendedJob(recommended);
+      return recommended;
+    } finally {
+      endPersistedJobMutation(recommendationMutationScope, false);
+    }
   }
 
   async function uploadSelectedFiles(runAutomation: boolean): Promise<JobRecord[]> {

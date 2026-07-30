@@ -6,6 +6,7 @@ on:
     paths:
       - "apps/backend/**"
       - "apps/frontend/**"
+      - "scripts/e2e_provider_stub.py"
       - "scripts/start-e2e-backend.sh"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -16,6 +17,7 @@ on:
     paths:
       - "apps/backend/**"
       - "apps/frontend/**"
+      - "scripts/e2e_provider_stub.py"
       - "scripts/start-e2e-backend.sh"
       - "package.json"
       - "pnpm-lock.yaml"

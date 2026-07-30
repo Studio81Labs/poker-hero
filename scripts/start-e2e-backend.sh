@@ -5,6 +5,8 @@ ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BACKEND_DIR="$ROOT_DIR/apps/backend"
 DATA_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poker-hero-e2e.XXXXXX")
 SERVER_PID=""
+PROVIDER_PID=""
+PROVIDER_READY_FILE="$DATA_DIR/provider-ready"
 
 cleanup() {
   status=$?
@@ -12,6 +14,10 @@ cleanup() {
   if [ -n "$SERVER_PID" ]; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+  if [ -n "$PROVIDER_PID" ]; then
+    kill "$PROVIDER_PID" >/dev/null 2>&1 || true
+    wait "$PROVIDER_PID" >/dev/null 2>&1 || true
   fi
   rm -rf -- "$DATA_DIR"
   exit "$status"
@@ -36,6 +42,27 @@ else
   exit 1
 fi
 
+"$PYTHON_BIN" "$ROOT_DIR/scripts/e2e_provider_stub.py" \
+  --host 127.0.0.1 \
+  --port 8011 \
+  --ready-file "$PROVIDER_READY_FILE" &
+PROVIDER_PID=$!
+
+ready_attempt=0
+while [ ! -f "$PROVIDER_READY_FILE" ]; do
+  if ! kill -0 "$PROVIDER_PID" >/dev/null 2>&1; then
+    echo "E2E recommendation provider failed to start" >&2
+    wait "$PROVIDER_PID"
+    exit 1
+  fi
+  ready_attempt=$((ready_attempt + 1))
+  if [ "$ready_attempt" -ge 100 ]; then
+    echo "Timed out waiting for E2E recommendation provider" >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+
 cd "$DATA_DIR"
 env -i \
   HOME="${HOME:-$DATA_DIR}" \
@@ -44,7 +71,9 @@ env -i \
   PYTHONPATH="$BACKEND_DIR" \
   POKER_DATA_DIR="$DATA_DIR" \
   POKER_PARSER_PROVIDER=mock \
-  POKER_RECOMMENDATION_PROVIDER=mock \
+  POKER_RECOMMENDATION_PROVIDER=external_solver \
+  POKER_EXTERNAL_PROVIDER_URL=http://127.0.0.1:8011/recommend \
+  POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS=5 \
   POKER_CORS_ORIGINS='["http://127.0.0.1:4174"]' \
   "$PYTHON_BIN" -m uvicorn app.main:app \
     --host 127.0.0.1 \

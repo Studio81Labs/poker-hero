@@ -322,7 +322,9 @@ frequencies.
     Shared processing-cache changes invalidate other open tabs. A persisted
     write that spans a same-tab reload keeps its processing or history
     projection unsynchronized until the leased approval, decision, review, or
-    benchmark effect is observed or a bounded recovery lease expires. Another
+    benchmark effect is observed or a bounded recovery lease expires. Unsaved
+    corrections to an active hand remain workspace-only when a dataset import
+    selects its persisted state as ground truth. Another
     tab's unrelated revision does not settle the lease, and a job omitted from
     processing is revalidated directly before its expected removal is accepted.
     Upload and capture leases wait for every expected new queue item and

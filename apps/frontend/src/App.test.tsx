@@ -9679,6 +9679,88 @@ describe("App", () => {
     ]);
   });
 
+  it("preserves unsaved corrections when importing the active dataset case", async () => {
+    const benchmarkJobId = "4".repeat(32);
+    const processingImport = {
+      ...approvedJob(),
+      id: benchmarkJobId,
+      original_filename: "dirty-reused-import.png",
+      image_filename: `${benchmarkJobId}.png`,
+      benchmark_included: false,
+      parser_result: null,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([processingImport]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingQueue = deferredResponse();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 0,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        imported_cases: 0,
+        reused_cases: 1,
+        included_cases: 1,
+        job_ids: [benchmarkJobId],
+      }))
+      .mockReturnValueOnce(pendingQueue.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    const heroCards = await screen.findByLabelText(/Hero cards/);
+    await user.clear(heroCards);
+    await user.type(heroCards, "7d Ah");
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(
+      within(dialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(dialog).getByLabelText("Parser dataset ZIP"),
+      new File(["dataset-zip"], "parser-dataset.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    expect(await screen.findByText("Dataset ready: 1 hand")).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([]));
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: dirty-reused-import.png",
+    })).toHaveClass("active");
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(heroCards).toHaveValue("7d Ah");
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBeNull();
+
+    pendingQueue.resolve(processingQueueResponse(
+      [],
+      "dirty-reused-import-snapshot",
+    ));
+
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-synced",
+    )).toBe("true"));
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 1: dirty-reused-import.png",
+    })).toHaveClass("active");
+    expect(heroCards).toHaveValue("7d Ah");
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks/import",
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("reconciles a reused pristine dataset case after a lost import response", async () => {
     const benchmarkJobId = "2".repeat(32);
     const processingImport = {

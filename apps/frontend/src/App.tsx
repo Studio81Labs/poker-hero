@@ -6568,6 +6568,9 @@ export default function App() {
     result: BenchmarkDatasetImportResult,
   ): number {
     const importedIds = new Set(result.job_ids);
+    const dirtyActiveJobId = formDirtyRef.current
+      ? activeJobIdRef.current
+      : null;
     for (
       const removalCandidateId
       of processingRemovalCandidateIdsRef.current
@@ -6589,9 +6592,14 @@ export default function App() {
         ...candidate,
         benchmark_included: true,
       };
-      return isPristineBenchmarkImport(includedCandidate)
-        ? []
-        : [includedCandidate];
+      if (!isPristineBenchmarkImport(includedCandidate)) {
+        return [includedCandidate];
+      }
+      if (candidate.id === dirtyActiveJobId) {
+        processingRemovalCandidateIdsRef.current.delete(candidate.id);
+        return [includedCandidate];
+      }
+      return [];
     });
     const activeJobRemoved = activeJobIdRef.current !== null
       && !nextJobs.some((candidate) => candidate.id === activeJobIdRef.current);

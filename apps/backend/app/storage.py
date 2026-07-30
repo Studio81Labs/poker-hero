@@ -6,6 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from app.models import (
+    BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkReport,
@@ -15,7 +16,7 @@ from app.models import (
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
-BENCHMARK_IMPORT_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 
 
 class JobNotFoundError(KeyError):
@@ -308,9 +309,15 @@ class FileBenchmarkStore:
         return self.benchmarks_dir / f"{report_id}.json"
 
     def _import_dir(self, request_id: str) -> Path:
-        if BENCHMARK_IMPORT_REQUEST_ID_PATTERN.fullmatch(request_id) is None:
+        if (
+            len(request_id) > 128
+            or BENCHMARK_IMPORT_REQUEST_ID_RE.fullmatch(request_id) is None
+        ):
             raise BenchmarkImportNotFoundError(request_id)
-        return self.imports_dir / request_id
+        request_dir = (self.imports_dir / request_id).resolve(strict=False)
+        if request_dir.parent != self.imports_dir:
+            raise BenchmarkImportNotFoundError(request_id)
+        return request_dir
 
     def _import_receipt_path(self, request_id: str) -> Path:
         return self._import_dir(request_id) / "receipt.json"

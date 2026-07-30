@@ -299,9 +299,11 @@ Backend solver completions and failures must still match that persisted solver
 identity before changing the job, so a superseded provider call cannot clear or
 overwrite a newer attempt.
 Benchmark dataset imports use a separate client-generated request identity in
-both projection leases and the multipart request. After enforcing the compressed
-upload limit, the backend atomically publishes a journal directory containing
-the ZIP and a pending receipt before parsing the archive or changing the corpus.
+both projection leases and the multipart request. Import identities are
+alphanumeric-led and resolve to a strict child of the journal root. After
+enforcing the compressed upload limit, the backend atomically publishes a
+journal directory containing the ZIP and a pending receipt before parsing the
+archive or changing the corpus.
 Imported jobs retain that request identity, so a pending journal can
 idempotently resume validation or repair a partial case after process
 interruption. The receipt transitions atomically to failed after deterministic

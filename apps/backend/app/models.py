@@ -15,6 +15,7 @@ TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "diff
 TrainingReviewOrder = Literal["recent", "ev_loss"]
 TrainingReviewCertainty = Literal["low", "medium", "high", "unrated"]
 
+BENCHMARK_IMPORT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 SUIT_BY_CODE = {
     "c": "clubs",
@@ -408,7 +409,7 @@ class JobRecord(BaseModel):
         default=None,
         min_length=1,
         max_length=128,
-        pattern=r"^[A-Za-z0-9._:-]+$",
+        pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     )
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
@@ -461,7 +462,7 @@ class BenchmarkDatasetImportReceipt(BaseModel):
     request_id: str = Field(
         min_length=1,
         max_length=128,
-        pattern=r"^[A-Za-z0-9._:-]+$",
+        pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     )
     archive_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["pending", "completed", "failed"]

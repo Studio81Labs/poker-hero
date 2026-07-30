@@ -37,6 +37,7 @@ from app.dataset_import import (
     parse_parser_dataset_archive,
 )
 from app.models import (
+    BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     ArchiveJobsRequest,
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
@@ -834,7 +835,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             alias="X-Benchmark-Import-Request-ID",
             min_length=1,
             max_length=128,
-            pattern=r"^[A-Za-z0-9._:-]+$",
+            pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
         ),
     ) -> BenchmarkDatasetImportResult:
         archive_bytes = await file.read(active_settings.max_dataset_upload_bytes + 1)

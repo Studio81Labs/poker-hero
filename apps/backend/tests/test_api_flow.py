@@ -19,7 +19,12 @@ from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
 from app.providers.base import ProviderError, ProviderInputError
 from app.providers.mock import MockRecommendationProvider
-from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
+from app.storage import (
+    BenchmarkImportNotFoundError,
+    FileBenchmarkStore,
+    FileJobStore,
+    JobNotFoundError,
+)
 
 
 VALID_PNG = (
@@ -1942,6 +1947,26 @@ def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
     assert repeated.json() == imported.json()
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Benchmark dataset import not found"
+
+
+@pytest.mark.parametrize("request_id", [".", ".."])
+def test_benchmark_dataset_import_rejects_dot_segment_request_ids(
+    tmp_path: Path,
+    request_id: str,
+) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+    benchmark_store = FileBenchmarkStore(tmp_path)
+
+    assert response.status_code == 422
+    assert list(benchmark_store.imports_dir.iterdir()) == []
+    with pytest.raises(BenchmarkImportNotFoundError):
+        benchmark_store.begin_import(request_id, b"dataset")
 
 
 def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(

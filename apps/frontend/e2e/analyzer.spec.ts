@@ -236,6 +236,123 @@ test("recovers from a failed recommendation and retries it", async ({
   });
 });
 
+test("reconciles a recommendation that completes after page reload", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("recommendation-reload", testInfo);
+
+  await page.getByRole("button", { name: "Automation On" }).click();
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+
+  const armBlockResponse = await page.request.post(
+    `${PROVIDER_URL}/control/block-next-recommendation`,
+  );
+  expect(armBlockResponse.ok()).toBe(true);
+
+  let recommendationReleased = false;
+  try {
+    await page.getByRole("button", { name: "Request recommendation" }).click();
+    await expect.poll(async () => {
+      const response = await page.request.get(
+        `${PROVIDER_URL}/control/recommendation-state`,
+      );
+      if (!response.ok()) {
+        return false;
+      }
+      const state = await response.json() as { started: boolean };
+      return state.started;
+    }).toBe(true);
+    await expect.poll(async () => {
+      const response = await page.request.get(
+        `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+      );
+      if (!response.ok()) {
+        return false;
+      }
+      const job = await response.json() as {
+        recommendation_pending: boolean;
+      };
+      return job.recommendation_pending;
+    }).toBe(true);
+    const pendingLease = await page.evaluate(() => JSON.parse(
+      sessionStorage.getItem("poker-training-processing-mutation-v1") ?? "null",
+    ) as {
+      expectedRecommendationRequestId: string;
+      jobId: string;
+      kind: string;
+    } | null);
+    if (pendingLease === null) {
+      throw new Error("Recommendation mutation lease was not persisted");
+    }
+    expect(pendingLease).toMatchObject({
+      expectedRecommendationRequestId: expect.any(String),
+      jobId: uploadedJob.id,
+      kind: "job",
+    });
+
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Poker Training Analyzer" }),
+    ).toBeVisible();
+    const reloadedQueueItem = page.getByRole("button", {
+      name: filenamePattern(filename),
+    });
+    await expect(reloadedQueueItem).toContainText("Recommendation running");
+    await reloadedQueueItem.click();
+    await expect(
+      page.getByRole("region", { name: "Recommendation" }),
+    ).toBeHidden();
+
+    const releaseResponse = await page.request.post(
+      `${PROVIDER_URL}/control/release-recommendation`,
+    );
+    expect(releaseResponse.ok()).toBe(true);
+    recommendationReleased = true;
+
+    await expect(
+      page.getByRole("region", { name: "Recommendation" }),
+    ).toBeVisible();
+    await expect(reloadedQueueItem).toContainText("recommended");
+    await expect.poll(
+      () => page.evaluate(
+        () => sessionStorage.getItem("poker-training-processing-mutation-v1"),
+      ),
+    ).toBeNull();
+
+    const completedJobResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+    );
+    expect(completedJobResponse.ok()).toBe(true);
+    const completedJob = await completedJobResponse.json() as {
+      error: string | null;
+      recommendation: { raw: Record<string, string> } | null;
+      recommendation_pending: boolean;
+      recommendation_request_id: string | null;
+      status: string;
+    };
+    expect(completedJob).toMatchObject({
+      error: null,
+      recommendation: {
+        raw: {
+          engine: "e2e_provider_stub",
+          provider: "external_solver",
+        },
+      },
+      recommendation_pending: false,
+      recommendation_request_id: pendingLease.expectedRecommendationRequestId,
+      status: "recommended",
+    });
+  } finally {
+    if (!recommendationReleased) {
+      await page.request.post(
+        `${PROVIDER_URL}/control/release-recommendation`,
+      );
+    }
+  }
+});
+
 test("persists a parser failure and recovers by re-uploading the screenshot", async ({
   page,
 }, testInfo) => {

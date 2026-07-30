@@ -500,7 +500,9 @@ Recommendation tests:
 - Verify engine-route keys, fallback-reason keys, and the unattributed selector
   are mutually exclusive and filter only the bounded Recent decisions
   projection while preserving global aggregates.
-- Add integration tests for local and external providers when concrete engines/APIs are configured.
+- Exercise the local subprocess engine and external HTTP adapter through the
+  complete recommendation API and persisted job flow, independently of their
+  focused provider-unit tests.
 
 End-to-end tests:
 

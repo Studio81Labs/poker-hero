@@ -28,18 +28,27 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.max_dataset_upload_bytes == 100 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
     assert settings.proxy_shared_secret is None
+    assert settings.external_parser_bearer_token is None
+    assert settings.external_provider_bearer_token is None
+    assert settings.llm_advice_bearer_token is None
+    assert settings.external_request_timeout_seconds == 60
 
 
 def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POKER_PARSER_PROVIDER", "external")
     monkeypatch.setenv("POKER_RECOMMENDATION_PROVIDER", "solver")
     monkeypatch.setenv("POKER_LOCAL_SOLVER_ENGINE", "local_ev")
+    monkeypatch.setenv("POKER_EXTERNAL_PROVIDER_BEARER_TOKEN", "solver-token")
+    monkeypatch.setenv("POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS", "12.5")
 
     settings = Settings()
 
     assert settings.parser_provider == "external"
     assert settings.recommendation_provider == "solver"
     assert settings.local_solver_engine == "local_ev"
+    assert settings.external_provider_bearer_token is not None
+    assert settings.external_provider_bearer_token.get_secret_value() == "solver-token"
+    assert settings.external_request_timeout_seconds == 12.5
 
 
 def test_application_settings_loader_reads_dotenv(
@@ -86,6 +95,8 @@ def test_settings_rejects_invalid_auto_approve_threshold() -> None:
 def test_settings_rejects_non_positive_solver_timeout() -> None:
     with pytest.raises(ValidationError):
         Settings(local_solver_timeout_seconds=0)
+    with pytest.raises(ValidationError):
+        Settings(external_request_timeout_seconds=0)
 
 
 def test_settings_rejects_invalid_postflop_solver_limits() -> None:
@@ -115,6 +126,36 @@ def test_settings_normalizes_and_validates_proxy_shared_secret() -> None:
 
     with pytest.raises(ValidationError):
         Settings(proxy_shared_secret="too-short")
+
+
+def test_settings_normalizes_and_masks_external_bearer_tokens() -> None:
+    assert Settings(external_parser_bearer_token="").external_parser_bearer_token is None
+    token = Settings(external_parser_bearer_token="  parser-token  ").external_parser_bearer_token
+
+    assert token is not None
+    assert token.get_secret_value() == "parser-token"
+    assert "parser-token" not in repr(token)
+
+    with pytest.raises(ValidationError, match="must not contain whitespace"):
+        Settings(external_parser_bearer_token="invalid token")
+    with pytest.raises(ValidationError, match="ASCII"):
+        Settings(external_parser_bearer_token="töken")
+
+
+@pytest.mark.parametrize(
+    ("url_field", "token_field"),
+    [
+        ("external_parser_url", "external_parser_bearer_token"),
+        ("external_provider_url", "external_provider_bearer_token"),
+        ("llm_advice_url", "llm_advice_bearer_token"),
+    ],
+)
+def test_settings_require_https_for_authenticated_external_services(
+    url_field: str,
+    token_field: str,
+) -> None:
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        Settings(**{url_field: "http://service.example/api", token_field: "secret-token"})
 
 
 def test_card_from_code_normalizes_rank_and_suit() -> None:

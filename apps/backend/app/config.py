@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Self
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Threshold = Annotated[float, Field(ge=0, le=1)]
@@ -34,8 +35,12 @@ class Settings(BaseSettings):
     )
     recommendation_provider: str = Field(default="rule_based")
     external_parser_url: str | None = Field(default=None)
+    external_parser_bearer_token: SecretStr | None = Field(default=None)
     external_provider_url: str | None = Field(default=None)
+    external_provider_bearer_token: SecretStr | None = Field(default=None)
     llm_advice_url: str | None = Field(default=None)
+    llm_advice_bearer_token: SecretStr | None = Field(default=None)
+    external_request_timeout_seconds: float = Field(default=60.0, gt=0)
     local_solver_command: str | None = Field(default=None)
     local_solver_engine: str = Field(default="postflop_solver")
     local_solver_timeout_seconds: float = Field(default=120.0, gt=0)
@@ -55,12 +60,40 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     proxy_shared_secret: SecretStr | None = Field(default=None)
 
-    @field_validator("proxy_shared_secret", mode="before")
+    @field_validator(
+        "external_parser_bearer_token",
+        "external_provider_bearer_token",
+        "llm_advice_bearer_token",
+        "proxy_shared_secret",
+        mode="before",
+    )
     @classmethod
-    def normalize_proxy_shared_secret(cls, value: object) -> object:
+    def normalize_optional_secret(cls, value: object) -> object:
         if isinstance(value, str):
             normalized = value.strip()
             return normalized or None
+        return value
+
+    @field_validator(
+        "external_parser_bearer_token",
+        "external_provider_bearer_token",
+        "llm_advice_bearer_token",
+    )
+    @classmethod
+    def validate_bearer_token(
+        cls,
+        value: SecretStr | None,
+    ) -> SecretStr | None:
+        if value is None:
+            return value
+        token = value.get_secret_value()
+        if not token.isascii():
+            raise ValueError("bearer tokens must contain ASCII characters only")
+        if any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in token
+        ):
+            raise ValueError("bearer tokens must not contain whitespace or control characters")
         return value
 
     @field_validator("proxy_shared_secret")
@@ -72,6 +105,30 @@ class Settings(BaseSettings):
         if value is not None and len(value.get_secret_value()) < 32:
             raise ValueError("proxy_shared_secret must contain at least 32 characters")
         return value
+
+    @model_validator(mode="after")
+    def validate_authenticated_external_urls(self) -> Self:
+        authenticated_urls = (
+            (
+                "POKER_EXTERNAL_PARSER_URL",
+                self.external_parser_url,
+                self.external_parser_bearer_token,
+            ),
+            (
+                "POKER_EXTERNAL_PROVIDER_URL",
+                self.external_provider_url,
+                self.external_provider_bearer_token,
+            ),
+            (
+                "POKER_LLM_ADVICE_URL",
+                self.llm_advice_url,
+                self.llm_advice_bearer_token,
+            ),
+        )
+        for field_name, url, token in authenticated_urls:
+            if token is not None and url is not None and urlsplit(url).scheme.lower() != "https":
+                raise ValueError(f"{field_name} must use HTTPS when its bearer token is configured")
+        return self
 
 
 @lru_cache

@@ -208,7 +208,9 @@ def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) 
         )
     )
 
-    result = provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+    result = provider.recommend(
+        RecommendationRequest(state=approved_state(), provider=provider.name)
+    )
 
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
@@ -572,9 +574,16 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
     request = httpx.Request("POST", "https://solver.example/recommend")
     captured: dict[str, object] = {}
 
-    def fake_post(url: str, *, json: dict[str, object], timeout: float) -> httpx.Response:
+    def fake_post(
+        url: str,
+        *,
+        json: dict[str, object],
+        headers: dict[str, str],
+        timeout: float,
+    ) -> httpx.Response:
         captured["url"] = url
         captured["json"] = json
+        captured["headers"] = headers
         captured["timeout"] = timeout
         return httpx.Response(
             200,
@@ -594,6 +603,8 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
             data_dir=tmp_path,
             recommendation_provider="external_solver",
             external_provider_url="https://solver.example/recommend",
+            external_provider_bearer_token="solver-token",
+            external_request_timeout_seconds=9.5,
         )
     )
 
@@ -627,8 +638,48 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
             },
             "provider": "external_solver",
         },
-        "timeout": 60.0,
+        "headers": {"Authorization": "Bearer solver-token"},
+        "timeout": 9.5,
     }
+
+
+def test_llm_advice_uses_its_own_bearer_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://llm.example/recommend")
+    captured_headers: dict[str, str] = {}
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        captured_headers.update(kwargs["headers"])
+        return httpx.Response(
+            200,
+            json={
+                "action": "call",
+                "sizing": None,
+                "confidence": 0.7,
+                "explanation": "LLM advice",
+                "raw": {"provider": "llm_advice"},
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="llm_advice",
+            llm_advice_url="https://llm.example/recommend",
+            llm_advice_bearer_token="llm-token",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=approved_state(), provider=provider.name)
+    )
+
+    assert result.raw["provider"] == "llm_advice"
+    assert captured_headers == {"Authorization": "Bearer llm-token"}
 
 
 def test_external_solver_requires_url(tmp_path: Path) -> None:

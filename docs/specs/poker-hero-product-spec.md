@@ -451,6 +451,9 @@ Example configuration concepts:
 - `recommendation.localEngine`: `postflop_solver` or `local_ev`.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
+- Independent optional bearer tokens for external vision, solver, and LLM
+  providers plus a configurable positive request timeout. Authenticated
+  provider URLs must use HTTPS, and credentials must never enter frontend state.
 - An optional deployment-only Worker-to-backend shared secret. The browser must
   never receive or forward this credential itself.
 

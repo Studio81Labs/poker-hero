@@ -1,8 +1,9 @@
 from json import JSONDecodeError
 
 import httpx
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
+from app.http_auth import bearer_headers
 from app.models import CanonicalState, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError, ProviderError
 
@@ -10,10 +11,19 @@ from app.providers.base import ProviderConfigurationError, ProviderError
 class HttpRecommendationProvider:
     required_fields = ["hero_cards", "street", "pot_size"]
 
-    def __init__(self, name: str, url: str | None, missing_message: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        url: str | None,
+        missing_message: str,
+        bearer_token: SecretStr | None,
+        timeout_seconds: float,
+    ) -> None:
         self.name = name
         self.url = url
         self.missing_message = missing_message
+        self.bearer_token = bearer_token
+        self.timeout_seconds = timeout_seconds
 
     def required_fields_for(self, state: CanonicalState) -> list[str]:
         return self.required_fields
@@ -32,7 +42,8 @@ class HttpRecommendationProvider:
             response = httpx.post(
                 self.url,
                 json=payload,
-                timeout=60.0,
+                headers=bearer_headers(self.bearer_token),
+                timeout=self.timeout_seconds,
             )
         except httpx.RequestError as exc:
             raise ProviderError(f"{self.name} request failed for {self.url}: {exc}") from exc

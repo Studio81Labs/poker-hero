@@ -70,6 +70,11 @@ The main provider switches are:
 - `POKER_PARSER_LAYOUT_PROFILE`: `generic`, `fortuna`, `nations`, or `fortuna_nations`
 - `POKER_RECOMMENDATION_PROVIDER`: `rule_based`, `mock`, `local_solver`, `external_solver`, or `llm_advice`
 - `POKER_LOCAL_SOLVER_ENGINE`: `postflop_solver` (default) or `local_ev`
+- `POKER_EXTERNAL_PARSER_BEARER_TOKEN`: optional bearer token for `llm_vision`
+- `POKER_EXTERNAL_PROVIDER_BEARER_TOKEN`: optional bearer token for `external_solver`
+- `POKER_LLM_ADVICE_BEARER_TOKEN`: optional bearer token for `llm_advice`
+- `POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS`: timeout shared by external parser
+  and recommendation requests (default 60 seconds)
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
 - `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size for
   benchmark selection, export, and import (default 100 MiB)
@@ -80,6 +85,10 @@ The main provider switches are:
 See [apps/backend/.env.example](./apps/backend/.env.example) for the complete
 local contract and [infra/docker/backend.env.example](./infra/docker/backend.env.example)
 for container-oriented values.
+
+Bearer tokens are masked by the settings model and sent only in the standard
+`Authorization: Bearer ...` header. Any external URL paired with a token must
+use HTTPS. Keep deployed token values in Coolify secrets.
 
 ### Local Solver Engines
 

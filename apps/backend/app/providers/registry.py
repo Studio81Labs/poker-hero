@@ -18,11 +18,15 @@ def build_provider(settings: Settings) -> RecommendationProvider:
             name="external_solver",
             url=settings.external_provider_url,
             missing_message="POKER_EXTERNAL_PROVIDER_URL is required for external_solver provider",
+            bearer_token=settings.external_provider_bearer_token,
+            timeout_seconds=settings.external_request_timeout_seconds,
         )
     if settings.recommendation_provider == "llm_advice":
         return HttpRecommendationProvider(
             name="llm_advice",
             url=settings.llm_advice_url,
             missing_message="POKER_LLM_ADVICE_URL is required for llm_advice provider",
+            bearer_token=settings.llm_advice_bearer_token,
+            timeout_seconds=settings.external_request_timeout_seconds,
         )
     raise ProviderConfigurationError(f"Unknown recommendation provider: {settings.recommendation_provider}")

@@ -1,9 +1,11 @@
 import type {
+  BenchmarkDatasetImportReceipt,
   BenchmarkDatasetImportResult,
   BenchmarkOverview,
   BenchmarkReport,
   CanonicalState,
   JobHistory,
+  JobQueue,
   JobRecord,
   RecommendationAction,
   SystemInfo,
@@ -28,6 +30,16 @@ const API_BASE_URL =
 
 const HISTORY_ARCHIVE_BATCH_SIZE = 100;
 
+export class ApiResponseError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiResponseError";
+    this.status = status;
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail = response.statusText;
@@ -37,7 +49,7 @@ async function readJson<T>(response: Response): Promise<T> {
     } catch {
       detail = response.statusText;
     }
-    throw new Error(detail);
+    throw new ApiResponseError(detail, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -58,6 +70,14 @@ export async function getJob(jobId: string): Promise<JobRecord> {
     credentials: "include",
   });
   return readJson<JobRecord>(response);
+}
+
+export async function getProcessingJobs(offset = 0): Promise<JobQueue> {
+  const query = offset > 0 ? `?offset=${offset}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/jobs${query}`, {
+    credentials: "include",
+  });
+  return readJson<JobQueue>(response);
 }
 
 export async function getHistory(
@@ -105,16 +125,24 @@ export async function archiveJobs(jobIds: string[]): Promise<JobHistory> {
   return history;
 }
 
-export async function uploadScreenshot(file: File, signal?: AbortSignal): Promise<JobRecord> {
+export async function uploadScreenshot(
+  file: File,
+  uploadRequestId: string,
+  signal?: AbortSignal,
+): Promise<JobRecord> {
   const form = new FormData();
   form.append("file", file);
+  form.append("upload_request_id", uploadRequestId);
   const response = await fetch(`${API_BASE_URL}/api/jobs`, {
     method: "POST",
     body: form,
     signal,
     credentials: "include",
   });
-  return readJson<JobRecord>(response);
+  const job = await readJson<JobRecord>(response);
+  return job.upload_request_id
+    ? job
+    : { ...job, upload_request_id: uploadRequestId };
 }
 
 export async function approveState(jobId: string, state: CanonicalState, signal?: AbortSignal): Promise<JobRecord> {
@@ -128,9 +156,14 @@ export async function approveState(jobId: string, state: CanonicalState, signal?
   return readJson<JobRecord>(response);
 }
 
-export async function requestRecommendation(jobId: string, signal?: AbortSignal): Promise<JobRecord> {
+export async function requestRecommendation(
+  jobId: string,
+  requestId: string,
+  signal?: AbortSignal,
+): Promise<JobRecord> {
   const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/recommend`, {
     method: "POST",
+    headers: { "X-Recommendation-Request-ID": requestId },
     signal,
     credentials: "include",
   });
@@ -270,15 +303,29 @@ export function benchmarkDatasetUrl(): string {
   return `${API_BASE_URL}/api/benchmarks/export`;
 }
 
-export async function importBenchmarkDataset(file: File): Promise<BenchmarkDatasetImportResult> {
+export async function importBenchmarkDataset(
+  file: File,
+  requestId: string,
+): Promise<BenchmarkDatasetImportResult> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch(`${API_BASE_URL}/api/benchmarks/import`, {
     method: "POST",
+    headers: { "X-Benchmark-Import-Request-ID": requestId },
     body: form,
     credentials: "include",
   });
   return readJson<BenchmarkDatasetImportResult>(response);
+}
+
+export async function getBenchmarkDatasetImport(
+  requestId: string,
+): Promise<BenchmarkDatasetImportReceipt> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/benchmarks/imports/${encodeURIComponent(requestId)}`,
+    { credentials: "include" },
+  );
+  return readJson<BenchmarkDatasetImportReceipt>(response);
 }
 
 export async function getBenchmarkReport(reportId: string): Promise<BenchmarkReport> {

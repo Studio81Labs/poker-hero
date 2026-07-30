@@ -257,6 +257,7 @@ export interface TrainingProgress {
 export interface JobRecord {
   id: string;
   status: "created" | "parsed" | "approved" | "recommended" | "error";
+  upload_request_id?: string | null;
   original_filename: string;
   image_filename: string;
   parser_provider: string;
@@ -265,16 +266,24 @@ export interface JobRecord {
   approved_state: CanonicalState | null;
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;
+  recommendation_pending: boolean;
+  recommendation_request_id?: string | null;
   training_reviewed_at: string | null;
   training_review_note: string | null;
   benchmark_included: boolean;
-  archived_at?: string | null;
+  archived_at: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface JobHistory {
+  total: number;
+  jobs: JobRecord[];
+  snapshot_version?: string;
+}
+
+export interface JobQueue {
   total: number;
   jobs: JobRecord[];
   snapshot_version?: string;
@@ -351,4 +360,13 @@ export interface BenchmarkDatasetImportResult {
   reused_cases: number;
   included_cases: number;
   job_ids: string[];
+}
+
+export interface BenchmarkDatasetImportReceipt {
+  request_id: string;
+  archive_sha256: string;
+  status: "pending" | "completed" | "failed";
+  result: BenchmarkDatasetImportResult | null;
+  error: string | null;
+  error_status: number | null;
 }

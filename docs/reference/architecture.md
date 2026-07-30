@@ -104,7 +104,8 @@ selection API prevents the app from producing a dataset that import rejects.
     without returning them to the pending queue. The same complete selection
     can be exported as Markdown.
 11. Completed queue items remain in processing until explicitly cleared into
-    backend-persisted history.
+    backend-persisted history. Unarchived upload and capture jobs restore in
+    stable queue order after reload.
 12. Explicitly selected approved states can be re-parsed as a benchmark corpus without mutating the job flow.
 
 Training decisions are persisted with the job. The API accepts them only for an
@@ -113,6 +114,14 @@ solver result from being recorded afterward as a supposed pre-reveal answer.
 Mutations for one job are serialized. Solver work runs outside that critical
 section, then reloads and validates the latest approved state before committing
 its result so concurrent decisions and unrelated job metadata are preserved.
+Before releasing the lock, recommendation work persists an in-progress marker;
+re-approval is rejected while that marker remains, and provider setup or
+execution clears it on every terminal success or failure. Backend startup
+converts an orphaned marker into a visible retryable error because no provider
+operation survives a process restart. A reloaded frontend keeps the processing
+cache unsynchronized and polls the projection while that marker remains,
+retrying transient projection failures so a solver result committed after the
+first reload read is not hidden by the browser cache.
 The training progress endpoint derives action and exact-line policy accuracy,
 street breakdowns, optional EV-loss grading, equal-window recent trends, and
 recent review links from persisted jobs. It also aggregates the recommendation
@@ -241,6 +250,9 @@ Re-approval, a changed training decision, or a fresh recommendation clears both
 the marker and note because the comparison inputs have changed. Deleting only
 the review marker explicitly reopens the same comparison and returns it to the
 pending queue while retaining the note for editing.
+Both the workspace and training-progress dialog reconcile the affected
+processing or history record when a review mutation response is lost, so a
+same-tab reload cannot preserve stale review metadata from browser storage.
 The frontend treats a hand opened from that queue as a review session. After
 persisting its review marker, it reloads the progress endpoint with the current
 action-pair, position, street, certainty, and order parameters and opens the
@@ -256,6 +268,87 @@ only and leaves other queue items free to continue.
 The backend stores jobs, images, and benchmark reports under `POKER_DATA_DIR`.
 The frontend retains automation preferences in versioned browser-local storage;
 invalid or unavailable storage falls back to the established application defaults.
+Unarchived upload and capture jobs are exposed through a stable oldest-first,
+offset-paged processing projection with a snapshot hash. The frontend caches at
+most 100 of those records for immediate reload display, retains the complete
+persisted count, and reconciles all backend pages once per browser session or
+after queue membership changes. Snapshot changes restart the bounded page walk.
+Once that authoritative backend projection completes, its matching processing
+records replace in-memory and cached records regardless of `updated_at`; dirty
+active form values remain separate until a persisted revision confirms the
+user's uncertain mutation committed. The frontend records bounded,
+browser-session mutation leases before persisted operations begin. Single-job
+writes carry the job ID and an operation-specific expected effect for approval,
+training decisions, review state, or benchmark inclusion. An unrelated
+`updated_at` change cannot settle that lease. Recommendation actions first carry
+the expected training-decision effect when one must be saved, then atomically
+arm the lease with the solver request ID before starting the solver. Ambiguous
+failures and correctable solver responses retain that exact-ID lease, while a
+deterministic conflict releases it and immediately refreshes the authoritative
+queue so the competing attempt becomes visible. If a leased job is missing from
+processing, including when its expected mutation removes it from that
+projection, the frontend revalidates it by ID before settling or removing it
+from the workspace. Legacy single-job leases without operation-specific
+evidence remain conservative until their bounded expiry.
+Upload and capture leases carry the baseline queue plus client-generated upload
+and solver request IDs and the last required automation stage for each file.
+The upload ID is sent with the multipart request and both
+identities are persisted on the backend job, allowing a replacement document to
+distinguish a completed correctable solver attempt from work that never began.
+Backend solver completions and failures must still match that persisted solver
+identity before changing the job, so a superseded provider call cannot clear or
+overwrite a newer attempt.
+Benchmark dataset imports use a separate client-generated request identity in
+both projection leases and the multipart request. Import identities are
+alphanumeric-led and resolve to a strict child of the journal root. After
+enforcing the compressed upload limit, the backend atomically publishes a
+journal directory containing the ZIP and a pending receipt before parsing the
+archive or changing the corpus.
+Imported jobs retain that request identity, so a pending journal can
+idempotently resume validation or repair a partial case after process
+interruption. The receipt transitions atomically to failed after deterministic
+validation errors or to completed only after every corpus write succeeds, and
+is exposed through a recovery endpoint. This is the authoritative completion
+evidence because newly created pristine benchmark cases are deliberately absent
+from processing and history. Replaying the same terminal identity returns the
+stored result or error without parsing or changing the corpus again.
+Deterministic non-timeout 4xx responses release both import leases immediately;
+ambiguous failures keep polling for the receipt. An observed pending receipt
+keeps its browser recovery leases alive beyond the ordinary mutation window;
+the backend either finishes the active import or resumes its durable archive.
+Once a benchmark hand records
+a solver request identity, including a correctable 422 attempt, it is no longer
+pristine and remains in the processing projection and browser cache for
+correction across reloads.
+The upload ID is used instead of the display filename when matching a restored
+queue. Dataset imports may also carry processing IDs expected to disappear. Batch
+archive leases carry every target ID and baseline revision in both processing
+and history scopes. A replacement document claims the leases, keeps the
+affected projections unsynchronized, and revalidates with bounded backoff until
+the required operation effect, queue appearance, removal confirmation, or
+archive membership is observed. Batch upload leases record every selected
+request ID before the first request. Ambiguous write failures retain their lease
+through unchanged projections, and a replacement document cannot overwrite a
+claimed lease with a second mutation in the same projection. Verified archives
+additionally refresh the full newest-history projection so newly added
+membership appears in the rail. Ordinary cache writes
+still merge matching records by `updated_at`, avoid no-op storage writes, and
+emit storage events so one tab cannot silently replace another tab's newer
+local record. Invalid or substantially future-dated processing timestamps
+invalidate the browser snapshot and force an authoritative reload instead of
+outranking server state.
+Processing records must also carry an explicit null archive marker; missing or
+non-null markers are reconciled rather than treated as active work. Imported
+benchmark-only jobs have approved labels but no parser result, recommendation,
+training decision, review metadata, error, or active recommendation, so
+untouched imports remain in the benchmark corpus without appearing as
+processing work. Once an imported hand starts recommendation work, records
+training state, or receives a retryable error, it returns to the processing
+projection until that work is completed. An untouched import explicitly opened
+for review remains workspace-only across processing reconciliations even though
+it stays excluded from the processing projection and browser queue cache. If
+the same job later enters the processing projection, its authoritative record
+replaces that workspace-only copy without creating a duplicate.
 Archiving sets `archived_at` on the existing job rather than copying its data;
 the history projection orders those jobs by archive time and returns a bounded
 latest list plus the complete count. Offset-based reads let the frontend append

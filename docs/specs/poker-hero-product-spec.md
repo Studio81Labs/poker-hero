@@ -301,19 +301,71 @@ frequencies.
     action-pair, position, street, certainty, and order filters and opens the
     next matching hand. An exhausted queue returns to its empty review view.
 18. A completed review may be reopened, returning the unchanged comparison and
-    its editable lesson note to the pending queue.
+    its editable lesson note to the pending queue. Reopen actions from either
+    the workspace or progress dialog reconcile persisted state when the response
+    is lost.
 19. Saved lessons may be filtered by street and note text, then ordered by
     recency or highest available EV loss before the bounded lesson list is
     returned. Ungraded lessons remain available after graded lessons.
 20. The active lesson filters and order can produce a complete Markdown
     download without applying the on-screen list limit.
 21. The UI retains completed items in processing until the user clears them into
-    backend-persisted history. A browser-session restore and explicit refresh
-    recover the latest archived hands without relying on one browser's local
-    storage, while bounded older pages remain available on demand. Saved
+    backend-persisted history. Unarchived upload and capture jobs are restored
+    in stable queue order after a reload from a bounded browser cache reconciled
+    with the complete paged backend projection. Benchmark-only dataset imports
+    do not enter the processing queue. A browser-session restore and explicit
+    refresh recover the latest archived hands without relying on one browser's
+    local storage, while bounded older pages remain available on demand. Saved
     changes to a reopened archived hand update its visible history entry
     immediately. Archive-wide search uses its own paged result set and match
     count without changing the global reviewed count or newest-page cache.
+    Shared processing-cache changes invalidate other open tabs. A persisted
+    write that spans a same-tab reload keeps its processing or history
+    projection unsynchronized until the leased approval, decision, review, or
+    benchmark effect is observed or a bounded recovery lease expires. Unsaved
+    corrections to an active hand remain workspace-only when a dataset import
+    selects its persisted state as ground truth. Another
+    tab's unrelated revision does not settle the lease, and a job omitted from
+    processing is revalidated directly before its expected removal is accepted.
+    Upload and capture leases wait for every expected new queue item and
+    required automation stage; a batch records all selected upload and
+    recommendation request identities before its first request. Dataset imports
+    record a distinct request identity before upload. After enforcing the
+    compressed upload limit, the backend atomically journals the archive before
+    parsing or corpus changes, persists validation and archive-decoding failures,
+    marks successful receipts complete afterward, and can resume validation or
+    partial request-owned cases after an interruption. The frontend recovers
+    that exact pending, failed, or completed receipt after a lost response or reload,
+    including when every imported hand is benchmark-only and absent from
+    processing and history. Observed pending receipts keep recovery alive beyond
+    the ordinary lease window, and benchmark operations remain locked until
+    import recovery reaches a terminal receipt.
+    Deterministic import rejections release their recovery leases immediately.
+    A benchmark-only hand with a recorded solver
+    attempt remains in processing across reloads so correctable provider
+    responses do not hide the workspace. A recommendation
+    that first saves the player's decision carries that decision expectation
+    until the solver identity is armed, and a superseded provider call cannot
+    write over a newer solver identity. A deterministic recommendation conflict
+    releases the losing identity and refreshes the competing state; ambiguous
+    and correctable attempts retain recovery.
+    Batch archive leases cover all target IDs in both projections, so a stale
+    first reload cannot leave a hand duplicated in processing or missing from
+    history. Unchanged projections after an ambiguous failure do not release
+    these leases, and a recovered lease blocks a second mutation from replacing
+    it in the same projection.
+    Separately, a persisted in-progress
+    recommendation keeps revalidating until the backend records its
+    recommendation or retryable error, including after transient projection
+    failures. Unsafe future-dated cache records force an authoritative reload
+    rather than outranking terminal server state, and processing cache records
+    require an explicit unarchived marker. Pending benchmark-import
+    recommendations remain processing work; re-approval is blocked until active
+    work finishes, and backend startup converts orphaned in-progress markers
+    into retryable errors. An untouched benchmark-only hand opened for review
+    remains visible as workspace-only state during processing refreshes; if it
+    later becomes processing work, the queue record replaces it without a
+    duplicate.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
@@ -335,7 +387,10 @@ fields and can reopen the persisted hand in the review workspace for correction.
 Recent run summaries remain available for parser/layout comparison, with full
 historical report details loaded on demand. Comparable runs show overall and
 field-level accuracy changes so parser regressions are visible. One failed case
-must not stop the remaining corpus.
+must not stop the remaining corpus. Runs serialize with corpus inclusion,
+dataset import, and export so each report observes a complete ground-truth set.
+After a restart, corpus operations reject while a durable pending import journal
+still requires recovery.
 
 The selected corpus can be exported independently of a benchmark run. The ZIP
 contains a versioned JSON manifest and original screenshots under stable,
@@ -552,6 +607,9 @@ Poker Hero is successful when:
   when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
+- Unarchived processing work survives a browser reload without mixing untouched
+  benchmark-only cases into the queue; imported hands with a decision or
+  retryable error remain visible as processing work.
 - Cleared history survives browser storage resets and can be refreshed from the
   persisted backend.
 - A user can search the complete persisted archive and page matching hands

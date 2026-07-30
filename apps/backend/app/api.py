@@ -5,7 +5,17 @@ from io import BytesIO
 import re
 from threading import Lock, RLock
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -22,11 +32,14 @@ from app.dataset_export import (
 )
 from app.dataset_import import (
     DatasetImportError,
+    ParsedParserDataset,
     import_parser_dataset,
     parse_parser_dataset_archive,
 )
 from app.models import (
+    BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     ArchiveJobsRequest,
+    BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
@@ -34,6 +47,7 @@ from app.models import (
     BenchmarkSelectionRequest,
     CanonicalState,
     JobHistory,
+    JobQueue,
     JobRecord,
     RecommendationAction,
     RecommendationRequest,
@@ -55,6 +69,7 @@ from app.providers.base import (
 )
 from app.providers.registry import build_provider
 from app.storage import (
+    BenchmarkImportNotFoundError,
     BenchmarkNotFoundError,
     FileBenchmarkStore,
     FileJobStore,
@@ -68,6 +83,12 @@ from app.training import (
 
 SUPPORTED_IMAGE_FORMATS = {"PNG", "JPEG", "GIF", "WEBP"}
 JOB_LOCK_STRIPES = 64
+INTERRUPTED_PARSER_ERROR = (
+    "Parsing was interrupted by a backend restart; upload the screenshot again"
+)
+INTERRUPTED_RECOMMENDATION_ERROR = (
+    "Recommendation was interrupted by a backend restart; request it again"
+)
 HISTORY_QUERY_TRANSLATION = str.maketrans({
     "♣": "c",
     "♦": "d",
@@ -87,9 +108,25 @@ HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 
 
+def recover_interrupted_jobs(store: FileJobStore) -> None:
+    for job in store.list():
+        if job.status == "created":
+            job.recommendation_pending = False
+            job.status = "error"
+            job.error = INTERRUPTED_PARSER_ERROR
+            store.save(job)
+            continue
+        if job.recommendation_pending:
+            job.recommendation_pending = False
+            job.status = "error"
+            job.error = INTERRUPTED_RECOMMENDATION_ERROR
+            store.save(job)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
+    recover_interrupted_jobs(store)
     benchmark_store = FileBenchmarkStore(active_settings.data_dir)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
@@ -109,9 +146,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with history_lock:
             return store.save(job)
 
+    def ensure_benchmark_corpus_ready() -> None:
+        if benchmark_store.has_pending_import():
+            raise HTTPException(
+                status_code=409,
+                detail="A benchmark dataset import is still pending",
+            )
+
     def current_recommendation_target(
         job_id: str,
         expected_state: CanonicalState,
+        expected_request_id: str | None,
     ) -> JobRecord:
         current = load_job_or_404(store, job_id)
         if current.approved_state != expected_state:
@@ -119,7 +164,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=409,
                 detail="Approved state changed while the recommendation was running",
             )
+        if current.recommendation_request_id != expected_request_id:
+            raise HTTPException(
+                status_code=409,
+                detail="A newer recommendation request replaced this attempt",
+            )
         return current
+
+    def execute_pending_benchmark_import(
+        request_id: str,
+        dataset: ParsedParserDataset | None = None,
+    ) -> BenchmarkDatasetImportResult:
+        receipt = benchmark_store.get_import(request_id)
+        if receipt.status == "completed" and receipt.result is not None:
+            return receipt.result
+        if receipt.status == "failed":
+            raise DatasetImportError(receipt.error or "Dataset import failed")
+        if dataset is None:
+            archive_bytes = benchmark_store.get_import_archive(request_id)
+            dataset = parse_parser_dataset_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=(
+                    active_settings.max_dataset_upload_bytes
+                    * MAX_DATASET_EXPANSION_RATIO
+                ),
+            )
+        lock_indexes = sorted(
+            {job_lock_index(case.job_id) for case in dataset.cases}
+        )
+        with benchmark_corpus_lock, ExitStack() as job_lock_stack:
+            for lock_index in lock_indexes:
+                job_lock_stack.enter_context(job_locks[lock_index])
+            with history_lock:
+                result = import_parser_dataset(
+                    dataset,
+                    store,
+                    recommendation_provider=active_settings.recommendation_provider,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                    max_archive_bytes=active_settings.max_dataset_upload_bytes,
+                    import_request_id=request_id,
+                )
+                benchmark_store.complete_import(request_id, result)
+                return result
+
+    def resume_benchmark_import(request_id: str) -> None:
+        with dataset_import_lock:
+            try:
+                receipt = benchmark_store.get_import(request_id)
+                if receipt.status != "pending":
+                    return
+                execute_pending_benchmark_import(request_id)
+            except DatasetImportError as exc:
+                benchmark_store.fail_import(
+                    request_id,
+                    str(exc),
+                    exc.status_code,
+                )
+            except (BenchmarkImportNotFoundError, OSError):
+                # A later poll can retry an interrupted or temporarily unavailable journal.
+                return
 
     app = FastAPI(title="Poker Training Analyzer API")
     app.add_middleware(
@@ -149,7 +254,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
-    async def create_job(file: UploadFile = File(...)) -> JobRecord:
+    async def create_job(
+        file: UploadFile = File(...),
+        upload_request_id: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+    ) -> JobRecord:
         image_bytes = await file.read(active_settings.max_upload_bytes + 1)
         if len(image_bytes) > active_settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
@@ -161,6 +274,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             image_bytes=image_bytes,
             parser_provider=active_settings.parser_provider,
             recommendation_provider=active_settings.recommendation_provider,
+            upload_request_id=upload_request_id,
         )
         try:
             parser = build_parser(active_settings)
@@ -175,6 +289,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.error = str(exc)
             save_job(job)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            job.status = "error"
+            job.error = f"Unexpected parser error: {exc}"
+            save_job(job)
+            raise HTTPException(status_code=500, detail=job.error) from exc
 
         job.parser_result = parser_result
         job.status = "parsed"
@@ -183,6 +302,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             job.approved_state.user_approved = True
             job.status = "approved"
         return save_job(job)
+
+    @app.get("/api/jobs", response_model=JobQueue)
+    def get_processing_jobs(
+        limit: int = Query(default=100, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> JobQueue:
+        with history_lock:
+            return build_job_queue(store, limit, offset)
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
@@ -237,6 +364,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
+            if job.recommendation_pending:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Recommendation is already running",
+                )
             state.user_approved = True
             job.approved_state = state
             job.training_decision = None
@@ -277,12 +409,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return save_job(job)
 
     @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
-    def recommend(job_id: str) -> JobRecord:
+    def recommend(
+        job_id: str,
+        recommendation_request_id: str | None = Header(
+            default=None,
+            alias="X-Recommendation-Request-ID",
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+    ) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
             if job.approved_state is None or not job.approved_state.user_approved:
                 raise HTTPException(status_code=409, detail="Approve corrected state before requesting recommendation")
+            if job.recommendation_pending:
+                raise HTTPException(status_code=409, detail="Recommendation is already running")
             approved_state = job.approved_state.model_copy(deep=True)
+            job.recommendation_pending = True
+            job.recommendation_request_id = recommendation_request_id
+            job.error = None
+            save_job(job)
 
         try:
             provider = build_provider(active_settings)
@@ -292,37 +439,101 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
 
         if missing:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
             raise HTTPException(status_code=422, detail={"missing_fields": missing})
 
         try:
             result = provider.recommend(RecommendationRequest(state=approved_state, provider=provider.name))
         except ProviderInputError as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ProviderConfigurationError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
         except ProviderError as exc:
             with job_lock_for(job_id):
-                current = current_recommendation_target(job_id, approved_state)
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
                 current.status = "error"
                 current.error = str(exc)
                 save_job(current)
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
 
         with job_lock_for(job_id):
-            current = current_recommendation_target(job_id, approved_state)
+            current = current_recommendation_target(
+                job_id,
+                approved_state,
+                recommendation_request_id,
+            )
             current.recommendation = result
+            current.recommendation_pending = False
             current.training_reviewed_at = None
             current.training_review_note = None
             current.status = "recommended"
@@ -379,6 +590,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
         with benchmark_corpus_lock, job_lock_for(job_id):
+            ensure_benchmark_corpus_ready()
             job = load_job_or_404(store, job_id)
             if selection.included and (
                 job.approved_state is None or not job.approved_state.user_approved
@@ -592,6 +804,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/benchmarks/export")
     def export_benchmark_dataset() -> StreamingResponse:
         with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
             jobs = [job for job in store.list() if job.benchmark_included]
             if not jobs:
                 raise HTTPException(
@@ -626,11 +839,58 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def import_benchmark_dataset(
         file: UploadFile = File(...),
+        benchmark_import_request_id: str | None = Header(
+            default=None,
+            alias="X-Benchmark-Import-Request-ID",
+            min_length=1,
+            max_length=128,
+            pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
+        ),
     ) -> BenchmarkDatasetImportResult:
         archive_bytes = await file.read(active_settings.max_dataset_upload_bytes + 1)
         if len(archive_bytes) > active_settings.max_dataset_upload_bytes:
             raise HTTPException(status_code=413, detail="Dataset ZIP exceeds maximum size")
         try:
+            if benchmark_import_request_id is not None:
+                with dataset_import_lock:
+                    try:
+                        receipt = benchmark_store.get_import(
+                            benchmark_import_request_id,
+                        )
+                    except BenchmarkImportNotFoundError:
+                        if benchmark_store.has_pending_import():
+                            raise HTTPException(
+                                status_code=409,
+                                detail="A benchmark dataset import is still pending",
+                            )
+                        receipt = benchmark_store.begin_import(
+                            benchmark_import_request_id,
+                            archive_bytes,
+                        )
+                    if receipt.archive_sha256 != sha256(archive_bytes).hexdigest():
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Import request ID belongs to another dataset",
+                        )
+                    if receipt.status == "completed" and receipt.result is not None:
+                        return receipt.result
+                    if receipt.status == "failed":
+                        raise HTTPException(
+                            status_code=receipt.error_status or 409,
+                            detail=receipt.error or "Dataset import failed",
+                        )
+                    try:
+                        return execute_pending_benchmark_import(
+                            benchmark_import_request_id,
+                        )
+                    except DatasetImportError as exc:
+                        benchmark_store.fail_import(
+                            benchmark_import_request_id,
+                            str(exc),
+                            exc.status_code,
+                        )
+                        raise
+
             dataset = parse_parser_dataset_archive(
                 archive_bytes,
                 max_image_bytes=active_settings.max_upload_bytes,
@@ -639,14 +899,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     * MAX_DATASET_EXPANSION_RATIO
                 ),
             )
+
             lock_indexes = sorted(
                 {job_lock_index(case.job_id) for case in dataset.cases}
             )
-            with (
-                dataset_import_lock,
-                benchmark_corpus_lock,
-                ExitStack() as job_lock_stack,
-            ):
+            with benchmark_corpus_lock, ExitStack() as job_lock_stack:
+                ensure_benchmark_corpus_ready()
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 with history_lock:
@@ -661,6 +919,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except DatasetImportError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
+    @app.get(
+        "/api/benchmarks/imports/{request_id}",
+        response_model=BenchmarkDatasetImportReceipt,
+    )
+    def get_benchmark_dataset_import(
+        request_id: str,
+        background_tasks: BackgroundTasks,
+    ) -> BenchmarkDatasetImportReceipt:
+        try:
+            receipt = benchmark_store.get_import(request_id)
+        except BenchmarkImportNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail="Benchmark dataset import not found",
+            ) from exc
+        if receipt.status == "pending" and not dataset_import_lock.locked():
+            background_tasks.add_task(resume_benchmark_import, request_id)
+        return receipt
+
     @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
     def get_benchmark_report(report_id: str) -> BenchmarkReport:
         try:
@@ -670,21 +947,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
     def run_parser_benchmark() -> BenchmarkReport:
-        jobs = [job for job in store.list() if job.benchmark_included]
-        if not jobs:
-            raise HTTPException(status_code=409, detail="Add at least one approved hand to the benchmark")
-        try:
-            parser = build_parser(active_settings)
-            report = run_benchmark(
-                jobs=jobs,
-                parser=parser,
-                image_path_for=store.image_path,
-                parser_provider=active_settings.parser_provider,
-                layout_profile=active_settings.parser_layout_profile,
-            )
-        except ParserConfigurationError as exc:
-            raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
-        return benchmark_store.save(report)
+        with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
+            jobs = [job for job in store.list() if job.benchmark_included]
+            if not jobs:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Add at least one approved hand to the benchmark",
+                )
+            try:
+                parser = build_parser(active_settings)
+                report = run_benchmark(
+                    jobs=jobs,
+                    parser=parser,
+                    image_path_for=store.image_path,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                )
+            except ParserConfigurationError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Parser configuration error: {exc}",
+                ) from exc
+            return benchmark_store.save(report)
 
     return app
 
@@ -698,9 +983,49 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
 
 def is_history_ready(job: JobRecord) -> bool:
     return (
-        job.status in {"approved", "recommended"}
-        or job.approved_state is not None
-        or job.recommendation is not None
+        not job.recommendation_pending
+        and (
+            job.status in {"approved", "recommended"}
+            or job.approved_state is not None
+            or job.recommendation is not None
+        )
+    )
+
+
+def is_pristine_benchmark_import(job: JobRecord) -> bool:
+    return (
+        job.benchmark_included
+        and job.status == "approved"
+        and not job.recommendation_pending
+        and job.parser_result is None
+        and job.approved_state is not None
+        and job.training_decision is None
+        and job.recommendation is None
+        and job.recommendation_request_id is None
+        and job.training_reviewed_at is None
+        and job.training_review_note is None
+        and job.error is None
+    )
+
+
+def build_job_queue(
+    store: FileJobStore,
+    limit: int,
+    offset: int = 0,
+) -> JobQueue:
+    processing_jobs = sorted(
+        (
+            job
+            for job in store.list()
+            if job.archived_at is None
+            and not is_pristine_benchmark_import(job)
+        ),
+        key=lambda job: (job.created_at, job.id),
+    )
+    return JobQueue(
+        total=len(processing_jobs),
+        jobs=processing_jobs[offset : offset + limit],
+        snapshot_version=job_snapshot_version(processing_jobs),
     )
 
 
@@ -727,11 +1052,11 @@ def build_job_history(
     return JobHistory(
         total=len(archived_jobs),
         jobs=archived_jobs[offset : offset + limit],
-        snapshot_version=history_snapshot_version(archived_jobs),
+        snapshot_version=job_snapshot_version(archived_jobs),
     )
 
 
-def history_snapshot_version(jobs: list[JobRecord]) -> str:
+def job_snapshot_version(jobs: list[JobRecord]) -> str:
     digest = sha256()
     for job in jobs:
         digest.update(job.id.encode())

@@ -15,6 +15,7 @@ TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "diff
 TrainingReviewOrder = Literal["recent", "ev_loss"]
 TrainingReviewCertainty = Literal["low", "medium", "high", "unrated"]
 
+BENCHMARK_IMPORT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
 SUIT_BY_CODE = {
     "c": "clubs",
@@ -383,6 +384,12 @@ class JobRecord(BaseModel):
 
     id: str = Field(default_factory=lambda: uuid4().hex)
     status: Literal["created", "parsed", "approved", "recommended", "error"] = "created"
+    upload_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     original_filename: str
     image_filename: str
     parser_provider: str
@@ -391,6 +398,19 @@ class JobRecord(BaseModel):
     approved_state: CanonicalState | None = None
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None
+    recommendation_pending: bool = False
+    recommendation_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
+    benchmark_import_request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
+    )
     training_reviewed_at: datetime | None = None
     training_review_note: str | None = None
     benchmark_included: bool = False
@@ -421,6 +441,12 @@ class JobHistory(BaseModel):
     snapshot_version: str
 
 
+class JobQueue(BaseModel):
+    total: int = Field(ge=0)
+    jobs: list[JobRecord] = Field(default_factory=list)
+    snapshot_version: str
+
+
 class BenchmarkSelectionRequest(BaseModel):
     included: bool
 
@@ -430,6 +456,41 @@ class BenchmarkDatasetImportResult(BaseModel):
     reused_cases: int = Field(ge=0)
     included_cases: int = Field(ge=0)
     job_ids: list[str] = Field(default_factory=list)
+
+
+class BenchmarkDatasetImportReceipt(BaseModel):
+    request_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
+    )
+    archive_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["pending", "completed", "failed"]
+    result: BenchmarkDatasetImportResult | None = None
+    error: str | None = None
+    error_status: int | None = Field(default=None, ge=400, le=599)
+
+    @model_validator(mode="after")
+    def validate_result(self) -> Self:
+        if self.status == "completed" and (
+            self.result is None
+            or self.error is not None
+            or self.error_status is not None
+        ):
+            raise ValueError("completed import receipts require a result")
+        if self.status == "failed" and (
+            self.result is not None
+            or self.error is None
+            or self.error_status is None
+        ):
+            raise ValueError("failed import receipts require an error")
+        if self.status == "pending" and (
+            self.result is not None
+            or self.error is not None
+            or self.error_status is not None
+        ):
+            raise ValueError("pending import receipts cannot contain a result")
+        return self
 
 
 class BenchmarkFieldComparison(BaseModel):

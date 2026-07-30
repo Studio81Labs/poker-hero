@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock as ThreadLock, Thread
@@ -16,9 +17,14 @@ from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.mock import MockParser
-from app.providers.base import ProviderError
+from app.providers.base import ProviderError, ProviderInputError
 from app.providers.mock import MockRecommendationProvider
-from app.storage import FileBenchmarkStore, FileJobStore, JobNotFoundError
+from app.storage import (
+    BenchmarkImportNotFoundError,
+    FileBenchmarkStore,
+    FileJobStore,
+    JobNotFoundError,
+)
 
 
 VALID_PNG = (
@@ -64,8 +70,18 @@ def upload_job(
     content: bytes = VALID_PNG,
     content_type: str = "image/png",
     filename: str = "table.png",
+    upload_request_id: str | None = None,
 ):
-    return client.post("/api/jobs", files={"file": (filename, content, content_type)})
+    data = (
+        {"upload_request_id": upload_request_id}
+        if upload_request_id is not None
+        else None
+    )
+    return client.post(
+        "/api/jobs",
+        files={"file": (filename, content, content_type)},
+        data=data,
+    )
 
 
 def approve_job(client: TestClient, job_id: str, state: dict[str, object] | None = None):
@@ -76,6 +92,21 @@ def load_only_job(tmp_path: Path):
     job_dirs = list((tmp_path / "jobs").iterdir())
     assert len(job_dirs) == 1
     return FileJobStore(tmp_path).get(job_dirs[0].name)
+
+
+def archive_with_unsupported_compression(archive_bytes: bytes) -> bytes:
+    payload = bytearray(archive_bytes)
+    for signature, compression_offset in (
+        (b"PK\x03\x04", 8),
+        (b"PK\x01\x02", 10),
+    ):
+        header_offset = payload.find(signature)
+        assert header_offset >= 0
+        payload[
+            header_offset + compression_offset:
+            header_offset + compression_offset + 2
+        ] = (99).to_bytes(2, "little")
+    return bytes(payload)
 
 
 def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
@@ -98,6 +129,7 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
 
 def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     client = make_client(tmp_path)
+    recommendation_request_id = "recommendation-request-123"
 
     upload = upload_job(client)
 
@@ -112,13 +144,157 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     assert approve.status_code == 200
     assert approve.json()["status"] == "approved"
 
-    recommend = client.post(f"/api/jobs/{job['id']}/recommend")
+    recommend = client.post(
+        f"/api/jobs/{job['id']}/recommend",
+        headers={"X-Recommendation-Request-ID": recommendation_request_id},
+    )
 
     assert recommend.status_code == 200
     result = recommend.json()
     assert result["status"] == "recommended"
+    assert result["recommendation_request_id"] == recommendation_request_id
     assert result["recommendation"]["action"] == "call"
     assert result["recommendation"]["sizing"] is None
+    assert (
+        FileJobStore(tmp_path).get(job["id"]).recommendation_request_id
+        == recommendation_request_id
+    )
+
+
+def test_upload_persists_client_request_identity(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"
+
+    response = upload_job(client, upload_request_id=request_id)
+
+    assert response.status_code == 201
+    assert response.json()["upload_request_id"] == request_id
+    assert load_only_job(tmp_path).upload_request_id == request_id
+
+
+def test_processing_queue_pages_unarchived_jobs_in_stable_order(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_ids = [
+        upload_job(client, filename=f"queue-{index}.png").json()["id"]
+        for index in range(4)
+    ]
+    approve_job(client, job_ids[1])
+    client.put("/api/history", json={"job_ids": [job_ids[1]]})
+    benchmark_only_id = upload_job(
+        client,
+        filename="benchmark-only.png",
+    ).json()["id"]
+    store = FileJobStore(tmp_path)
+    benchmark_only = store.get(benchmark_only_id)
+    benchmark_only.parser_result = None
+    benchmark_only.approved_state = APPROVED_STATE
+    benchmark_only.benchmark_included = True
+    benchmark_only.status = "approved"
+    store.save(benchmark_only)
+
+    first_page = client.get("/api/jobs?limit=2")
+    second_page = client.get("/api/jobs?limit=2&offset=2")
+    changed_job = store.get(job_ids[2])
+    changed_job.error = "Needs another look"
+    store.save(changed_job)
+    changed_page = client.get("/api/jobs?limit=2")
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert first_page.json()["total"] == 3
+    assert [job["id"] for job in first_page.json()["jobs"]] == [
+        job_ids[0],
+        job_ids[2],
+    ]
+    assert [job["id"] for job in second_page.json()["jobs"]] == [job_ids[3]]
+    assert first_page.json()["snapshot_version"] == second_page.json()["snapshot_version"]
+    assert changed_page.json()["snapshot_version"] != first_page.json()["snapshot_version"]
+    assert client.get("/api/jobs?offset=-1").status_code == 422
+
+
+def test_processing_queue_keeps_mutated_benchmark_imports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingProvider:
+        name = "failing"
+        required_fields = ["hero_cards", "street"]
+
+        def required_fields_for(self, state: object):
+            return self.required_fields
+
+        def recommend(self, request: object):
+            raise ProviderError("provider exploded")
+
+    client = make_client(tmp_path)
+    pristine_id = upload_job(client, filename="pristine-import.png").json()["id"]
+    decision_id = upload_job(client, filename="decision-import.png").json()["id"]
+    failed_id = upload_job(client, filename="failed-import.png").json()["id"]
+    store = FileJobStore(tmp_path)
+    for job_id in (pristine_id, decision_id, failed_id):
+        approve_job(client, job_id)
+        imported_job = store.get(job_id)
+        imported_job.parser_result = None
+        imported_job.benchmark_included = True
+        store.save(imported_job)
+
+    decision = client.put(
+        f"/api/jobs/{decision_id}/decision",
+        json={"action": "call", "sizing": None, "certainty": "medium"},
+    )
+    monkeypatch.setattr("app.api.build_provider", lambda settings: FailingProvider())
+    failed_recommendation = client.post(f"/api/jobs/{failed_id}/recommend")
+    queue = client.get("/api/jobs")
+
+    assert decision.status_code == 200
+    assert failed_recommendation.status_code == 502
+    assert queue.status_code == 200
+    assert queue.json()["total"] == 2
+    assert [job["id"] for job in queue.json()["jobs"]] == [decision_id, failed_id]
+    assert queue.json()["jobs"][0]["training_decision"]["action"] == "call"
+    assert queue.json()["jobs"][1]["status"] == "error"
+    assert queue.json()["jobs"][1]["error"] == "provider exploded"
+
+
+def test_processing_queue_keeps_correctable_benchmark_attempts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CorrectableProvider:
+        name = "correctable"
+        required_fields = ["hero_cards", "street"]
+
+        def required_fields_for(self, state: object):
+            return self.required_fields
+
+        def recommend(self, request: object):
+            raise ProviderInputError("Add the missing table context")
+
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="correctable-import.png").json()["id"]
+    approve_job(client, job_id)
+    store = FileJobStore(tmp_path)
+    imported_job = store.get(job_id)
+    imported_job.parser_result = None
+    imported_job.benchmark_included = True
+    store.save(imported_job)
+    monkeypatch.setattr("app.api.build_provider", lambda settings: CorrectableProvider())
+
+    recommendation = client.post(
+        f"/api/jobs/{job_id}/recommend",
+        headers={"X-Recommendation-Request-ID": "correctable-attempt"},
+    )
+    queue = client.get("/api/jobs")
+
+    assert recommendation.status_code == 422
+    assert queue.status_code == 200
+    assert queue.json()["total"] == 1
+    assert queue.json()["jobs"][0]["id"] == job_id
+    assert queue.json()["jobs"][0]["recommendation_request_id"] == (
+        "correctable-attempt"
+    )
 
 
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
@@ -176,6 +352,61 @@ def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None
     assert empty_history["total"] == 0
     assert empty_history["jobs"] == []
     assert FileJobStore(tmp_path).get(job_id).archived_at is None
+
+
+def test_processing_queue_waits_for_batch_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_ids = [
+        upload_job(client, filename=f"archive-{index}.png").json()["id"]
+        for index in range(2)
+    ]
+    for job_id in job_ids:
+        approve_job(client, job_id)
+
+    first_archive_saved = Event()
+    release_archive = Event()
+    processing_finished = Event()
+    responses: dict[str, object] = {}
+    original_save = FileJobStore.save
+
+    def paused_save(store: FileJobStore, job):
+        saved = original_save(store, job)
+        if job.archived_at is not None and not first_archive_saved.is_set():
+            first_archive_saved.set()
+            assert release_archive.wait(timeout=2)
+        return saved
+
+    monkeypatch.setattr(FileJobStore, "save", paused_save)
+    archive_thread = Thread(
+        target=lambda: responses.update(
+            archive=client.put("/api/history", json={"job_ids": job_ids}),
+        ),
+    )
+
+    def read_processing_queue() -> None:
+        responses["processing"] = client.get("/api/jobs")
+        processing_finished.set()
+
+    processing_thread = Thread(target=read_processing_queue)
+    archive_thread.start()
+    try:
+        assert first_archive_saved.wait(timeout=2)
+        processing_thread.start()
+        assert not processing_finished.wait(timeout=0.1)
+    finally:
+        release_archive.set()
+        archive_thread.join(timeout=2)
+        processing_thread.join(timeout=2)
+
+    assert not archive_thread.is_alive()
+    assert not processing_thread.is_alive()
+    assert responses["archive"].status_code == 200
+    assert responses["processing"].status_code == 200
+    assert responses["processing"].json()["total"] == 0
+    assert responses["processing"].json()["jobs"] == []
 
 
 def test_history_pages_archived_jobs_in_stable_newest_first_order(
@@ -1019,6 +1250,10 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
+    imported_job = FileJobStore(tmp_path).get(job_id)
+    imported_job.parser_result = None
+    imported_job.benchmark_included = True
+    FileJobStore(tmp_path).save(imported_job)
     monkeypatch.setattr(
         "app.api.build_provider",
         lambda settings: SlowRecommendationProvider(),
@@ -1033,11 +1268,27 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     recommendation_thread.start()
     try:
         assert provider_started.wait(timeout=2)
+        in_progress_job = client.get(f"/api/jobs/{job_id}")
+        assert in_progress_job.status_code == 200
+        assert in_progress_job.json()["recommendation_pending"] is True
+        processing_jobs = client.get("/api/jobs")
+        assert processing_jobs.status_code == 200
+        assert processing_jobs.json()["total"] == 1
+        assert processing_jobs.json()["jobs"][0]["id"] == job_id
+        assert processing_jobs.json()["jobs"][0]["recommendation_pending"] is True
+        duplicate_response = client.post(f"/api/jobs/{job_id}/recommend")
+        assert duplicate_response.status_code == 409
+        assert duplicate_response.json()["detail"] == "Recommendation is already running"
+        reapproval_response = approve_job(client, job_id)
+        assert reapproval_response.status_code == 409
+        assert reapproval_response.json()["detail"] == "Recommendation is already running"
+        assert FileJobStore(tmp_path).get(job_id).recommendation_pending is True
         decision_response = client.put(
             f"/api/jobs/{job_id}/decision",
             json={"action": "raise", "sizing": 7.5},
         )
         assert decision_response.status_code == 200
+        assert decision_response.json()["recommendation_pending"] is True
     finally:
         release_provider.set()
         recommendation_thread.join(timeout=5)
@@ -1048,11 +1299,125 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     assert recommendation_response.status_code == 200
     job = recommendation_response.json()
     assert job["status"] == "recommended"
+    assert job["recommendation_pending"] is False
     assert job["training_decision"]["action"] == "raise"
     assert job["training_decision"]["sizing"] == 7.5
     persisted_job = FileJobStore(tmp_path).get(job_id)
     assert persisted_job.training_decision.action == "raise"
     assert persisted_job.recommendation is not None
+
+
+def test_superseded_recommendation_cannot_overwrite_newer_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_provider_started = Event()
+    release_first_provider = Event()
+    provider_calls = 0
+    provider_calls_lock = ThreadLock()
+
+    class SupersededRecommendationProvider(MockRecommendationProvider):
+        def recommend(self, request):
+            nonlocal provider_calls
+            with provider_calls_lock:
+                provider_calls += 1
+                call_number = provider_calls
+            if call_number == 1:
+                first_provider_started.set()
+                if not release_first_provider.wait(timeout=5):
+                    raise ProviderError("test provider timed out")
+            return super().recommend(request)
+
+    provider = SupersededRecommendationProvider()
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    monkeypatch.setattr("app.api.build_provider", lambda settings: provider)
+    first_responses = []
+    first_thread = Thread(
+        target=lambda: first_responses.append(client.post(
+            f"/api/jobs/{job_id}/recommend",
+            headers={"X-Recommendation-Request-ID": "first-attempt"},
+        ))
+    )
+
+    first_thread.start()
+    try:
+        assert first_provider_started.wait(timeout=2)
+        store = FileJobStore(tmp_path)
+        recovered_job = store.get(job_id)
+        recovered_job.recommendation_pending = False
+        recovered_job.status = "error"
+        recovered_job.error = "Recommendation was recovered elsewhere"
+        store.save(recovered_job)
+
+        newer_response = client.post(
+            f"/api/jobs/{job_id}/recommend",
+            headers={"X-Recommendation-Request-ID": "newer-attempt"},
+        )
+        assert newer_response.status_code == 200
+        assert newer_response.json()["recommendation_request_id"] == "newer-attempt"
+    finally:
+        release_first_provider.set()
+        first_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert len(first_responses) == 1
+    assert first_responses[0].status_code == 409
+    assert first_responses[0].json()["detail"] == (
+        "A newer recommendation request replaced this attempt"
+    )
+    persisted_job = FileJobStore(tmp_path).get(job_id)
+    assert persisted_job.recommendation_request_id == "newer-attempt"
+    assert persisted_job.recommendation_pending is False
+    assert persisted_job.status == "recommended"
+    assert persisted_job.recommendation is not None
+
+
+def test_app_startup_recovers_interrupted_recommendation(tmp_path: Path) -> None:
+    initial_client = make_client(tmp_path)
+    job_id = upload_job(initial_client).json()["id"]
+    approve_job(initial_client, job_id)
+    store = FileJobStore(tmp_path)
+    interrupted_job = store.get(job_id)
+    interrupted_job.recommendation_pending = True
+    store.save(interrupted_job)
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{job_id}")
+    assert recovered_response.status_code == 200
+    recovered_job = recovered_response.json()
+    assert recovered_job["recommendation_pending"] is False
+    assert recovered_job["status"] == "error"
+    assert recovered_job["error"] == (
+        "Recommendation was interrupted by a backend restart; request it again"
+    )
+
+    retry_response = restarted_client.post(f"/api/jobs/{job_id}/recommend")
+    assert retry_response.status_code == 200
+    assert retry_response.json()["status"] == "recommended"
+
+
+def test_app_startup_recovers_interrupted_parser_job(tmp_path: Path) -> None:
+    store = FileJobStore(tmp_path)
+    interrupted_job = store.create_job(
+        original_filename="interrupted-parser.png",
+        image_bytes=VALID_PNG,
+        parser_provider="mock",
+        recommendation_provider="mock",
+    )
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{interrupted_job.id}")
+    assert recovered_response.status_code == 200
+    recovered_job = recovered_response.json()
+    assert recovered_job["recommendation_pending"] is False
+    assert recovered_job["status"] == "error"
+    assert recovered_job["error"] == (
+        "Parsing was interrupted by a backend restart; upload the screenshot again"
+    )
 
 
 def test_recommend_requires_approval(tmp_path: Path) -> None:
@@ -1166,6 +1531,29 @@ def test_parser_runtime_errors_are_bad_gateway_and_stored(
     assert job.error == "parser exploded"
 
 
+def test_unexpected_parser_errors_are_http_errors_and_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FailingParser:
+        name = "failing"
+
+        def parse(self, image_path: Path):
+            raise RuntimeError("unexpected parser crash")
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: FailingParser())
+    client = make_client(tmp_path)
+
+    response = upload_job(client)
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Unexpected parser error: unexpected parser crash"
+    )
+    job = load_only_job(tmp_path)
+    assert job.status == "error"
+    assert job.error == "Unexpected parser error: unexpected parser crash"
+
+
 def test_provider_runtime_errors_are_bad_gateway_and_stored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1191,6 +1579,50 @@ def test_provider_runtime_errors_are_bad_gateway_and_stored(
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "provider exploded"
+    assert job.recommendation_pending is False
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    ["build_provider", "required_fields", "validation"],
+)
+def test_unexpected_provider_setup_errors_clear_pending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    class SetupProvider(MockRecommendationProvider):
+        def required_fields_for(self, state):
+            if failure_stage == "required_fields":
+                raise RuntimeError("required fields exploded")
+            return super().required_fields_for(state)
+
+    def build_setup_provider(settings):
+        if failure_stage == "build_provider":
+            raise RuntimeError("provider construction exploded")
+        return SetupProvider()
+
+    def fail_required_field_validation(state, required_fields):
+        raise RuntimeError("required field validation exploded")
+
+    monkeypatch.setattr("app.api.build_provider", build_setup_provider)
+    if failure_stage == "validation":
+        monkeypatch.setattr(
+            "app.api.missing_required_fields",
+            fail_required_field_validation,
+        )
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    with pytest.raises(RuntimeError, match="exploded"):
+        client.post(f"/api/jobs/{job_id}/recommend")
+
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "error"
+    assert job.error is not None
+    assert job.error.startswith("Unexpected provider error:")
+    assert job.recommendation_pending is False
 
 
 def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
@@ -1202,7 +1634,9 @@ def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == {"missing_fields": ["hero_cards"]}
-    assert FileJobStore(tmp_path).get(job_id).status == "approved"
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.recommendation_pending is False
 
 
 @pytest.mark.parametrize(
@@ -1480,6 +1914,350 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
 
 
+def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="recoverable.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_client = make_client(tmp_path / "target")
+    request_id = "benchmark-import-request-123"
+    headers = {"X-Benchmark-Import-Request-ID": request_id}
+
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        headers=headers,
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    recovered = target_client.get(f"/api/benchmarks/imports/{request_id}")
+    repeated = target_client.post(
+        "/api/benchmarks/import",
+        headers=headers,
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+    missing = target_client.get("/api/benchmarks/imports/unknown-request")
+
+    assert imported.status_code == 200
+    assert imported.json() == {
+        "imported_cases": 1,
+        "reused_cases": 0,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    assert recovered.status_code == 200
+    assert recovered.json() == {
+        "request_id": request_id,
+        "archive_sha256": sha256(archive).hexdigest(),
+        "status": "completed",
+        "result": imported.json(),
+        "error": None,
+        "error_status": None,
+    }
+    assert repeated.status_code == 200
+    assert repeated.json() == imported.json()
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Benchmark dataset import not found"
+
+
+@pytest.mark.parametrize("request_id", [".", ".."])
+def test_benchmark_dataset_import_rejects_dot_segment_request_ids(
+    tmp_path: Path,
+    request_id: str,
+) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+    benchmark_store = FileBenchmarkStore(tmp_path)
+
+    assert response.status_code == 422
+    assert list(benchmark_store.imports_dir.iterdir()) == []
+    with pytest.raises(BenchmarkImportNotFoundError):
+        benchmark_store.begin_import(request_id, b"dataset")
+
+
+def test_benchmark_dataset_import_blocks_runs_until_partial_case_recovers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="interrupted.png").json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    request_id = "interrupted-import-request"
+    original_write_image = FileJobStore.write_image
+    interrupted = False
+
+    def interrupt_first_import_image(
+        self: FileJobStore,
+        job,
+        image_bytes: bytes,
+    ) -> None:
+        nonlocal interrupted
+        if (
+            not interrupted
+            and job.benchmark_import_request_id == request_id
+        ):
+            interrupted = True
+            raise OSError("simulated process interruption")
+        original_write_image(self, job, image_bytes)
+
+    monkeypatch.setattr(FileJobStore, "write_image", interrupt_first_import_image)
+    with pytest.raises(OSError, match="simulated process interruption"):
+        target_client.post(
+            "/api/benchmarks/import",
+            headers={"X-Benchmark-Import-Request-ID": request_id},
+            files={"file": ("dataset.zip", archive, "application/zip")},
+        )
+
+    interrupted_store = FileJobStore(target_dir)
+    partial_job = interrupted_store.get(source_job_id)
+    assert partial_job.benchmark_import_request_id == request_id
+    assert not interrupted_store.image_path(partial_job).exists()
+    assert FileBenchmarkStore(target_dir).get_import(request_id).status == "pending"
+
+    monkeypatch.setattr(FileJobStore, "write_image", original_write_image)
+    recovery_client = make_client(target_dir)
+    blocked_run = recovery_client.post("/api/benchmarks/run")
+    blocked_export = recovery_client.get("/api/benchmarks/export")
+    blocked_inclusion = recovery_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": False},
+    )
+    blocked_import = recovery_client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": "second-pending-import"},
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert blocked_run.status_code == 409
+    assert blocked_run.json()["detail"] == "A benchmark dataset import is still pending"
+    assert blocked_export.status_code == 409
+    assert blocked_export.json()["detail"] == "A benchmark dataset import is still pending"
+    assert blocked_inclusion.status_code == 409
+    assert blocked_inclusion.json()["detail"] == (
+        "A benchmark dataset import is still pending"
+    )
+    assert blocked_import.status_code == 409
+    assert blocked_import.json()["detail"] == (
+        "A benchmark dataset import is still pending"
+    )
+    with pytest.raises(BenchmarkImportNotFoundError):
+        FileBenchmarkStore(target_dir).get_import("second-pending-import")
+    assert FileBenchmarkStore(target_dir).get_latest() is None
+
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    completed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    recovered_run = recovery_client.post("/api/benchmarks/run")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["result"] == {
+        "imported_cases": 1,
+        "reused_cases": 0,
+        "included_cases": 1,
+        "job_ids": [source_job_id],
+    }
+    assert recovered_run.status_code == 200
+    assert recovered_run.json()["total_cases"] == 1
+    assert recovered_run.json()["cases"][0]["job_id"] == source_job_id
+    recovered_job = FileJobStore(target_dir).get(source_job_id)
+    assert FileJobStore(target_dir).image_path(recovered_job).read_bytes() == VALID_PNG
+
+
+def test_benchmark_dataset_import_journals_before_parsing_and_resumes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="parse-interrupted.png").json()[
+        "id"
+    ]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    request_id = "parse-interrupted-import"
+    parse_entered = Event()
+    release_parse = Event()
+    import_errors: list[Exception] = []
+    original_parse = api_module.parse_parser_dataset_archive
+
+    def interrupt_parse(*args: object, **kwargs: object):
+        parse_entered.set()
+        assert release_parse.wait(timeout=2)
+        raise OSError("simulated interruption during dataset parsing")
+
+    monkeypatch.setattr(api_module, "parse_parser_dataset_archive", interrupt_parse)
+
+    def run_import() -> None:
+        try:
+            target_client.post(
+                "/api/benchmarks/import",
+                headers={"X-Benchmark-Import-Request-ID": request_id},
+                files={"file": ("dataset.zip", archive, "application/zip")},
+            )
+        except Exception as exc:
+            import_errors.append(exc)
+
+    import_thread = Thread(target=run_import)
+    import_thread.start()
+    assert parse_entered.wait(timeout=2)
+
+    benchmark_store = FileBenchmarkStore(target_dir)
+    assert benchmark_store.get_import(request_id).status == "pending"
+    assert benchmark_store.get_import_archive(request_id) == archive
+
+    release_parse.set()
+    import_thread.join(timeout=2)
+    assert not import_thread.is_alive()
+    assert len(import_errors) == 1
+    assert isinstance(import_errors[0], OSError)
+
+    monkeypatch.setattr(
+        api_module,
+        "parse_parser_dataset_archive",
+        original_parse,
+    )
+    recovery_client = make_client(target_dir)
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    completed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["result"]["job_ids"] == [source_job_id]
+
+
+def test_benchmark_dataset_import_persists_validation_failure_receipt(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    request_id = "invalid-archive-import"
+
+    response = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+    receipt = client.get(f"/api/benchmarks/imports/{request_id}")
+    repeated = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Upload must be a valid dataset ZIP"
+    assert receipt.status_code == 200
+    assert receipt.json() == {
+        "request_id": request_id,
+        "archive_sha256": sha256(b"not a zip").hexdigest(),
+        "status": "failed",
+        "result": None,
+        "error": "Upload must be a valid dataset ZIP",
+        "error_status": 400,
+    }
+    assert repeated.status_code == 400
+    assert repeated.json()["detail"] == "Upload must be a valid dataset ZIP"
+
+
+def test_benchmark_dataset_import_rejects_unsupported_compression(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    unsupported_archive = archive_with_unsupported_compression(archive)
+
+    response = make_client(tmp_path / "target").post(
+        "/api/benchmarks/import",
+        files={
+            "file": (
+                "unsupported.zip",
+                unsupported_archive,
+                "application/zip",
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Dataset ZIP uses an unsupported compression method"
+    )
+
+
+def test_benchmark_import_recovery_fails_unsupported_compression_receipt(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    unsupported_archive = archive_with_unsupported_compression(archive)
+
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    existing_job_id = upload_job(target_client).json()["id"]
+    approve_job(target_client, existing_job_id)
+    target_client.put(
+        f"/api/jobs/{existing_job_id}/benchmark",
+        json={"included": True},
+    )
+    request_id = "unsupported-compression-import"
+    benchmark_store = FileBenchmarkStore(target_dir)
+    benchmark_store.begin_import(request_id, unsupported_archive)
+
+    recovery_client = make_client(target_dir)
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    failed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    recovered_run = recovery_client.post("/api/benchmarks/run")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "failed"
+    assert failed.json()["error"] == (
+        "Dataset ZIP uses an unsupported compression method"
+    )
+    assert failed.json()["error_status"] == 400
+    with pytest.raises(BenchmarkImportNotFoundError):
+        benchmark_store.get_import_archive(request_id)
+    assert recovered_run.status_code == 200
+    assert recovered_run.json()["total_cases"] == 1
+    assert recovered_run.json()["cases"][0]["job_id"] == existing_job_id
+
+
 def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
     tmp_path: Path,
 ) -> None:
@@ -1602,6 +2380,83 @@ def test_benchmark_dataset_import_serializes_reuse_with_corrections(
     assert current.approved_state is not None
     assert current.approved_state.pot_size == 21
     assert current.benchmark_included is True
+
+
+def test_benchmark_run_waits_for_dataset_import_corpus_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(
+        source_client,
+        filename="imported-during-run.png",
+    ).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+
+    target_client = make_client(tmp_path / "target")
+    target_job_id = upload_job(
+        target_client,
+        filename="existing-before-run.png",
+    ).json()["id"]
+    approve_job(target_client, target_job_id)
+    target_client.put(
+        f"/api/jobs/{target_job_id}/benchmark",
+        json={"included": True},
+    )
+
+    import_entered = Event()
+    release_import = Event()
+    benchmark_started = Event()
+    benchmark_finished = Event()
+    responses: dict[str, object] = {}
+    original_import = api_module.import_parser_dataset
+
+    def paused_import(*args: object, **kwargs: object):
+        import_entered.set()
+        assert release_import.wait(timeout=2)
+        return original_import(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+
+    import_thread = Thread(
+        target=lambda: responses.update(
+            imported=target_client.post(
+                "/api/benchmarks/import",
+                files={"file": ("dataset.zip", archive, "application/zip")},
+            ),
+        ),
+    )
+
+    def run_benchmark_request() -> None:
+        benchmark_started.set()
+        responses["benchmark"] = target_client.post("/api/benchmarks/run")
+        benchmark_finished.set()
+
+    benchmark_thread = Thread(target=run_benchmark_request)
+    import_thread.start()
+    try:
+        assert import_entered.wait(timeout=2)
+        benchmark_thread.start()
+        assert benchmark_started.wait(timeout=2)
+        assert not benchmark_finished.wait(timeout=0.1)
+    finally:
+        release_import.set()
+        import_thread.join(timeout=2)
+        benchmark_thread.join(timeout=2)
+
+    assert not import_thread.is_alive()
+    assert not benchmark_thread.is_alive()
+    assert responses["imported"].status_code == 200
+    assert responses["benchmark"].status_code == 200
+    assert responses["benchmark"].json()["total_cases"] == 2
+    assert {
+        case["job_id"] for case in responses["benchmark"].json()["cases"]
+    } == {target_job_id, source_job_id}
 
 
 def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
@@ -1931,6 +2786,7 @@ def test_provider_configuration_errors_are_http_errors(
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "Unknown required field: missing_field"
+    assert job.recommendation_pending is False
 
 
 def test_store_persists_jobs_and_rejects_invalid_job_ids(tmp_path: Path) -> None:

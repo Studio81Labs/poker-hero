@@ -1,12 +1,22 @@
 import os
 import re
+import shutil
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 
-from app.models import BenchmarkReport, JobRecord
+from app.models import (
+    BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
+    BenchmarkDatasetImportReceipt,
+    BenchmarkDatasetImportResult,
+    BenchmarkReport,
+    CanonicalState,
+    JobRecord,
+)
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
+BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 
 
 class JobNotFoundError(KeyError):
@@ -14,6 +24,10 @@ class JobNotFoundError(KeyError):
 
 
 class BenchmarkNotFoundError(KeyError):
+    pass
+
+
+class BenchmarkImportNotFoundError(KeyError):
     pass
 
 
@@ -30,6 +44,7 @@ class FileJobStore:
         parser_provider: str,
         recommendation_provider: str,
         job_id: str | None = None,
+        upload_request_id: str | None = None,
     ) -> JobRecord:
         image_suffix = Path(original_filename).suffix or ".png"
         job_values = {
@@ -37,6 +52,7 @@ class FileJobStore:
             "image_filename": f"original{image_suffix}",
             "parser_provider": parser_provider,
             "recommendation_provider": recommendation_provider,
+            "upload_request_id": upload_request_id,
         }
         if job_id is not None:
             job_values["id"] = job_id
@@ -46,6 +62,40 @@ class FileJobStore:
         self.image_path(job).write_bytes(image_bytes)
         self.save(job)
         return job
+
+    def create_benchmark_import_job(
+        self,
+        *,
+        job_id: str,
+        original_filename: str,
+        image_bytes: bytes,
+        parser_provider: str,
+        recommendation_provider: str,
+        approved_state: CanonicalState,
+        import_request_id: str,
+    ) -> JobRecord:
+        image_suffix = Path(original_filename).suffix or ".png"
+        job = JobRecord(
+            id=job_id,
+            status="approved",
+            original_filename=original_filename,
+            image_filename=f"original{image_suffix}",
+            parser_provider=parser_provider,
+            recommendation_provider=recommendation_provider,
+            approved_state=approved_state,
+            benchmark_included=True,
+            benchmark_import_request_id=import_request_id,
+        )
+        job_dir = self._job_dir(job.id)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        if self._job_path(job.id).exists():
+            raise FileExistsError(job.id)
+        self.save(job)
+        self.write_image(job, image_bytes)
+        return job
+
+    def write_image(self, job: JobRecord, image_bytes: bytes) -> None:
+        self._atomic_write_bytes(self.image_path(job), image_bytes)
 
     def image_path(self, job: JobRecord) -> Path:
         job_dir = self._job_dir(job.id)
@@ -108,11 +158,32 @@ class FileJobStore:
             raise JobNotFoundError(str(candidate)) from exc
         return path
 
+    def _atomic_write_bytes(self, path: Path, payload: bytes) -> None:
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "wb",
+                dir=path.parent,
+                prefix="image.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                temp_file.write(payload)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, path)
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
+
 
 class FileBenchmarkStore:
     def __init__(self, data_dir: Path) -> None:
         self.benchmarks_dir = (data_dir / "benchmarks").resolve()
         self.benchmarks_dir.mkdir(parents=True, exist_ok=True)
+        self.imports_dir = (self.benchmarks_dir / "imports").resolve()
+        self.imports_dir.mkdir(parents=True, exist_ok=True)
 
     def get_latest(self) -> BenchmarkReport | None:
         path = self.benchmarks_dir / "latest.json"
@@ -151,10 +222,136 @@ class FileBenchmarkStore:
         self._atomic_write(self.benchmarks_dir / "latest.json", payload)
         return report
 
+    def get_import(self, request_id: str) -> BenchmarkDatasetImportReceipt:
+        path = self._import_receipt_path(request_id)
+        if not path.exists():
+            raise BenchmarkImportNotFoundError(request_id)
+        return BenchmarkDatasetImportReceipt.model_validate_json(path.read_text())
+
+    def has_pending_import(self) -> bool:
+        for request_dir in self.imports_dir.iterdir():
+            if (
+                not request_dir.is_dir()
+                or BENCHMARK_IMPORT_REQUEST_ID_RE.fullmatch(request_dir.name) is None
+            ):
+                continue
+            try:
+                receipt = self.get_import(request_dir.name)
+            except BenchmarkImportNotFoundError:
+                continue
+            if receipt.status == "pending":
+                return True
+        return False
+
+    def begin_import(
+        self,
+        request_id: str,
+        archive_bytes: bytes,
+    ) -> BenchmarkDatasetImportReceipt:
+        request_dir = self._import_dir(request_id)
+        if request_dir.exists():
+            return self.get_import(request_id)
+        receipt = BenchmarkDatasetImportReceipt(
+            request_id=request_id,
+            archive_sha256=sha256(archive_bytes).hexdigest(),
+            status="pending",
+        )
+        temp_dir = Path(tempfile.mkdtemp(
+            dir=self.imports_dir,
+            prefix=".benchmark-import.",
+        ))
+        try:
+            self._write_file(
+                temp_dir / "dataset.zip",
+                archive_bytes,
+            )
+            self._write_file(
+                temp_dir / "receipt.json",
+                receipt.model_dump_json(indent=2).encode(),
+            )
+            os.replace(temp_dir, request_dir)
+        finally:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+        return receipt
+
+    def complete_import(
+        self,
+        request_id: str,
+        result: BenchmarkDatasetImportResult,
+    ) -> BenchmarkDatasetImportReceipt:
+        receipt = self.get_import(request_id)
+        completed = receipt.model_copy(update={
+            "status": "completed",
+            "result": result,
+        })
+        self._atomic_write(
+            self._import_receipt_path(request_id),
+            completed.model_dump_json(indent=2),
+        )
+        self._remove_import_archive(request_id)
+        return completed
+
+    def fail_import(
+        self,
+        request_id: str,
+        error: str,
+        status_code: int,
+    ) -> BenchmarkDatasetImportReceipt:
+        receipt = self.get_import(request_id)
+        failed = receipt.model_copy(update={
+            "status": "failed",
+            "result": None,
+            "error": error,
+            "error_status": status_code,
+        })
+        self._atomic_write(
+            self._import_receipt_path(request_id),
+            failed.model_dump_json(indent=2),
+        )
+        self._remove_import_archive(request_id)
+        return failed
+
+    def get_import_archive(self, request_id: str) -> bytes:
+        path = self._import_archive_path(request_id)
+        if not path.exists():
+            raise BenchmarkImportNotFoundError(request_id)
+        return path.read_bytes()
+
     def _report_path(self, report_id: str) -> Path:
         if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
             raise BenchmarkNotFoundError(report_id)
         return self.benchmarks_dir / f"{report_id}.json"
+
+    def _import_dir(self, request_id: str) -> Path:
+        if (
+            len(request_id) > 128
+            or BENCHMARK_IMPORT_REQUEST_ID_RE.fullmatch(request_id) is None
+        ):
+            raise BenchmarkImportNotFoundError(request_id)
+        request_dir = (self.imports_dir / request_id).resolve(strict=False)
+        if request_dir.parent != self.imports_dir:
+            raise BenchmarkImportNotFoundError(request_id)
+        return request_dir
+
+    def _import_receipt_path(self, request_id: str) -> Path:
+        return self._import_dir(request_id) / "receipt.json"
+
+    def _import_archive_path(self, request_id: str) -> Path:
+        return self._import_dir(request_id) / "dataset.zip"
+
+    def _write_file(self, path: Path, payload: bytes) -> None:
+        with path.open("xb") as file:
+            file.write(payload)
+            file.flush()
+            os.fsync(file.fileno())
+
+    def _remove_import_archive(self, request_id: str) -> None:
+        try:
+            self._import_archive_path(request_id).unlink(missing_ok=True)
+        except OSError:
+            # The terminal receipt remains authoritative if best-effort cleanup fails.
+            pass
 
     def _atomic_write(self, path: Path, payload: str) -> None:
         temp_path: Path | None = None

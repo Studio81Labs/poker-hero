@@ -7,6 +7,8 @@ node_modules/
 # Build and test output
 dist/
 coverage/
+playwright-report/
+test-results/
 .vite/
 .vitest/
 .pytest_cache/

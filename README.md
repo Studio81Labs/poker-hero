@@ -56,8 +56,14 @@ poker-hero/
 | `pnpm frontend:dev` | Start Vite on port 5173 |
 | `pnpm frontend:test` | Run frontend tests |
 | `pnpm frontend:build` | Build the production frontend |
+| `pnpm test:e2e` | Run browser workflow tests with isolated mock providers |
 | `pnpm docker:up` | Build and start both apps with Docker Compose |
 | `pnpm docker:down` | Stop the Compose stack |
+
+The browser workflow command starts temporary FastAPI and Vite servers on ports
+8010 and 4174. Install Chromium once with
+`pnpm -C apps/frontend exec playwright install chromium` before the first local
+run. Its backend job store is removed when the test server exits.
 
 ## Configuration
 

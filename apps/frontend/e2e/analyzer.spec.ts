@@ -138,16 +138,33 @@ async function openUploadInput(page: Page): Promise<void> {
     .click();
 }
 
-async function installWindowCaptureStream(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+type CaptureSurface = "browser" | "monitor" | "window";
+
+async function installCaptureStreams(
+  page: Page,
+  surfaces: readonly CaptureSurface[] = ["window"],
+): Promise<void> {
+  await page.addInitScript((configuredSurfaces) => {
     Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
       configurable: true,
-      value: async () => {
+      value: async (requestedOptions: DisplayMediaStreamOptions) => {
         const fixtureWindow = window as typeof window & {
+          __pokerHeroCaptureFixtures?: Array<{
+            stream: MediaStream;
+            surface: CaptureSurface;
+          }>;
           __pokerHeroDisplayMediaCalls?: number;
+          __pokerHeroDisplayMediaOptions?: DisplayMediaStreamOptions[];
         };
-        fixtureWindow.__pokerHeroDisplayMediaCalls =
-          (fixtureWindow.__pokerHeroDisplayMediaCalls ?? 0) + 1;
+        const callIndex = fixtureWindow.__pokerHeroDisplayMediaCalls ?? 0;
+        fixtureWindow.__pokerHeroDisplayMediaCalls = callIndex + 1;
+        const displayMediaOptions =
+          fixtureWindow.__pokerHeroDisplayMediaOptions ?? [];
+        displayMediaOptions.push(requestedOptions);
+        fixtureWindow.__pokerHeroDisplayMediaOptions = displayMediaOptions;
+        const displaySurface = configuredSurfaces[
+          Math.min(callIndex, configuredSurfaces.length - 1)
+        ] ?? "window";
         const canvas = document.createElement("canvas");
         canvas.width = 640;
         canvas.height = 360;
@@ -179,7 +196,7 @@ async function installWindowCaptureStream(page: Page): Promise<void> {
         const nativeGetSettings = track.getSettings.bind(track);
         track.getSettings = () => ({
           ...nativeGetSettings(),
-          displaySurface: "window",
+          displaySurface,
         });
         const interval = window.setInterval(paintFrame, 125);
         const clearPaintInterval = () => window.clearInterval(interval);
@@ -192,26 +209,31 @@ async function installWindowCaptureStream(page: Page): Promise<void> {
           once: true,
         });
 
-        Object.assign(window, {
-          __pokerHeroCaptureFixture: {
-            canvas,
-            setTableColor(color: string) {
-              tableColor = color;
-              paintFrame();
-            },
-            stream,
+        const fixture = {
+          canvas,
+          setTableColor(color: string) {
+            tableColor = color;
+            paintFrame();
           },
+          stream,
+          surface: displaySurface,
+        };
+        const fixtures = fixtureWindow.__pokerHeroCaptureFixtures ?? [];
+        fixtures.push(fixture);
+        Object.assign(fixtureWindow, {
+          __pokerHeroCaptureFixture: fixture,
+          __pokerHeroCaptureFixtures: fixtures,
         });
         return stream;
       },
     });
-  });
+  }, [...surfaces]);
 }
 
 test("captures repeated shared-window frames into persisted history", async ({
   page,
 }) => {
-  await installWindowCaptureStream(page);
+  await installCaptureStreams(page);
   await page.goto("/");
   await expect(
     page.getByRole("heading", { name: "Poker Training Analyzer" }),
@@ -370,6 +392,122 @@ test("captures repeated shared-window frames into persisted history", async ({
       return fixture.stream.getVideoTracks()[0]?.readyState;
     }),
   ).toBe("ended");
+});
+
+test("rejects a mismatched share source and recovers with a tab", async ({
+  page,
+}) => {
+  await installCaptureStreams(page, ["browser", "browser"]);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Poker Training Analyzer" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Share window" }).click();
+  await expect(
+    page.getByText(
+      "Tab was selected. Choose a window in the browser share picker, or switch the source type before sharing.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Capture and parse" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("No screenshots uploaded or captured yet"),
+  ).toBeVisible();
+  await expect.poll(
+    () => page.evaluate(() => {
+      const fixtures = (
+        window as typeof window & {
+          __pokerHeroCaptureFixtures: Array<{ stream: MediaStream }>;
+        }
+      ).__pokerHeroCaptureFixtures;
+      return fixtures[0]?.stream.getVideoTracks()[0]?.readyState;
+    }),
+  ).toBe("ended");
+
+  await page
+    .getByRole("group", { name: "Share source type" })
+    .getByRole("button", { name: "Tab" })
+    .click();
+  await page.getByRole("button", { name: "Share tab" }).click();
+  await expect(page.getByText("Tab sharing active")).toBeVisible();
+  const preview = page.getByLabel("Shared screen preview");
+  await expect(preview).toHaveClass(/active/);
+  await expect.poll(
+    () => preview.evaluate((element: HTMLVideoElement) => ({
+      height: element.videoHeight,
+      width: element.videoWidth,
+    })),
+  ).toEqual({ height: 360, width: 640 });
+  await expect(
+    page.getByText(
+      "Tab was selected. Choose a window in the browser share picker, or switch the source type before sharing.",
+    ),
+  ).toBeHidden();
+
+  const capture = await captureAutomatedFrame(page);
+  await expect(
+    page.getByRole("region", { name: "Recommendation" }),
+  ).toBeVisible();
+  const activeShareState = await page.evaluate(() => {
+    const fixtureWindow = window as typeof window & {
+      __pokerHeroCaptureFixtures: Array<{
+        stream: MediaStream;
+        surface: CaptureSurface;
+      }>;
+      __pokerHeroDisplayMediaCalls?: number;
+      __pokerHeroDisplayMediaOptions?: DisplayMediaStreamOptions[];
+    };
+    return {
+      calls: fixtureWindow.__pokerHeroDisplayMediaCalls,
+      requestedSurfaces: (
+        fixtureWindow.__pokerHeroDisplayMediaOptions ?? []
+      ).map((options) => {
+        const video = options.video;
+        return typeof video === "object" && video !== null
+          ? video.displaySurface
+          : null;
+      }),
+      streams: fixtureWindow.__pokerHeroCaptureFixtures.map((fixture) => ({
+        readyState: fixture.stream.getVideoTracks()[0]?.readyState,
+        surface: fixture.surface,
+      })),
+    };
+  });
+  expect(activeShareState).toEqual({
+    calls: 2,
+    requestedSurfaces: ["window", "browser"],
+    streams: [
+      { readyState: "ended", surface: "browser" },
+      { readyState: "live", surface: "browser" },
+    ],
+  });
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(capture.queueItem).toBeHidden();
+  const archivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${capture.id}`,
+  );
+  expect(archivedResponse.ok()).toBe(true);
+  const archivedJob = await archivedResponse.json() as {
+    archived_at: string | null;
+  };
+  expect(archivedJob.archived_at).not.toBeNull();
+
+  await page.getByRole("button", { name: "Stop sharing" }).click();
+  await expect.poll(
+    () => page.evaluate(() => {
+      const fixtures = (
+        window as typeof window & {
+          __pokerHeroCaptureFixtures: Array<{ stream: MediaStream }>;
+        }
+      ).__pokerHeroCaptureFixtures;
+      return fixtures.map(
+        (fixture) => fixture.stream.getVideoTracks()[0]?.readyState,
+      );
+    }),
+  ).toEqual(["ended", "ended"]);
 });
 
 test("reviews one screenshot from upload through persisted history", async ({

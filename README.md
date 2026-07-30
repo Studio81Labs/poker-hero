@@ -74,6 +74,8 @@ The main provider switches are:
 - `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size for
   benchmark selection, export, and import (default 100 MiB)
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
+- `POKER_PROXY_SHARED_SECRET`: optional Worker-to-backend credential, at least
+  32 characters; leave empty for local development
 
 See [apps/backend/.env.example](./apps/backend/.env.example) for the complete
 local contract and [infra/docker/backend.env.example](./infra/docker/backend.env.example)
@@ -272,6 +274,13 @@ repository or `testing` environment variables:
 - `APP_WORKERS_SUBDOMAIN`, for example `studio81`
 - `BACKEND_URL`, the backend origin used by the Worker proxy
 - `APP_WORKER_NAME`, optional and defaults to `poker`
+
+For a deployed backend, set the same random value in the Cloudflare
+`API_PROXY_SECRET` secret and Coolify `POKER_PROXY_SHARED_SECRET` environment
+variable, and use an `https://` `BACKEND_URL`. The Worker replaces any incoming
+copy of its private header before proxying. FastAPI then rejects direct requests
+to application API routes that do not carry the configured value; `/api/health`
+remains available to platform health probes.
 
 Leave `VITE_API_BASE_URL` unset for the deployed Worker so browser requests use
 same-origin `/api/*`.

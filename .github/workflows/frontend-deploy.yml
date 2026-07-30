@@ -10,12 +10,15 @@ name: Frontend Deploy
 # Required repo secret:
 #   CLOUDFLARE_API_TOKEN
 #
+# Optional repo or "testing" environment secret:
+#   API_PROXY_SECRET          Shared with backend POKER_PROXY_SHARED_SECRET
+#
 # Required repo vars:
 #   CLOUDFLARE_ACCOUNT_ID
 #   APP_WORKERS_SUBDOMAIN      e.g. studio81 for *.studio81.workers.dev
 #
 # Required repo or "testing" environment vars:
-#   BACKEND_URL                Backend origin proxied by the Worker, e.g. http://coolify-app.example.com
+#   BACKEND_URL                Backend origin proxied by the Worker, e.g. https://coolify-app.example.com
 #
 # Optional repo or "testing" environment vars:
 #   APP_WORKER_NAME            Defaults to "poker"
@@ -77,6 +80,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           BACKEND_URL: ${{ vars.BACKEND_URL }}
+          API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
         run: |
           set -euo pipefail
           WORKER_NAME="${CONFIGURED_WORKER_NAME:-poker}"
@@ -85,11 +89,29 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN repo secret is required"; exit 1; }
           test -n "$BACKEND_URL" || { echo "::error::BACKEND_URL repo or testing environment var is required"; exit 1; }
+          node -e '
+            const backend = new URL(process.env.BACKEND_URL);
+            if (process.env.API_PROXY_SECRET && backend.protocol !== "https:") {
+              console.error("::error::BACKEND_URL must use HTTPS when API_PROXY_SECRET is configured");
+              process.exit(1);
+            }
+          '
+
+          SECRETS_ARGS=()
+          if [ -n "$API_PROXY_SECRET" ]; then
+            SECRETS_FILE="${RUNNER_TEMP}/poker-worker-secrets.json"
+            trap 'rm -f "$SECRETS_FILE"' EXIT
+            node -e \
+              'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({API_PROXY_SECRET: process.env.API_PROXY_SECRET}))' \
+              "$SECRETS_FILE"
+            SECRETS_ARGS+=(--secrets-file "$SECRETS_FILE")
+          fi
 
           pnpm dlx wrangler@latest deploy \
             --config wrangler.jsonc \
             --name "$WORKER_NAME" \
-            --var "BACKEND_URL:$BACKEND_URL"
+            --var "BACKEND_URL:$BACKEND_URL" \
+            "${SECRETS_ARGS[@]}"
 
           DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
@@ -98,6 +120,8 @@ jobs:
       - name: Smoke test
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
           ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
         run: |
@@ -131,10 +155,50 @@ jobs:
             HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-health.json -w '%{http_code}' "$URL/api/health" || echo '000')
             if [ "$HTTP_CODE" = "200" ] && grep -q '"status"' api-health.json; then
               echo "::notice::API proxy smoke OK (${URL}/api/health)"
-              exit 0
+              break
             fi
             echo "API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
             sleep 5
+            if [ "$attempt" = "5" ]; then
+              echo "::error::API proxy smoke failed for ${URL}/api/health"
+              exit 1
+            fi
           done
-          echo "::error::API proxy smoke failed for ${URL}/api/health"
-          exit 1
+
+          for attempt in 1 2 3 4 5; do
+            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-jobs.json -w '%{http_code}' "$URL/api/jobs?limit=1" || echo '000')
+            if [ "$HTTP_CODE" = "200" ] && grep -q '"jobs"' api-jobs.json; then
+              echo "::notice::Protected API proxy smoke OK (${URL}/api/jobs)"
+              break
+            fi
+            echo "Protected API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
+            sleep 5
+            if [ "$attempt" = "5" ]; then
+              echo "::error::Protected API proxy smoke failed for ${URL}/api/jobs"
+              exit 1
+            fi
+          done
+
+          if [ -n "$API_PROXY_SECRET" ]; then
+            DIRECT_API_URL=$(node -e '
+              const backend = new URL(process.env.BACKEND_URL);
+              const basePath = backend.pathname.replace(/\/+$/, "");
+              backend.pathname = basePath.endsWith("/api")
+                ? `${basePath}/jobs`
+                : `${basePath}/api/jobs`;
+              backend.search = "?limit=1";
+              backend.hash = "";
+              process.stdout.write(backend.href);
+            ')
+            for attempt in 1 2 3; do
+              HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$DIRECT_API_URL" || echo '000')
+              if [ "$HTTP_CODE" = "401" ]; then
+                echo "::notice::Direct backend API correctly rejected an unauthenticated request"
+                exit 0
+              fi
+              echo "Direct backend rejection attempt ${attempt}: HTTP=${HTTP_CODE}"
+              sleep 5
+            done
+            echo "::error::Direct backend API did not return 401 without the Worker credential"
+            exit 1
+          fi

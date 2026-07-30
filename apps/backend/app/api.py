@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 import re
+from secrets import compare_digest
 from threading import Lock, RLock
 
 from fastapi import (
@@ -17,7 +18,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 
 from app.config import Settings, get_settings
@@ -106,6 +107,8 @@ HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
 )
 HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
+PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
+PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 
 
 def recover_interrupted_jobs(store: FileJobStore) -> None:
@@ -234,6 +237,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def require_proxy_shared_secret(request, call_next):
+        configured_secret = active_settings.proxy_shared_secret
+        if (
+            configured_secret is not None
+            and request.url.path.startswith("/api/")
+            and request.url.path not in PROXY_AUTH_EXEMPT_PATHS
+        ):
+            supplied_secret = request.headers.get(PROXY_SHARED_SECRET_HEADER, "")
+            if not compare_digest(
+                supplied_secret,
+                configured_secret.get_secret_value(),
+            ):
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Unauthorized"},
+                )
+        return await call_next(request)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

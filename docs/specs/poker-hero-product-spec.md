@@ -451,6 +451,8 @@ Example configuration concepts:
 - `recommendation.localEngine`: `postflop_solver` or `local_ev`.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
+- An optional deployment-only Worker-to-backend shared secret. The browser must
+  never receive or forward this credential itself.
 
 Configuration must allow local/private testing with local services and later public testing with external services without changing the frontend flow.
 
@@ -618,3 +620,6 @@ Poker Hero is successful when:
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.
 - The system can swap parsers and recommendation providers without changing the core UI workflow.
+- A deployed backend can reject application API traffic that does not pass
+  through the configured frontend Worker while retaining a platform health
+  endpoint.

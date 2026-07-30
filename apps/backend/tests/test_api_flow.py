@@ -127,6 +127,26 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     }
 
 
+def test_proxy_shared_secret_protects_api_but_not_health(tmp_path: Path) -> None:
+    proxy_secret = "worker-to-backend-secret-value-123"
+    client = make_client(tmp_path, proxy_shared_secret=proxy_secret)
+
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/jobs").status_code == 401
+    assert client.get(
+        "/api/jobs",
+        headers={"X-Poker-Proxy-Secret": "incorrect-secret-value-123456789"},
+    ).status_code == 401
+
+    authorized = client.get(
+        "/api/jobs",
+        headers={"X-Poker-Proxy-Secret": proxy_secret},
+    )
+
+    assert authorized.status_code == 200
+    assert authorized.json()["jobs"] == []
+
+
 def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     recommendation_request_id = "recommendation-request-123"

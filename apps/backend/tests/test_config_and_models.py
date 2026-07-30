@@ -154,8 +154,12 @@ def test_settings_require_https_for_authenticated_external_services(
     url_field: str,
     token_field: str,
 ) -> None:
-    with pytest.raises(ValidationError, match="must use HTTPS"):
-        Settings(**{url_field: "http://service.example/api", token_field: "secret-token"})
+    token = "must-not-appear-in-validation-output"
+
+    with pytest.raises(ValidationError, match="must use HTTPS") as exc_info:
+        Settings(**{url_field: "http://service.example/api", token_field: token})
+
+    assert token not in str(exc_info.value)
 
 
 def test_card_from_code_normalizes_rank_and_suit() -> None:

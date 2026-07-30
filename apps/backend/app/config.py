@@ -19,6 +19,7 @@ class Settings(BaseSettings):
         env_prefix="POKER_",
         env_nested_delimiter="__",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     data_dir: Path = Field(default=Path("data"))

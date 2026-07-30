@@ -6,7 +6,8 @@ from pathlib import Path
 from threading import Event, Lock
 
 
-RECOMMENDATION_BLOCK_TIMEOUT_SECONDS = 8
+# Keep the gate beyond Playwright's 30-second test timeout.
+RECOMMENDATION_BLOCK_TIMEOUT_SECONDS = 35
 
 
 class ProviderState:

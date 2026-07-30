@@ -4353,6 +4353,9 @@ describe("App", () => {
     expect(screen.getByRole("button", {
       name: "Request recommendation",
     })).toBeEnabled();
+    expect(screen.getByRole("button", {
+      name: "Clear reviewed",
+    })).toBeDisabled();
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");

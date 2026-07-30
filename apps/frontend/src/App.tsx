@@ -3200,6 +3200,7 @@ function historyAction(job: JobRecord): string {
 
 function isHistoryReady(job: JobRecord): boolean {
   return job.archived_at === null
+    && job.status !== "error"
     && !job.recommendation_pending
     && (
       job.status === "approved"

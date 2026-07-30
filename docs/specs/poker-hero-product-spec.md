@@ -338,7 +338,8 @@ frequencies.
     pending, failed, or completed receipt after a lost response or reload,
     including when every imported hand is benchmark-only and absent from
     processing and history. Observed pending receipts keep recovery alive beyond
-    the ordinary lease window.
+    the ordinary lease window, and benchmark operations remain locked until
+    import recovery reaches a terminal receipt.
     Deterministic import rejections release their recovery leases immediately.
     A benchmark-only hand with a recorded solver
     attempt remains in processing across reloads so correctable provider

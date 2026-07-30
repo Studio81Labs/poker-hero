@@ -9967,6 +9967,98 @@ describe("App", () => {
     expect(recoveryAttempts).toBe(2);
   });
 
+  it("blocks benchmark runs while a recovered dataset import is pending", async () => {
+    const importRequestId = "pending-import-before-benchmark";
+    const pendingImportLease = {
+      kind: "projection",
+      ownerId: "previous-page",
+      baselineJobIds: [],
+      expectedRemovalJobIds: [],
+      benchmarkImportRequestId: importRequestId,
+      benchmarkImportReceiptObserved: true,
+      expectedUploads: [],
+      expiresAt: Date.now() + 30_000,
+    };
+    window.sessionStorage.setItem(
+      "poker-training-processing-mutation-v1",
+      JSON.stringify(pendingImportLease),
+    );
+    window.sessionStorage.setItem(
+      "poker-training-history-mutation-v1",
+      JSON.stringify(pendingImportLease),
+    );
+    const pendingReceipt = deferredResponse();
+    fetchMock().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (
+        url
+        === `http://localhost:8000/api/benchmarks/imports/${importRequestId}`
+      ) {
+        return pendingReceipt.promise;
+      }
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return Promise.resolve(jsonResponse({
+          included_cases: 1,
+          latest_report: null,
+          recent_reports: [],
+        }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse(
+          [],
+          "completed-import-processing-snapshot",
+        ));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "completed-import-history-snapshot",
+        }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const runButton = within(dialog).getByRole("button", {
+      name: "Run benchmark",
+    });
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/benchmarks/imports/${importRequestId}`,
+      { credentials: "include" },
+    ));
+    expect(runButton).toBeDisabled();
+    await user.click(runButton);
+    expect(fetchMock().mock.calls.some(
+      ([url]) => String(url) === "http://localhost:8000/api/benchmarks/run",
+    )).toBe(false);
+
+    pendingReceipt.resolve(jsonResponse({
+      request_id: importRequestId,
+      archive_sha256: "c".repeat(64),
+      status: "completed",
+      result: {
+        imported_cases: 1,
+        reused_cases: 0,
+        included_cases: 1,
+        job_ids: [],
+      },
+      error: null,
+      error_status: null,
+    }));
+
+    await waitFor(() => expect(runButton).toBeEnabled());
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+  });
+
   it("expires unobserved dataset import leases after recovery request failures", async () => {
     const importRequestId = "expired-unobserved-import";
     const expiredLease = {

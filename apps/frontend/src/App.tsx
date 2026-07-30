@@ -3712,12 +3712,18 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
+  const benchmarkImportRecoveryPending =
+    benchmarkImportLeaseRequestId(
+      processingMutationLeaseRef.current,
+      historyMutationLeaseRef.current,
+    ) !== null;
   const benchmarkOperationsLocked =
     benchmarkLoading ||
     benchmarkReportLoading ||
     benchmarkRunning ||
     benchmarkUpdating ||
     benchmarkImporting ||
+    benchmarkImportRecoveryPending ||
     benchmarkReviewJobId !== null ||
     busy;
   const benchmarkDatasetExportDisabled =
@@ -6757,6 +6763,12 @@ export default function App() {
   }
 
   async function onRunBenchmark() {
+    if (
+      benchmarkOperationsLocked
+      || mutationRecoveryPending(["processing", "history"])
+    ) {
+      return;
+    }
     setBenchmarkRunning(true);
     setError(null);
     try {
@@ -9279,13 +9291,7 @@ export default function App() {
                 type="button"
                 onClick={onRunBenchmark}
                 disabled={
-                  benchmarkLoading ||
-                  benchmarkReportLoading ||
-                  benchmarkRunning ||
-                  benchmarkUpdating ||
-                  benchmarkImporting ||
-                  benchmarkReviewJobId !== null ||
-                  busy ||
+                  benchmarkOperationsLocked ||
                   (benchmarkOverview?.included_cases ?? 0) === 0
                 }
               >

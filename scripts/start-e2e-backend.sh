@@ -51,13 +51,13 @@ PROVIDER_PID=$!
 ready_attempt=0
 while [ ! -f "$PROVIDER_READY_FILE" ]; do
   if ! kill -0 "$PROVIDER_PID" >/dev/null 2>&1; then
-    echo "E2E recommendation provider failed to start" >&2
+    echo "E2E parser and recommendation provider failed to start" >&2
     wait "$PROVIDER_PID"
     exit 1
   fi
   ready_attempt=$((ready_attempt + 1))
   if [ "$ready_attempt" -ge 100 ]; then
-    echo "Timed out waiting for E2E recommendation provider" >&2
+    echo "Timed out waiting for E2E parser and recommendation provider" >&2
     exit 1
   fi
   sleep 0.05
@@ -70,7 +70,8 @@ env -i \
   TMPDIR="${TMPDIR:-/tmp}" \
   PYTHONPATH="$BACKEND_DIR" \
   POKER_DATA_DIR="$DATA_DIR" \
-  POKER_PARSER_PROVIDER=mock \
+  POKER_PARSER_PROVIDER=llm_vision \
+  POKER_EXTERNAL_PARSER_URL=http://127.0.0.1:8011/parse \
   POKER_RECOMMENDATION_PROVIDER=external_solver \
   POKER_EXTERNAL_PROVIDER_URL=http://127.0.0.1:8011/recommend \
   POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS=5 \

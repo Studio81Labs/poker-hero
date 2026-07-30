@@ -182,7 +182,7 @@ test("recovers from a failed recommendation and retries it", async ({
   ).toBeVisible();
 
   const armFailureResponse = await page.request.post(
-    `${PROVIDER_URL}/control/fail-next`,
+    `${PROVIDER_URL}/control/fail-next-recommendation`,
   );
   expect(armFailureResponse.ok()).toBe(true);
 
@@ -234,4 +234,161 @@ test("recovers from a failed recommendation and retries it", async ({
     },
     status: "recommended",
   });
+});
+
+test("persists a parser failure and recovers by re-uploading the screenshot", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("parser-retry", testInfo);
+  await expect(
+    page.getByRole("button", { name: "Automation On" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const armFailureResponse = await page.request.post(
+    `${PROVIDER_URL}/control/fail-next-parser`,
+  );
+  expect(armFailureResponse.ok()).toBe(true);
+
+  await page.getByLabel("Choose screenshots").setInputFiles({
+    name: filename,
+    mimeType: "image/png",
+    buffer: VALID_PNG,
+  });
+  const failedUploadResponsePromise = page.waitForResponse(
+    (response) => response.url() === `${BACKEND_URL}/api/jobs`
+      && response.request().method() === "POST"
+      && response.status() === 502,
+  );
+  await page.getByRole("button", { name: "Upload and parse" }).click();
+  const failedUploadResponse = await failedUploadResponsePromise;
+  expect(await failedUploadResponse.json()).toEqual({
+    detail: "Vision parser request failed with status 503",
+  });
+
+  const matchingQueueItems = page.getByRole("button", {
+    name: filenamePattern(filename),
+  });
+  await expect(matchingQueueItems).toHaveCount(1);
+  await expect(matchingQueueItems).toContainText("error");
+  await expect(matchingQueueItems).toContainText(
+    "Vision parser request failed with status 503",
+  );
+  await expect.poll(
+    () => page.evaluate(
+      () => sessionStorage.getItem("poker-training-processing-mutation-v1"),
+    ),
+  ).toBeNull();
+
+  const failedJobsResponse = await page.request.get(`${BACKEND_URL}/api/jobs`);
+  expect(failedJobsResponse.ok()).toBe(true);
+  const failedJobs = await failedJobsResponse.json() as {
+    jobs: Array<{
+      error: string | null;
+      id: string;
+      original_filename: string;
+      parser_provider: string;
+      parser_result: unknown;
+      status: string;
+      upload_request_id: string | null;
+    }>;
+  };
+  const failedJob = failedJobs.jobs.find(
+    (candidate) => candidate.original_filename === filename,
+  );
+  expect(failedJob).toMatchObject({
+    error: "Vision parser request failed with status 503",
+    parser_provider: "llm_vision",
+    parser_result: null,
+    status: "error",
+  });
+  expect(failedJob?.upload_request_id).not.toBeNull();
+  const cachedFailedJobs = await page.evaluate(() => JSON.parse(
+    localStorage.getItem("poker-training-processing-v1") ?? "[]",
+  ) as Array<{
+    id: string;
+    original_filename: string;
+    parser_provider: string;
+    status: string;
+  }>);
+  const cachedFailedJob = cachedFailedJobs.find(
+    (candidate) => candidate.original_filename === filename,
+  );
+  expect(cachedFailedJob).toMatchObject({
+    id: failedJob?.id,
+    parser_provider: "llm_vision",
+    status: "error",
+  });
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Poker Training Analyzer" }),
+  ).toBeVisible();
+  await expect(matchingQueueItems).toHaveCount(1);
+  await expect(matchingQueueItems).toContainText(
+    "Vision parser request failed with status 503",
+  );
+  await page
+    .getByRole("group", { name: "Input mode" })
+    .getByRole("button", { name: "Upload" })
+    .click();
+
+  await page.getByLabel("Choose screenshots").setInputFiles({
+    name: filename,
+    mimeType: "image/png",
+    buffer: VALID_PNG,
+  });
+  await page.getByRole("button", { name: "Upload and parse" }).click();
+
+  await expect(matchingQueueItems).toHaveCount(2);
+  const failedQueueItem = matchingQueueItems.filter({ hasText: "error" });
+  const recoveredQueueItem = matchingQueueItems.filter({
+    hasText: "recommended",
+  });
+  await expect(failedQueueItem).toContainText(
+    "Vision parser request failed with status 503",
+  );
+  await expect(recoveredQueueItem).toContainText("recommended");
+  await expect(
+    page.getByRole("region", { name: "Recommendation" }),
+  ).toBeVisible();
+
+  const recoveredJobsResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs`,
+  );
+  expect(recoveredJobsResponse.ok()).toBe(true);
+  const recoveredJobs = await recoveredJobsResponse.json() as {
+    jobs: Array<{
+      original_filename: string;
+      parser_result: { raw: Record<string, string> } | null;
+      recommendation: { raw: Record<string, string> } | null;
+      status: string;
+    }>;
+  };
+  const matchingPersistedJobs = recoveredJobs.jobs.filter(
+    (candidate) => candidate.original_filename === filename,
+  );
+  expect(matchingPersistedJobs).toHaveLength(2);
+  expect(matchingPersistedJobs).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      parser_result: null,
+      status: "error",
+    }),
+    expect.objectContaining({
+      parser_result: expect.objectContaining({
+        raw: expect.objectContaining({
+          engine: "e2e_provider_stub",
+          provider: "llm_vision",
+        }),
+      }),
+      recommendation: expect.objectContaining({
+        raw: expect.objectContaining({ engine: "e2e_provider_stub" }),
+      }),
+      status: "recommended",
+    }),
+  ]));
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(matchingQueueItems).toHaveCount(1);
+  await expect(matchingQueueItems).toContainText("error");
 });

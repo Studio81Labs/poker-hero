@@ -146,6 +146,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with history_lock:
             return store.save(job)
 
+    def ensure_benchmark_corpus_ready() -> None:
+        if benchmark_store.has_pending_import():
+            raise HTTPException(
+                status_code=409,
+                detail="A benchmark dataset import is still pending",
+            )
+
     def current_recommendation_target(
         job_id: str,
         expected_state: CanonicalState,
@@ -583,6 +590,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
         with benchmark_corpus_lock, job_lock_for(job_id):
+            ensure_benchmark_corpus_ready()
             job = load_job_or_404(store, job_id)
             if selection.included and (
                 job.approved_state is None or not job.approved_state.user_approved
@@ -796,6 +804,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/benchmarks/export")
     def export_benchmark_dataset() -> StreamingResponse:
         with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
             jobs = [job for job in store.list() if job.benchmark_included]
             if not jobs:
                 raise HTTPException(
@@ -849,6 +858,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             benchmark_import_request_id,
                         )
                     except BenchmarkImportNotFoundError:
+                        if benchmark_store.has_pending_import():
+                            raise HTTPException(
+                                status_code=409,
+                                detail="A benchmark dataset import is still pending",
+                            )
                         receipt = benchmark_store.begin_import(
                             benchmark_import_request_id,
                             archive_bytes,
@@ -890,6 +904,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {job_lock_index(case.job_id) for case in dataset.cases}
             )
             with benchmark_corpus_lock, ExitStack() as job_lock_stack:
+                ensure_benchmark_corpus_ready()
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 with history_lock:
@@ -933,6 +948,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
     def run_parser_benchmark() -> BenchmarkReport:
         with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
             jobs = [job for job in store.list() if job.benchmark_included]
             if not jobs:
                 raise HTTPException(

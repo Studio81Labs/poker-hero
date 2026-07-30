@@ -228,6 +228,21 @@ class FileBenchmarkStore:
             raise BenchmarkImportNotFoundError(request_id)
         return BenchmarkDatasetImportReceipt.model_validate_json(path.read_text())
 
+    def has_pending_import(self) -> bool:
+        for request_dir in self.imports_dir.iterdir():
+            if (
+                not request_dir.is_dir()
+                or BENCHMARK_IMPORT_REQUEST_ID_RE.fullmatch(request_dir.name) is None
+            ):
+                continue
+            try:
+                receipt = self.get_import(request_dir.name)
+            except BenchmarkImportNotFoundError:
+                continue
+            if receipt.status == "pending":
+                return True
+        return False
+
     def begin_import(
         self,
         request_id: str,

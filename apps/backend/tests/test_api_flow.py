@@ -1969,7 +1969,7 @@ def test_benchmark_dataset_import_rejects_dot_segment_request_ids(
         benchmark_store.begin_import(request_id, b"dataset")
 
 
-def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(
+def test_benchmark_dataset_import_blocks_runs_until_partial_case_recovers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2017,8 +2017,37 @@ def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(
 
     monkeypatch.setattr(FileJobStore, "write_image", original_write_image)
     recovery_client = make_client(target_dir)
+    blocked_run = recovery_client.post("/api/benchmarks/run")
+    blocked_export = recovery_client.get("/api/benchmarks/export")
+    blocked_inclusion = recovery_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": False},
+    )
+    blocked_import = recovery_client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": "second-pending-import"},
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    assert blocked_run.status_code == 409
+    assert blocked_run.json()["detail"] == "A benchmark dataset import is still pending"
+    assert blocked_export.status_code == 409
+    assert blocked_export.json()["detail"] == "A benchmark dataset import is still pending"
+    assert blocked_inclusion.status_code == 409
+    assert blocked_inclusion.json()["detail"] == (
+        "A benchmark dataset import is still pending"
+    )
+    assert blocked_import.status_code == 409
+    assert blocked_import.json()["detail"] == (
+        "A benchmark dataset import is still pending"
+    )
+    with pytest.raises(BenchmarkImportNotFoundError):
+        FileBenchmarkStore(target_dir).get_import("second-pending-import")
+    assert FileBenchmarkStore(target_dir).get_latest() is None
+
     pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
     completed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    recovered_run = recovery_client.post("/api/benchmarks/run")
 
     assert pending.status_code == 200
     assert pending.json()["status"] == "pending"
@@ -2030,6 +2059,9 @@ def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(
         "included_cases": 1,
         "job_ids": [source_job_id],
     }
+    assert recovered_run.status_code == 200
+    assert recovered_run.json()["total_cases"] == 1
+    assert recovered_run.json()["cases"][0]["job_id"] == source_job_id
     recovered_job = FileJobStore(target_dir).get(source_job_id)
     assert FileJobStore(target_dir).image_path(recovered_job).read_bytes() == VALID_PNG
 

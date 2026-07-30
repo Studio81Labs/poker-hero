@@ -27,9 +27,10 @@ openssl rand -hex 32
 
 Set that value as `POKER_PROXY_SHARED_SECRET` in Coolify and as the
 `API_PROXY_SECRET` secret in the repository or `testing` environment. The value
-must contain at least 32 characters. When enabled, the backend accepts
-application API requests only through a Worker carrying that secret. The
-unauthenticated `/api/health` route remains available for Coolify health checks.
+must contain at least 32 characters, and `BACKEND_URL` must use HTTPS. When
+enabled, the backend accepts application API requests only through a Worker
+carrying that secret. The unauthenticated `/api/health` route remains available
+for Coolify health checks.
 
 After deployment, verify:
 

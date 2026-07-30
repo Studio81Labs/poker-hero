@@ -63,8 +63,11 @@ browser-supplied proxy credential with its private `API_PROXY_SECRET` binding,
 and serves all other routes from Worker Static Assets. When
 `POKER_PROXY_SHARED_SECRET` is configured, FastAPI uses a constant-time
 comparison to reject application API traffic that bypasses or misconfigures the
-Worker. The health route stays public for container orchestration. Empty secret
-configuration preserves the direct local-development path.
+Worker. The Worker requires an HTTPS backend before attaching the secret,
+follows only bounded same-origin redirects, and rejects cross-origin redirect
+targets without exposing them to the browser. The health route stays public for
+container orchestration. Empty secret configuration preserves the direct
+local-development path.
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,

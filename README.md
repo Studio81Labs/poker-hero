@@ -277,10 +277,10 @@ repository or `testing` environment variables:
 
 For a deployed backend, set the same random value in the Cloudflare
 `API_PROXY_SECRET` secret and Coolify `POKER_PROXY_SHARED_SECRET` environment
-variable. The Worker replaces any incoming copy of its private header before
-proxying. FastAPI then rejects direct requests to application API routes that
-do not carry the configured value; `/api/health` remains available to platform
-health probes.
+variable, and use an `https://` `BACKEND_URL`. The Worker replaces any incoming
+copy of its private header before proxying. FastAPI then rejects direct requests
+to application API routes that do not carry the configured value; `/api/health`
+remains available to platform health probes.
 
 Leave `VITE_API_BASE_URL` unset for the deployed Worker so browser requests use
 same-origin `/api/*`.

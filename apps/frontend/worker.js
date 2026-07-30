@@ -11,6 +11,8 @@ export default {
 };
 
 const PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret";
+const MAX_BACKEND_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   if (!backendUrl) {
@@ -19,7 +21,14 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
 
   const incomingUrl = new URL(request.url);
   const backendBase = new URL(backendUrl);
-  const targetUrl = new URL(backendBase);
+  if (proxySharedSecret && backendBase.protocol !== "https:") {
+    return new Response(
+      "BACKEND_URL must use HTTPS when API_PROXY_SECRET is configured",
+      { status: 500 },
+    );
+  }
+
+  let targetUrl = new URL(backendBase);
   const basePath = backendBase.pathname.replace(/\/+$/, "");
   let proxiedPath = incomingUrl.pathname;
 
@@ -38,17 +47,68 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
     headers.set(PROXY_SHARED_SECRET_HEADER, proxySharedSecret);
   }
 
-  const init = {
-    method: request.method,
-    headers,
-    // Do not let a backend redirect carry the private proxy header to another origin.
-    redirect: "manual",
-    signal: request.signal,
-  };
+  let method = request.method;
+  let body =
+    method !== "GET" && method !== "HEAD"
+      ? await request.arrayBuffer()
+      : undefined;
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.arrayBuffer();
+  for (let redirectCount = 0; ; redirectCount += 1) {
+    const init = {
+      method,
+      headers,
+      // Inspect redirects so the private header never crosses backend origins.
+      redirect: "manual",
+      signal: request.signal,
+    };
+
+    if (body !== undefined) {
+      init.body = body;
+    }
+
+    const response = await fetch(new Request(targetUrl, init));
+    const location = response.headers.get("location");
+    if (!REDIRECT_STATUSES.has(response.status) || !location) {
+      return response;
+    }
+
+    if (redirectCount >= MAX_BACKEND_REDIRECTS) {
+      await response.body?.cancel();
+      return new Response("Backend redirect limit exceeded", { status: 502 });
+    }
+
+    let redirectUrl;
+    try {
+      redirectUrl = new URL(location, targetUrl);
+    } catch {
+      await response.body?.cancel();
+      return new Response("Backend redirect target is invalid", { status: 502 });
+    }
+
+    if (
+      redirectUrl.origin !== backendBase.origin ||
+      redirectUrl.username ||
+      redirectUrl.password ||
+      (basePath &&
+        redirectUrl.pathname !== basePath &&
+        !redirectUrl.pathname.startsWith(`${basePath}/`))
+    ) {
+      await response.body?.cancel();
+      return new Response("Backend redirect target is not allowed", {
+        status: 502,
+      });
+    }
+
+    await response.body?.cancel();
+    if (
+      (response.status === 303 && method !== "GET" && method !== "HEAD") ||
+      ((response.status === 301 || response.status === 302) && method === "POST")
+    ) {
+      method = "GET";
+      body = undefined;
+      headers.delete("content-type");
+    }
+
+    targetUrl = redirectUrl;
   }
-
-  return fetch(new Request(targetUrl, init));
 }

@@ -18,7 +18,7 @@ name: Frontend Deploy
 #   APP_WORKERS_SUBDOMAIN      e.g. studio81 for *.studio81.workers.dev
 #
 # Required repo or "testing" environment vars:
-#   BACKEND_URL                Backend origin proxied by the Worker, e.g. http://coolify-app.example.com
+#   BACKEND_URL                Backend origin proxied by the Worker, e.g. https://coolify-app.example.com
 #
 # Optional repo or "testing" environment vars:
 #   APP_WORKER_NAME            Defaults to "poker"
@@ -89,6 +89,13 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN repo secret is required"; exit 1; }
           test -n "$BACKEND_URL" || { echo "::error::BACKEND_URL repo or testing environment var is required"; exit 1; }
+          node -e '
+            const backend = new URL(process.env.BACKEND_URL);
+            if (process.env.API_PROXY_SECRET && backend.protocol !== "https:") {
+              console.error("::error::BACKEND_URL must use HTTPS when API_PROXY_SECRET is configured");
+              process.exit(1);
+            }
+          '
 
           SECRETS_ARGS=()
           if [ -n "$API_PROXY_SECRET" ]; then

@@ -29,6 +29,17 @@ function filenamePattern(filename: string): RegExp {
   );
 }
 
+function expectPixelClose(
+  actual: number[],
+  expected: readonly [number, number, number, number],
+): void {
+  expect(actual).toHaveLength(expected.length);
+  expected.forEach((channel, index) => {
+    const tolerance = index === 3 ? 0 : 12;
+    expect(Math.abs(actual[index] - channel)).toBeLessThanOrEqual(tolerance);
+  });
+}
+
 async function uploadValidScreenshot(
   page: Page,
   filename: string,
@@ -184,6 +195,35 @@ test("captures a shared window through automation into persisted history", async
   );
   expect(imageBytes.readUInt32BE(16)).toBe(640);
   expect(imageBytes.readUInt32BE(20)).toBe(360);
+  const sampledPixels = await page.evaluate(async (pngBase64) => {
+    const binary = window.atob(pngBase64);
+    const bytes = Uint8Array.from(
+      binary,
+      (character) => character.charCodeAt(0),
+    );
+    const bitmap = await createImageBitmap(
+      new Blob([bytes], { type: "image/png" }),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (context === null) {
+      throw new Error("Canvas is unavailable");
+    }
+    context.drawImage(bitmap, 0, 0);
+    const pixelAt = (x: number, y: number) => Array.from(
+      context.getImageData(x, y, 1, 1).data,
+    );
+    const samples = {
+      background: pixelAt(20, 20),
+      table: pixelAt(320, 100),
+    };
+    bitmap.close();
+    return samples;
+  }, imageBytes.toString("base64"));
+  expectPixelClose(sampledPixels.background, [31, 41, 55, 255]);
+  expectPixelClose(sampledPixels.table, [153, 27, 63, 255]);
 
   const persistedResponse = await page.request.get(
     `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
@@ -228,6 +268,16 @@ test("captures a shared window through automation into persisted history", async
   await expect(
     page.getByRole("button", { name: "Share window" }),
   ).toBeEnabled();
+  await expect.poll(
+    () => page.evaluate(() => {
+      const fixture = (
+        window as typeof window & {
+          __pokerHeroCaptureFixture: { stream: MediaStream };
+        }
+      ).__pokerHeroCaptureFixture;
+      return fixture.stream.getVideoTracks()[0]?.readyState;
+    }),
+  ).toBe("ended");
 });
 
 test("reviews one screenshot from upload through persisted history", async ({

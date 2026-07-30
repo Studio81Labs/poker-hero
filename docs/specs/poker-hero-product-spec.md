@@ -524,7 +524,8 @@ valid/invalid automated batch, including correction persistence,
 recommendation display, failure isolation, moving completed work into history,
 persisted parser failure reconciliation and same-file re-upload, and retrying
 a recommendation after its failed provider request has reconciled with
-persisted backend state.
+persisted backend state. It also verifies that an in-flight recommendation
+survives a browser reload and is reconciled after its original request is lost.
 
 ## Success Criteria
 

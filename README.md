@@ -60,8 +60,8 @@ poker-hero/
 | `pnpm docker:up` | Build and start both apps with Docker Compose |
 | `pnpm docker:down` | Stop the Compose stack |
 
-The browser workflow command starts temporary FastAPI, recommendation-provider,
-and Vite servers on ports 8010, 8011, and 4174. Install Chromium once with
+The browser workflow command starts temporary FastAPI, HTTP provider stub, and
+Vite servers on ports 8010, 8011, and 4174. Install Chromium once with
 `pnpm -C apps/frontend exec playwright install chromium` before the first local
 run. Its backend job store is removed when the test server exits.
 

@@ -3,13 +3,20 @@ from argparse import ArgumentParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
+
+
+# Keep the gate beyond Playwright's 30-second test timeout.
+RECOMMENDATION_BLOCK_TIMEOUT_SECONDS = 35
 
 
 class ProviderState:
     def __init__(self) -> None:
         self._fail_next_parser = False
         self._fail_next_recommendation = False
+        self._block_next_recommendation = False
+        self._recommendation_started = Event()
+        self._recommendation_release = Event()
         self._lock = Lock()
 
     def arm_parser_failure(self) -> None:
@@ -19,6 +26,12 @@ class ProviderState:
     def arm_recommendation_failure(self) -> None:
         with self._lock:
             self._fail_next_recommendation = True
+
+    def arm_recommendation_block(self) -> None:
+        with self._lock:
+            self._block_next_recommendation = True
+            self._recommendation_started.clear()
+            self._recommendation_release.clear()
 
     def consume_parser_failure(self) -> bool:
         with self._lock:
@@ -32,10 +45,35 @@ class ProviderState:
             self._fail_next_recommendation = False
             return should_fail
 
+    def begin_recommendation(self) -> bool:
+        with self._lock:
+            should_block = self._block_next_recommendation
+            self._block_next_recommendation = False
+        if should_block:
+            self._recommendation_started.set()
+        return should_block
+
+    def recommendation_started(self) -> bool:
+        return self._recommendation_started.is_set()
+
+    def release_recommendation(self) -> None:
+        self._recommendation_release.set()
+
+    def wait_for_recommendation_release(self) -> bool:
+        return self._recommendation_release.wait(
+            RECOMMENDATION_BLOCK_TIMEOUT_SECONDS,
+        )
+
 
 def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
     class ProviderHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            if self.path == "/control/recommendation-state":
+                self._send_json(
+                    200,
+                    {"started": state.recommendation_started()},
+                )
+                return
             if self.path != "/health":
                 self.send_error(404)
                 return
@@ -49,6 +87,14 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
                 self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/block-next-recommendation":
+                state.arm_recommendation_block()
+                self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/release-recommendation":
+                state.release_recommendation()
+                self._send_json(200, {"released": True})
                 return
             if self.path == "/parse":
                 self._handle_parser_request()
@@ -135,6 +181,12 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             if state.consume_recommendation_failure():
                 self._send_json(503, {"detail": "Temporary solver outage"})
                 return
+            if (
+                state.begin_recommendation()
+                and not state.wait_for_recommendation_release()
+            ):
+                self._send_json(504, {"detail": "Recommendation gate timed out"})
+                return
             self._send_json(
                 200,
                 {
@@ -183,6 +235,7 @@ def main() -> None:
         (args.host, args.port),
         build_handler(ProviderState()),
     )
+    server.daemon_threads = True
     args.ready_file.touch()
     try:
         server.serve_forever()

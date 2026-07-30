@@ -434,6 +434,8 @@ Required behavior:
   completed training-review marker and lesson note.
 - Parser or provider failures are recoverable in the UI.
 - Batch failures are isolated and surfaced on the affected queue items.
+- Clearing reviewed work archives successful items while error-state items
+  remain in processing for retry.
 - Users can retry with the currently configured backend.
 - The app clearly frames recommendations as training analysis, not guaranteed optimal play.
 
@@ -522,10 +524,11 @@ FastAPI process with deterministic local HTTP parser and recommendation
 providers. It covers the complete single-upload manual review flow and a mixed
 valid/invalid automated batch, including correction persistence,
 recommendation display, failure isolation, moving completed work into history,
-persisted parser failure reconciliation and same-file re-upload, and retrying
-a recommendation after its failed provider request has reconciled with
-persisted backend state. It also verifies that an in-flight recommendation
-survives a browser reload and is reconciled after its original request is lost.
+continuing automated work after a persisted provider failure, persisted parser
+failure reconciliation and same-file re-upload, and retrying a recommendation
+after its failed provider request has reconciled with persisted backend state.
+It also verifies that an in-flight recommendation survives a browser reload and
+is reconciled after its original request is lost.
 
 ## Success Criteria
 

@@ -168,6 +168,111 @@ test("continues an automated batch when one screenshot is invalid", async ({
   await expect(invalidItem).toBeVisible();
 });
 
+test("continues an automated batch after a recommendation provider failure", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const failedFilename = attemptFilename("automated-provider-failure", testInfo);
+  const successfulFilename = attemptFilename("automated-provider-success", testInfo);
+  await expect(
+    page.getByRole("button", { name: "Automation On" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  const armFailureResponse = await page.request.post(
+    `${PROVIDER_URL}/control/fail-next-recommendation`,
+  );
+  expect(armFailureResponse.ok()).toBe(true);
+
+  await page.getByLabel("Choose screenshots").setInputFiles([
+    {
+      name: failedFilename,
+      mimeType: "image/png",
+      buffer: VALID_PNG,
+    },
+    {
+      name: successfulFilename,
+      mimeType: "image/png",
+      buffer: VALID_PNG,
+    },
+  ]);
+  await page.getByRole("button", { name: "Upload and parse" }).click();
+
+  await expect(
+    page.getByRole("dialog", { name: "Processing queue" }),
+  ).toBeHidden();
+  const failedItem = page.getByRole("button", {
+    name: filenamePattern(failedFilename),
+  });
+  const successfulItem = page.getByRole("button", {
+    name: filenamePattern(successfulFilename),
+  });
+  await expect(failedItem).toContainText("error");
+  await expect(failedItem).toContainText(
+    "external_solver request failed with status 503",
+  );
+  await expect(successfulItem).toContainText("recommended");
+  await expect(
+    page.getByText(
+      "1 screenshot need attention. Check the highlighted queue items.",
+    ),
+  ).toBeVisible();
+  await expect.poll(
+    () => page.evaluate(
+      () => sessionStorage.getItem("poker-training-processing-mutation-v1"),
+    ),
+  ).toBeNull();
+
+  const processingJobsResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs`,
+  );
+  expect(processingJobsResponse.ok()).toBe(true);
+  const processingJobs = await processingJobsResponse.json() as {
+    jobs: Array<{
+      approved_state: unknown;
+      error: string | null;
+      original_filename: string;
+      recommendation: { raw: Record<string, string> } | null;
+      recommendation_request_id: string | null;
+      status: string;
+    }>;
+  };
+  const failedJob = processingJobs.jobs.find(
+    (candidate) => candidate.original_filename === failedFilename,
+  );
+  const successfulJob = processingJobs.jobs.find(
+    (candidate) => candidate.original_filename === successfulFilename,
+  );
+  expect(failedJob).toMatchObject({
+    approved_state: expect.any(Object),
+    error: "external_solver request failed with status 503",
+    recommendation: null,
+    recommendation_request_id: expect.any(String),
+    status: "error",
+  });
+  expect(successfulJob).toMatchObject({
+    error: null,
+    recommendation: {
+      raw: {
+        engine: "e2e_provider_stub",
+        provider: "external_solver",
+      },
+    },
+    recommendation_request_id: expect.any(String),
+    status: "recommended",
+  });
+
+  await successfulItem.click();
+  await expect(
+    page.getByRole("region", { name: "Recommendation" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(successfulItem).toBeHidden();
+  await expect(failedItem).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Request recommendation" }),
+  ).toBeEnabled();
+});
+
 test("recovers from a failed recommendation and retries it", async ({
   page,
 }, testInfo) => {

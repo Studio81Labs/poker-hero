@@ -4353,6 +4353,9 @@ describe("App", () => {
     expect(screen.getByRole("button", {
       name: "Request recommendation",
     })).toBeEnabled();
+    expect(screen.getByRole("button", {
+      name: "Clear reviewed",
+    })).toBeDisabled();
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");
@@ -4694,7 +4697,9 @@ describe("App", () => {
       const url = String(input);
       if (url === "http://localhost:8000/api/history" && init?.method === "PUT") {
         return Promise.resolve(jsonResponse({
-          detail: "Only approved or recommended jobs can be moved to history",
+          detail: (
+            "Only successful approved or recommended jobs can be moved to history"
+          ),
         }, 409));
       }
       if (url === "http://localhost:8000/api/history") {
@@ -4718,7 +4723,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
 
     expect(await screen.findByText(
-      "Only approved or recommended jobs can be moved to history",
+      "Only successful approved or recommended jobs can be moved to history",
     )).toBeInTheDocument();
     await waitFor(() => expect(JSON.parse(String(
       window.localStorage.getItem("poker-training-processing-v1"),
@@ -8975,7 +8980,7 @@ describe("App", () => {
     window.localStorage.setItem("poker-training-history-total-v1", "1");
     window.sessionStorage.removeItem("poker-training-history-synced");
     fetchMock().mockResolvedValueOnce(jsonResponse({
-      detail: "Only approved or recommended jobs can be moved to history",
+      detail: "Only successful approved or recommended jobs can be moved to history",
     }, 409));
 
     render(<App />);

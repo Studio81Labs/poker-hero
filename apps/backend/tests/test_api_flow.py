@@ -339,7 +339,7 @@ def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) ->
     assert empty_history.json()["snapshot_version"]
     assert rejected.status_code == 409
     assert rejected.json()["detail"] == (
-        "Only approved or recommended jobs can be moved to history"
+        "Only successful approved or recommended jobs can be moved to history"
     )
     assert FileJobStore(tmp_path).get(parsed_id).archived_at is None
     assert archived.status_code == 200
@@ -348,13 +348,18 @@ def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) ->
     assert [job["id"] for job in history["jobs"]] == [second_id, first_id]
     assert all(job["archived_at"] for job in history["jobs"])
 
-    persisted_at = FileJobStore(tmp_path).get(first_id).archived_at
+    store = FileJobStore(tmp_path)
+    replayed_job = store.get(first_id)
+    persisted_at = replayed_job.archived_at
+    replayed_job.status = "error"
+    replayed_job.error = "Later archived review failed"
+    store.save(replayed_job)
     repeated = client.put("/api/history?limit=1", json={"job_ids": [first_id]})
 
     assert repeated.status_code == 200
     assert repeated.json()["total"] == 2
     assert len(repeated.json()["jobs"]) == 1
-    assert FileJobStore(tmp_path).get(first_id).archived_at == persisted_at
+    assert store.get(first_id).archived_at == persisted_at
 
 
 def test_history_archive_is_atomic_when_a_job_is_missing(tmp_path: Path) -> None:
@@ -1574,7 +1579,7 @@ def test_unexpected_parser_errors_are_http_errors_and_stored(
     assert job.error == "Unexpected parser error: unexpected parser crash"
 
 
-def test_provider_runtime_errors_are_bad_gateway_and_stored(
+def test_provider_runtime_errors_are_stored_retryable_and_not_archived(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class FailingProvider:
@@ -1593,13 +1598,24 @@ def test_provider_runtime_errors_are_bad_gateway_and_stored(
     monkeypatch.setattr("app.api.build_provider", lambda settings: FailingProvider())
 
     response = client.post(f"/api/jobs/{job_id}/recommend")
+    rejected_archive = client.put(
+        "/api/history",
+        json={"job_ids": [job_id]},
+    )
 
     assert response.status_code == 502
     assert response.json()["detail"] == "provider exploded"
+    assert rejected_archive.status_code == 409
+    assert rejected_archive.json()["detail"] == (
+        "Only successful approved or recommended jobs can be moved to history"
+    )
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "error"
     assert job.error == "provider exploded"
     assert job.recommendation_pending is False
+    assert job.archived_at is None
+    queue = client.get("/api/jobs").json()
+    assert [queued_job["id"] for queued_job in queue["jobs"]] == [job_id]
 
 
 @pytest.mark.parametrize(

@@ -360,7 +360,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if any(not is_history_ready(job) for job in jobs):
                 raise HTTPException(
                     status_code=409,
-                    detail="Only approved or recommended jobs can be moved to history",
+                    detail=(
+                        "Only successful approved or recommended jobs "
+                        "can be moved to history"
+                    ),
                 )
 
             with history_lock:
@@ -1004,8 +1007,11 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
 
 
 def is_history_ready(job: JobRecord) -> bool:
+    if job.archived_at is not None:
+        return True
     return (
-        not job.recommendation_pending
+        job.status != "error"
+        and not job.recommendation_pending
         and (
             job.status in {"approved", "recommended"}
             or job.approved_state is not None

@@ -19,6 +19,11 @@ tree limit is separate from container overhead, so allocate at least 1.5 GB RAM
 or lower `POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB`. Keep provider URLs and
 credentials in Coolify secrets.
 
+External OCR, solver, and LLM endpoints can each use an independent bearer
+token. Configure the matching `POKER_*_BEARER_TOKEN` value as a Coolify secret
+and use an HTTPS endpoint URL. `POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS` controls
+all external HTTP parser and recommendation calls and defaults to 60 seconds.
+
 For a public Coolify origin, generate a private Worker credential:
 
 ```bash

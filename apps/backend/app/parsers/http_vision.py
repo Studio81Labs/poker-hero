@@ -5,6 +5,7 @@ import httpx
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.http_auth import bearer_headers
 from app.models import ParserResult
 from app.parsers.base import ParserConfigurationError, ParserError
 
@@ -27,7 +28,8 @@ class HttpVisionParser:
                     self.settings.external_parser_url,
                     files={"image": (image_path.name, image_file, "application/octet-stream")},
                     data={"layout_profile": self.settings.parser_layout_profile},
-                    timeout=60.0,
+                    headers=bearer_headers(self.settings.external_parser_bearer_token),
+                    timeout=self.settings.external_request_timeout_seconds,
                 )
         except OSError as exc:
             raise ParserError(f"Could not read screenshot file: {image_path}") from exc

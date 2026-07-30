@@ -48,6 +48,12 @@ recorded fallback for ambiguous preflop, multiway, incomplete,
 resource-limited, or failed postflop solves. Explicit custom commands still
 override the bundled engine selection.
 
+External vision, solver, and LLM adapters use independent optional bearer
+tokens held as masked settings and a shared configurable request timeout. The
+tokens are attached only as `Authorization` headers, and authenticated external
+URLs must use HTTPS. This keeps external provider credentials behind the
+backend integration boundary without changing the frontend workflow.
+
 ### Frontend
 
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and

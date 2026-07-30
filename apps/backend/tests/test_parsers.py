@@ -63,6 +63,7 @@ def test_http_vision_parser_posts_image_and_layout_profile(
         *,
         files: dict[str, tuple[str, BinaryIO, str]],
         data: dict[str, str],
+        headers: dict[str, str],
         timeout: float,
     ) -> httpx.Response:
         image_name, image_file, content_type = files["image"]
@@ -71,6 +72,7 @@ def test_http_vision_parser_posts_image_and_layout_profile(
         captured["image_bytes"] = image_file.read()
         captured["content_type"] = content_type
         captured["data"] = data
+        captured["headers"] = headers
         captured["timeout"] = timeout
         return httpx.Response(
             200,
@@ -91,6 +93,8 @@ def test_http_vision_parser_posts_image_and_layout_profile(
             data_dir=tmp_path,
             parser_provider="llm_vision",
             external_parser_url="https://parser.example/parse",
+            external_parser_bearer_token="parser-token",
+            external_request_timeout_seconds=12.5,
             parser_layout_profile="ignition",
         )
     )
@@ -105,7 +109,8 @@ def test_http_vision_parser_posts_image_and_layout_profile(
         "image_bytes": b"fake image bytes",
         "content_type": "application/octet-stream",
         "data": {"layout_profile": "ignition"},
-        "timeout": 60.0,
+        "headers": {"Authorization": "Bearer parser-token"},
+        "timeout": 12.5,
     }
 
 

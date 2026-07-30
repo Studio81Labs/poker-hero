@@ -65,6 +65,171 @@ async function openUploadInput(page: Page): Promise<void> {
     .click();
 }
 
+async function installWindowCaptureStream(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
+      configurable: true,
+      value: async () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 360;
+        const context = canvas.getContext("2d");
+        if (context === null) {
+          throw new Error("Canvas is unavailable");
+        }
+
+        let frame = 0;
+        const paintFrame = () => {
+          context.fillStyle = "#1f2937";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.fillStyle = "#991b3f";
+          context.beginPath();
+          context.ellipse(320, 180, 250, 125, 0, 0, Math.PI * 2);
+          context.fill();
+          context.fillStyle = "#ffffff";
+          context.font = "bold 28px sans-serif";
+          context.fillText("Poker Hero capture fixture", 145, 188);
+          context.fillStyle = frame % 2 === 0 ? "#22c55e" : "#16a34a";
+          context.fillRect(510, 300, 90, 18);
+          frame += 1;
+        };
+        paintFrame();
+
+        const stream = canvas.captureStream(8);
+        const track = stream.getVideoTracks()[0];
+        const nativeGetSettings = track.getSettings.bind(track);
+        track.getSettings = () => ({
+          ...nativeGetSettings(),
+          displaySurface: "window",
+        });
+        const interval = window.setInterval(paintFrame, 125);
+        const clearPaintInterval = () => window.clearInterval(interval);
+        const nativeStop = track.stop.bind(track);
+        track.stop = () => {
+          clearPaintInterval();
+          nativeStop();
+        };
+        track.addEventListener("ended", clearPaintInterval, {
+          once: true,
+        });
+
+        Object.assign(window, {
+          __pokerHeroCaptureFixture: { canvas, stream },
+        });
+        return stream;
+      },
+    });
+  });
+}
+
+test("captures a shared window through automation into persisted history", async ({
+  page,
+}) => {
+  await installWindowCaptureStream(page);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Poker Training Analyzer" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Automation On" }),
+  ).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "Share window" }).click();
+  await expect(page.getByText("Window sharing active")).toBeVisible();
+  const preview = page.getByLabel("Shared screen preview");
+  await expect(preview).toHaveClass(/active/);
+  await expect.poll(
+    () => preview.evaluate((element: HTMLVideoElement) => ({
+      height: element.videoHeight,
+      width: element.videoWidth,
+    })),
+  ).toEqual({ height: 360, width: 640 });
+
+  const uploadResponsePromise = page.waitForResponse(
+    (response) => response.url() === `${BACKEND_URL}/api/jobs`
+      && response.request().method() === "POST"
+      && response.ok(),
+  );
+  await page.getByRole("button", { name: "Capture and parse" }).click();
+  const uploadedJob = await uploadResponsePromise.then(
+    (response) => response.json() as Promise<{
+      id: string;
+      original_filename: string;
+    }>,
+  );
+  expect(uploadedJob.original_filename).toMatch(
+    /^screen-capture-\d{4}-\d{2}-\d{2}T.*Z\.png$/,
+  );
+
+  const queueItem = page.getByRole("button", {
+    name: filenamePattern(uploadedJob.original_filename),
+  });
+  await expect(queueItem).toContainText("recommended");
+  await expect(
+    page.getByRole("region", { name: "Recommendation" }),
+  ).toBeVisible();
+  await expect(preview).not.toHaveClass(/active/);
+  await expect(
+    page.getByAltText("Uploaded poker table screenshot"),
+  ).toBeVisible();
+
+  const imageResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}/image`,
+  );
+  expect(imageResponse.ok()).toBe(true);
+  expect(imageResponse.headers()["content-type"]).toContain("image/png");
+  const imageBytes = await imageResponse.body();
+  expect(imageBytes.subarray(0, 8)).toEqual(
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+  );
+  expect(imageBytes.readUInt32BE(16)).toBe(640);
+  expect(imageBytes.readUInt32BE(20)).toBe(360);
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    approved_state: unknown;
+    archived_at: string | null;
+    recommendation: { raw: Record<string, string> } | null;
+    status: string;
+    upload_request_id: string | null;
+  };
+  expect(persistedJob).toMatchObject({
+    approved_state: expect.any(Object),
+    archived_at: null,
+    recommendation: {
+      raw: {
+        engine: "e2e_provider_stub",
+        provider: "external_solver",
+      },
+    },
+    status: "recommended",
+    upload_request_id: expect.any(String),
+  });
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(queueItem).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: /Reopen history item/ }).first(),
+  ).toBeVisible();
+
+  const archivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  );
+  expect(archivedResponse.ok()).toBe(true);
+  const archivedJob = await archivedResponse.json() as {
+    archived_at: string | null;
+  };
+  expect(archivedJob.archived_at).not.toBeNull();
+
+  await page.getByRole("button", { name: "Stop sharing" }).click();
+  await expect(
+    page.getByRole("button", { name: "Share window" }),
+  ).toBeEnabled();
+});
+
 test("reviews one screenshot from upload through persisted history", async ({
   page,
 }, testInfo) => {

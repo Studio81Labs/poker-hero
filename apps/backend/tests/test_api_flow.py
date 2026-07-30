@@ -94,6 +94,21 @@ def load_only_job(tmp_path: Path):
     return FileJobStore(tmp_path).get(job_dirs[0].name)
 
 
+def archive_with_unsupported_compression(archive_bytes: bytes) -> bytes:
+    payload = bytearray(archive_bytes)
+    for signature, compression_offset in (
+        (b"PK\x03\x04", 8),
+        (b"PK\x01\x02", 10),
+    ):
+        header_offset = payload.find(signature)
+        assert header_offset >= 0
+        payload[
+            header_offset + compression_offset:
+            header_offset + compression_offset + 2
+        ] = (99).to_bytes(2, "little")
+    return bytes(payload)
+
+
 def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,
@@ -2166,6 +2181,81 @@ def test_benchmark_dataset_import_persists_validation_failure_receipt(
     }
     assert repeated.status_code == 400
     assert repeated.json()["detail"] == "Upload must be a valid dataset ZIP"
+
+
+def test_benchmark_dataset_import_rejects_unsupported_compression(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    unsupported_archive = archive_with_unsupported_compression(archive)
+
+    response = make_client(tmp_path / "target").post(
+        "/api/benchmarks/import",
+        files={
+            "file": (
+                "unsupported.zip",
+                unsupported_archive,
+                "application/zip",
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Dataset ZIP uses an unsupported compression method"
+    )
+
+
+def test_benchmark_import_recovery_fails_unsupported_compression_receipt(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    unsupported_archive = archive_with_unsupported_compression(archive)
+
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    existing_job_id = upload_job(target_client).json()["id"]
+    approve_job(target_client, existing_job_id)
+    target_client.put(
+        f"/api/jobs/{existing_job_id}/benchmark",
+        json={"included": True},
+    )
+    request_id = "unsupported-compression-import"
+    benchmark_store = FileBenchmarkStore(target_dir)
+    benchmark_store.begin_import(request_id, unsupported_archive)
+
+    recovery_client = make_client(target_dir)
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    failed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    recovered_run = recovery_client.post("/api/benchmarks/run")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "failed"
+    assert failed.json()["error"] == (
+        "Dataset ZIP uses an unsupported compression method"
+    )
+    assert failed.json()["error_status"] == 400
+    with pytest.raises(BenchmarkImportNotFoundError):
+        benchmark_store.get_import_archive(request_id)
+    assert recovered_run.status_code == 200
+    assert recovered_run.json()["total_cases"] == 1
+    assert recovered_run.json()["cases"][0]["job_id"] == existing_job_id
 
 
 def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(

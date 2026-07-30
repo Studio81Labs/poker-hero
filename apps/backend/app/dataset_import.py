@@ -1,8 +1,10 @@
+import lzma
+import zlib
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePosixPath
 from typing import Literal, Self
-from zipfile import BadZipFile, ZipFile
+from zipfile import BadZipFile, ZipFile, ZipInfo
 
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -106,7 +108,7 @@ def parse_parser_dataset_archive(
                 raise DatasetImportError("Dataset manifest exceeds the allowed size")
             try:
                 manifest = _DatasetManifest.model_validate_json(
-                    archive.read(manifest_info)
+                    _read_archive_member(archive, manifest_info)
                 )
             except ValidationError as exc:
                 first_error = exc.errors(include_url=False)[0]
@@ -302,7 +304,7 @@ def _read_dataset_case(
         raise DatasetImportError(
             f"Dataset image exceeds the allowed size: {case.original_filename}"
         )
-    image_bytes = archive.read(image_info)
+    image_bytes = _read_archive_member(archive, image_info)
     if not _is_supported_image(image_bytes):
         raise DatasetImportError(
             f"Dataset image is invalid: {case.original_filename}"
@@ -316,6 +318,25 @@ def _read_dataset_case(
             user_approved=True,
         ),
     )
+
+
+def _read_archive_member(archive: ZipFile, info: ZipInfo) -> bytes:
+    try:
+        return archive.read(info)
+    except (NotImplementedError, RuntimeError) as exc:
+        raise DatasetImportError(
+            "Dataset ZIP uses an unsupported compression method"
+        ) from exc
+    except (
+        BadZipFile,
+        EOFError,
+        OSError,
+        lzma.LZMAError,
+        zlib.error,
+    ) as exc:
+        raise DatasetImportError(
+            f"Dataset ZIP entry could not be read: {info.filename}"
+        ) from exc
 
 
 def _is_supported_image(image_bytes: bytes) -> bool:

@@ -332,10 +332,10 @@ frequencies.
     recommendation request identities before its first request. Dataset imports
     record a distinct request identity before upload. After enforcing the
     compressed upload limit, the backend atomically journals the archive before
-    parsing or corpus changes, persists validation failures, marks successful
-    receipts complete afterward, and can resume validation or partial
-    request-owned cases after an interruption. The frontend recovers that exact
-    pending, failed, or completed receipt after a lost response or reload,
+    parsing or corpus changes, persists validation and archive-decoding failures,
+    marks successful receipts complete afterward, and can resume validation or
+    partial request-owned cases after an interruption. The frontend recovers
+    that exact pending, failed, or completed receipt after a lost response or reload,
     including when every imported hand is benchmark-only and absent from
     processing and history. Observed pending receipts keep recovery alive beyond
     the ordinary lease window, and benchmark operations remain locked until

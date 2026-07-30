@@ -120,6 +120,8 @@ jobs:
       - name: Smoke test
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
           ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
           ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
         run: |
@@ -167,10 +169,36 @@ jobs:
             HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-jobs.json -w '%{http_code}' "$URL/api/jobs?limit=1" || echo '000')
             if [ "$HTTP_CODE" = "200" ] && grep -q '"jobs"' api-jobs.json; then
               echo "::notice::Protected API proxy smoke OK (${URL}/api/jobs)"
-              exit 0
+              break
             fi
             echo "Protected API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
             sleep 5
+            if [ "$attempt" = "5" ]; then
+              echo "::error::Protected API proxy smoke failed for ${URL}/api/jobs"
+              exit 1
+            fi
           done
-          echo "::error::Protected API proxy smoke failed for ${URL}/api/jobs"
-          exit 1
+
+          if [ -n "$API_PROXY_SECRET" ]; then
+            DIRECT_API_URL=$(node -e '
+              const backend = new URL(process.env.BACKEND_URL);
+              const basePath = backend.pathname.replace(/\/+$/, "");
+              backend.pathname = basePath.endsWith("/api")
+                ? `${basePath}/jobs`
+                : `${basePath}/api/jobs`;
+              backend.search = "?limit=1";
+              backend.hash = "";
+              process.stdout.write(backend.href);
+            ')
+            for attempt in 1 2 3; do
+              HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$DIRECT_API_URL" || echo '000')
+              if [ "$HTTP_CODE" = "401" ]; then
+                echo "::notice::Direct backend API correctly rejected an unauthenticated request"
+                exit 0
+              fi
+              echo "Direct backend rejection attempt ${attempt}: HTTP=${HTTP_CODE}"
+              sleep 5
+            done
+            echo "::error::Direct backend API did not return 401 without the Worker credential"
+            exit 1
+          fi

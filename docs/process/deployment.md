@@ -73,7 +73,10 @@ Recommended Worker-to-backend secret:
 The workflow smoke-tests both the SPA and `/api/health`. A frontend success with
 an API `502` means the Worker deployed but its configured backend origin is not
 healthy or reachable. It also reads one bounded processing-queue page so a
-mismatched proxy credential fails deployment validation.
+mismatched proxy credential fails deployment validation. When
+`API_PROXY_SECRET` is configured, the workflow additionally calls the matching
+backend queue URL without that credential and requires a `401`, proving the
+Coolify setting is active rather than merely accepting an unused Worker header.
 
 ## Local Container Validation
 

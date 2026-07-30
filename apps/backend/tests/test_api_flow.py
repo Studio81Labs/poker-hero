@@ -2009,6 +2009,108 @@ def test_benchmark_dataset_import_resumes_an_interrupted_partial_case(
     assert FileJobStore(target_dir).image_path(recovered_job).read_bytes() == VALID_PNG
 
 
+def test_benchmark_dataset_import_journals_before_parsing_and_resumes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client, filename="parse-interrupted.png").json()[
+        "id"
+    ]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    request_id = "parse-interrupted-import"
+    parse_entered = Event()
+    release_parse = Event()
+    import_errors: list[Exception] = []
+    original_parse = api_module.parse_parser_dataset_archive
+
+    def interrupt_parse(*args: object, **kwargs: object):
+        parse_entered.set()
+        assert release_parse.wait(timeout=2)
+        raise OSError("simulated interruption during dataset parsing")
+
+    monkeypatch.setattr(api_module, "parse_parser_dataset_archive", interrupt_parse)
+
+    def run_import() -> None:
+        try:
+            target_client.post(
+                "/api/benchmarks/import",
+                headers={"X-Benchmark-Import-Request-ID": request_id},
+                files={"file": ("dataset.zip", archive, "application/zip")},
+            )
+        except Exception as exc:
+            import_errors.append(exc)
+
+    import_thread = Thread(target=run_import)
+    import_thread.start()
+    assert parse_entered.wait(timeout=2)
+
+    benchmark_store = FileBenchmarkStore(target_dir)
+    assert benchmark_store.get_import(request_id).status == "pending"
+    assert benchmark_store.get_import_archive(request_id) == archive
+
+    release_parse.set()
+    import_thread.join(timeout=2)
+    assert not import_thread.is_alive()
+    assert len(import_errors) == 1
+    assert isinstance(import_errors[0], OSError)
+
+    monkeypatch.setattr(
+        api_module,
+        "parse_parser_dataset_archive",
+        original_parse,
+    )
+    recovery_client = make_client(target_dir)
+    pending = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+    completed = recovery_client.get(f"/api/benchmarks/imports/{request_id}")
+
+    assert pending.status_code == 200
+    assert pending.json()["status"] == "pending"
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["result"]["job_ids"] == [source_job_id]
+
+
+def test_benchmark_dataset_import_persists_validation_failure_receipt(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    request_id = "invalid-archive-import"
+
+    response = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+    receipt = client.get(f"/api/benchmarks/imports/{request_id}")
+    repeated = client.post(
+        "/api/benchmarks/import",
+        headers={"X-Benchmark-Import-Request-ID": request_id},
+        files={"file": ("dataset.zip", b"not a zip", "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Upload must be a valid dataset ZIP"
+    assert receipt.status_code == 200
+    assert receipt.json() == {
+        "request_id": request_id,
+        "archive_sha256": sha256(b"not a zip").hexdigest(),
+        "status": "failed",
+        "result": None,
+        "error": "Upload must be a valid dataset ZIP",
+        "error_status": 400,
+    }
+    assert repeated.status_code == 400
+    assert repeated.json()["detail"] == "Upload must be a valid dataset ZIP"
+
+
 def test_benchmark_dataset_import_rejects_conflicts_without_overwriting(
     tmp_path: Path,
 ) -> None:

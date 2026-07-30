@@ -299,16 +299,17 @@ Backend solver completions and failures must still match that persisted solver
 identity before changing the job, so a superseded provider call cannot clear or
 overwrite a newer attempt.
 Benchmark dataset imports use a separate client-generated request identity in
-both projection leases and the multipart request. After validating the archive,
-the backend atomically publishes a journal directory containing the ZIP and a
-pending receipt before changing the corpus. Imported jobs retain that request
-identity, so a pending journal can idempotently repair a partial case and resume
-after process interruption. The receipt transitions atomically to completed
-only after every corpus write succeeds and is exposed through a recovery
-endpoint. This is the authoritative completion evidence because newly created
-pristine benchmark cases are deliberately absent from processing and history.
-Replaying the same completed identity returns the stored result without
-changing the corpus again.
+both projection leases and the multipart request. After enforcing the compressed
+upload limit, the backend atomically publishes a journal directory containing
+the ZIP and a pending receipt before parsing the archive or changing the corpus.
+Imported jobs retain that request identity, so a pending journal can
+idempotently resume validation or repair a partial case after process
+interruption. The receipt transitions atomically to failed after deterministic
+validation errors or to completed only after every corpus write succeeds, and
+is exposed through a recovery endpoint. This is the authoritative completion
+evidence because newly created pristine benchmark cases are deliberately absent
+from processing and history. Replaying the same terminal identity returns the
+stored result or error without parsing or changing the corpus again.
 Deterministic non-timeout 4xx responses release both import leases immediately;
 ambiguous failures keep polling for the receipt. An observed pending receipt
 keeps its browser recovery leases alive beyond the ordinary mutation window;

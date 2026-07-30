@@ -206,12 +206,13 @@ of that operational queue. Bounded browser-session mutation leases keep
 uncertain writes, uploads, and batch archives unsynchronized across a same-tab
 reload until the backend projection proves the operation completed or the
 recovery window expires. Benchmark dataset imports additionally carry a
-client-generated request ID. Before changing the corpus, the backend atomically
-publishes a pending journal containing the validated archive. Completed results
-are persisted in that journal, while interrupted or partial imports can resume
-idempotently from the same archive. A dropped response or same-tab reload can
-therefore recover newly created benchmark-only cases that intentionally appear
-in neither operational projection.
+client-generated request ID. Before parsing or changing the corpus, the backend
+atomically publishes a pending journal containing the size-bounded archive.
+Validation failures and completed results are persisted in that journal, while
+interrupted or partial imports can resume idempotently from the same archive. A
+dropped response or same-tab reload can therefore recover newly created
+benchmark-only cases that intentionally appear in neither operational
+projection.
 
 ### Offline Parser Benchmarks
 

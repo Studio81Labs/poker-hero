@@ -10420,6 +10420,56 @@ describe("App", () => {
     ]);
   });
 
+  it("releases a benchmark lease after deterministic inclusion rejection", async () => {
+    const parsedJob = {
+      ...approvedJob(),
+      id: "5".repeat(32),
+      original_filename: "benchmark-conflict.png",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([parsedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 250,
+        latest_report: null,
+        recent_reports: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Parser datasets support at most 250 cases",
+      }, 409))
+      .mockResolvedValueOnce(processingQueueResponse(
+        [parsedJob],
+        "benchmark-inclusion-conflict-snapshot",
+      ));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    await user.click(groundTruthSwitch);
+
+    expect(await screen.findByText(
+      "Parser datasets support at most 250 cases",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(groundTruthSwitch).toHaveAttribute("aria-checked", "false");
+    expect(groundTruthSwitch).toBeEnabled();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/jobs/${parsedJob.id}/benchmark`,
+      "http://localhost:8000/api/jobs",
+    ]);
+  });
+
   it("removes an import from processing after successful re-approval", async () => {
     const benchmarkJobId = "4".repeat(32);
     const mutatedImport = {

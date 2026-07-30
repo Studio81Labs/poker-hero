@@ -6716,7 +6716,9 @@ export default function App() {
             },
       );
     } catch (benchmarkError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(benchmarkError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(benchmarkError, "Could not update benchmark ground truth"));
     } finally {

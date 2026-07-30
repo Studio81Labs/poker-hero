@@ -841,14 +841,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if len(archive_bytes) > active_settings.max_dataset_upload_bytes:
             raise HTTPException(status_code=413, detail="Dataset ZIP exceeds maximum size")
         try:
-            dataset = parse_parser_dataset_archive(
-                archive_bytes,
-                max_image_bytes=active_settings.max_upload_bytes,
-                max_uncompressed_bytes=(
-                    active_settings.max_dataset_upload_bytes
-                    * MAX_DATASET_EXPANSION_RATIO
-                ),
-            )
             if benchmark_import_request_id is not None:
                 with dataset_import_lock:
                     try:
@@ -875,7 +867,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     try:
                         return execute_pending_benchmark_import(
                             benchmark_import_request_id,
-                            dataset,
                         )
                     except DatasetImportError as exc:
                         benchmark_store.fail_import(
@@ -884,6 +875,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             exc.status_code,
                         )
                         raise
+
+            dataset = parse_parser_dataset_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=(
+                    active_settings.max_dataset_upload_bytes
+                    * MAX_DATASET_EXPANSION_RATIO
+                ),
+            )
 
             lock_indexes = sorted(
                 {job_lock_index(case.job_id) for case in dataset.cases}

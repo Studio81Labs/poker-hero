@@ -5914,7 +5914,9 @@ export default function App() {
         ));
       }
     } catch (reviewError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(reviewError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not complete training review"));
     } finally {
@@ -5944,7 +5946,9 @@ export default function App() {
       replaceJob(reopenedJob);
       toast.success("Training review reopened");
     } catch (reviewError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(reviewError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {
@@ -5992,7 +5996,9 @@ export default function App() {
       setTrainingReviewNoteEditing(false);
       toast.success(note ? "Lesson note updated" : "Lesson note removed");
     } catch (reviewError) {
-      markPersistedJobMutationUncertain(mutationScope, job.id);
+      if (mutationFailureMayHavePersistedSideEffect(reviewError)) {
+        markPersistedJobMutationUncertain(mutationScope, job.id);
+      }
       restoreAfterMutation = true;
       setError(messageFromError(reviewError, "Could not update lesson note"));
     } finally {
@@ -6009,6 +6015,7 @@ export default function App() {
       ?? historySearchResults?.find((item) => item.id === jobId)?.job
       ?? null;
     let mutationScope: PersistedJobMutationScope | null = null;
+    let reviewPersisted = false;
     let restoreAfterMutation = false;
     setTrainingReviewJobId(jobId);
     setError(null);
@@ -6023,6 +6030,7 @@ export default function App() {
         note: null,
       });
       const reopenedJob = await reopenTrainingReview(jobId);
+      reviewPersisted = true;
       updateJobs((current) =>
         current.map((candidate) => (candidate.id === reopenedJob.id ? reopenedJob : candidate)),
       );
@@ -6044,8 +6052,13 @@ export default function App() {
       toast.success("Training review reopened");
     } catch (reviewError) {
       if (mutationScope !== null) {
-        markPersistedJobMutationUncertain(mutationScope, jobId);
-        restoreAfterMutation = true;
+        if (
+          !reviewPersisted
+          && mutationFailureMayHavePersistedSideEffect(reviewError)
+        ) {
+          markPersistedJobMutationUncertain(mutationScope, jobId);
+        }
+        restoreAfterMutation = !reviewPersisted;
       }
       setError(messageFromError(reviewError, "Could not reopen training review"));
     } finally {

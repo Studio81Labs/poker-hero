@@ -3173,6 +3173,105 @@ describe("App", () => {
   });
 
   it.each([
+    { scope: "processing" as const },
+    { scope: "history" as const },
+  ])("releases a $scope review lease after a deterministic conflict", async ({
+    scope,
+  }) => {
+    const jobId = scope === "processing" ? "3".repeat(32) : "4".repeat(32);
+    const archivedAt = scope === "history" ? "2026-07-20T12:00:00Z" : null;
+    const reviewedCandidate: JobRecord = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: `${scope}-review-conflict.png`,
+      archived_at: archivedAt,
+      training_decision: {
+        action: "call",
+        sizing: null,
+        certainty: "medium",
+        recorded_at: "2026-07-20T12:01:00Z",
+      },
+    };
+    const competingApproval: JobRecord = {
+      ...reviewedCandidate,
+      status: "approved",
+      approved_state: canonicalState({ pot_size: 20 }),
+      recommendation: null,
+      recommendation_request_id: null,
+      training_decision: null,
+      updated_at: "2026-07-20T12:02:00Z",
+    };
+    if (scope === "processing") {
+      window.localStorage.setItem(
+        "poker-training-processing-v1",
+        JSON.stringify([reviewedCandidate]),
+      );
+      window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    } else {
+      window.localStorage.setItem("poker-training-processing-v1", "[]");
+      window.localStorage.setItem("poker-training-processing-total-v1", "0");
+      window.sessionStorage.setItem(
+        "poker-training-processing-synced",
+        "true",
+      );
+      window.localStorage.setItem(
+        "poker-training-history-v1",
+        JSON.stringify([{
+          id: jobId,
+          job: reviewedCandidate,
+          savedAt: archivedAt,
+        }]),
+      );
+      window.localStorage.setItem("poker-training-history-total-v1", "1");
+    }
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "Approve the current state before completing review",
+      }, 409))
+      .mockResolvedValueOnce(
+        scope === "processing"
+          ? processingQueueResponse(
+              [competingApproval],
+              "review-conflict-snapshot",
+            )
+          : jsonResponse({
+              total: 1,
+              jobs: [competingApproval],
+              snapshot_version: "archived-review-conflict-snapshot",
+            }),
+      );
+    render(<App />);
+    const user = userEvent.setup();
+
+    if (scope === "history") {
+      await user.click(screen.getByRole("button", {
+        name: "Reopen history item 1",
+      }));
+    }
+    const comparison = await screen.findByLabelText(
+      "Training decision comparison",
+    );
+    await user.click(within(comparison).getByRole("button", {
+      name: "Mark reviewed",
+    }));
+
+    expect(await screen.findByText(
+      "Approve the current state before completing review",
+    )).toBeInTheDocument();
+    const cacheKey = scope === "processing"
+      ? "poker-training-processing-v1"
+      : "poker-training-history-v1";
+    await waitFor(() => {
+      const cached = JSON.parse(String(window.localStorage.getItem(cacheKey)));
+      const cachedJob = scope === "processing" ? cached[0] : cached[0].job;
+      expect(cachedJob).toEqual(competingApproval);
+    });
+    expect(window.sessionStorage.getItem(
+      `poker-training-${scope}-mutation-v1`,
+    )).toBeNull();
+  });
+
+  it.each([
     { operation: "approval" as const },
     { operation: "recommendation" as const },
     { operation: "decision" as const },

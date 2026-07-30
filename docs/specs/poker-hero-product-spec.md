@@ -387,7 +387,8 @@ fields and can reopen the persisted hand in the review workspace for correction.
 Recent run summaries remain available for parser/layout comparison, with full
 historical report details loaded on demand. Comparable runs show overall and
 field-level accuracy changes so parser regressions are visible. One failed case
-must not stop the remaining corpus.
+must not stop the remaining corpus. Runs serialize with corpus inclusion,
+dataset import, and export so each report observes a complete ground-truth set.
 
 The selected corpus can be exported independently of a benchmark run. The ZIP
 contains a versioned JSON manifest and original screenshots under stable,

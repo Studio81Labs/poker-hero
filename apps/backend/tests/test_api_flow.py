@@ -2260,6 +2260,83 @@ def test_benchmark_dataset_import_serializes_reuse_with_corrections(
     assert current.benchmark_included is True
 
 
+def test_benchmark_run_waits_for_dataset_import_corpus_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(
+        source_client,
+        filename="imported-during-run.png",
+    ).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+
+    target_client = make_client(tmp_path / "target")
+    target_job_id = upload_job(
+        target_client,
+        filename="existing-before-run.png",
+    ).json()["id"]
+    approve_job(target_client, target_job_id)
+    target_client.put(
+        f"/api/jobs/{target_job_id}/benchmark",
+        json={"included": True},
+    )
+
+    import_entered = Event()
+    release_import = Event()
+    benchmark_started = Event()
+    benchmark_finished = Event()
+    responses: dict[str, object] = {}
+    original_import = api_module.import_parser_dataset
+
+    def paused_import(*args: object, **kwargs: object):
+        import_entered.set()
+        assert release_import.wait(timeout=2)
+        return original_import(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+
+    import_thread = Thread(
+        target=lambda: responses.update(
+            imported=target_client.post(
+                "/api/benchmarks/import",
+                files={"file": ("dataset.zip", archive, "application/zip")},
+            ),
+        ),
+    )
+
+    def run_benchmark_request() -> None:
+        benchmark_started.set()
+        responses["benchmark"] = target_client.post("/api/benchmarks/run")
+        benchmark_finished.set()
+
+    benchmark_thread = Thread(target=run_benchmark_request)
+    import_thread.start()
+    try:
+        assert import_entered.wait(timeout=2)
+        benchmark_thread.start()
+        assert benchmark_started.wait(timeout=2)
+        assert not benchmark_finished.wait(timeout=0.1)
+    finally:
+        release_import.set()
+        import_thread.join(timeout=2)
+        benchmark_thread.join(timeout=2)
+
+    assert not import_thread.is_alive()
+    assert not benchmark_thread.is_alive()
+    assert responses["imported"].status_code == 200
+    assert responses["benchmark"].status_code == 200
+    assert responses["benchmark"].json()["total_cases"] == 2
+    assert {
+        case["job_id"] for case in responses["benchmark"].json()["cases"]
+    } == {target_job_id, source_job_id}
+
+
 def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
     tmp_path: Path,
 ) -> None:

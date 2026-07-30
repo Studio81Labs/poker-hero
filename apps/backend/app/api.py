@@ -932,21 +932,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
     def run_parser_benchmark() -> BenchmarkReport:
-        jobs = [job for job in store.list() if job.benchmark_included]
-        if not jobs:
-            raise HTTPException(status_code=409, detail="Add at least one approved hand to the benchmark")
-        try:
-            parser = build_parser(active_settings)
-            report = run_benchmark(
-                jobs=jobs,
-                parser=parser,
-                image_path_for=store.image_path,
-                parser_provider=active_settings.parser_provider,
-                layout_profile=active_settings.parser_layout_profile,
-            )
-        except ParserConfigurationError as exc:
-            raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
-        return benchmark_store.save(report)
+        with benchmark_corpus_lock:
+            jobs = [job for job in store.list() if job.benchmark_included]
+            if not jobs:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Add at least one approved hand to the benchmark",
+                )
+            try:
+                parser = build_parser(active_settings)
+                report = run_benchmark(
+                    jobs=jobs,
+                    parser=parser,
+                    image_path_for=store.image_path,
+                    parser_provider=active_settings.parser_provider,
+                    layout_profile=active_settings.parser_layout_profile,
+                )
+            except ParserConfigurationError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Parser configuration error: {exc}",
+                ) from exc
+            return benchmark_store.save(report)
 
     return app
 

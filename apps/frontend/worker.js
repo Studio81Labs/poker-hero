@@ -3,14 +3,16 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/")) {
-      return proxyApiRequest(request, env.BACKEND_URL);
+      return proxyApiRequest(request, env.BACKEND_URL, env.API_PROXY_SECRET);
     }
 
     return env.ASSETS.fetch(request);
   },
 };
 
-async function proxyApiRequest(request, backendUrl) {
+const PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret";
+
+async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   if (!backendUrl) {
     return new Response("BACKEND_URL is not configured", { status: 500 });
   }
@@ -31,11 +33,16 @@ async function proxyApiRequest(request, backendUrl) {
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
+  headers.delete(PROXY_SHARED_SECRET_HEADER);
+  if (proxySharedSecret) {
+    headers.set(PROXY_SHARED_SECRET_HEADER, proxySharedSecret);
+  }
 
   const init = {
     method: request.method,
     headers,
-    redirect: request.redirect,
+    // Do not let a backend redirect carry the private proxy header to another origin.
+    redirect: "manual",
     signal: request.signal,
   };
 

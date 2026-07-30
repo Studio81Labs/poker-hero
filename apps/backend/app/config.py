@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Threshold = Annotated[float, Field(ge=0, le=1)]
@@ -53,6 +53,25 @@ class Settings(BaseSettings):
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     max_dataset_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    proxy_shared_secret: SecretStr | None = Field(default=None)
+
+    @field_validator("proxy_shared_secret", mode="before")
+    @classmethod
+    def normalize_proxy_shared_secret(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("proxy_shared_secret")
+    @classmethod
+    def validate_proxy_shared_secret(
+        cls,
+        value: SecretStr | None,
+    ) -> SecretStr | None:
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("proxy_shared_secret must contain at least 32 characters")
+        return value
 
 
 @lru_cache

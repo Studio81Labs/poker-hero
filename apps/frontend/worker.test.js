@@ -7,6 +7,57 @@ afterEach(() => {
 });
 
 describe("API Worker proxy", () => {
+  it("replaces an incoming proxy credential with the Worker secret", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return new Response(null, { status: 200 });
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/api/jobs", {
+        headers: { "X-Poker-Proxy-Secret": "spoofed-browser-value" },
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(forwardedRequest.headers.get("X-Poker-Proxy-Secret")).toBe(
+      "trusted-worker-value",
+    );
+    expect(forwardedRequest.redirect).toBe("manual");
+  });
+
+  it("strips browser-supplied proxy credentials when no Worker secret is configured", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return new Response(null, { status: 200 });
+      }),
+    );
+
+    await worker.fetch(
+      new Request("https://poker.example/api/jobs", {
+        headers: { "X-Poker-Proxy-Secret": "spoofed-browser-value" },
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        BACKEND_URL: "https://backend.example",
+      },
+    );
+
+    expect(forwardedRequest.headers.has("X-Poker-Proxy-Secret")).toBe(false);
+  });
+
   it("forwards a multipart screenshot as the file field", async () => {
     let forwardedRequest;
     const backendResponse = new Response(JSON.stringify({ status: "parsed" }), {

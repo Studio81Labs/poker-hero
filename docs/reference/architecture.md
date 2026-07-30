@@ -58,8 +58,13 @@ EVs/frequencies, exploitability, preflop stack/range/sizing policy, and fallback
 context. Supported postflop results also expose bounded tree/history metadata
 and keep exact configured OOP/IP ranges behind a collapsed disclosure; providers
 remain free to omit those fields. In production it uses same-origin `/api/*`;
-`worker.js` forwards those requests to `BACKEND_URL` and serves all other routes
-from Worker Static Assets.
+`worker.js` forwards those requests to `BACKEND_URL`, replaces any
+browser-supplied proxy credential with its private `API_PROXY_SECRET` binding,
+and serves all other routes from Worker Static Assets. When
+`POKER_PROXY_SHARED_SECRET` is configured, FastAPI uses a constant-time
+comparison to reject application API traffic that bypasses or misconfigures the
+Worker. The health route stays public for container orchestration. Empty secret
+configuration preserves the direct local-development path.
 
 The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,
@@ -378,7 +383,8 @@ user.
 - Backend: Coolify Docker application built from repository root with
   `apps/backend/Dockerfile`.
 - Access control: Cloudflare Access can allowlist testing users at the public
-  frontend and backend boundaries.
+  frontend boundary. A shared Worker-to-backend secret protects the public
+  Coolify application API from direct access.
 
 The frontend Worker proxy removes mixed-content and browser CORS issues from the
 normal deployed path. Backend CORS remains configurable for local and direct API

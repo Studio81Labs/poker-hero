@@ -139,12 +139,13 @@ async function openUploadInput(page: Page): Promise<void> {
 }
 
 type CaptureSurface = "browser" | "monitor" | "window";
+type CaptureOutcome = CaptureSurface | "cancel";
 
 async function installCaptureStreams(
   page: Page,
-  surfaces: readonly CaptureSurface[] = ["window"],
+  outcomes: readonly CaptureOutcome[] = ["window"],
 ): Promise<void> {
-  await page.addInitScript((configuredSurfaces) => {
+  await page.addInitScript((configuredOutcomes) => {
     Object.defineProperty(navigator.mediaDevices, "getDisplayMedia", {
       configurable: true,
       value: async (requestedOptions: DisplayMediaStreamOptions) => {
@@ -162,9 +163,16 @@ async function installCaptureStreams(
           fixtureWindow.__pokerHeroDisplayMediaOptions ?? [];
         displayMediaOptions.push(requestedOptions);
         fixtureWindow.__pokerHeroDisplayMediaOptions = displayMediaOptions;
-        const displaySurface = configuredSurfaces[
-          Math.min(callIndex, configuredSurfaces.length - 1)
+        const outcome = configuredOutcomes[
+          Math.min(callIndex, configuredOutcomes.length - 1)
         ] ?? "window";
+        if (outcome === "cancel") {
+          throw new DOMException(
+            "Screen sharing was cancelled",
+            "NotAllowedError",
+          );
+        }
+        const displaySurface = outcome;
         const canvas = document.createElement("canvas");
         canvas.width = 640;
         canvas.height = 360;
@@ -227,7 +235,7 @@ async function installCaptureStreams(
         return stream;
       },
     });
-  }, [...surfaces]);
+  }, [...outcomes]);
 }
 
 test("captures repeated shared-window frames into persisted history", async ({
@@ -508,6 +516,121 @@ test("rejects a mismatched share source and recovers with a tab", async ({
       );
     }),
   ).toEqual(["ended", "ended"]);
+});
+
+test("recovers after the browser share picker is cancelled", async ({
+  page,
+}) => {
+  await installCaptureStreams(page, ["cancel", "window"]);
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Poker Training Analyzer" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Share window" }).click();
+  await expect(page.getByText("Screen sharing was cancelled")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Capture and parse" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("No screenshots uploaded or captured yet"),
+  ).toBeVisible();
+  const cancelledState = await page.evaluate(() => {
+    const fixtureWindow = window as typeof window & {
+      __pokerHeroCaptureFixtures?: Array<{ stream: MediaStream }>;
+      __pokerHeroDisplayMediaCalls?: number;
+      __pokerHeroDisplayMediaOptions?: DisplayMediaStreamOptions[];
+    };
+    return {
+      calls: fixtureWindow.__pokerHeroDisplayMediaCalls,
+      fixtures: fixtureWindow.__pokerHeroCaptureFixtures?.length ?? 0,
+      requestedSurfaces: (
+        fixtureWindow.__pokerHeroDisplayMediaOptions ?? []
+      ).map((options) => {
+        const video = options.video;
+        return typeof video === "object" && video !== null
+          ? video.displaySurface
+          : null;
+      }),
+    };
+  });
+  expect(cancelledState).toEqual({
+    calls: 1,
+    fixtures: 0,
+    requestedSurfaces: ["window"],
+  });
+
+  await page.getByRole("button", { name: "Share window" }).click();
+  await expect(page.getByText("Window sharing active")).toBeVisible();
+  await expect(page.getByText("Screen sharing was cancelled")).toBeHidden();
+  const preview = page.getByLabel("Shared screen preview");
+  await expect(preview).toHaveClass(/active/);
+  await expect.poll(
+    () => preview.evaluate((element: HTMLVideoElement) => ({
+      height: element.videoHeight,
+      width: element.videoWidth,
+    })),
+  ).toEqual({ height: 360, width: 640 });
+
+  const capture = await captureAutomatedFrame(page);
+  await expect(
+    page.getByRole("region", { name: "Recommendation" }),
+  ).toBeVisible();
+  const recoveredState = await page.evaluate(() => {
+    const fixtureWindow = window as typeof window & {
+      __pokerHeroCaptureFixtures: Array<{
+        stream: MediaStream;
+        surface: CaptureSurface;
+      }>;
+      __pokerHeroDisplayMediaCalls?: number;
+      __pokerHeroDisplayMediaOptions?: DisplayMediaStreamOptions[];
+    };
+    return {
+      calls: fixtureWindow.__pokerHeroDisplayMediaCalls,
+      requestedSurfaces: (
+        fixtureWindow.__pokerHeroDisplayMediaOptions ?? []
+      ).map((options) => {
+        const video = options.video;
+        return typeof video === "object" && video !== null
+          ? video.displaySurface
+          : null;
+      }),
+      streams: fixtureWindow.__pokerHeroCaptureFixtures.map((fixture) => ({
+        readyState: fixture.stream.getVideoTracks()[0]?.readyState,
+        surface: fixture.surface,
+      })),
+    };
+  });
+  expect(recoveredState).toEqual({
+    calls: 2,
+    requestedSurfaces: ["window", "window"],
+    streams: [{ readyState: "live", surface: "window" }],
+  });
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(capture.queueItem).toBeHidden();
+  const archivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${capture.id}`,
+  );
+  expect(archivedResponse.ok()).toBe(true);
+  const archivedJob = await archivedResponse.json() as {
+    archived_at: string | null;
+  };
+  expect(archivedJob.archived_at).not.toBeNull();
+
+  await page.getByRole("button", { name: "Stop sharing" }).click();
+  await expect.poll(
+    () => page.evaluate(() => {
+      const fixtures = (
+        window as typeof window & {
+          __pokerHeroCaptureFixtures: Array<{ stream: MediaStream }>;
+        }
+      ).__pokerHeroCaptureFixtures;
+      return fixtures.map(
+        (fixture) => fixture.stream.getVideoTracks()[0]?.readyState,
+      );
+    }),
+  ).toEqual(["ended"]);
 });
 
 test("reviews one screenshot from upload through persisted history", async ({

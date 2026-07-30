@@ -523,8 +523,9 @@ The Playwright browser suite runs the real Vite app against an isolated
 FastAPI process with deterministic local HTTP parser and recommendation
 providers. It covers repeated automated captures from one live window share
 through persisted history, rejection and recovery of a mismatched share-source
-selection, the complete single-upload manual review flow, and a mixed
-valid/invalid automated batch, including correction persistence,
+selection, retry after cancelling the browser share picker, the complete
+single-upload manual review flow, and a mixed valid/invalid automated batch,
+including correction persistence,
 recommendation display, failure isolation, moving completed work into history,
 continuing automated work after a persisted provider failure, persisted parser
 failure reconciliation and same-file re-upload, and retrying a recommendation

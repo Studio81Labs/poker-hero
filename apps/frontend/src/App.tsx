@@ -3073,7 +3073,10 @@ function isAbortError(error: unknown): boolean {
 
 function mutationFailureMayHavePersistedSideEffect(error: unknown): boolean {
   return error instanceof TypeError
-    || (error instanceof ApiResponseError && error.status >= 500);
+    || (
+      error instanceof ApiResponseError
+      && (error.status === 408 || error.status >= 500)
+    );
 }
 
 function recommendationAttemptMayHavePersistedSideEffect(
@@ -5269,7 +5272,12 @@ export default function App() {
       return true;
     } catch (historyError) {
       if (jobIds !== null) {
-        scheduleMutationLeaseRevalidation();
+        if (mutationFailureMayHavePersistedSideEffect(historyError)) {
+          scheduleMutationLeaseRevalidation();
+        } else {
+          clearOwnedMutationLease("processing");
+          clearOwnedMutationLease("history");
+        }
       }
       if (reportErrors) {
         setError(messageFromError(historyError, "Could not load saved history"));
@@ -6881,7 +6889,12 @@ export default function App() {
       } else if (!historyReconciled) {
         markHistorySessionUnsynced();
       }
-      scheduleMutationLeaseRevalidation();
+      if (mutationFailureMayHavePersistedSideEffect(historyError)) {
+        scheduleMutationLeaseRevalidation();
+      } else {
+        clearOwnedMutationLease("processing");
+        clearOwnedMutationLease("history");
+      }
       setError(archiveErrorMessage);
     } finally {
       if (historyMutationActive) {

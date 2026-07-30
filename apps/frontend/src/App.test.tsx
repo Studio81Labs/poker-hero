@@ -4667,6 +4667,70 @@ describe("App", () => {
     expect(window.sessionStorage.getItem("poker-training-history-synced")).toBeNull();
   });
 
+  it("releases archive leases after a deterministic conflict", async () => {
+    const readyJob: JobRecord = {
+      ...recommendedJob(),
+      id: "6".repeat(32),
+      original_filename: "archive-conflict.png",
+    };
+    const competingAttempt: JobRecord = {
+      ...readyJob,
+      status: "approved",
+      recommendation: null,
+      recommendation_pending: true,
+      recommendation_request_id: "other-tab-recommendation",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([readyJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem("poker-training-history-v1", "[]");
+    window.localStorage.setItem("poker-training-history-total-v1", "0");
+    window.sessionStorage.setItem("poker-training-processing-synced", "true");
+    window.sessionStorage.setItem("poker-training-history-synced", "true");
+    fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "http://localhost:8000/api/history" && init?.method === "PUT") {
+        return Promise.resolve(jsonResponse({
+          detail: "Only approved or recommended jobs can be moved to history",
+        }, 409));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "archive-conflict-history",
+        }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse(
+          [competingAttempt],
+          "archive-conflict-processing",
+        ));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Clear reviewed" }));
+
+    expect(await screen.findByText(
+      "Only approved or recommended jobs can be moved to history",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))).toEqual([competingAttempt]));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+  });
+
   it("refreshes history when a later archive batch fails", async () => {
     window.sessionStorage.removeItem("poker-training-processing-synced");
     const readyJobs = Array.from({ length: 101 }, (_, index) => ({
@@ -8890,6 +8954,42 @@ describe("App", () => {
     })).not.toBeInTheDocument();
     expect(window.sessionStorage.getItem("poker-training-history-synced")).toBe("true");
     expect(window.sessionStorage.getItem("poker-training-processing-synced")).toBe("true");
+  });
+
+  it("releases legacy archive leases after deterministic migration rejection", async () => {
+    const jobId = "b".repeat(32);
+    const legacyJob: JobRecord = {
+      ...recommendedJob(),
+      id: jobId,
+      original_filename: "legacy-conflict.png",
+      archived_at: null,
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: jobId,
+        job: legacyJob,
+        savedAt: "2026-07-10T00:00:00Z",
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    window.sessionStorage.removeItem("poker-training-history-synced");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      detail: "Only approved or recommended jobs can be moved to history",
+    }, 409));
+
+    render(<App />);
+
+    expect(await screen.findByText(
+      "Could not migrate legacy history before restoring processing",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+    expect(window.sessionStorage.getItem(
+      "poker-training-history-mutation-v1",
+    )).toBeNull();
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
   });
 
   it("shows normalized decision evidence for solver recommendations", async () => {

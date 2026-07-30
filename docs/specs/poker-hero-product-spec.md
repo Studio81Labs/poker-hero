@@ -518,10 +518,12 @@ End-to-end tests:
 - Clear completed processing items into history.
 
 The Playwright browser suite runs the real Vite app against an isolated
-FastAPI process with deterministic mock providers. It covers the complete
-single-upload manual review flow and a mixed valid/invalid automated batch,
-including correction persistence, recommendation display, failure isolation,
-and moving completed work into history.
+FastAPI process with a mock parser and deterministic local HTTP recommendation
+provider. It covers the complete single-upload manual review flow and a mixed
+valid/invalid automated batch, including correction persistence,
+recommendation display, failure isolation, moving completed work into history,
+and retrying a recommendation after its failed provider request has reconciled
+with persisted backend state.
 
 ## Success Criteria
 

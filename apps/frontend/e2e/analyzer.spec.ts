@@ -165,6 +165,43 @@ async function createReviewedLesson(
   return { id: uploadedJob.id };
 }
 
+async function createPendingTrainingReview(
+  page: Page,
+  filename: string,
+  options: {
+    boardCards?: string;
+    certainty: "high" | "medium" | "low";
+    street: "flop" | "turn" | "river";
+  },
+): Promise<{ id: string }> {
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  if (options.boardCards !== undefined) {
+    await page.getByLabel("Board cards").fill(options.boardCards);
+  }
+  await page.getByLabel("Street").selectOption(options.street);
+  await page.getByRole("button", { name: "Approve state" }).click();
+
+  const decisionPanel = page.getByRole("region", {
+    name: "Your training decision",
+  });
+  await decisionPanel.getByRole("button", {
+    name: "fold",
+    exact: true,
+  }).click();
+  await decisionPanel.getByRole("button", {
+    name: options.certainty,
+    exact: true,
+  }).click();
+  await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
+  await expect(decisionPanel).toContainText("Answer locked");
+
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(uploadedJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(uploadedJob.queueItem).toBeHidden();
+  return { id: uploadedJob.id };
+}
+
 async function createApprovedScreenshot(
   page: Page,
   filename: string,
@@ -908,6 +945,173 @@ test("completes and reopens a training review from persisted progress", async ({
     needs_review_hands: initialProgress.needs_review_hands,
     reviewed_hands: initialProgress.reviewed_hands + 1,
   });
+});
+
+test("continues through a filtered persisted training review queue", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const staleProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(staleProgressResponse.ok()).toBe(true);
+  const staleProgress = await staleProgressResponse.json() as {
+    review_queue: Array<{ job_id: string; original_filename: string }>;
+  };
+  const attemptMarker = [
+    `w${testInfo.workerIndex}`,
+    `p${testInfo.repeatEachIndex}`,
+  ].join("-");
+  const staleFixturePrefixes = [
+    "review-control-flop-",
+    "review-turn-older-",
+    "review-turn-newer-",
+  ];
+  for (const staleHand of staleProgress.review_queue) {
+    if (
+      !staleHand.original_filename.includes(attemptMarker)
+      || !staleFixturePrefixes.some(
+        (prefix) => staleHand.original_filename.startsWith(prefix),
+      )
+    ) {
+      continue;
+    }
+    const cleanupResponse = await page.request.put(
+      `${BACKEND_URL}/api/jobs/${staleHand.job_id}/training-review`,
+      { data: { note: null } },
+    );
+    expect(cleanupResponse.ok()).toBe(true);
+  }
+
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    needs_review_hands: number;
+  };
+
+  const controlFilename = attemptFilename("review-control-flop", testInfo);
+  const olderTurnFilename = attemptFilename("review-turn-older", testInfo);
+  const newerTurnFilename = attemptFilename("review-turn-newer", testInfo);
+  const controlJob = await createPendingTrainingReview(
+    page,
+    controlFilename,
+    {
+      certainty: "low",
+      street: "flop",
+    },
+  );
+  const olderTurnJob = await createPendingTrainingReview(
+    page,
+    olderTurnFilename,
+    {
+      boardCards: "Qs Jc 2h 9d",
+      certainty: "high",
+      street: "turn",
+    },
+  );
+  const newerTurnJob = await createPendingTrainingReview(
+    page,
+    newerTurnFilename,
+    {
+      boardCards: "Qs Jc 2h 8s",
+      certainty: "high",
+      street: "turn",
+    },
+  );
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  const expectedPendingCount = initialProgress.needs_review_hands + 3;
+  await progressDialog.getByRole("button", {
+    name: `Needs review ${expectedPendingCount}`,
+    exact: true,
+  }).click();
+  await progressDialog.getByLabel("Review street").selectOption("turn");
+  await progressDialog.getByLabel("Review certainty").selectOption("high");
+
+  const olderTurnReview = progressDialog.getByRole("button", {
+    name: `Open ${olderTurnFilename} training review`,
+    exact: true,
+  });
+  const newerTurnReview = progressDialog.getByRole("button", {
+    name: `Open ${newerTurnFilename} training review`,
+    exact: true,
+  });
+  await expect(newerTurnReview).toBeVisible();
+  await expect(olderTurnReview).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${controlFilename} training review`,
+    exact: true,
+  })).toBeHidden();
+
+  await progressDialog.getByRole("button", { name: "Review next" }).click();
+  await expect(progressDialog).toBeHidden();
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${newerTurnJob.id}/image`,
+    );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${olderTurnJob.id}/image`,
+    );
+  await expect(page.getByText(
+    "Training review completed. Next hand ready",
+  )).toBeVisible();
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog.getByLabel("Review street")).toHaveValue("turn");
+  await expect(progressDialog.getByLabel("Review certainty"))
+    .toHaveValue("high");
+  await expect(progressDialog).toContainText(
+    "No action or sizing differences need review.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Needs review ${initialProgress.needs_review_hands + 1}`,
+    exact: true,
+  })).toBeVisible();
+
+  for (const reviewedJob of [newerTurnJob, olderTurnJob]) {
+    const persistedResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${reviewedJob.id}`,
+    );
+    expect(persistedResponse.ok()).toBe(true);
+    const persistedJob = await persistedResponse.json() as {
+      training_reviewed_at: string | null;
+    };
+    expect(persistedJob.training_reviewed_at).toEqual(expect.any(String));
+  }
+  const controlResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}`,
+  );
+  expect(controlResponse.ok()).toBe(true);
+  const persistedControl = await controlResponse.json() as {
+    training_reviewed_at: string | null;
+  };
+  expect(persistedControl.training_reviewed_at).toBeNull();
+
+  const cleanupResponse = await page.request.put(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}/training-review`,
+    { data: { note: null } },
+  );
+  expect(cleanupResponse.ok()).toBe(true);
 });
 
 test("filters and exports persisted lesson notes", async ({

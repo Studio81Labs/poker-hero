@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -260,6 +261,101 @@ def test_restore_does_not_block_unrelated_requests(
             assert restore.status_code == 200
 
     asyncio.run(exercise_restore())
+
+
+def test_upload_waiting_for_backup_does_not_block_unrelated_requests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_started = Event()
+    release_export = Event()
+    original_build = api_module.build_application_backup_archive
+
+    def paused_build(*args: object, **kwargs: object):
+        export_started.set()
+        assert release_export.wait(timeout=2)
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(
+        api_module,
+        "build_application_backup_archive",
+        paused_build,
+    )
+    app = create_app(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="mock",
+            recommendation_provider="mock",
+        )
+    )
+
+    async def exercise_upload() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            export_task = asyncio.create_task(client.get("/api/backups/export"))
+            assert await asyncio.to_thread(export_started.wait, 2)
+            upload_task = asyncio.create_task(
+                client.post(
+                    "/api/jobs",
+                    files={"file": ("table.png", VALID_PNG, "image/png")},
+                )
+            )
+            try:
+                await asyncio.sleep(0.05)
+                assert not upload_task.done()
+                health = await asyncio.wait_for(
+                    client.get("/api/health"),
+                    timeout=1,
+                )
+                assert health.status_code == 200
+            finally:
+                release_export.set()
+            export = await export_task
+            upload = await upload_task
+            assert export.status_code == 200
+            assert upload.status_code == 201
+
+    asyncio.run(exercise_upload())
+
+
+def test_restored_old_reports_do_not_displace_recent_report_history(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "source"
+    source = make_client(source_dir)
+    create_reviewed_job(source)
+    old_report = FileBenchmarkStore(source_dir).get_latest()
+    assert old_report is not None
+
+    destination_store = FileBenchmarkStore(tmp_path / "destination")
+    baseline = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    recent_reports = [
+        old_report.model_copy(
+            update={
+                "id": f"{index + 1:032x}",
+                "created_at": baseline + timedelta(days=index),
+            }
+        )
+        for index in range(10)
+    ]
+    for report in recent_reports:
+        destination_store.save(report)
+    restored_old_report = old_report.model_copy(
+        update={
+            "id": f"{100:032x}",
+            "created_at": baseline - timedelta(days=1),
+        }
+    )
+
+    destination_store.restore(restored_old_report)
+    recent_history = destination_store.list(limit=10)
+
+    assert [report.id for report in recent_history] == [
+        report.id for report in reversed(recent_reports)
+    ]
 
 
 def test_restore_rejects_checksum_tampering_before_writing(

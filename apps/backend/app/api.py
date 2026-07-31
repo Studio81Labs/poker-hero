@@ -240,6 +240,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # A later poll can retry an interrupted or temporarily unavailable journal.
                 return
 
+    def process_uploaded_image(
+        original_filename: str,
+        image_bytes: bytes,
+        upload_request_id: str | None,
+    ) -> JobRecord:
+        if not is_supported_image(image_bytes):
+            raise HTTPException(
+                status_code=400,
+                detail="Upload must contain supported image data",
+            )
+        with application_backup_lock:
+            job = store.create_job(
+                original_filename=original_filename,
+                image_bytes=image_bytes,
+                parser_provider=active_settings.parser_provider,
+                recommendation_provider=active_settings.recommendation_provider,
+                upload_request_id=upload_request_id,
+            )
+        try:
+            parser = build_parser(active_settings)
+            parser_result = parser.parse(store.image_path(job))
+        except ParserConfigurationError as exc:
+            job.status = "error"
+            job.error = str(exc)
+            save_job(job)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Parser configuration error: {exc}",
+            ) from exc
+        except ParserError as exc:
+            job.status = "error"
+            job.error = str(exc)
+            save_job(job)
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            job.status = "error"
+            job.error = f"Unexpected parser error: {exc}"
+            save_job(job)
+            raise HTTPException(status_code=500, detail=job.error) from exc
+
+        job.parser_result = parser_result
+        job.status = "parsed"
+        if should_auto_approve(parser_result.confidences, active_settings):
+            job.approved_state = CanonicalState.from_parser_result(parser_result)
+            job.approved_state.user_approved = True
+            job.status = "approved"
+        return save_job(job)
+
     def restore_uploaded_application_backup(
         archive_bytes: bytes,
     ) -> ApplicationBackupRestoreResult:
@@ -343,43 +391,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         image_bytes = await file.read(active_settings.max_upload_bytes + 1)
         if len(image_bytes) > active_settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
-        if not is_supported_image(image_bytes):
-            raise HTTPException(status_code=400, detail="Upload must contain supported image data")
-
-        with application_backup_lock:
-            job = store.create_job(
-                original_filename=file.filename or "screenshot.png",
-                image_bytes=image_bytes,
-                parser_provider=active_settings.parser_provider,
-                recommendation_provider=active_settings.recommendation_provider,
-                upload_request_id=upload_request_id,
-            )
-        try:
-            parser = build_parser(active_settings)
-            parser_result = parser.parse(store.image_path(job))
-        except ParserConfigurationError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            save_job(job)
-            raise HTTPException(status_code=500, detail=f"Parser configuration error: {exc}") from exc
-        except ParserError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            save_job(job)
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except Exception as exc:
-            job.status = "error"
-            job.error = f"Unexpected parser error: {exc}"
-            save_job(job)
-            raise HTTPException(status_code=500, detail=job.error) from exc
-
-        job.parser_result = parser_result
-        job.status = "parsed"
-        if should_auto_approve(parser_result.confidences, active_settings):
-            job.approved_state = CanonicalState.from_parser_result(parser_result)
-            job.approved_state.user_approved = True
-            job.status = "approved"
-        return save_job(job)
+        return await run_in_threadpool(
+            process_uploaded_image,
+            file.filename or "screenshot.png",
+            image_bytes,
+            upload_request_id,
+        )
 
     @app.get("/api/jobs", response_model=JobQueue)
     def get_processing_jobs(

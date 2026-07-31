@@ -280,6 +280,13 @@ class FileBenchmarkStore:
                 temp_file.write(report.model_dump_json(indent=2))
                 temp_file.flush()
                 os.fsync(temp_file.fileno())
+            report_timestamp_ns = int(
+                report.created_at.timestamp() * 1_000_000_000
+            )
+            os.utime(
+                temp_path,
+                ns=(report_timestamp_ns, report_timestamp_ns),
+            )
             os.link(temp_path, path)
         finally:
             if temp_path is not None and temp_path.exists():

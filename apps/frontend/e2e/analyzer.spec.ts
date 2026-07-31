@@ -1894,3 +1894,130 @@ test("searches beyond cached history without replacing active work", async ({
   await page.getByRole("button", { name: "Clear reviewed" }).click();
   await expect(pendingJob.queueItem).toBeHidden();
 });
+
+test("loads an older page of matching history results", async ({
+  page,
+}, testInfo) => {
+  const searchToken = [
+    "paged-history",
+    `w${testInfo.workerIndex}`,
+    `p${testInfo.repeatEachIndex}`,
+    `r${testInfo.retry}`,
+  ].join("-");
+  const oldestFilename = `${searchToken}-oldest.png`;
+  const oldestJob = await createApprovedScreenshot(
+    page,
+    oldestFilename,
+    88.5,
+  );
+  const oldestArchiveResponse = await page.request.put(
+    `${BACKEND_URL}/api/history`,
+    { data: { job_ids: [oldestJob.id] } },
+  );
+  expect(oldestArchiveResponse.ok()).toBe(true);
+
+  const newerJobIds: string[] = [];
+  for (let index = 0; index < 24; index += 1) {
+    const fixture = await createApprovedScreenshot(
+      page,
+      `${searchToken}-newer-${index + 1}.png`,
+      20 + index,
+    );
+    newerJobIds.push(fixture.id);
+  }
+  const newerArchiveResponse = await page.request.put(
+    `${BACKEND_URL}/api/history`,
+    { data: { job_ids: newerJobIds } },
+  );
+  expect(newerArchiveResponse.ok()).toBe(true);
+
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  const pendingFilename = attemptFilename("paged-history-pending", testInfo);
+  const pendingJob = await uploadValidScreenshot(page, pendingFilename);
+  const historyPanel = page.getByRole("region", { name: "Session history" });
+  await historyPanel.getByRole("button", {
+    name: "Search saved history",
+  }).click();
+  await historyPanel.getByLabel("History search query").fill(searchToken);
+
+  const firstSearchResponsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") {
+      return false;
+    }
+    const url = new URL(response.url());
+    return url.origin === BACKEND_URL
+      && url.pathname === "/api/history"
+      && url.searchParams.get("query") === searchToken
+      && url.searchParams.get("offset") === null;
+  });
+  await historyPanel.getByRole("button", {
+    name: "Run history search",
+  }).click();
+  const firstSearchResponse = await firstSearchResponsePromise;
+  expect(firstSearchResponse.ok()).toBe(true);
+  const firstSearchPage = await firstSearchResponse.json() as {
+    jobs: Array<{ id: string }>;
+    snapshot_version: string;
+    total: number;
+  };
+  expect(firstSearchPage.jobs).toHaveLength(24);
+  expect(firstSearchPage.total).toBe(25);
+  expect(firstSearchPage.jobs.map((job) => job.id)).not.toContain(oldestJob.id);
+
+  const historyItems = historyPanel.getByRole("button", {
+    name: /^Reopen history item /,
+  });
+  await expect(historyPanel).toContainText("History · 25 matches");
+  await expect(historyItems).toHaveCount(24);
+  const loadOlderButton = historyPanel.getByRole("button", {
+    name: "Load older history",
+  });
+  await expect(loadOlderButton).toContainText("Load 1 older");
+
+  const olderPageResponsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") {
+      return false;
+    }
+    const url = new URL(response.url());
+    return url.origin === BACKEND_URL
+      && url.pathname === "/api/history"
+      && url.searchParams.get("query") === searchToken
+      && url.searchParams.get("offset") === "24";
+  });
+  await loadOlderButton.click();
+  const olderPageResponse = await olderPageResponsePromise;
+  expect(olderPageResponse.ok()).toBe(true);
+  const olderPage = await olderPageResponse.json() as {
+    jobs: Array<{ id: string }>;
+    snapshot_version: string;
+    total: number;
+  };
+  expect(olderPage).toMatchObject({
+    jobs: [{ id: oldestJob.id }],
+    snapshot_version: firstSearchPage.snapshot_version,
+    total: 25,
+  });
+  await expect(historyItems).toHaveCount(25);
+  await expect(loadOlderButton).toBeHidden();
+
+  await historyItems.nth(24).click();
+  await expect(page.getByLabel("Pot")).toHaveValue("88.5");
+  await expect(pendingJob.queueItem).toContainText("parsed");
+
+  await historyPanel.getByRole("button", {
+    name: "Close history search",
+  }).click();
+  await expect(historyItems).toHaveCount(24);
+  await expect(pendingJob.queueItem).toContainText("parsed");
+
+  await pendingJob.queueItem.click();
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(pendingJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(pendingJob.queueItem).toBeHidden();
+});

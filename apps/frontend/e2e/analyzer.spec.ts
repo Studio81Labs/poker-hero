@@ -693,12 +693,16 @@ test("downloads and verifies an application backup through recovery", async ({
   await expect(
     page.getByRole("button", { name: "Automation Off" }),
   ).toHaveAttribute("aria-pressed", "false");
-  const uploadedJob = await uploadValidScreenshot(page, filename);
+  const archivedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   await page.getByRole("button", { name: "Request recommendation" }).click();
-  await expect(uploadedJob.queueItem).toContainText("recommended");
+  await expect(archivedJob.queueItem).toContainText("recommended");
   await page.getByRole("button", { name: "Clear reviewed" }).click();
-  await expect(uploadedJob.queueItem).toBeHidden();
+  await expect(archivedJob.queueItem).toBeHidden();
+
+  const pendingFilename = attemptFilename("application-backup-pending", testInfo);
+  const pendingJob = await uploadValidScreenshot(page, pendingFilename);
+  await expect(pendingJob.queueItem).toContainText("parsed");
 
   await page.getByRole("button", { name: "About this app" }).click();
   const infoDialog = page.getByRole("dialog", {
@@ -734,7 +738,7 @@ test("downloads and verifies an application backup through recovery", async ({
   };
   expect(restoreResult.imported_jobs).toBe(0);
   expect(restoreResult.imported_benchmark_reports).toBe(0);
-  expect(restoreResult.reused_jobs).toBeGreaterThanOrEqual(1);
+  expect(restoreResult.reused_jobs).toBeGreaterThanOrEqual(2);
   expect(
     restoreResult.reused_jobs + restoreResult.reused_benchmark_reports,
   ).toBeGreaterThanOrEqual(1);
@@ -742,19 +746,40 @@ test("downloads and verifies an application backup through recovery", async ({
   await expect(
     page.getByText(/Backup already present: \d+ records? verified/),
   ).toBeVisible();
-  await expect(uploadedJob.queueItem).toBeHidden();
-  const persistedResponse = await page.request.get(
-    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  await expect(archivedJob.queueItem).toBeHidden();
+  await expect(pendingJob.queueItem).toContainText("parsed");
+  const archivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${archivedJob.id}`,
   );
-  expect(persistedResponse.ok()).toBe(true);
-  const persistedJob = await persistedResponse.json() as {
+  expect(archivedResponse.ok()).toBe(true);
+  const archivedRecord = await archivedResponse.json() as {
     archived_at: string | null;
     status: string;
   };
-  expect(persistedJob).toMatchObject({
+  expect(archivedRecord).toMatchObject({
     archived_at: expect.any(String),
     status: "recommended",
   });
+  const pendingResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${pendingJob.id}`,
+  );
+  expect(pendingResponse.ok()).toBe(true);
+  const pendingRecord = await pendingResponse.json() as {
+    archived_at: string | null;
+    status: string;
+  };
+  expect(pendingRecord).toMatchObject({
+    archived_at: null,
+    status: "parsed",
+  });
+
+  await infoDialog.getByRole("button", { name: "Done" }).click();
+  await pendingJob.queueItem.click();
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(pendingJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(pendingJob.queueItem).toBeHidden();
 });
 
 test("continues an automated batch when one screenshot is invalid", async ({

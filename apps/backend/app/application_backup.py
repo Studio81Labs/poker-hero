@@ -300,6 +300,10 @@ def parse_application_backup_archive(
                     "Application backup manifest is invalid at "
                     f"{location}: {first_error['msg']}"
                 ) from exc
+            _require_timezone_aware(
+                manifest.exported_at,
+                "manifest exported_at",
+            )
 
             expected_paths = {
                 "manifest.json",
@@ -482,6 +486,7 @@ def _read_backup_job(
         raise ApplicationBackupError(
             f"Application backup job {entry.job_id} contains an active operation"
         )
+    _validate_job_timestamps(job)
     if not _is_plain_filename(job.image_filename):
         raise ApplicationBackupError(
             f"Application backup image filename is invalid for job {entry.job_id}"
@@ -544,6 +549,10 @@ def _read_backup_report(
         raise ApplicationBackupError(
             f"Application backup report ID does not match {entry.report_id}"
         )
+    _require_timezone_aware(
+        report.created_at,
+        f"report {entry.report_id} created_at",
+    )
     return report
 
 
@@ -677,3 +686,29 @@ def _is_supported_image(image_bytes: bytes) -> bool:
             return image_format in SUPPORTED_IMAGE_FORMATS
     except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
         return False
+
+
+def _validate_job_timestamps(job: JobRecord) -> None:
+    timestamps = (
+        ("created_at", job.created_at),
+        ("updated_at", job.updated_at),
+        ("training_reviewed_at", job.training_reviewed_at),
+        ("archived_at", job.archived_at),
+        (
+            "training_decision.recorded_at",
+            job.training_decision.recorded_at if job.training_decision else None,
+        ),
+    )
+    for field_name, value in timestamps:
+        if value is not None:
+            _require_timezone_aware(
+                value,
+                f"job {job.id} {field_name}",
+            )
+
+
+def _require_timezone_aware(value: datetime, label: str) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ApplicationBackupError(
+            f"Application backup {label} must include a timezone"
+        )

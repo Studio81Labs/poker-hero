@@ -286,6 +286,78 @@ def test_restore_rejects_checksum_tampering_before_writing(
     assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 
 
+def test_restore_rejects_naive_job_timestamp_before_writing(
+    tmp_path: Path,
+) -> None:
+    source = make_client(tmp_path / "source")
+    source_job = create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        record_name = f"jobs/{source_job['id']}/job.json"
+        record = json.loads(archive.read(record_name))
+    record["created_at"] = "2026-07-31T12:00:00"
+    record_bytes = (json.dumps(record, indent=2) + "\n").encode()
+    manifest["jobs"][0]["record_sha256"] = sha256(record_bytes).hexdigest()
+    modified = rebuild_archive(
+        export.content,
+        {
+            record_name: record_bytes,
+            "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("naive-job.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "job" in response.json()["detail"]
+    assert "created_at must include a timezone" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
+def test_restore_rejects_naive_report_timestamp_before_writing(
+    tmp_path: Path,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        report_name = manifest["benchmark_reports"][0]["report_file"]
+        report = json.loads(archive.read(report_name))
+    report["created_at"] = "2026-07-31T12:00:00"
+    report_bytes = (json.dumps(report, indent=2) + "\n").encode()
+    manifest["benchmark_reports"][0]["report_sha256"] = sha256(
+        report_bytes
+    ).hexdigest()
+    modified = rebuild_archive(
+        export.content,
+        {
+            report_name: report_bytes,
+            "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("naive-report.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "report" in response.json()["detail"]
+    assert "created_at must include a timezone" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
 def test_restore_rejects_conflicting_existing_job_without_partial_import(
     tmp_path: Path,
 ) -> None:

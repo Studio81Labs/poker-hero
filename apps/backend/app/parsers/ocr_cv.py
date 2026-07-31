@@ -742,7 +742,12 @@ def _load_image(image_path: Path) -> Image.Image:
             return ImageOps.exif_transpose(opened).convert("RGB")
     except FileNotFoundError as exc:
         raise ParserError(f"Screenshot file does not exist: {image_path}") from exc
-    except (OSError, UnidentifiedImageError, ValueError) as exc:
+    except (
+        Image.DecompressionBombError,
+        OSError,
+        UnidentifiedImageError,
+        ValueError,
+    ) as exc:
         raise ParserError(f"Screenshot file could not be read: {image_path}") from exc
 
 

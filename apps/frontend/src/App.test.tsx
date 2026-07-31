@@ -3911,6 +3911,82 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("downloads and restores full application backups from the info dialog", async () => {
+    const restoredJob = approvedJob();
+    fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/health")) {
+        return Promise.resolve(jsonResponse({
+          status: "ok",
+          parser_provider: "ocr_cv",
+          recommendation_provider: "local_solver",
+          recommendation_engine: "postflop_solver",
+        }));
+      }
+      if (url.endsWith("/api/backups/restore")) {
+        return Promise.resolve(jsonResponse({
+          imported_jobs: 1,
+          reused_jobs: 0,
+          imported_benchmark_reports: 1,
+          reused_benchmark_reports: 0,
+          total_jobs: 1,
+          total_benchmark_reports: 1,
+        }));
+      }
+      if (url.endsWith("/api/jobs")) {
+        return Promise.resolve(processingQueueResponse([restoredJob]));
+      }
+      if (url.endsWith("/api/history")) {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "restored-history",
+        }));
+      }
+      return Promise.reject(new Error(
+        `Unexpected request: ${url} ${init?.method ?? "GET"}`,
+      ));
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "About this app" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "About Poker Training Analyzer",
+    });
+    expect(within(dialog).getByRole("link", {
+      name: "Download application backup",
+    })).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/backups/export",
+    );
+
+    const file = new File(["backup"], "poker-hero-backup.zip", {
+      type: "application/zip",
+    });
+    await user.upload(
+      within(dialog).getByLabelText("Application backup ZIP"),
+      file,
+    );
+
+    expect(await screen.findByText(
+      "Backup restored: 1 new hand, 1 benchmark report",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: /Open screenshot 1: table\.png/,
+    })).toBeInTheDocument());
+    const restoreCall = fetchMock().mock.calls.find(
+      ([input]) => String(input).endsWith("/api/backups/restore"),
+    );
+    expect(restoreCall).toBeDefined();
+    expect(restoreCall?.[1]?.method).toBe("POST");
+    expect(restoreCall?.[1]?.body).toBeInstanceOf(FormData);
+    expect((restoreCall?.[1]?.body as FormData).get("file")).toBe(file);
+    expect(fetchMock().mock.calls.some(
+      ([input]) => String(input).endsWith("/api/history"),
+    )).toBe(true);
+  });
+
   it("restores automation settings across reloads", async () => {
     const firstRender = render(<App />);
     const user = userEvent.setup();

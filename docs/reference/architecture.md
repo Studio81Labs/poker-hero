@@ -99,6 +99,24 @@ an imported job never presents user-approved state as detected OCR evidence.
 The shared import/export corpus contract is capped at 250 selected hands; the
 selection API prevents the app from producing a dataset that import rejects.
 
+Full application backups are a separate schema and recovery boundary. A
+versioned ZIP contains every durable `JobRecord`, its original image, and all
+persisted benchmark reports. Because training decisions, completed reviews,
+lesson notes, recommendations, history timestamps, and benchmark selection are
+job fields, they travel with the record. Export serializes against benchmark,
+job, and history mutations and refuses to capture active parser or
+recommendation work.
+
+Restore parses and verifies the complete archive before acquiring the mutation
+locks. It checks declared paths, entry counts and sizes, supported images,
+record models, report references, and SHA-256 checksums. Under the locks it
+rechecks current state, reuses exact records, creates only missing records, and
+rejects divergent stable IDs. New job directories and report files are
+published atomically; a write failure rolls back files created by that restore
+and recomputes the latest-report pointer. Configuration, credentials, and
+transient benchmark-import journals remain deployment concerns and are not
+portable user data.
+
 ## State Flow
 
 1. A capture or upload creates an independent job.

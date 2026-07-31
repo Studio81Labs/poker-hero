@@ -138,6 +138,38 @@ class FileJobStore:
                 temp_path.unlink()
         return job
 
+    def restore(self, job: JobRecord, image_bytes: bytes) -> JobRecord:
+        job_dir = self._job_dir(job.id)
+        if job_dir.exists():
+            raise FileExistsError(job.id)
+        if (
+            not job.image_filename
+            or Path(job.image_filename).name != job.image_filename
+            or "\\" in job.image_filename
+        ):
+            raise ValueError("job image filename must not contain a path")
+        temp_dir = Path(tempfile.mkdtemp(
+            dir=self.jobs_dir,
+            prefix=".backup-restore.",
+        ))
+        try:
+            self._write_file(
+                temp_dir / job.image_filename,
+                image_bytes,
+            )
+            self._write_file(
+                temp_dir / "job.json",
+                job.model_dump_json(indent=2).encode(),
+            )
+            os.replace(temp_dir, job_dir)
+        finally:
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+        return job
+
+    def delete(self, job_id: str) -> None:
+        shutil.rmtree(self._job_dir(job_id))
+
     def _job_dir(self, job_id: str) -> Path:
         self._validate_job_id(job_id)
         return self._resolve_under(self.jobs_dir, self.jobs_dir / job_id)
@@ -177,6 +209,12 @@ class FileJobStore:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink()
 
+    def _write_file(self, path: Path, payload: bytes) -> None:
+        with path.open("xb") as file:
+            file.write(payload)
+            file.flush()
+            os.fsync(file.fileno())
+
 
 class FileBenchmarkStore:
     def __init__(self, data_dir: Path) -> None:
@@ -197,8 +235,8 @@ class FileBenchmarkStore:
             raise BenchmarkNotFoundError(report_id)
         return BenchmarkReport.model_validate_json(path.read_text())
 
-    def list(self, limit: int = 10) -> list[BenchmarkReport]:
-        if limit <= 0:
+    def list(self, limit: int | None = 10) -> list[BenchmarkReport]:
+        if limit is not None and limit <= 0:
             return []
 
         report_paths = sorted(
@@ -209,7 +247,9 @@ class FileBenchmarkStore:
             ),
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
-        )[:limit]
+        )
+        if limit is not None:
+            report_paths = report_paths[:limit]
         reports = [
             BenchmarkReport.model_validate_json(path.read_text())
             for path in report_paths
@@ -221,6 +261,58 @@ class FileBenchmarkStore:
         self._atomic_write(self.benchmarks_dir / f"{report.id}.json", payload)
         self._atomic_write(self.benchmarks_dir / "latest.json", payload)
         return report
+
+    def restore(self, report: BenchmarkReport) -> BenchmarkReport:
+        path = self._report_path(report.id)
+        if path.exists():
+            raise FileExistsError(report.id)
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                dir=path.parent,
+                encoding="utf-8",
+                prefix=".backup-report.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                temp_file.write(report.model_dump_json(indent=2))
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            report_timestamp_ns = int(
+                report.created_at.timestamp() * 1_000_000_000
+            )
+            os.utime(
+                temp_path,
+                ns=(report_timestamp_ns, report_timestamp_ns),
+            )
+            os.link(temp_path, path)
+        finally:
+            if temp_path is not None and temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    # The final hard link may already be published. A hidden
+                    # cleanup file is safer than reporting a partial restore.
+                    pass
+        return report
+
+    def delete(self, report_id: str) -> None:
+        path = self._report_path(report_id)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+
+    def refresh_latest(self) -> None:
+        reports = self.list(limit=None)
+        latest_path = self.benchmarks_dir / "latest.json"
+        if not reports:
+            latest_path.unlink(missing_ok=True)
+            return
+        latest = max(reports, key=lambda report: (report.created_at, report.id))
+        self._atomic_write(latest_path, latest.model_dump_json(indent=2))
 
     def get_import(self, request_id: str) -> BenchmarkDatasetImportReceipt:
         path = self._import_receipt_path(request_id)

@@ -447,6 +447,15 @@ class JobQueue(BaseModel):
     snapshot_version: str
 
 
+class ApplicationBackupRestoreResult(BaseModel):
+    imported_jobs: int = Field(ge=0)
+    reused_jobs: int = Field(ge=0)
+    imported_benchmark_reports: int = Field(ge=0)
+    reused_benchmark_reports: int = Field(ge=0)
+    total_jobs: int = Field(ge=0)
+    total_benchmark_reports: int = Field(ge=0)
+
+
 class BenchmarkSelectionRequest(BaseModel):
     included: bool
 

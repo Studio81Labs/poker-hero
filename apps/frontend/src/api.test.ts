@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applicationBackupUrl,
   archiveJobs,
   getHistory,
   getProcessingJobs,
   requestRecommendation,
+  restoreApplicationBackup,
   uploadScreenshot,
 } from "./api";
 
@@ -40,6 +42,43 @@ describe("archiveJobs", () => {
       jobIds.slice(100, 200),
       jobIds.slice(200),
     ]);
+  });
+});
+
+describe("application backups", () => {
+  it("uses the same-origin API URL for backup downloads", () => {
+    expect(applicationBackupUrl()).toBe(
+      "http://localhost:8000/api/backups/export",
+    );
+  });
+
+  it("uploads a selected ZIP to the restore endpoint", async () => {
+    const result = {
+      imported_jobs: 2,
+      reused_jobs: 1,
+      imported_benchmark_reports: 1,
+      reused_benchmark_reports: 0,
+      total_jobs: 3,
+      total_benchmark_reports: 1,
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(result));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["backup"], "poker-hero-backup.zip", {
+      type: "application/zip",
+    });
+
+    await expect(restoreApplicationBackup(file)).resolves.toEqual(result);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/backups/restore",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
+    const request = fetchMock.mock.calls[0][1];
+    expect(request.body).toBeInstanceOf(FormData);
+    expect((request.body as FormData).get("file")).toBe(file);
   });
 });
 

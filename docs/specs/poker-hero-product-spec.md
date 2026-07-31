@@ -566,7 +566,9 @@ can be found and reopened through persisted archive search without replacing
 the newest-history strip or disturbing active processing work, and that a
 25-result search can append and open its older page without duplicating results.
 Archived and unarchived hands are also reconstructed from the backend after all
-browser-local and session storage is cleared.
+browser-local and session storage is cleared. Persisted training differences
+can be narrowed by street and certainty, then completed in sequence without
+losing the active review filters.
 
 ## Success Criteria
 

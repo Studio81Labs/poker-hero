@@ -565,6 +565,8 @@ queue. The suite also proves that a hand older than the compact history cache
 can be found and reopened through persisted archive search without replacing
 the newest-history strip or disturbing active processing work, and that a
 25-result search can append and open its older page without duplicating results.
+Archived and unarchived hands are also reconstructed from the backend after all
+browser-local and session storage is cleared.
 
 ## Success Criteria
 

@@ -563,7 +563,8 @@ full application backup downloaded from the information dialog can be uploaded
 again and verified idempotently without disturbing the current processing
 queue. The suite also proves that a hand older than the compact history cache
 can be found and reopened through persisted archive search without replacing
-the newest-history strip or disturbing active processing work.
+the newest-history strip or disturbing active processing work, and that a
+25-result search can append and open its older page without duplicating results.
 
 ## Success Criteria
 

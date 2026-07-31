@@ -1358,7 +1358,13 @@ def is_supported_image(image_bytes: bytes) -> bool:
             image_format = image.format
             image.verify()
             return image_format in SUPPORTED_IMAGE_FORMATS
-    except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
+    except (
+        Image.DecompressionBombError,
+        OSError,
+        SyntaxError,
+        UnidentifiedImageError,
+        ValueError,
+    ):
         return False
 
 

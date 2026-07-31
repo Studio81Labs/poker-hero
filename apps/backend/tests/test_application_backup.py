@@ -11,8 +11,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 import app.api as api_module
+import app.application_backup as application_backup_module
 from app.api import create_app
 from app.config import Settings
 from app.storage import FileBenchmarkStore, FileJobStore
@@ -356,6 +358,46 @@ def test_restored_old_reports_do_not_displace_recent_report_history(
     assert [report.id for report in recent_history] == [
         report.id for report in reversed(recent_reports)
     ]
+
+
+def test_backup_rejects_decompression_bomb_images_without_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    valid_export = source.get("/api/backups/export")
+    assert valid_export.status_code == 200
+
+    def raise_decompression_bomb(*args: object, **kwargs: object):
+        raise Image.DecompressionBombError("image dimensions are unsafe")
+
+    monkeypatch.setattr(
+        application_backup_module.Image,
+        "open",
+        raise_decompression_bomb,
+    )
+
+    rejected_export = source.get("/api/backups/export")
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+    rejected_restore = destination.post(
+        "/api/backups/restore",
+        files={
+            "file": (
+                "decompression-bomb.zip",
+                valid_export.content,
+                "application/zip",
+            )
+        },
+    )
+
+    assert rejected_export.status_code == 409
+    assert "Image is invalid" in rejected_export.json()["detail"]
+    assert rejected_restore.status_code == 400
+    assert "image is invalid" in rejected_restore.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 
 
 def test_restore_rejects_checksum_tampering_before_writing(

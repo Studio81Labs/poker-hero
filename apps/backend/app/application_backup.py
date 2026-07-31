@@ -639,7 +639,13 @@ def _validated_job_image_path(
         with Image.open(image_path) as image:
             image_format = image.format
             image.verify()
-    except (OSError, SyntaxError, UnidentifiedImageError, ValueError) as exc:
+    except (
+        Image.DecompressionBombError,
+        OSError,
+        SyntaxError,
+        UnidentifiedImageError,
+        ValueError,
+    ) as exc:
         raise ApplicationBackupExportError(
             f"Image is invalid for {job.original_filename}"
         ) from exc
@@ -684,7 +690,13 @@ def _is_supported_image(image_bytes: bytes) -> bool:
             image_format = image.format
             image.verify()
             return image_format in SUPPORTED_IMAGE_FORMATS
-    except (OSError, SyntaxError, UnidentifiedImageError, ValueError):
+    except (
+        Image.DecompressionBombError,
+        OSError,
+        SyntaxError,
+        UnidentifiedImageError,
+        ValueError,
+    ):
         return False
 
 

@@ -202,6 +202,36 @@ async function createPendingTrainingReview(
   return { id: uploadedJob.id };
 }
 
+async function completeStaleTrainingReviews(
+  page: Page,
+  fixturePrefix: string,
+): Promise<void> {
+  const staleProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(staleProgressResponse.ok()).toBe(true);
+  const staleProgress = await staleProgressResponse.json() as {
+    recent_hands: Array<{
+      job_id: string;
+      original_filename: string;
+      reviewed_at: string | null;
+    }>;
+  };
+  for (const staleHand of staleProgress.recent_hands) {
+    if (
+      staleHand.reviewed_at !== null
+      || !staleHand.original_filename.startsWith(fixturePrefix)
+    ) {
+      continue;
+    }
+    const cleanupResponse = await page.request.put(
+      `${BACKEND_URL}/api/jobs/${staleHand.job_id}/training-review`,
+      { data: { note: null } },
+    );
+    expect(cleanupResponse.ok()).toBe(true);
+  }
+}
+
 async function createApprovedScreenshot(
   page: Page,
   filename: string,
@@ -1128,30 +1158,7 @@ test("drills into persisted solver attribution", async ({
     `w${testInfo.workerIndex}`,
     `p${testInfo.repeatEachIndex}`,
   ].join("-");
-  const staleProgressResponse = await page.request.get(
-    `${BACKEND_URL}/api/training/progress`,
-  );
-  expect(staleProgressResponse.ok()).toBe(true);
-  const staleProgress = await staleProgressResponse.json() as {
-    recent_hands: Array<{
-      job_id: string;
-      original_filename: string;
-      reviewed_at: string | null;
-    }>;
-  };
-  for (const staleHand of staleProgress.recent_hands) {
-    if (
-      staleHand.reviewed_at !== null
-      || !staleHand.original_filename.startsWith(fixturePrefix)
-    ) {
-      continue;
-    }
-    const cleanupResponse = await page.request.put(
-      `${BACKEND_URL}/api/jobs/${staleHand.job_id}/training-review`,
-      { data: { note: null } },
-    );
-    expect(cleanupResponse.ok()).toBe(true);
-  }
+  await completeStaleTrainingReviews(page, fixturePrefix);
 
   const initialProgressResponse = await page.request.get(
     `${BACKEND_URL}/api/training/progress`,
@@ -1221,6 +1228,98 @@ test("drills into persisted solver attribution", async ({
   expect(persistedJob).toMatchObject({
     recommendation: {
       raw: { engine: "e2e_provider_stub" },
+    },
+    training_reviewed_at: expect.any(String),
+  });
+});
+
+test("drills into a persisted solver fallback", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const fixturePrefix = [
+    "solver-fallback",
+    `w${testInfo.workerIndex}`,
+    `p${testInfo.repeatEachIndex}`,
+  ].join("-");
+  await completeStaleTrainingReviews(page, fixturePrefix);
+  const fallbackReason = "E2E fallback: unsupported postflop tree";
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    solver_coverage: {
+      fallback_reasons: Array<{ reason: string; hands: number }>;
+    };
+  };
+  const initialFallbackHands = initialProgress.solver_coverage
+    .fallback_reasons.find((fallback) => fallback.reason === fallbackReason)
+    ?.hands ?? 0;
+
+  const armResponse = await page.request.post(
+    `${PROVIDER_URL}/control/fallback-next-recommendation`,
+  );
+  expect(armResponse.ok()).toBe(true);
+  const filename = attemptFilename("solver-fallback", testInfo);
+  const fallbackJob = await createPendingTrainingReview(page, filename, {
+    certainty: "medium",
+    street: "flop",
+  });
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  const expectedFallbackHands = initialFallbackHands + 1;
+  const fallbackButton = progressDialog.getByRole("button", {
+    name: new RegExp(
+      `^Show ${expectedFallbackHands} ${expectedFallbackHands === 1 ? "hand" : "hands"}`
+        + ` using fallback: ${fallbackReason}\\.`,
+    ),
+  });
+  await expect(fallbackButton).toBeVisible();
+  await fallbackButton.click();
+
+  const activeSolverFilter = progressDialog.getByLabel("Active solver filter");
+  await expect(activeSolverFilter).toContainText(fallbackReason);
+  const fallbackReview = progressDialog.getByRole("button", {
+    name: `Open ${filename} training review`,
+    exact: true,
+  });
+  await expect(fallbackReview).toBeVisible();
+  await fallbackReview.click();
+
+  await expect(progressDialog).toBeHidden();
+  const recommendation = page.getByRole("region", { name: "Recommendation" });
+  await expect(recommendation).toContainText(fallbackReason);
+  await expect(recommendation).toContainText("Postflop solver fallback");
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed" })
+    .click();
+  await expect(page.getByLabel("Training decision comparison"))
+    .toContainText("Reviewed");
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${fallbackJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    recommendation: { raw: Record<string, unknown> } | null;
+    training_reviewed_at: string | null;
+  };
+  expect(persistedJob).toMatchObject({
+    recommendation: {
+      raw: {
+        engine: "e2e_provider_stub",
+        fallback_reason: fallbackReason,
+        requested_engine: "postflop_solver",
+      },
     },
     training_reviewed_at: expect.any(String),
   });

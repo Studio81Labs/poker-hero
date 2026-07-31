@@ -360,6 +360,43 @@ def test_restored_old_reports_do_not_displace_recent_report_history(
     ]
 
 
+def test_restore_tracks_published_report_when_temp_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_client(tmp_path / "source")
+    source_job = create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    assert export.status_code == 200
+
+    original_unlink = Path.unlink
+
+    def fail_report_temp_cleanup(
+        path: Path,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        if path.name.startswith(".backup-report."):
+            raise OSError("simulated temporary file cleanup failure")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_report_temp_cleanup)
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    restore = destination.post(
+        "/api/backups/restore",
+        files={"file": ("backup.zip", export.content, "application/zip")},
+    )
+
+    assert restore.status_code == 200
+    assert restore.json()["imported_benchmark_reports"] == 1
+    assert FileJobStore(destination_dir).get(str(source_job["id"])).id == source_job["id"]
+    restored_report = FileBenchmarkStore(destination_dir).get_latest()
+    assert restored_report is not None
+    assert list((destination_dir / "benchmarks").glob(".backup-report.*.tmp"))
+
+
 def test_backup_rejects_decompression_bomb_images_without_writing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

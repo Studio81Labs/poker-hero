@@ -290,7 +290,12 @@ class FileBenchmarkStore:
             os.link(temp_path, path)
         finally:
             if temp_path is not None and temp_path.exists():
-                temp_path.unlink()
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    # The final hard link may already be published. A hidden
+                    # cleanup file is safer than reporting a partial restore.
+                    pass
         return report
 
     def delete(self, report_id: str) -> None:

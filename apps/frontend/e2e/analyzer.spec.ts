@@ -892,8 +892,19 @@ test("filters and exports persisted lesson notes", async ({
   };
   const flopFilename = attemptFilename("lesson-export-flop", testInfo);
   const turnFilename = attemptFilename("lesson-export-turn", testInfo);
-  const flopNote = `Review flop continuation bets from ${flopFilename}.`;
-  const turnNote = `Turn bluff-catcher check for ${turnFilename}.`;
+  const turnControlFilename = attemptFilename(
+    "lesson-export-turn-control",
+    testInfo,
+  );
+  const lessonFilterToken = [
+    "shared-filter",
+    `w${testInfo.workerIndex}`,
+    `p${testInfo.repeatEachIndex}`,
+    `r${testInfo.retry}`,
+  ].join("-");
+  const flopNote = `${lessonFilterToken}: review the flop continuation bet.`;
+  const turnNote = `${lessonFilterToken}: check the turn bluff catcher.`;
+  const turnControlNote = `Review turn value bets from ${turnControlFilename}.`;
 
   const flopJob = await createReviewedLesson(
     page,
@@ -906,30 +917,48 @@ test("filters and exports persisted lesson notes", async ({
     turnNote,
     { boardCards: "Qs Jc 2h 9d", street: "turn" },
   );
+  const turnControlJob = await createReviewedLesson(
+    page,
+    turnControlFilename,
+    turnControlNote,
+    { boardCards: "Qs Jc 2h 8s", street: "turn" },
+  );
 
   await page.getByRole("button", { name: "Training progress" }).click();
   const progressDialog = page.getByRole("dialog", {
     name: "Training progress",
   });
   await expect(progressDialog).toBeVisible();
-  const expectedLessonCount = initialProgress.lesson_count + 2;
+  const expectedLessonCount = initialProgress.lesson_count + 3;
   await progressDialog.getByRole("button", {
     name: `Lessons ${expectedLessonCount}`,
     exact: true,
   }).click();
 
   await progressDialog.getByLabel("Lesson street").selectOption("turn");
-  const lessonSearch = progressDialog.getByLabel("Search saved lesson notes");
-  await lessonSearch.fill(turnFilename);
-  await progressDialog.getByRole("button", {
-    name: "Apply lesson search",
-  }).click();
-
   const turnLesson = progressDialog.getByRole("button", {
     name: `Open ${turnFilename} training review`,
     exact: true,
   });
+  const turnControlLesson = progressDialog.getByRole("button", {
+    name: `Open ${turnControlFilename} training review`,
+    exact: true,
+  });
+  await expect(turnLesson).toBeVisible();
+  await expect(turnControlLesson).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${flopFilename} training review`,
+    exact: true,
+  })).toBeHidden();
+
+  const lessonSearch = progressDialog.getByLabel("Search saved lesson notes");
+  await lessonSearch.fill(lessonFilterToken);
+  await progressDialog.getByRole("button", {
+    name: "Apply lesson search",
+  }).click();
+
   await expect(turnLesson).toContainText(turnNote);
+  await expect(turnControlLesson).toBeHidden();
   await expect(progressDialog.getByRole("button", {
     name: `Open ${flopFilename} training review`,
     exact: true,
@@ -946,7 +975,7 @@ test("filters and exports persisted lesson notes", async ({
   );
   expect(download.url()).toContain("lesson_street=turn");
   expect(decodeURIComponent(download.url())).toContain(
-    `lesson_query=${turnFilename}`,
+    `lesson_query=${lessonFilterToken}`,
   );
   const lessonPath = await download.path();
   expect(lessonPath).not.toBeNull();
@@ -960,8 +989,10 @@ test("filters and exports persisted lesson notes", async ({
   expect(lessonDocument).toContain(turnNote);
   expect(lessonDocument).not.toContain(flopFilename);
   expect(lessonDocument).not.toContain(flopNote);
+  expect(lessonDocument).not.toContain(turnControlFilename);
+  expect(lessonDocument).not.toContain(turnControlNote);
 
-  for (const lessonJob of [flopJob, turnJob]) {
+  for (const lessonJob of [flopJob, turnJob, turnControlJob]) {
     const cleanupResponse = await page.request.put(
       `${BACKEND_URL}/api/jobs/${lessonJob.id}/training-review`,
       { data: { note: null } },

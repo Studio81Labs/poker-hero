@@ -1792,6 +1792,85 @@ test("persists a parser failure and recovers by re-uploading the screenshot", as
   await expect(matchingQueueItems).toContainText("error");
 });
 
+test("restores history and processing after browser storage is cleared", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const archivedFilename = attemptFilename("storage-reset-history", testInfo);
+  const archivedJob = await uploadValidScreenshot(page, archivedFilename);
+  await page.getByLabel("Pot").fill("66.75");
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(archivedJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(archivedJob.queueItem).toBeHidden();
+
+  const pendingFilename = attemptFilename("storage-reset-pending", testInfo);
+  const pendingJob = await uploadValidScreenshot(page, pendingFilename);
+  await expect(pendingJob.queueItem).toContainText("parsed");
+  const historyPanel = page.getByRole("region", { name: "Session history" });
+  await expect(historyPanel.getByRole("button", {
+    name: "Reopen history item 1",
+    exact: true,
+  })).toBeVisible();
+
+  const storageCounts = await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    return {
+      local: localStorage.length,
+      session: sessionStorage.length,
+    };
+  });
+  expect(storageCounts).toEqual({ local: 0, session: 0 });
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Poker Training Analyzer" }),
+  ).toBeVisible();
+  const restoredPendingJob = page.getByRole("button", {
+    name: filenamePattern(pendingFilename),
+  });
+  await expect(restoredPendingJob).toContainText("parsed");
+  const restoredHistoryItem = page.getByRole("region", {
+    name: "Session history",
+  }).getByRole("button", { name: "Reopen history item 1", exact: true });
+  await expect(restoredHistoryItem).toBeVisible();
+
+  await restoredHistoryItem.click();
+  await expect(page.getByLabel("Pot")).toHaveValue("66.75");
+  await expect(restoredPendingJob).toContainText("parsed");
+  const persistedArchivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${archivedJob.id}`,
+  );
+  expect(persistedArchivedResponse.ok()).toBe(true);
+  const persistedArchivedJob = await persistedArchivedResponse.json() as {
+    archived_at: string | null;
+    approved_state: { pot_size: number } | null;
+    status: string;
+  };
+  expect(persistedArchivedJob).toMatchObject({
+    archived_at: expect.any(String),
+    approved_state: { pot_size: 66.75 },
+    status: "recommended",
+  });
+
+  if (await page.getByRole("button", { name: "Automation On" }).isVisible()) {
+    await page.getByRole("button", { name: "Automation On" }).click();
+  }
+  await restoredPendingJob.click();
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(restoredPendingJob).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(restoredPendingJob).toBeHidden();
+});
+
 test("searches beyond cached history without replacing active work", async ({
   page,
 }, testInfo) => {

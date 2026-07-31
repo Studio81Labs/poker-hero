@@ -84,6 +84,8 @@ The main provider switches are:
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
 - `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size for
   benchmark selection, export, and import (default 100 MiB)
+- `POKER_MAX_BACKUP_UPLOAD_BYTES`: maximum full application backup ZIP size for
+  export and restore (default 100 MiB)
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
 - `POKER_PROXY_SHARED_SECRET`: optional Worker-to-backend credential, at least
   32 characters; leave empty for local development
@@ -231,6 +233,16 @@ dropped response or same-tab reload can therefore recover newly created
 benchmark-only cases that intentionally appear in neither operational
 projection.
 
+The app information dialog can export a versioned full-data backup containing
+every job record, original screenshot, training decision, review and lesson
+note, recommendation, history timestamp, benchmark selection, and benchmark
+report. Restore validates the complete ZIP, member paths, Pydantic records,
+image payloads, limits, and SHA-256 checksums before writing. Missing records
+are merged, exact records are reused, and a divergent existing job, image, or
+report rejects the restore without overwriting current data. Provider
+credentials, environment configuration, and transient import journals are
+intentionally excluded.
+
 ### Offline Parser Benchmarks
 
 Export approved ground-truth hands from the Parser benchmark dialog, then run
@@ -321,6 +333,8 @@ for the runtime topology.
 - `GET /api/training/progress`
 - `GET /api/training/lessons/export`
 - `GET /api/benchmarks`
+- `GET /api/backups/export`
+- `POST /api/backups/restore`
 - `GET /api/benchmarks/export`
 - `POST /api/benchmarks/import`
 - `GET /api/benchmarks/{report_id}`

@@ -1,4 +1,5 @@
 import type {
+  ApplicationBackupRestoreResult,
   BenchmarkDatasetImportReceipt,
   BenchmarkDatasetImportResult,
   BenchmarkOverview,
@@ -56,6 +57,23 @@ async function readJson<T>(response: Response): Promise<T> {
 
 export function imageUrl(jobId: string): string {
   return `${API_BASE_URL}/api/jobs/${jobId}/image`;
+}
+
+export function applicationBackupUrl(): string {
+  return `${API_BASE_URL}/api/backups/export`;
+}
+
+export async function restoreApplicationBackup(
+  file: File,
+): Promise<ApplicationBackupRestoreResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/backups/restore`, {
+    method: "POST",
+    body: form,
+    credentials: "include",
+  });
+  return readJson<ApplicationBackupRestoreResult>(response);
 }
 
 export async function getSystemInfo(): Promise<SystemInfo> {

@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import {
   ApiResponseError,
+  applicationBackupUrl,
   approveState,
   archiveJobs,
   benchmarkDatasetUrl,
@@ -23,6 +24,7 @@ import {
   recordTrainingDecision,
   reopenTrainingReview,
   requestRecommendation,
+  restoreApplicationBackup,
   runParserBenchmark,
   setBenchmarkInclusion,
   trainingLessonsExportUrl,
@@ -3287,6 +3289,7 @@ export default function App() {
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [backupRestoring, setBackupRestoring] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
   const [trainingProgressView, setTrainingProgressView] = useState<TrainingProgressView>("recent");
@@ -3344,6 +3347,7 @@ export default function App() {
   const appMountedRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
+  const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
   const historySearchRequestRef = useRef(0);
@@ -6139,6 +6143,54 @@ export default function App() {
       .finally(() => setSystemInfoLoading(false));
   }
 
+  async function onApplicationBackupRestore(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const backupFile = event.target.files?.[0];
+    event.target.value = "";
+    if (!backupFile || busy || backupRestoring) {
+      return;
+    }
+
+    setBackupRestoring(true);
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await restoreApplicationBackup(backupFile);
+      setBenchmarkOverview(null);
+      setSelectedBenchmarkReport(null);
+      setTrainingProgress(null);
+      clearHistorySearch();
+      markProcessingQueueSessionUnsynced();
+      scheduleProcessingQueueRestore();
+      markHistorySessionUnsynced();
+      void requestHistoryRestore(null, true);
+
+      const restoredItems = result.imported_jobs
+        + result.imported_benchmark_reports;
+      const reusedItems = result.reused_jobs
+        + result.reused_benchmark_reports;
+      const restoredParts = [
+        result.imported_jobs > 0
+          ? `${result.imported_jobs} new ${result.imported_jobs === 1 ? "hand" : "hands"}`
+          : null,
+        result.imported_benchmark_reports > 0
+          ? `${result.imported_benchmark_reports} benchmark ${result.imported_benchmark_reports === 1 ? "report" : "reports"}`
+          : null,
+      ].filter((part): part is string => part !== null);
+      toast.success(
+        restoredItems > 0
+          ? `Backup restored: ${restoredParts.join(", ")}`
+          : `Backup already present: ${reusedItems} ${reusedItems === 1 ? "record" : "records"} verified`,
+      );
+    } catch (backupError) {
+      setError(messageFromError(backupError, "Could not restore application backup"));
+    } finally {
+      setBackupRestoring(false);
+      setBusy(false);
+    }
+  }
+
   function openTrainingDialog() {
     setTrainingReviewQueueJobId(null);
     setTrainingDialogOpen(true);
@@ -7824,7 +7876,13 @@ export default function App() {
                 <h2 id="info-dialog-title">About Poker Training Analyzer</h2>
                 <p>Post-hand Texas Hold&apos;em review and training</p>
               </div>
-              <button type="button" className="dialog-icon-button" onClick={() => setInfoDialogOpen(false)} aria-label="Close app information">
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={() => setInfoDialogOpen(false)}
+                disabled={backupRestoring}
+                aria-label="Close app information"
+              >
                 <X size={16} aria-hidden="true" />
               </button>
             </div>
@@ -7859,10 +7917,56 @@ export default function App() {
                 <h3>Training scope</h3>
                 <p>Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
               </section>
+              <section className="info-dialog-section data-recovery-section">
+                <h3>Data and recovery</h3>
+                <p>Back up screenshots, reviewed hands, lesson notes, training decisions, recommendations, and benchmark reports in one portable ZIP.</p>
+                <div className="data-recovery-actions">
+                  <a
+                    className={`secondary-button${busy ? " disabled" : ""}`}
+                    href={applicationBackupUrl()}
+                    download
+                    aria-label="Download application backup"
+                    aria-disabled={busy}
+                    tabIndex={busy ? -1 : undefined}
+                    onClick={(event) => {
+                      if (busy) {
+                        event.preventDefault();
+                      }
+                    }}
+                  >
+                    <Download size={14} aria-hidden="true" />
+                    Download backup
+                  </a>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => applicationBackupInputRef.current?.click()}
+                    disabled={busy || backupRestoring}
+                    aria-label="Restore application backup"
+                  >
+                    <Upload size={14} aria-hidden="true" />
+                    {backupRestoring ? "Restoring..." : "Restore backup"}
+                  </button>
+                  <input
+                    ref={applicationBackupInputRef}
+                    className="sr-only"
+                    type="file"
+                    accept=".zip,application/zip"
+                    aria-label="Application backup ZIP"
+                    disabled={busy || backupRestoring}
+                    onChange={(event) => void onApplicationBackupRestore(event)}
+                  />
+                </div>
+              </section>
             </div>
 
             <div className="automation-dialog-footer info-dialog-footer">
-              <button type="button" className="secondary-button" onClick={() => setInfoDialogOpen(false)}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setInfoDialogOpen(false)}
+                disabled={backupRestoring}
+              >
                 Done
               </button>
             </div>

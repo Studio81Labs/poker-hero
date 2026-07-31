@@ -140,6 +140,8 @@ The frontend is a browser control panel for:
   browser cache.
 - Selecting approved hands as parser ground truth and reviewing field-level benchmark results.
 - Exporting the explicitly selected screenshots and canonical labels as a portable parser dataset.
+- Exporting and restoring all durable application data as a portable,
+  versioned backup without replacing divergent current records.
 
 ### Backend API
 
@@ -152,6 +154,8 @@ The backend API:
   pre-reveal training decision, and recommendation result.
 - Runs the active parser against an explicit ground-truth corpus without changing the original jobs.
 - Persists the latest benchmark report with case and field-level accuracy.
+- Exports complete durable job/image and benchmark-report state and restores
+  it through validation-first, conflict-safe merge semantics.
 - Derives training progress from completed decision/recommendation pairs without
   scoring automation-only hands.
 - Normalizes approved hero-position aliases and aggregates position-level
@@ -402,6 +406,24 @@ are approved and selected as parser ground truth. They do not synthesize parser
 results or confidence from canonical labels.
 Parser dataset selection, export, and import share a 250-hand corpus limit.
 
+## Application Backup And Restore
+
+The full application backup is distinct from the parser dataset. It contains
+all persisted jobs and source screenshots, including parser output, approved
+state, training decisions, completed reviews and lesson notes,
+recommendations, history timestamps, and benchmark selection, plus every
+persisted benchmark report. It does not contain provider credentials,
+environment configuration, or transient import journals.
+
+The ZIP uses a versioned manifest with stable job/report paths, byte sizes, and
+SHA-256 checksums. Export refuses to snapshot active parser or recommendation
+operations. Restore validates the complete archive, model schemas, image
+payloads, path safety, report-to-job references, configured size limits, and
+checksums before writing. Missing records are created with their stable IDs;
+existing records are reused only when both structured data and source image
+match exactly. Any divergent job or report rejects the operation without
+overwriting current data. Repeating a completed restore is idempotent.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.
@@ -640,6 +662,9 @@ Poker Hero is successful when:
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.
+- A valid full backup can restore jobs, screenshots, history, training data,
+  recommendations, benchmark selection, and reports; exact re-restores are
+  idempotent and conflicting records are not overwritten.
 - The system can swap parsers and recommendation providers without changing the core UI workflow.
 - A deployed backend can reject application API traffic that does not pass
   through the configured frontend Worker while retaining a platform health

@@ -21,6 +21,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 
+from app.application_backup import (
+    ApplicationBackupError,
+    MAX_BACKUP_EXPANSION_RATIO,
+    build_application_backup_archive,
+    parse_application_backup_archive,
+    restore_application_backup,
+    stream_application_backup,
+)
 from app.config import Settings, get_settings
 from app.benchmarking import run_benchmark
 from app.dataset_export import (
@@ -39,6 +47,7 @@ from app.dataset_import import (
 )
 from app.models import (
     BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
+    ApplicationBackupRestoreResult,
     ArchiveJobsRequest,
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
@@ -136,6 +145,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     history_lock = RLock()
     dataset_import_lock = Lock()
     benchmark_corpus_lock = Lock()
+    application_backup_lock = Lock()
 
     def job_lock_index(job_id: str) -> int:
         return hash(job_id) % len(job_locks)
@@ -291,13 +301,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not is_supported_image(image_bytes):
             raise HTTPException(status_code=400, detail="Upload must contain supported image data")
 
-        job = store.create_job(
-            original_filename=file.filename or "screenshot.png",
-            image_bytes=image_bytes,
-            parser_provider=active_settings.parser_provider,
-            recommendation_provider=active_settings.recommendation_provider,
-            upload_request_id=upload_request_id,
-        )
+        with application_backup_lock:
+            job = store.create_job(
+                original_filename=file.filename or "screenshot.png",
+                image_bytes=image_bytes,
+                parser_provider=active_settings.parser_provider,
+                recommendation_provider=active_settings.recommendation_provider,
+                upload_request_id=upload_request_id,
+            )
         try:
             parser = build_parser(active_settings)
             parser_result = parser.parse(store.image_path(job))
@@ -825,6 +836,99 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for report in benchmark_store.list()
             ],
         )
+
+    @app.get("/api/backups/export")
+    def export_application_backup() -> StreamingResponse:
+        with (
+            application_backup_lock,
+            dataset_import_lock,
+            benchmark_corpus_lock,
+            ExitStack() as job_lock_stack,
+        ):
+            ensure_benchmark_corpus_ready()
+            for job_lock in job_locks:
+                job_lock_stack.enter_context(job_lock)
+            with history_lock:
+                try:
+                    archive_file = build_application_backup_archive(
+                        jobs=store.list(),
+                        benchmark_reports=benchmark_store.list(limit=None),
+                        image_path_for=store.image_path,
+                        max_archive_bytes=active_settings.max_backup_upload_bytes,
+                        max_image_bytes=active_settings.max_upload_bytes,
+                    )
+                except ApplicationBackupError as exc:
+                    raise HTTPException(
+                        status_code=exc.status_code,
+                        detail=str(exc),
+                    ) from exc
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return StreamingResponse(
+            stream_application_backup(archive_file),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="poker-hero-backup-{timestamp}.zip"'
+                )
+            },
+        )
+
+    @app.post(
+        "/api/backups/restore",
+        response_model=ApplicationBackupRestoreResult,
+    )
+    async def restore_backup(
+        file: UploadFile = File(...),
+    ) -> ApplicationBackupRestoreResult:
+        archive_bytes = await file.read(
+            active_settings.max_backup_upload_bytes + 1
+        )
+        if len(archive_bytes) > active_settings.max_backup_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="Application backup ZIP exceeds maximum size",
+            )
+        try:
+            backup = parse_application_backup_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=(
+                    active_settings.max_backup_upload_bytes
+                    * MAX_BACKUP_EXPANSION_RATIO
+                ),
+            )
+            with (
+                application_backup_lock,
+                dataset_import_lock,
+                benchmark_corpus_lock,
+                ExitStack() as job_lock_stack,
+            ):
+                ensure_benchmark_corpus_ready()
+                for job_lock in job_locks:
+                    job_lock_stack.enter_context(job_lock)
+                with history_lock:
+                    if any(
+                        job.status == "created" or job.recommendation_pending
+                        for job in store.list()
+                    ):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                "Wait for active parsing and recommendations "
+                                "before restoring a backup"
+                            ),
+                        )
+                    return restore_application_backup(
+                        backup,
+                        job_store=store,
+                        benchmark_store=benchmark_store,
+                    )
+        except ApplicationBackupError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=str(exc),
+            ) from exc
 
     @app.get("/api/benchmarks/export")
     def export_benchmark_dataset() -> StreamingResponse:

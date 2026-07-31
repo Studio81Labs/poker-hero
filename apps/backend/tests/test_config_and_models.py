@@ -26,6 +26,7 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.postflop_solver_raise_sizes == "2.5x"
     assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.max_dataset_upload_bytes == 100 * 1024 * 1024
+    assert settings.max_backup_upload_bytes == 100 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
     assert settings.proxy_shared_secret is None
     assert settings.external_parser_bearer_token is None
@@ -115,6 +116,8 @@ def test_settings_rejects_non_positive_max_upload_bytes() -> None:
         Settings(max_upload_bytes=0)
     with pytest.raises(ValidationError):
         Settings(max_dataset_upload_bytes=0)
+    with pytest.raises(ValidationError):
+        Settings(max_backup_upload_bytes=0)
 
 
 def test_settings_normalizes_and_validates_proxy_shared_secret() -> None:

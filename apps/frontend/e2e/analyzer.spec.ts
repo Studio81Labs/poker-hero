@@ -165,6 +165,42 @@ async function createReviewedLesson(
   return { id: uploadedJob.id };
 }
 
+async function createApprovedScreenshot(
+  page: Page,
+  filename: string,
+  potSize: number,
+): Promise<{ id: string }> {
+  const uploadResponse = await page.request.post(`${BACKEND_URL}/api/jobs`, {
+    multipart: {
+      file: {
+        name: filename,
+        mimeType: "image/png",
+        buffer: VALID_PNG,
+      },
+    },
+  });
+  expect(uploadResponse.ok()).toBe(true);
+  const uploadedJob = await uploadResponse.json() as {
+    id: string;
+    parser_result: { state: Record<string, unknown> } | null;
+  };
+  if (uploadedJob.parser_result === null) {
+    throw new Error(`History fixture ${filename} was not parsed`);
+  }
+  const approveResponse = await page.request.post(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}/approve`,
+    {
+      data: {
+        ...uploadedJob.parser_result.state,
+        pot_size: potSize,
+        user_approved: true,
+      },
+    },
+  );
+  expect(approveResponse.ok()).toBe(true);
+  return { id: uploadedJob.id };
+}
+
 async function openUploadInput(page: Page): Promise<void> {
   await page.goto("/");
   await expect(
@@ -1754,4 +1790,107 @@ test("persists a parser failure and recovers by re-uploading the screenshot", as
   await page.getByRole("button", { name: "Clear reviewed" }).click();
   await expect(matchingQueueItems).toHaveCount(1);
   await expect(matchingQueueItems).toContainText("error");
+});
+
+test("searches beyond cached history without replacing active work", async ({
+  page,
+}, testInfo) => {
+  const targetFilename = attemptFilename("deep-history-target", testInfo);
+  const targetJob = await createApprovedScreenshot(
+    page,
+    targetFilename,
+    77.25,
+  );
+  const targetArchiveResponse = await page.request.put(
+    `${BACKEND_URL}/api/history`,
+    { data: { job_ids: [targetJob.id] } },
+  );
+  expect(targetArchiveResponse.ok()).toBe(true);
+
+  const newerJobIds: string[] = [];
+  for (let index = 0; index < 24; index += 1) {
+    const fixture = await createApprovedScreenshot(
+      page,
+      attemptFilename(`deep-history-newer-${index + 1}`, testInfo),
+      12.5 + index,
+    );
+    newerJobIds.push(fixture.id);
+  }
+  const newerArchiveResponse = await page.request.put(
+    `${BACKEND_URL}/api/history`,
+    { data: { job_ids: newerJobIds } },
+  );
+  expect(newerArchiveResponse.ok()).toBe(true);
+
+  const firstHistoryResponse = await page.request.get(
+    `${BACKEND_URL}/api/history`,
+  );
+  expect(firstHistoryResponse.ok()).toBe(true);
+  const firstHistory = await firstHistoryResponse.json() as {
+    jobs: Array<{ id: string }>;
+    total: number;
+  };
+  expect(firstHistory.jobs).toHaveLength(24);
+  expect(firstHistory.total).toBeGreaterThanOrEqual(25);
+  expect(firstHistory.jobs.map((job) => job.id)).not.toContain(targetJob.id);
+
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  const pendingFilename = attemptFilename("deep-history-pending", testInfo);
+  const pendingJob = await uploadValidScreenshot(page, pendingFilename);
+  const historyPanel = page.getByRole("region", { name: "Session history" });
+  const historyItems = historyPanel.getByRole("button", {
+    name: /^Reopen history item /,
+  });
+  await expect(historyItems).toHaveCount(24);
+
+  await historyPanel.getByRole("button", {
+    name: "Search saved history",
+  }).click();
+  await historyPanel.getByLabel("History search query").fill(targetFilename);
+  const searchResponsePromise = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") {
+      return false;
+    }
+    const url = new URL(response.url());
+    return url.origin === BACKEND_URL
+      && url.pathname === "/api/history"
+      && url.searchParams.get("query") === targetFilename;
+  });
+  await historyPanel.getByRole("button", {
+    name: "Run history search",
+  }).click();
+  const searchResponse = await searchResponsePromise;
+  expect(searchResponse.ok()).toBe(true);
+  const searchResult = await searchResponse.json() as {
+    jobs: Array<{ id: string }>;
+    total: number;
+  };
+  expect(searchResult).toMatchObject({
+    jobs: [{ id: targetJob.id }],
+    total: 1,
+  });
+  await expect(historyPanel).toContainText("History · 1 match");
+  await expect(historyItems).toHaveCount(1);
+
+  await historyItems.first().click();
+  await expect(page.getByLabel("Pot")).toHaveValue("77.25");
+  await expect(pendingJob.queueItem).toContainText("parsed");
+
+  await historyPanel.getByRole("button", {
+    name: "Close history search",
+  }).click();
+  await expect(historyPanel).toContainText("History · reopen");
+  await expect(historyItems).toHaveCount(24);
+  await expect(pendingJob.queueItem).toContainText("parsed");
+
+  await pendingJob.queueItem.click();
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(pendingJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(pendingJob.queueItem).toBeHidden();
 });

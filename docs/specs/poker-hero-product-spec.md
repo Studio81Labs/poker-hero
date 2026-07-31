@@ -568,7 +568,8 @@ the newest-history strip or disturbing active processing work, and that a
 Archived and unarchived hands are also reconstructed from the backend after all
 browser-local and session storage is cleared. Persisted training differences
 can be narrowed by street and certainty, then completed in sequence without
-losing the active review filters.
+losing the active review filters. Persisted solver attribution can also be
+inspected by engine route and used to reopen the exact training hand.
 
 ## Success Criteria
 

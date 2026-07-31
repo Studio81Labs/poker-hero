@@ -683,6 +683,154 @@ test("reviews one screenshot from upload through persisted history", async ({
   expect(persistedJob.archived_at).not.toBeNull();
 });
 
+test("runs a parser benchmark and verifies its exported dataset", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("benchmark-dataset", testInfo);
+
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+
+  const initialOverviewResponse = await page.request.get(
+    `${BACKEND_URL}/api/benchmarks`,
+  );
+  expect(initialOverviewResponse.ok()).toBe(true);
+  const initialOverview = await initialOverviewResponse.json() as {
+    included_cases: number;
+  };
+  const expectedIncludedCases = initialOverview.included_cases + 1;
+
+  await page.getByRole("button", { name: "Parser benchmark" }).click();
+  const benchmarkDialog = page.getByRole("dialog", {
+    name: "Parser benchmark",
+  });
+  await expect(benchmarkDialog).toBeVisible();
+  await expect(benchmarkDialog).toContainText(
+    `${initialOverview.included_cases} ground-truth ${initialOverview.included_cases === 1 ? "hand" : "hands"}`,
+  );
+
+  const includeResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/benchmark`
+      && response.request().method() === "PUT",
+  );
+  const groundTruthToggle = benchmarkDialog.getByRole("switch", {
+    name: /Use current hand as ground truth/,
+  });
+  await groundTruthToggle.click();
+  expect((await includeResponsePromise).ok()).toBe(true);
+  await expect(groundTruthToggle).toHaveAttribute("aria-checked", "true");
+  await expect(benchmarkDialog).toContainText(
+    `${expectedIncludedCases} ground-truth ${expectedIncludedCases === 1 ? "hand" : "hands"}`,
+  );
+
+  const runResponsePromise = page.waitForResponse(
+    (response) => response.url() === `${BACKEND_URL}/api/benchmarks/run`
+      && response.request().method() === "POST",
+  );
+  await benchmarkDialog.getByRole("button", { name: "Run benchmark" }).click();
+  const runResponse = await runResponsePromise;
+  expect(runResponse.ok()).toBe(true);
+  const report = await runResponse.json() as {
+    accuracy: number;
+    cases: Array<{
+      accuracy: number;
+      job_id: string;
+      status: string;
+    }>;
+    failed_cases: number;
+    total_cases: number;
+  };
+  expect(report).toMatchObject({
+    accuracy: 1,
+    failed_cases: 0,
+    total_cases: expectedIncludedCases,
+  });
+  expect(report.cases).toContainEqual(expect.objectContaining({
+    accuracy: 1,
+    job_id: uploadedJob.id,
+    status: "completed",
+  }));
+  const benchmarkSummary = benchmarkDialog.getByLabel("Benchmark summary");
+  await expect(benchmarkSummary).toContainText(String(expectedIncludedCases));
+  await expect(benchmarkSummary).toContainText("100%");
+  await expect(
+    benchmarkDialog.getByRole("button", {
+      name: `Toggle ${filename} benchmark details`,
+    }),
+  ).toContainText("100%");
+
+  const downloadPromise = page.waitForEvent("download");
+  await benchmarkDialog.getByRole("link", { name: "Export dataset" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^poker-hero-parser-dataset-\d{8}T\d{6}Z\.zip$/,
+  );
+  const datasetPath = await download.path();
+  expect(datasetPath).not.toBeNull();
+
+  const importResponsePromise = page.waitForResponse(
+    (response) => response.url() === `${BACKEND_URL}/api/benchmarks/import`
+      && response.request().method() === "POST",
+  );
+  await benchmarkDialog.getByLabel("Parser dataset ZIP").setInputFiles(
+    datasetPath ?? "",
+  );
+  const importResponse = await importResponsePromise;
+  expect(importResponse.ok()).toBe(true);
+  const importResult = await importResponse.json() as {
+    imported_cases: number;
+    included_cases: number;
+    job_ids: string[];
+    reused_cases: number;
+  };
+  expect(importResult).toMatchObject({
+    imported_cases: 0,
+    included_cases: expectedIncludedCases,
+    reused_cases: expectedIncludedCases,
+  });
+  expect(importResult.job_ids).toContain(uploadedJob.id);
+  await expect(page.getByText(
+    `Dataset ready: ${expectedIncludedCases} ${expectedIncludedCases === 1 ? "hand" : "hands"}`,
+  )).toBeVisible();
+
+  const excludeResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/benchmark`
+      && response.request().method() === "PUT",
+  );
+  await groundTruthToggle.click();
+  expect((await excludeResponsePromise).ok()).toBe(true);
+  await expect(groundTruthToggle).toHaveAttribute("aria-checked", "false");
+  await expect(benchmarkDialog).toContainText(
+    `${initialOverview.included_cases} ground-truth ${initialOverview.included_cases === 1 ? "hand" : "hands"}`,
+  );
+  await benchmarkDialog.getByRole("button", { name: "Done" }).click();
+
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(uploadedJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(uploadedJob.queueItem).toBeHidden();
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    archived_at: string | null;
+    benchmark_included: boolean;
+  };
+  expect(persistedJob).toMatchObject({
+    archived_at: expect.any(String),
+    benchmark_included: false,
+  });
+});
+
 test("downloads and verifies an application backup through recovery", async ({
   page,
 }, testInfo) => {

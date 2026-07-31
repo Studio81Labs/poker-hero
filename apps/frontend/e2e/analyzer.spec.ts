@@ -683,6 +683,105 @@ test("reviews one screenshot from upload through persisted history", async ({
   expect(persistedJob.archived_at).not.toBeNull();
 });
 
+test("downloads and verifies an application backup through recovery", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("application-backup", testInfo);
+
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  const archivedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(archivedJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(archivedJob.queueItem).toBeHidden();
+
+  const pendingFilename = attemptFilename("application-backup-pending", testInfo);
+  const pendingJob = await uploadValidScreenshot(page, pendingFilename);
+  await expect(pendingJob.queueItem).toContainText("parsed");
+
+  await page.getByRole("button", { name: "About this app" }).click();
+  const infoDialog = page.getByRole("dialog", {
+    name: "About Poker Training Analyzer",
+  });
+  await expect(infoDialog).toBeVisible();
+
+  const downloadPromise = page.waitForEvent("download");
+  await infoDialog.getByRole("link", {
+    name: "Download application backup",
+  }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^poker-hero-backup-\d{8}T\d{6}Z\.zip$/,
+  );
+  const backupPath = await download.path();
+  expect(backupPath).not.toBeNull();
+
+  const restoreResponsePromise = page.waitForResponse(
+    (response) => response.url() === `${BACKEND_URL}/api/backups/restore`
+      && response.request().method() === "POST",
+  );
+  await infoDialog.getByLabel("Application backup ZIP").setInputFiles(
+    backupPath ?? "",
+  );
+  const restoreResponse = await restoreResponsePromise;
+  expect(restoreResponse.ok()).toBe(true);
+  const restoreResult = await restoreResponse.json() as {
+    imported_jobs: number;
+    reused_jobs: number;
+    imported_benchmark_reports: number;
+    reused_benchmark_reports: number;
+  };
+  expect(restoreResult.imported_jobs).toBe(0);
+  expect(restoreResult.imported_benchmark_reports).toBe(0);
+  expect(restoreResult.reused_jobs).toBeGreaterThanOrEqual(2);
+  expect(
+    restoreResult.reused_jobs + restoreResult.reused_benchmark_reports,
+  ).toBeGreaterThanOrEqual(1);
+
+  await expect(
+    page.getByText(/Backup already present: \d+ records? verified/),
+  ).toBeVisible();
+  await expect(archivedJob.queueItem).toBeHidden();
+  await expect(pendingJob.queueItem).toContainText("parsed");
+  const archivedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${archivedJob.id}`,
+  );
+  expect(archivedResponse.ok()).toBe(true);
+  const archivedRecord = await archivedResponse.json() as {
+    archived_at: string | null;
+    status: string;
+  };
+  expect(archivedRecord).toMatchObject({
+    archived_at: expect.any(String),
+    status: "recommended",
+  });
+  const pendingResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${pendingJob.id}`,
+  );
+  expect(pendingResponse.ok()).toBe(true);
+  const pendingRecord = await pendingResponse.json() as {
+    archived_at: string | null;
+    status: string;
+  };
+  expect(pendingRecord).toMatchObject({
+    archived_at: null,
+    status: "parsed",
+  });
+
+  await infoDialog.getByRole("button", { name: "Done" }).click();
+  await pendingJob.queueItem.click();
+  await page.getByRole("button", { name: "Approve state" }).click();
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(pendingJob.queueItem).toContainText("recommended");
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(pendingJob.queueItem).toBeHidden();
+});
+
 test("continues an automated batch when one screenshot is invalid", async ({
   page,
 }, testInfo) => {

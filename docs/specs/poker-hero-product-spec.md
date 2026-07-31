@@ -553,7 +553,9 @@ continuing automated work after a persisted provider failure, persisted parser
 failure reconciliation and same-file re-upload, and retrying a recommendation
 after its failed provider request has reconciled with persisted backend state.
 It also verifies that an in-flight recommendation survives a browser reload and
-is reconciled after its original request is lost.
+is reconciled after its original request is lost, and that a full application
+backup downloaded from the information dialog can be uploaded again and
+verified idempotently without disturbing the current processing queue.
 
 ## Success Criteria
 

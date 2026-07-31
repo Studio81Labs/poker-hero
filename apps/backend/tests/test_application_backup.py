@@ -1,12 +1,17 @@
+import asyncio
 import base64
 import json
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from threading import Event
 from zipfile import ZIP_DEFLATED, ZipFile
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
+import app.api as api_module
 from app.api import create_app
 from app.config import Settings
 from app.storage import FileBenchmarkStore, FileJobStore
@@ -192,6 +197,69 @@ def test_empty_application_backup_round_trips(
         "total_jobs": 0,
         "total_benchmark_reports": 0,
     }
+
+
+def test_restore_does_not_block_unrelated_requests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_client(tmp_path / "source")
+    export = source.get("/api/backups/export")
+    assert export.status_code == 200
+
+    parse_started = Event()
+    release_parse = Event()
+    original_parse = api_module.parse_application_backup_archive
+
+    def paused_parse(*args: object, **kwargs: object):
+        parse_started.set()
+        assert release_parse.wait(timeout=2)
+        return original_parse(*args, **kwargs)
+
+    monkeypatch.setattr(
+        api_module,
+        "parse_application_backup_archive",
+        paused_parse,
+    )
+    destination_app = create_app(
+        Settings(
+            data_dir=tmp_path / "destination",
+            parser_provider="mock",
+            recommendation_provider="mock",
+        )
+    )
+
+    async def exercise_restore() -> None:
+        transport = httpx.ASGITransport(app=destination_app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            restore_task = asyncio.create_task(
+                client.post(
+                    "/api/backups/restore",
+                    files={
+                        "file": (
+                            "backup.zip",
+                            export.content,
+                            "application/zip",
+                        )
+                    },
+                )
+            )
+            try:
+                assert await asyncio.to_thread(parse_started.wait, 2)
+                health = await asyncio.wait_for(
+                    client.get("/api/health"),
+                    timeout=1,
+                )
+                assert health.status_code == 200
+            finally:
+                release_parse.set()
+            restore = await restore_task
+            assert restore.status_code == 200
+
+    asyncio.run(exercise_restore())
 
 
 def test_restore_rejects_checksum_tampering_before_writing(

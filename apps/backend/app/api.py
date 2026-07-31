@@ -20,6 +20,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
+from starlette.concurrency import run_in_threadpool
 
 from app.application_backup import (
     ApplicationBackupError,
@@ -238,6 +239,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (BenchmarkImportNotFoundError, OSError):
                 # A later poll can retry an interrupted or temporarily unavailable journal.
                 return
+
+    def restore_uploaded_application_backup(
+        archive_bytes: bytes,
+    ) -> ApplicationBackupRestoreResult:
+        try:
+            backup = parse_application_backup_archive(
+                archive_bytes,
+                max_image_bytes=active_settings.max_upload_bytes,
+                max_uncompressed_bytes=(
+                    active_settings.max_backup_upload_bytes
+                    * MAX_BACKUP_EXPANSION_RATIO
+                ),
+            )
+            with (
+                application_backup_lock,
+                dataset_import_lock,
+                benchmark_corpus_lock,
+                ExitStack() as job_lock_stack,
+            ):
+                ensure_benchmark_corpus_ready()
+                for job_lock in job_locks:
+                    job_lock_stack.enter_context(job_lock)
+                with history_lock:
+                    if any(
+                        job.status == "created" or job.recommendation_pending
+                        for job in store.list()
+                    ):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                "Wait for active parsing and recommendations "
+                                "before restoring a backup"
+                            ),
+                        )
+                    return restore_application_backup(
+                        backup,
+                        job_store=store,
+                        benchmark_store=benchmark_store,
+                    )
+        except ApplicationBackupError as exc:
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=str(exc),
+            ) from exc
 
     app = FastAPI(title="Poker Training Analyzer API")
     app.add_middleware(
@@ -889,46 +934,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=413,
                 detail="Application backup ZIP exceeds maximum size",
             )
-        try:
-            backup = parse_application_backup_archive(
-                archive_bytes,
-                max_image_bytes=active_settings.max_upload_bytes,
-                max_uncompressed_bytes=(
-                    active_settings.max_backup_upload_bytes
-                    * MAX_BACKUP_EXPANSION_RATIO
-                ),
-            )
-            with (
-                application_backup_lock,
-                dataset_import_lock,
-                benchmark_corpus_lock,
-                ExitStack() as job_lock_stack,
-            ):
-                ensure_benchmark_corpus_ready()
-                for job_lock in job_locks:
-                    job_lock_stack.enter_context(job_lock)
-                with history_lock:
-                    if any(
-                        job.status == "created" or job.recommendation_pending
-                        for job in store.list()
-                    ):
-                        raise HTTPException(
-                            status_code=409,
-                            detail=(
-                                "Wait for active parsing and recommendations "
-                                "before restoring a backup"
-                            ),
-                        )
-                    return restore_application_backup(
-                        backup,
-                        job_store=store,
-                        benchmark_store=benchmark_store,
-                    )
-        except ApplicationBackupError as exc:
-            raise HTTPException(
-                status_code=exc.status_code,
-                detail=str(exc),
-            ) from exc
+        return await run_in_threadpool(
+            restore_uploaded_application_backup,
+            archive_bytes,
+        )
 
     @app.get("/api/benchmarks/export")
     def export_benchmark_dataset() -> StreamingResponse:

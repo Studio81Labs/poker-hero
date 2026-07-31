@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import {
   expect,
   test,
@@ -125,6 +127,42 @@ async function uploadValidScreenshot(
   });
   await expect(queueItem).toContainText("parsed");
   return { id: uploadedJob.id, queueItem };
+}
+
+async function createReviewedLesson(
+  page: Page,
+  filename: string,
+  note: string,
+  options: { boardCards?: string; street?: "flop" | "turn" } = {},
+): Promise<{ id: string }> {
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  if (options.boardCards !== undefined) {
+    await page.getByLabel("Board cards").fill(options.boardCards);
+  }
+  if (options.street !== undefined) {
+    await page.getByLabel("Street").selectOption(options.street);
+  }
+  await page.getByRole("button", { name: "Approve state" }).click();
+  const decisionPanel = page.getByRole("region", {
+    name: "Your training decision",
+  });
+  await decisionPanel.getByRole("button", { name: "fold", exact: true }).click();
+  await decisionPanel.getByRole("button", { name: "high", exact: true }).click();
+  await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
+  await expect(decisionPanel).toContainText("Answer locked");
+
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(uploadedJob.queueItem).toContainText("recommended");
+  await page.getByLabel("Training review note").fill(note);
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed" })
+    .click();
+  await expect(page.getByLabel("Training decision comparison")).toContainText(
+    "Reviewed",
+  );
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(uploadedJob.queueItem).toBeHidden();
+  return { id: uploadedJob.id };
 }
 
 async function openUploadInput(page: Page): Promise<void> {
@@ -834,6 +872,110 @@ test("completes and reopens a training review from persisted progress", async ({
     needs_review_hands: initialProgress.needs_review_hands,
     reviewed_hands: initialProgress.reviewed_hands + 1,
   });
+});
+
+test("filters and exports persisted lesson notes", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    lesson_count: number;
+  };
+  const flopFilename = attemptFilename("lesson-export-flop", testInfo);
+  const turnFilename = attemptFilename("lesson-export-turn", testInfo);
+  const flopNote = `Review flop continuation bets from ${flopFilename}.`;
+  const turnNote = `Turn bluff-catcher check for ${turnFilename}.`;
+
+  const flopJob = await createReviewedLesson(
+    page,
+    flopFilename,
+    flopNote,
+  );
+  const turnJob = await createReviewedLesson(
+    page,
+    turnFilename,
+    turnNote,
+    { boardCards: "Qs Jc 2h 9d", street: "turn" },
+  );
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  await expect(progressDialog).toBeVisible();
+  const expectedLessonCount = initialProgress.lesson_count + 2;
+  await progressDialog.getByRole("button", {
+    name: `Lessons ${expectedLessonCount}`,
+    exact: true,
+  }).click();
+
+  await progressDialog.getByLabel("Lesson street").selectOption("turn");
+  const lessonSearch = progressDialog.getByLabel("Search saved lesson notes");
+  await lessonSearch.fill(turnFilename);
+  await progressDialog.getByRole("button", {
+    name: "Apply lesson search",
+  }).click();
+
+  const turnLesson = progressDialog.getByRole("button", {
+    name: `Open ${turnFilename} training review`,
+    exact: true,
+  });
+  await expect(turnLesson).toContainText(turnNote);
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${flopFilename} training review`,
+    exact: true,
+  })).toBeHidden();
+  await expect(progressDialog).toContainText(
+    "1 lesson note matches these filters.",
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await progressDialog.getByRole("link", { name: "Export lessons" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(
+    /^poker-hero-lessons-\d{8}T\d{6}Z\.md$/,
+  );
+  expect(download.url()).toContain("lesson_street=turn");
+  expect(decodeURIComponent(download.url())).toContain(
+    `lesson_query=${turnFilename}`,
+  );
+  const lessonPath = await download.path();
+  expect(lessonPath).not.toBeNull();
+  if (lessonPath === null) {
+    throw new Error("Lesson export did not produce a local download");
+  }
+  const lessonDocument = await readFile(lessonPath, "utf8");
+  expect(lessonDocument).toContain("# Poker Hero Lessons");
+  expect(lessonDocument).toContain("1 saved lesson note.");
+  expect(lessonDocument).toContain(`- Source: \`${turnFilename}\``);
+  expect(lessonDocument).toContain(turnNote);
+  expect(lessonDocument).not.toContain(flopFilename);
+  expect(lessonDocument).not.toContain(flopNote);
+
+  for (const lessonJob of [flopJob, turnJob]) {
+    const cleanupResponse = await page.request.put(
+      `${BACKEND_URL}/api/jobs/${lessonJob.id}/training-review`,
+      { data: { note: null } },
+    );
+    expect(cleanupResponse.ok()).toBe(true);
+  }
+  const cleanedProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(cleanedProgressResponse.ok()).toBe(true);
+  const cleanedProgress = await cleanedProgressResponse.json() as {
+    lesson_count: number;
+  };
+  expect(cleanedProgress.lesson_count).toBe(initialProgress.lesson_count);
 });
 
 test("runs a parser benchmark and verifies its exported dataset", async ({

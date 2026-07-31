@@ -556,10 +556,12 @@ It also verifies that an in-flight recommendation survives a browser reload and
 is reconciled after its original request is lost, that a pre-reveal training
 answer and lesson note can be completed, archived, reopened from persisted
 progress, and reviewed again without changing the answer or recommendation,
-that an approved hand can run through the parser benchmark and an idempotent
-dataset export/import round trip, and that a full application backup downloaded
-from the information dialog can be uploaded again and verified idempotently
-without disturbing the current processing queue.
+that saved lesson notes can be narrowed by street and text and exported as the
+same filtered Markdown study set, that an approved hand can run through the
+parser benchmark and an idempotent dataset export/import round trip, and that a
+full application backup downloaded from the information dialog can be uploaded
+again and verified idempotently without disturbing the current processing
+queue.
 
 ## Success Criteria
 

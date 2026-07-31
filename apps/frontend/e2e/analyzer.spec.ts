@@ -683,6 +683,159 @@ test("reviews one screenshot from upload through persisted history", async ({
   expect(persistedJob.archived_at).not.toBeNull();
 });
 
+test("completes and reopens a training review from persisted progress", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("training-review", testInfo);
+
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    lesson_count: number;
+    needs_review_hands: number;
+    reviewed_hands: number;
+  };
+
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+  const decisionPanel = page.getByRole("region", {
+    name: "Your training decision",
+  });
+  await expect(decisionPanel).toBeVisible();
+  await decisionPanel.getByRole("button", { name: "fold" }).click();
+  await decisionPanel.getByRole("button", { name: "high" }).click();
+
+  const decisionResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/decision`
+      && response.request().method() === "PUT",
+  );
+  await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
+  expect((await decisionResponsePromise).ok()).toBe(true);
+  await expect(decisionPanel).toContainText("Answer locked");
+  await expect(decisionPanel).toContainText("Saved before reveal");
+
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(uploadedJob.queueItem).toContainText("recommended");
+  const recommendation = page.getByRole("region", { name: "Recommendation" });
+  await expect(recommendation).toBeVisible();
+  await expect(recommendation).toContainText("call");
+  const comparison = page.getByLabel("Training decision comparison");
+  await expect(comparison).toContainText("Fold");
+  await expect(comparison).toContainText("High certainty");
+  await expect(comparison).toContainText("Different action");
+
+  const lessonNote = "Compare pot odds before folding to a single bet.";
+  await page.getByLabel("Training review note").fill(lessonNote);
+  const completeResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/training-review`
+      && response.request().method() === "PUT",
+  );
+  await comparison.getByRole("button", { name: "Mark reviewed" }).click();
+  expect((await completeResponsePromise).ok()).toBe(true);
+  await expect(comparison).toContainText("Reviewed");
+  await expect(page.getByLabel("Saved training review note")).toContainText(
+    lessonNote,
+  );
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(uploadedJob.queueItem).toBeHidden();
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  await expect(progressDialog).toBeVisible();
+  const progressSummary = progressDialog.getByLabel("Training progress summary");
+  await expect(progressSummary).toContainText(
+    String(initialProgress.reviewed_hands + 1),
+  );
+  const trainingRow = progressDialog.getByRole("button", {
+    name: `Open ${filename} training review`,
+    exact: true,
+  });
+  await expect(trainingRow).toContainText("Fold");
+  await expect(trainingRow).toContainText("Call");
+  await expect(trainingRow).toContainText(lessonNote);
+  await expect(trainingRow).toContainText("Reviewed");
+
+  await trainingRow.click();
+  await expect(progressDialog).toBeHidden();
+  await expect(page.getByLabel("Training decision comparison")).toContainText(
+    "Reviewed",
+  );
+  await expect(page.getByLabel("Saved training review note")).toContainText(
+    lessonNote,
+  );
+
+  const reopenResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/training-review`
+      && response.request().method() === "DELETE",
+  );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Reopen review" })
+    .click();
+  expect((await reopenResponsePromise).ok()).toBe(true);
+  await expect(page.getByText("Training review reopened")).toBeVisible();
+  await expect(page.getByLabel("Training review note")).toHaveValue(lessonNote);
+
+  const recompleteResponsePromise = page.waitForResponse(
+    (response) => response.url()
+      === `${BACKEND_URL}/api/jobs/${uploadedJob.id}/training-review`
+      && response.request().method() === "PUT",
+  );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed" })
+    .click();
+  expect((await recompleteResponsePromise).ok()).toBe(true);
+  await expect(page.getByLabel("Training decision comparison")).toContainText(
+    "Reviewed",
+  );
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    archived_at: string | null;
+    recommendation: { action: string } | null;
+    training_decision: { action: string; certainty: string | null } | null;
+    training_review_note: string | null;
+    training_reviewed_at: string | null;
+  };
+  expect(persistedJob).toMatchObject({
+    archived_at: expect.any(String),
+    recommendation: { action: "call" },
+    training_decision: { action: "fold", certainty: "high" },
+    training_review_note: lessonNote,
+    training_reviewed_at: expect.any(String),
+  });
+
+  const finalProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(finalProgressResponse.ok()).toBe(true);
+  const finalProgress = await finalProgressResponse.json() as {
+    lesson_count: number;
+    needs_review_hands: number;
+    reviewed_hands: number;
+  };
+  expect(finalProgress).toMatchObject({
+    lesson_count: initialProgress.lesson_count + 1,
+    needs_review_hands: initialProgress.needs_review_hands,
+    reviewed_hands: initialProgress.reviewed_hands + 1,
+  });
+});
+
 test("runs a parser benchmark and verifies its exported dataset", async ({
   page,
 }, testInfo) => {

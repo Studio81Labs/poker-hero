@@ -561,7 +561,9 @@ same filtered Markdown study set, that an approved hand can run through the
 parser benchmark and an idempotent dataset export/import round trip, and that a
 full application backup downloaded from the information dialog can be uploaded
 again and verified idempotently without disturbing the current processing
-queue.
+queue. The suite also proves that a hand older than the compact history cache
+can be found and reopened through persisted archive search without replacing
+the newest-history strip or disturbing active processing work.
 
 ## Success Criteria
 

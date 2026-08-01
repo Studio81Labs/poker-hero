@@ -592,6 +592,8 @@ unsupported and ungraded after persistence.
 A valid alternate policy line can remain supported when the provider omits its
 recommended line from candidate evidence, but that comparison remains ungraded
 for EV loss.
+An exact recommendation match also remains ungraded when candidate evidence
+contains no distinct alternative line.
 A same-action sizing difference remains available for review without being
 reported as a repeated unsupported-action pattern.
 A meaningful alternate action taken at a different size preserves action

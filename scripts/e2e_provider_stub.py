@@ -140,6 +140,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("missing_recommended_line")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/single-line-evidence-next-recommendation":
+                state.arm_recommendation_evidence("single_line_evidence")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -262,6 +266,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "below_frequency_boundary",
                 "malformed_policy",
                 "missing_recommended_line",
+                "single_line_evidence",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
@@ -283,6 +288,13 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_frequency = 0.0
                     raise_frequency = 0.2
                     fold_frequency = 0.8
+                elif recommendation_variant == "single_line_evidence":
+                    call_ev, raise_ev = 0.0, 1.4
+                    call_frequency = 0.0
+                    raise_frequency = 1.0
+                    fold_frequency = 0.0
+                    recommendation_action = "raise"
+                    recommendation_sizing = 8
                 elif recommendation_variant == "sizing_evidence":
                     call_ev, raise_ev = 0.8, 1.4
                     call_frequency = 0.3
@@ -319,9 +331,12 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     "ev": 0,
                     "frequency": fold_frequency,
                 }
-                policy_candidates = [raise_candidate, fold_candidate]
-                if recommendation_variant != "missing_recommended_line":
-                    policy_candidates.insert(0, call_candidate)
+                if recommendation_variant == "single_line_evidence":
+                    policy_candidates = [raise_candidate]
+                else:
+                    policy_candidates = [raise_candidate, fold_candidate]
+                    if recommendation_variant != "missing_recommended_line":
+                        policy_candidates.insert(0, call_candidate)
                 raw.update(
                     {
                         "equity": {"equity": 0.61},

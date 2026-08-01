@@ -1632,6 +1632,39 @@ def test_summarize_training_rejects_malformed_candidate_ev_metadata() -> None:
     assert all(hand.ev_loss_bb is None for hand in progress.recent_hands)
 
 
+def test_summarize_training_does_not_grade_single_candidate_ev() -> None:
+    jobs = [
+        reviewed_job(
+            "d" * 32,
+            "flop",
+            "raise",
+            "raise",
+            datetime(2026, 7, 23, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommended_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {
+                        "action": "raise",
+                        "sizing": 8,
+                        "ev": 1.4,
+                        "frequency": 1.0,
+                    }
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 1
+    assert progress.exact_matches == 1
+    assert progress.ev_compared_hands == 0
+    assert progress.average_ev_loss_bb is None
+    assert progress.recent_hands[0].outcome == "match"
+    assert progress.recent_hands[0].ev_loss_bb is None
+
+
 def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> None:
     jobs = [
         reviewed_job(

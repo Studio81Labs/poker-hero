@@ -1419,13 +1419,23 @@ def test_summarize_training_applies_sizing_tolerance() -> None:
             decision_sizing=5.01,
             recommended_sizing=5,
         ),
+        reviewed_job(
+            "8" * 32,
+            "flop",
+            "bet",
+            "bet",
+            datetime(2026, 7, 8, tzinfo=timezone.utc),
+            decision_sizing=7.5099999995,
+            recommended_sizing=7.5,
+        ),
     ]
 
     progress = summarize_training(jobs)
 
-    assert progress.action_matches == 3
-    assert progress.exact_matches == 1
+    assert progress.action_matches == 4
+    assert progress.exact_matches == 2
     assert [hand.outcome for hand in progress.recent_hands] == [
+        "match",
         "same_action",
         "same_action",
         "match",

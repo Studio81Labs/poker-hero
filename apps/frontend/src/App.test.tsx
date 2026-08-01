@@ -5064,10 +5064,23 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(5);
   });
 
-  it("keeps sizing at the match-tolerance boundary reviewable", async () => {
+  it.each([
+    {
+      title: "keeps sizing at the match-tolerance boundary reviewable",
+      decisionSizing: 7.51,
+      expectedLabel: "Same action, different size",
+      needsReview: true,
+    },
+    {
+      title: "preserves high-precision sizing below the tolerance",
+      decisionSizing: 7.5099999995,
+      expectedLabel: "Matched solver",
+      needsReview: false,
+    },
+  ])("$title", async ({ decisionSizing, expectedLabel, needsReview }) => {
     const trainingDecision = {
       action: "raise" as const,
-      sizing: 7.51,
+      sizing: decisionSizing,
       certainty: "high" as const,
       recorded_at: "2026-07-20T12:00:00Z",
     };
@@ -5089,14 +5102,21 @@ describe("App", () => {
     await user.click(await screen.findByRole("button", { name: "Approve state" }));
     const decisionPanel = await screen.findByLabelText("Your training decision");
     await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
-    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "7.51");
+    await user.type(
+      within(decisionPanel).getByLabelText("Decision sizing in BB"),
+      String(decisionSizing),
+    );
     await user.click(within(decisionPanel).getByRole("button", { name: "high" }));
     await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
     const comparison = await screen.findByLabelText("Training decision comparison");
-    expect(within(comparison).getByText("Same action, different size")).toBeInTheDocument();
-    expect(within(comparison).getByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
+    expect(within(comparison).getByText(expectedLabel)).toBeInTheDocument();
+    if (needsReview) {
+      expect(within(comparison).getByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
+    } else {
+      expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    }
   });
 
   it("accepts an exact alternate line from a meaningful solver mix", async () => {

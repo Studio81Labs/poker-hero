@@ -88,7 +88,6 @@ const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "cal
 const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const SIZING_MATCH_TOLERANCE = 0.01;
-const SIZING_MATCH_FLOAT_EPSILON = 1e-9;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
@@ -857,11 +856,52 @@ function trainingLineMatches(
   return leftAction === rightAction && trainingSizingMatches(leftSizing, rightSizing);
 }
 
+function decimalNumberParts(value: number): { coefficient: bigint; scale: number } {
+  const [mantissa, exponentText] = value.toString().toLowerCase().split("e");
+  const exponent = exponentText === undefined ? 0 : Number.parseInt(exponentText, 10);
+  const negative = mantissa.startsWith("-");
+  const unsignedMantissa = negative ? mantissa.slice(1) : mantissa;
+  const [integerPart, fractionalPart = ""] = unsignedMantissa.split(".");
+  const digits = `${integerPart}${fractionalPart}`;
+  const coefficient = BigInt(digits) * (negative ? -1n : 1n);
+  return {
+    coefficient,
+    scale: fractionalPart.length - exponent,
+  };
+}
+
+function decimalCoefficientAtScale(
+  value: { coefficient: bigint; scale: number },
+  scale: number,
+): bigint {
+  return value.coefficient * (10n ** BigInt(scale - value.scale));
+}
+
 function trainingSizingMatches(left: number | null, right: number | null): boolean {
   if (left === null || right === null) {
     return left === right;
   }
-  return Math.abs(left - right) + SIZING_MATCH_FLOAT_EPSILON < SIZING_MATCH_TOLERANCE;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
+  const leftParts = decimalNumberParts(left);
+  const rightParts = decimalNumberParts(right);
+  const toleranceParts = decimalNumberParts(SIZING_MATCH_TOLERANCE);
+  const commonScale = Math.max(
+    leftParts.scale,
+    rightParts.scale,
+    toleranceParts.scale,
+  );
+  const leftCoefficient = decimalCoefficientAtScale(leftParts, commonScale);
+  const rightCoefficient = decimalCoefficientAtScale(rightParts, commonScale);
+  const toleranceCoefficient = decimalCoefficientAtScale(
+    toleranceParts,
+    commonScale,
+  );
+  const difference = leftCoefficient >= rightCoefficient
+    ? leftCoefficient - rightCoefficient
+    : rightCoefficient - leftCoefficient;
+  return difference < toleranceCoefficient;
 }
 
 function parseTrainingSizing(

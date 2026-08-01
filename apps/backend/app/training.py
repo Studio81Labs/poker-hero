@@ -2,6 +2,7 @@ import hashlib
 import math
 import re
 from collections import defaultdict
+from decimal import Decimal
 from datetime import datetime
 from typing import Any, Literal
 
@@ -29,8 +30,7 @@ from app.models import (
 )
 
 
-SIZING_MATCH_TOLERANCE = 0.01
-SIZING_MATCH_FLOAT_EPSILON = 1e-9
+SIZING_MATCH_TOLERANCE = Decimal("0.01")
 MIN_SUPPORTED_FREQUENCY = 0.05
 MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
@@ -962,10 +962,10 @@ def _line_matches(
 def _sizing_matches(left: float | None, right: float | None) -> bool:
     if left is None or right is None:
         return left == right
-    return (
-        abs(left - right) + SIZING_MATCH_FLOAT_EPSILON
-        < SIZING_MATCH_TOLERANCE
-    )
+    if not math.isfinite(left) or not math.isfinite(right):
+        return False
+    difference = abs(Decimal(str(left)) - Decimal(str(right)))
+    return difference < SIZING_MATCH_TOLERANCE
 
 
 def _training_recorded_at(job: JobRecord) -> datetime:

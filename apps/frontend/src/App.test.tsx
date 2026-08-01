@@ -5119,7 +5119,20 @@ describe("App", () => {
     }
   });
 
-  it("accepts an exact alternate line from a meaningful solver mix", async () => {
+  it.each([
+    {
+      title: "accepts an alternate line at the policy-support boundary",
+      frequency: 0.05,
+      expectedLabel: "Solver-supported mix",
+      needsReview: false,
+    },
+    {
+      title: "rejects an alternate line below the policy-support boundary",
+      frequency: 0.049999,
+      expectedLabel: "Different action",
+      needsReview: true,
+    },
+  ])("$title", async ({ frequency, expectedLabel, needsReview }) => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 8,
@@ -5135,7 +5148,7 @@ describe("App", () => {
         engine: "postflop_solver",
         candidates: [
           { action: "call", sizing: null, ev: 2.75, frequency: 0.84 },
-          { action: "raise", sizing: 8, ev: 2.74, frequency: 0.16 },
+          { action: "raise", sizing: 8, ev: 2.74, frequency },
         ],
       },
     };
@@ -5160,9 +5173,13 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
     const comparison = await screen.findByLabelText("Training decision comparison");
-    expect(within(comparison).getByText("Solver-supported mix")).toBeInTheDocument();
+    expect(within(comparison).getByText(expectedLabel)).toBeInTheDocument();
     expect(within(comparison).getByText("0.01 BB EV loss")).toBeInTheDocument();
-    expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    if (needsReview) {
+      expect(within(comparison).getByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
+    } else {
+      expect(within(comparison).queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    }
   });
 
   it("marks a differing training decision reviewed", async () => {

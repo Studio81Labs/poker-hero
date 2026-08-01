@@ -124,6 +124,14 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("sizing_evidence")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/frequency-boundary-next-recommendation":
+                state.arm_recommendation_evidence("frequency_boundary")
+                self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/below-frequency-boundary-next-recommendation":
+                state.arm_recommendation_evidence("below_frequency_boundary")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -242,11 +250,23 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "lower_evidence",
                 "pattern_evidence",
                 "sizing_evidence",
+                "frequency_boundary",
+                "below_frequency_boundary",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
                     call_frequency = 0.96
                     raise_frequency = 0.02
+                    fold_frequency = 0.02
+                elif recommendation_variant == "frequency_boundary":
+                    call_ev, raise_ev = 1.4, 1.1
+                    call_frequency = 0.93
+                    raise_frequency = 0.05
+                    fold_frequency = 0.02
+                elif recommendation_variant == "below_frequency_boundary":
+                    call_ev, raise_ev = 1.4, 1.1
+                    call_frequency = 0.930001
+                    raise_frequency = 0.049999
                     fold_frequency = 0.02
                 elif recommendation_variant == "sizing_evidence":
                     call_ev, raise_ev = 0.8, 1.4

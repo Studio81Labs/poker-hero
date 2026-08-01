@@ -2361,6 +2361,156 @@ test("keeps a solver-supported mixed action out of review", async ({
   });
 });
 
+test("applies the solver policy-support frequency boundary", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    action_matches: number;
+    different_actions: number;
+    exact_matches: number;
+    needs_review_hands: number;
+    review_queue_hands: number;
+    reviewed_hands: number;
+  };
+
+  async function processFrequencyCase(
+    filename: string,
+    controlPath: string,
+    expectedLabel: string,
+    needsReview: boolean,
+  ) {
+    const uploadedJob = await uploadValidScreenshot(page, filename);
+    await page.getByRole("button", { name: "Approve state" }).click();
+    const decisionPanel = page.getByRole("region", {
+      name: "Your training decision",
+    });
+    await decisionPanel.getByRole("button", {
+      name: "raise",
+      exact: true,
+    }).click();
+    await decisionPanel.getByLabel("Decision sizing in BB").fill("8");
+    await decisionPanel.getByRole("button", {
+      name: "medium",
+      exact: true,
+    }).click();
+    await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
+    await expect(decisionPanel).toContainText("Answer locked");
+
+    const armResponse = await page.request.post(
+      `${PROVIDER_URL}${controlPath}`,
+    );
+    expect(armResponse.ok()).toBe(true);
+    await page.getByRole("button", { name: "Request recommendation" }).click();
+    await expect(uploadedJob.queueItem).toContainText("recommended");
+
+    const comparison = page.getByLabel("Training decision comparison");
+    await expect(comparison).toContainText(expectedLabel);
+    if (needsReview) {
+      await expect(comparison.getByRole("button", {
+        name: "Mark reviewed",
+      })).toBeVisible();
+    } else {
+      await expect(comparison.getByRole("button", {
+        name: "Mark reviewed",
+      })).toBeHidden();
+    }
+
+    await page.getByRole("button", { name: "Clear reviewed" }).click();
+    await expect(uploadedJob.queueItem).toBeHidden();
+    return uploadedJob;
+  }
+
+  const boundaryJob = await processFrequencyCase(
+    attemptFilename("frequency-boundary-supported", testInfo),
+    "/control/frequency-boundary-next-recommendation",
+    "Solver-supported mix",
+    false,
+  );
+  const belowBoundaryJob = await processFrequencyCase(
+    attemptFilename("frequency-boundary-review", testInfo),
+    "/control/below-frequency-boundary-next-recommendation",
+    "Different action",
+    true,
+  );
+
+  const updatedProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(updatedProgressResponse.ok()).toBe(true);
+  const updatedProgress = await updatedProgressResponse.json() as {
+    action_matches: number;
+    different_actions: number;
+    exact_matches: number;
+    needs_review_hands: number;
+    recent_hands: Array<{ job_id: string; outcome: string }>;
+    review_queue: Array<{ job_id: string; outcome: string }>;
+    review_queue_hands: number;
+    reviewed_hands: number;
+  };
+  expect(updatedProgress).toMatchObject({
+    action_matches: initialProgress.action_matches + 1,
+    different_actions: initialProgress.different_actions + 1,
+    exact_matches: initialProgress.exact_matches + 1,
+    needs_review_hands: initialProgress.needs_review_hands + 1,
+    review_queue_hands: initialProgress.review_queue_hands + 1,
+    reviewed_hands: initialProgress.reviewed_hands + 2,
+  });
+  expect(updatedProgress.recent_hands).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      job_id: boundaryJob.id,
+      outcome: "mixed",
+    }),
+    expect.objectContaining({
+      job_id: belowBoundaryJob.id,
+      outcome: "different",
+    }),
+  ]));
+  expect(updatedProgress.review_queue).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      job_id: belowBoundaryJob.id,
+      outcome: "different",
+    }),
+  ]));
+  expect(updatedProgress.review_queue).not.toEqual(expect.arrayContaining([
+    expect.objectContaining({ job_id: boundaryJob.id }),
+  ]));
+
+  const boundaryResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${boundaryJob.id}`,
+  );
+  const belowBoundaryResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${belowBoundaryJob.id}`,
+  );
+  expect(boundaryResponse.ok()).toBe(true);
+  expect(belowBoundaryResponse.ok()).toBe(true);
+  const boundaryPersistedJob = await boundaryResponse.json() as {
+    recommendation: { raw: Record<string, unknown> } | null;
+  };
+  const belowBoundaryPersistedJob = await belowBoundaryResponse.json() as {
+    recommendation: { raw: Record<string, unknown> } | null;
+  };
+  expect(boundaryPersistedJob.recommendation?.raw).toMatchObject({
+    candidates: expect.arrayContaining([
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.05 },
+    ]),
+  });
+  expect(belowBoundaryPersistedJob.recommendation?.raw).toMatchObject({
+    candidates: expect.arrayContaining([
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.049999 },
+    ]),
+  });
+});
+
 test("reviews a sizing difference at the tolerance boundary", async ({
   page,
 }, testInfo) => {

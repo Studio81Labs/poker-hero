@@ -571,7 +571,9 @@ can be narrowed by street and certainty, then completed in sequence without
 losing the active review filters. Persisted solver attribution can also be
 inspected by engine route and used to reopen the exact training hand. Recorded
 solver fallbacks expose their requested engine and reason, and support the same
-persisted drilldown workflow.
+persisted drilldown workflow. Candidate EV and equity evidence remains visible
+after persistence, grades the player's locked line, and can prioritize the
+highest-cost pending review.
 
 ## Success Criteria
 

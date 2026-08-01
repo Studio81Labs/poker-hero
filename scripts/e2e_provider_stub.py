@@ -15,7 +15,7 @@ class ProviderState:
     def __init__(self) -> None:
         self._fail_next_parser = False
         self._fail_next_recommendation = False
-        self._fallback_next_recommendation = False
+        self._next_recommendation_variant: str | None = None
         self._block_next_recommendation = False
         self._recommendation_started = Event()
         self._recommendation_release = Event()
@@ -31,7 +31,11 @@ class ProviderState:
 
     def arm_recommendation_fallback(self) -> None:
         with self._lock:
-            self._fallback_next_recommendation = True
+            self._next_recommendation_variant = "fallback"
+
+    def arm_recommendation_evidence(self) -> None:
+        with self._lock:
+            self._next_recommendation_variant = "evidence"
 
     def arm_recommendation_block(self) -> None:
         with self._lock:
@@ -51,11 +55,11 @@ class ProviderState:
             self._fail_next_recommendation = False
             return should_fail
 
-    def consume_recommendation_fallback(self) -> bool:
+    def consume_recommendation_variant(self) -> str | None:
         with self._lock:
-            should_fallback = self._fallback_next_recommendation
-            self._fallback_next_recommendation = False
-            return should_fallback
+            variant = self._next_recommendation_variant
+            self._next_recommendation_variant = None
+            return variant
 
     def begin_recommendation(self) -> bool:
         with self._lock:
@@ -102,6 +106,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/control/fallback-next-recommendation":
                 state.arm_recommendation_fallback()
+                self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/evidence-next-recommendation":
+                state.arm_recommendation_evidence()
                 self._send_json(200, {"armed": True})
                 return
             if self.path == "/control/block-next-recommendation":
@@ -207,11 +215,40 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "provider": "external_solver",
                 "engine": "e2e_provider_stub",
             }
-            if state.consume_recommendation_fallback():
+            recommendation_variant = state.consume_recommendation_variant()
+            if recommendation_variant == "fallback":
                 raw.update(
                     {
                         "requested_engine": "postflop_solver",
                         "fallback_reason": RECOMMENDATION_FALLBACK_REASON,
+                    },
+                )
+            elif recommendation_variant == "evidence":
+                raw.update(
+                    {
+                        "equity": {"equity": 0.61},
+                        "realized_equity": 0.55,
+                        "required_equity": 0.2,
+                        "candidates": [
+                            {
+                                "action": "call",
+                                "sizing": None,
+                                "ev": 1.4,
+                                "frequency": 0.78,
+                            },
+                            {
+                                "action": "raise",
+                                "sizing": 8,
+                                "ev": 1.1,
+                                "frequency": 0.2,
+                            },
+                            {
+                                "action": "fold",
+                                "sizing": None,
+                                "ev": 0,
+                                "frequency": 0.02,
+                            },
+                        ],
                     },
                 )
             self._send_json(

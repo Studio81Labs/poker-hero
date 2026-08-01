@@ -5223,7 +5223,21 @@ describe("App", () => {
     }
   });
 
-  it("does not grade EV from only the recommended candidate line", async () => {
+  it.each([
+    {
+      title: "does not grade EV from only the recommended candidate line",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+      ],
+    },
+    {
+      title: "does not grade EV from duplicate recommended candidate lines",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8, ev: 1.3, frequency: 0 },
+      ],
+    },
+  ])("$title", async ({ candidates }) => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 8,
@@ -5237,9 +5251,7 @@ describe("App", () => {
       raw: {
         provider: "local_solver",
         engine: "postflop_solver",
-        candidates: [
-          { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
-        ],
+        candidates,
       },
     };
     const created = jobRecord();

@@ -2745,9 +2745,31 @@ test("leaves EV loss ungraded without the recommended candidate line", async ({
   );
 });
 
-test("leaves EV loss ungraded without a distinct candidate line", async ({
-  page,
-}, testInfo) => {
+const nonDistinctEvidenceCases = [
+  {
+    label: "one candidate",
+    filename: "single-line-ev-evidence",
+    controlPath: "/control/single-line-evidence-next-recommendation",
+    candidates: [
+      { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+    ],
+  },
+  {
+    label: "duplicate candidate lines",
+    filename: "duplicate-line-ev-evidence",
+    controlPath: "/control/duplicate-line-evidence-next-recommendation",
+    candidates: [
+      { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+      { action: "raise", sizing: 8, ev: 1.3, frequency: 0 },
+    ],
+  },
+];
+
+async function verifyNonDistinctEvidence(
+  page: Page,
+  testInfo: TestInfo,
+  evidenceCase: (typeof nonDistinctEvidenceCases)[number],
+): Promise<void> {
   await openUploadInput(page);
   await page.getByRole("button", { name: "Automation On" }).click();
   await expect(
@@ -2768,7 +2790,7 @@ test("leaves EV loss ungraded without a distinct candidate line", async ({
     reviewed_hands: number;
   };
 
-  const filename = attemptFilename("single-line-ev-evidence", testInfo);
+  const filename = attemptFilename(evidenceCase.filename, testInfo);
   const uploadedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   const decisionPanel = page.getByRole("region", {
@@ -2787,7 +2809,7 @@ test("leaves EV loss ungraded without a distinct candidate line", async ({
   await expect(decisionPanel).toContainText("Answer locked");
 
   const armResponse = await page.request.post(
-    `${PROVIDER_URL}/control/single-line-evidence-next-recommendation`,
+    `${PROVIDER_URL}${evidenceCase.controlPath}`,
   );
   expect(armResponse.ok()).toBe(true);
   await page.getByRole("button", { name: "Request recommendation" }).click();
@@ -2857,9 +2879,21 @@ test("leaves EV loss ungraded without a distinct candidate line", async ({
     action: "raise",
     sizing: 8,
   });
-  expect(persistedJob.recommendation?.raw.candidates).toEqual([
-    { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
-  ]);
+  expect(persistedJob.recommendation?.raw.candidates).toEqual(
+    evidenceCase.candidates,
+  );
+}
+
+test("leaves EV loss ungraded with one candidate", async ({
+  page,
+}, testInfo) => {
+  await verifyNonDistinctEvidence(page, testInfo, nonDistinctEvidenceCases[0]);
+});
+
+test("leaves EV loss ungraded with duplicate candidate lines", async ({
+  page,
+}, testInfo) => {
+  await verifyNonDistinctEvidence(page, testInfo, nonDistinctEvidenceCases[1]);
 });
 
 test("reviews a sizing difference at the tolerance boundary", async ({

@@ -144,6 +144,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("single_line_evidence")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/duplicate-line-evidence-next-recommendation":
+                state.arm_recommendation_evidence("duplicate_line_evidence")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -267,6 +271,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "malformed_policy",
                 "missing_recommended_line",
                 "single_line_evidence",
+                "duplicate_line_evidence",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
@@ -288,7 +293,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_frequency = 0.0
                     raise_frequency = 0.2
                     fold_frequency = 0.8
-                elif recommendation_variant == "single_line_evidence":
+                elif recommendation_variant in {
+                    "single_line_evidence",
+                    "duplicate_line_evidence",
+                }:
                     call_ev, raise_ev = 0.0, 1.4
                     call_frequency = 0.0
                     raise_frequency = 1.0
@@ -333,6 +341,16 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 }
                 if recommendation_variant == "single_line_evidence":
                     policy_candidates = [raise_candidate]
+                elif recommendation_variant == "duplicate_line_evidence":
+                    policy_candidates = [
+                        raise_candidate,
+                        {
+                            "action": "raise",
+                            "sizing": 8,
+                            "ev": 1.3,
+                            "frequency": 0.0,
+                        },
+                    ]
                 else:
                     policy_candidates = [raise_candidate, fold_candidate]
                     if recommendation_variant != "missing_recommended_line":

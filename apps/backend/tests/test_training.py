@@ -1632,7 +1632,37 @@ def test_summarize_training_rejects_malformed_candidate_ev_metadata() -> None:
     assert all(hand.ev_loss_bb is None for hand in progress.recent_hands)
 
 
-def test_summarize_training_does_not_grade_single_candidate_ev() -> None:
+@pytest.mark.parametrize(
+    "candidates",
+    [
+        [
+            {
+                "action": "raise",
+                "sizing": 8,
+                "ev": 1.4,
+                "frequency": 1.0,
+            }
+        ],
+        [
+            {
+                "action": "raise",
+                "sizing": 8,
+                "ev": 1.4,
+                "frequency": 1.0,
+            },
+            {
+                "action": "raise",
+                "sizing": 8,
+                "ev": 1.3,
+                "frequency": 0.0,
+            },
+        ],
+    ],
+    ids=["single", "duplicate"],
+)
+def test_summarize_training_does_not_grade_without_distinct_candidate_ev(
+    candidates: list[dict[str, object]],
+) -> None:
     jobs = [
         reviewed_job(
             "d" * 32,
@@ -1642,16 +1672,7 @@ def test_summarize_training_does_not_grade_single_candidate_ev() -> None:
             datetime(2026, 7, 23, tzinfo=timezone.utc),
             decision_sizing=8,
             recommended_sizing=8,
-            recommendation_raw={
-                "candidates": [
-                    {
-                        "action": "raise",
-                        "sizing": 8,
-                        "ev": 1.4,
-                        "frequency": 1.0,
-                    }
-                ]
-            },
+            recommendation_raw={"candidates": candidates},
         )
     ]
 

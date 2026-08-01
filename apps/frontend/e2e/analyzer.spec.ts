@@ -1818,6 +1818,158 @@ test("opens the suggested normalized-position review focus", async ({
   expect(cleanupResponse.ok()).toBe(true);
 });
 
+test("opens the suggested certainty review focus", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  await completeStaleTrainingReviews(page, "suggested-certainty-");
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    needs_review_hands: number;
+  };
+
+  const controlFilename = attemptFilename(
+    "suggested-certainty-control",
+    testInfo,
+  );
+  const controlJob = await createPendingTrainingReview(
+    page,
+    controlFilename,
+    {
+      certainty: "low",
+      recommendationControl: "lower-evidence-next-recommendation",
+      street: "flop",
+    },
+  );
+  const olderTargetFilename = attemptFilename(
+    "suggested-certainty-target-older",
+    testInfo,
+  );
+  const olderTargetJob = await createPendingTrainingReview(
+    page,
+    olderTargetFilename,
+    {
+      certainty: "high",
+      recommendationControl: "pattern-evidence-next-recommendation",
+      street: "turn",
+    },
+  );
+  const newerTargetFilename = attemptFilename(
+    "suggested-certainty-target-newer",
+    testInfo,
+  );
+  const newerTargetJob = await createPendingTrainingReview(
+    page,
+    newerTargetFilename,
+    {
+      boardCards: "Qs Jc 2h 8s",
+      certainty: "high",
+      recommendationControl: "pattern-evidence-next-recommendation",
+      street: "turn",
+    },
+  );
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  const suggestedFocus = progressDialog.getByRole("button", {
+    name: /^Focus high certainty reviews: Highest average EV loss: [\d.]+ BB$/,
+  });
+  await expect(suggestedFocus).toBeVisible();
+  await suggestedFocus.click();
+
+  await expect(progressDialog.getByLabel("Review certainty"))
+    .toHaveValue("high");
+  await expect(progressDialog).toContainText(
+    "2 pending review hands across all streets with high certainty.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${newerTargetFilename} training review`,
+  })).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${olderTargetFilename} training review`,
+  })).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${controlFilename} training review`,
+  })).toBeHidden();
+  await progressDialog.getByRole("button", { name: "Review next" }).click();
+
+  await expect(progressDialog).toBeHidden();
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${newerTargetJob.id}/image`,
+    );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${olderTargetJob.id}/image`,
+    );
+  await expect(page.getByText(
+    "Training review completed. Next hand ready",
+  )).toBeVisible();
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog.getByLabel("Review certainty"))
+    .toHaveValue("high");
+  await expect(progressDialog).toContainText(
+    "No action or sizing differences need review.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Needs review ${initialProgress.needs_review_hands + 1}`,
+    exact: true,
+  })).toBeVisible();
+
+  for (const targetJob of [newerTargetJob, olderTargetJob]) {
+    const targetResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${targetJob.id}`,
+    );
+    expect(targetResponse.ok()).toBe(true);
+    const persistedTarget = await targetResponse.json() as {
+      training_decision: { certainty: string | null } | null;
+      training_reviewed_at: string | null;
+    };
+    expect(persistedTarget).toMatchObject({
+      training_decision: { certainty: "high" },
+      training_reviewed_at: expect.any(String),
+    });
+  }
+
+  const controlResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}`,
+  );
+  expect(controlResponse.ok()).toBe(true);
+  const persistedControl = await controlResponse.json() as {
+    training_decision: { certainty: string | null } | null;
+    training_reviewed_at: string | null;
+  };
+  expect(persistedControl).toMatchObject({
+    training_decision: { certainty: "low" },
+    training_reviewed_at: null,
+  });
+  const cleanupResponse = await page.request.put(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}/training-review`,
+    { data: { note: null } },
+  );
+  expect(cleanupResponse.ok()).toBe(true);
+});
+
 test("filters and exports persisted lesson notes", async ({
   page,
 }, testInfo) => {

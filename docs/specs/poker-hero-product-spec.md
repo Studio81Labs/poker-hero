@@ -577,7 +577,8 @@ highest-cost pending review. The highest-cost repeated action difference can
 also open its persisted, pattern-scoped queue and retain that scope through
 review completion. Position aliases normalize into the same persisted focus,
 and the highest-loss normalized position can retain that scope while its queue
-is completed.
+is completed. The highest-loss rated certainty group can likewise open and
+complete its persisted queue without consuming hands from another certainty.
 
 ## Success Criteria
 

@@ -585,6 +585,8 @@ neither a certainty rating nor a recorded position remain reachable from both
 fallback suggestions without fabricating either value.
 A modeled alternate line with at least 5% strategy frequency remains a
 persisted supported mix and does not enter the unsupported-action review queue.
+A same-action sizing difference remains available for review without being
+reported as a repeated unsupported-action pattern.
 
 ## Success Criteria
 

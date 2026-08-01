@@ -1491,6 +1491,51 @@ def test_summarize_training_scores_meaningful_solver_mixes() -> None:
     assert [hand.job_id for hand in progress.review_queue] == ["a" * 32]
 
 
+def test_summarize_training_applies_solver_mix_frequency_boundary() -> None:
+    jobs = [
+        reviewed_job(
+            "b" * 32,
+            "flop",
+            "raise",
+            "call",
+            datetime(2026, 7, 11, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "frequency": 0.95},
+                    {"action": "raise", "sizing": 8, "frequency": 0.05},
+                ]
+            },
+        ),
+        reviewed_job(
+            "c" * 32,
+            "turn",
+            "raise",
+            "call",
+            datetime(2026, 7, 12, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "frequency": 0.950001},
+                    {"action": "raise", "sizing": 8, "frequency": 0.049999},
+                ]
+            },
+        ),
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 1
+    assert progress.exact_matches == 1
+    assert progress.different_actions == 1
+    assert progress.needs_review_hands == 1
+    assert [hand.outcome for hand in progress.recent_hands] == [
+        "different",
+        "mixed",
+    ]
+    assert [hand.job_id for hand in progress.review_queue] == ["c" * 32]
+
+
 def test_summarize_training_reports_available_candidate_ev_loss() -> None:
     jobs = [
         reviewed_job(

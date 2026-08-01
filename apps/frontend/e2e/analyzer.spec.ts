@@ -2481,6 +2481,140 @@ test("reviews a sizing-only difference without grouping it as an action mistake"
   });
 });
 
+test("reviews a supported mixed action taken at a different size", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    action_differences: Array<{
+      decision_action: string;
+      recommended_action: string;
+    }>;
+    action_matches: number;
+    different_actions: number;
+    exact_matches: number;
+    needs_review_hands: number;
+    review_queue_hands: number;
+    reviewed_hands: number;
+  };
+
+  const filename = attemptFilename("mixed-sizing-review", testInfo);
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+  const decisionPanel = page.getByRole("region", {
+    name: "Your training decision",
+  });
+  await decisionPanel.getByRole("button", {
+    name: "raise",
+    exact: true,
+  }).click();
+  await decisionPanel.getByLabel("Decision sizing in BB").fill("9");
+  await decisionPanel.getByRole("button", {
+    name: "medium",
+    exact: true,
+  }).click();
+  await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
+  await expect(decisionPanel).toContainText("Answer locked");
+
+  const armResponse = await page.request.post(
+    `${PROVIDER_URL}/control/evidence-next-recommendation`,
+  );
+  expect(armResponse.ok()).toBe(true);
+  await page.getByRole("button", { name: "Request recommendation" }).click();
+  await expect(uploadedJob.queueItem).toContainText("recommended");
+
+  const comparison = page.getByLabel("Training decision comparison");
+  await expect(comparison).toContainText(
+    "Solver-supported action, different size",
+  );
+  await expect(comparison.getByRole("button", {
+    name: "Mark reviewed",
+  })).toBeVisible();
+
+  await page.getByRole("button", { name: "Clear reviewed" }).click();
+  await expect(uploadedJob.queueItem).toBeHidden();
+
+  const updatedProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(updatedProgressResponse.ok()).toBe(true);
+  const updatedProgress = await updatedProgressResponse.json() as {
+    action_differences: Array<{
+      decision_action: string;
+      recommended_action: string;
+    }>;
+    action_matches: number;
+    different_actions: number;
+    exact_matches: number;
+    needs_review_hands: number;
+    recent_hands: Array<{ job_id: string; outcome: string }>;
+    review_queue: Array<{ job_id: string; outcome: string }>;
+    review_queue_hands: number;
+    reviewed_hands: number;
+  };
+  expect(updatedProgress).toMatchObject({
+    action_matches: initialProgress.action_matches + 1,
+    different_actions: initialProgress.different_actions,
+    exact_matches: initialProgress.exact_matches,
+    needs_review_hands: initialProgress.needs_review_hands + 1,
+    review_queue_hands: initialProgress.review_queue_hands + 1,
+    reviewed_hands: initialProgress.reviewed_hands + 1,
+  });
+  expect(updatedProgress.action_differences).toEqual(
+    initialProgress.action_differences,
+  );
+  expect(updatedProgress.recent_hands).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      job_id: uploadedJob.id,
+      outcome: "mixed_action",
+    }),
+  ]));
+  expect(updatedProgress.review_queue).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      job_id: uploadedJob.id,
+      outcome: "mixed_action",
+    }),
+  ]));
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    archived_at: string | null;
+    recommendation: {
+      action: string;
+      raw: Record<string, unknown>;
+      sizing: number | null;
+    } | null;
+    training_decision: { action: string; sizing: number | null } | null;
+    training_reviewed_at: string | null;
+  };
+  expect(persistedJob).toMatchObject({
+    archived_at: expect.any(String),
+    recommendation: {
+      action: "call",
+      raw: {
+        candidates: expect.arrayContaining([
+          { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+        ]),
+      },
+      sizing: null,
+    },
+    training_decision: { action: "raise", sizing: 9 },
+    training_reviewed_at: null,
+  });
+});
+
 test("filters and exports persisted lesson notes", async ({
   page,
 }, testInfo) => {

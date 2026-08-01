@@ -1536,6 +1536,38 @@ def test_summarize_training_applies_solver_mix_frequency_boundary() -> None:
     assert [hand.job_id for hand in progress.review_queue] == ["c" * 32]
 
 
+def test_summarize_training_keeps_supported_mix_with_nonnumeric_ev_ungraded() -> None:
+    jobs = [
+        reviewed_job(
+            "d" * 32,
+            "flop",
+            "raise",
+            "call",
+            datetime(2026, 7, 13, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "ev": 1.4, "frequency": 0.78},
+                    {"action": "raise", "sizing": 8, "ev": "1.1", "frequency": 0.2},
+                    {"action": "fold", "sizing": None, "ev": 0, "frequency": 0.02},
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 1
+    assert progress.exact_matches == 1
+    assert progress.different_actions == 0
+    assert progress.needs_review_hands == 0
+    assert progress.ev_compared_hands == 0
+    assert progress.average_ev_loss_bb is None
+    assert progress.recent_hands[0].outcome == "mixed"
+    assert progress.recent_hands[0].ev_loss_bb is None
+    assert progress.review_queue == []
+
+
 def test_summarize_training_reports_available_candidate_ev_loss() -> None:
     jobs = [
         reviewed_job(

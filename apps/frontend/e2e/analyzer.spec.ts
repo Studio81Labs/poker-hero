@@ -2624,9 +2624,31 @@ test("keeps a malformed solver candidate out of policy support", async ({
   );
 });
 
-test("leaves EV loss ungraded without the recommended candidate line", async ({
-  page,
-}, testInfo) => {
+const supportedUngradedMixCases = [
+  {
+    filename: "missing-recommended-ev-line",
+    controlPath: "/control/missing-recommended-line-next-recommendation",
+    candidates: [
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+      { action: "fold", sizing: null, ev: 0, frequency: 0.8 },
+    ],
+  },
+  {
+    filename: "nonnumeric-candidate-ev",
+    controlPath: "/control/nonnumeric-ev-next-recommendation",
+    candidates: [
+      { action: "call", sizing: null, ev: 1.4, frequency: 0.78 },
+      { action: "raise", sizing: 8, ev: "1.1", frequency: 0.2 },
+      { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
+    ],
+  },
+];
+
+async function verifySupportedUngradedMix(
+  page: Page,
+  testInfo: TestInfo,
+  evidenceCase: (typeof supportedUngradedMixCases)[number],
+): Promise<void> {
   await openUploadInput(page);
   await page.getByRole("button", { name: "Automation On" }).click();
   await expect(
@@ -2647,7 +2669,7 @@ test("leaves EV loss ungraded without the recommended candidate line", async ({
     reviewed_hands: number;
   };
 
-  const filename = attemptFilename("missing-recommended-ev-line", testInfo);
+  const filename = attemptFilename(evidenceCase.filename, testInfo);
   const uploadedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   const decisionPanel = page.getByRole("region", {
@@ -2666,7 +2688,7 @@ test("leaves EV loss ungraded without the recommended candidate line", async ({
   await expect(decisionPanel).toContainText("Answer locked");
 
   const armResponse = await page.request.post(
-    `${PROVIDER_URL}/control/missing-recommended-line-next-recommendation`,
+    `${PROVIDER_URL}${evidenceCase.controlPath}`,
   );
   expect(armResponse.ok()).toBe(true);
   await page.getByRole("button", { name: "Request recommendation" }).click();
@@ -2733,15 +2755,27 @@ test("leaves EV loss ungraded without the recommended candidate line", async ({
   };
   expect(persistedJob.recommendation?.action).toBe("call");
   expect(persistedJob.recommendation?.raw.candidates).toEqual(
-    expect.arrayContaining([
-      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
-      { action: "fold", sizing: null, ev: 0, frequency: 0.8 },
-    ]),
+    evidenceCase.candidates,
   );
-  expect(persistedJob.recommendation?.raw.candidates).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ action: "call" }),
-    ]),
+}
+
+test("leaves EV loss ungraded without the recommended candidate line", async ({
+  page,
+}, testInfo) => {
+  await verifySupportedUngradedMix(
+    page,
+    testInfo,
+    supportedUngradedMixCases[0],
+  );
+});
+
+test("keeps a supported mix with nonnumeric candidate EV ungraded", async ({
+  page,
+}, testInfo) => {
+  await verifySupportedUngradedMix(
+    page,
+    testInfo,
+    supportedUngradedMixCases[1],
   );
 });
 

@@ -173,6 +173,7 @@ async function createPendingTrainingReview(
     certainty: "high" | "medium" | "low";
     decisionAction?: "fold" | "check" | "call" | "bet" | "raise";
     decisionSizing?: number;
+    heroPosition?: string;
     recommendationControl?: string;
     street: "flop" | "turn" | "river";
   },
@@ -180,6 +181,9 @@ async function createPendingTrainingReview(
   const uploadedJob = await uploadValidScreenshot(page, filename);
   if (options.boardCards !== undefined) {
     await page.getByLabel("Board cards").fill(options.boardCards);
+  }
+  if (options.heroPosition !== undefined) {
+    await page.getByLabel("Hero position").fill(options.heroPosition);
   }
   await page.getByLabel("Street").selectOption(options.street);
   await page.getByRole("button", { name: "Approve state" }).click();
@@ -1640,6 +1644,163 @@ test("opens the suggested highest-loss action pattern", async ({
       training_reviewed_at: string | null;
     };
     expect(persistedTarget.training_reviewed_at).toEqual(expect.any(String));
+  }
+
+  const controlResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}`,
+  );
+  expect(controlResponse.ok()).toBe(true);
+  const persistedControl = await controlResponse.json() as {
+    training_reviewed_at: string | null;
+  };
+  expect(persistedControl.training_reviewed_at).toBeNull();
+  const cleanupResponse = await page.request.put(
+    `${BACKEND_URL}/api/jobs/${controlJob.id}/training-review`,
+    { data: { note: null } },
+  );
+  expect(cleanupResponse.ok()).toBe(true);
+});
+
+test("opens the suggested normalized-position review focus", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  await completeStaleTrainingReviews(page, "suggested-position-");
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    needs_review_hands: number;
+  };
+
+  const controlFilename = attemptFilename(
+    "suggested-position-control",
+    testInfo,
+  );
+  const controlJob = await createPendingTrainingReview(
+    page,
+    controlFilename,
+    {
+      certainty: "low",
+      recommendationControl: "lower-evidence-next-recommendation",
+      street: "flop",
+    },
+  );
+  const olderTargetFilename = attemptFilename(
+    "suggested-position-target-older",
+    testInfo,
+  );
+  const olderTargetJob = await createPendingTrainingReview(
+    page,
+    olderTargetFilename,
+    {
+      certainty: "high",
+      heroPosition: "big blind",
+      recommendationControl: "evidence-next-recommendation",
+      street: "turn",
+    },
+  );
+  const newerTargetFilename = attemptFilename(
+    "suggested-position-target-newer",
+    testInfo,
+  );
+  const newerTargetJob = await createPendingTrainingReview(
+    page,
+    newerTargetFilename,
+    {
+      boardCards: "Qs Jc 2h 8s",
+      certainty: "medium",
+      heroPosition: "bb",
+      recommendationControl: "evidence-next-recommendation",
+      street: "turn",
+    },
+  );
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  const suggestedFocus = progressDialog.getByRole("button", {
+    name: "Focus BB position reviews: Highest average EV loss: 1.4 BB",
+  });
+  await expect(suggestedFocus).toBeVisible();
+  await suggestedFocus.click();
+
+  const positionFilter = progressDialog.getByLabel(
+    "Active review position filter",
+  );
+  await expect(positionFilter).toContainText("BB");
+  await expect(progressDialog).toContainText(
+    "2 pending review hands across all streets at BB.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${newerTargetFilename} training review`,
+  })).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${olderTargetFilename} training review`,
+  })).toBeVisible();
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${controlFilename} training review`,
+  })).toBeHidden();
+  await progressDialog.getByRole("button", { name: "Review next" }).click();
+
+  await expect(progressDialog).toBeHidden();
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${newerTargetJob.id}/image`,
+    );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${olderTargetJob.id}/image`,
+    );
+  await expect(page.getByText(
+    "Training review completed. Next hand ready",
+  )).toBeVisible();
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog.getByLabel(
+    "Active review position filter",
+  )).toContainText("BB");
+  await expect(progressDialog).toContainText(
+    "No action or sizing differences need review.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Needs review ${initialProgress.needs_review_hands + 1}`,
+    exact: true,
+  })).toBeVisible();
+
+  const targetPositions = [
+    [newerTargetJob, "bb"],
+    [olderTargetJob, "big blind"],
+  ] as const;
+  for (const [targetJob, expectedPosition] of targetPositions) {
+    const targetResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${targetJob.id}`,
+    );
+    expect(targetResponse.ok()).toBe(true);
+    const persistedTarget = await targetResponse.json() as {
+      approved_state: { hero_position: string | null } | null;
+      training_reviewed_at: string | null;
+    };
+    expect(persistedTarget).toMatchObject({
+      approved_state: { hero_position: expectedPosition },
+      training_reviewed_at: expect.any(String),
+    });
   }
 
   const controlResponse = await page.request.get(

@@ -583,6 +583,8 @@ The highest-loss street can open the same persisted workflow while retaining
 its approved board state and leaving other streets pending. Legacy hands with
 neither a certainty rating nor a recorded position remain reachable from both
 fallback suggestions without fabricating either value.
+A modeled alternate line with at least 5% strategy frequency remains a
+persisted supported mix and does not enter the unsupported-action review queue.
 
 ## Success Criteria
 

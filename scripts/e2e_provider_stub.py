@@ -33,9 +33,9 @@ class ProviderState:
         with self._lock:
             self._next_recommendation_variant = "fallback"
 
-    def arm_recommendation_evidence(self) -> None:
+    def arm_recommendation_evidence(self, variant: str = "evidence") -> None:
         with self._lock:
-            self._next_recommendation_variant = "evidence"
+            self._next_recommendation_variant = variant
 
     def arm_recommendation_block(self) -> None:
         with self._lock:
@@ -110,6 +110,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/control/evidence-next-recommendation":
                 state.arm_recommendation_evidence()
+                self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/lower-evidence-next-recommendation":
+                state.arm_recommendation_evidence("lower_evidence")
                 self._send_json(200, {"armed": True})
                 return
             if self.path == "/control/block-next-recommendation":
@@ -223,7 +227,8 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                         "fallback_reason": RECOMMENDATION_FALLBACK_REASON,
                     },
                 )
-            elif recommendation_variant == "evidence":
+            elif recommendation_variant in {"evidence", "lower_evidence"}:
+                lower_evidence = recommendation_variant == "lower_evidence"
                 raw.update(
                     {
                         "equity": {"equity": 0.61},
@@ -233,13 +238,13 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                             {
                                 "action": "call",
                                 "sizing": None,
-                                "ev": 1.4,
+                                "ev": 0.4 if lower_evidence else 1.4,
                                 "frequency": 0.78,
                             },
                             {
                                 "action": "raise",
                                 "sizing": 8,
-                                "ev": 1.1,
+                                "ev": 0.3 if lower_evidence else 1.1,
                                 "frequency": 0.2,
                             },
                             {

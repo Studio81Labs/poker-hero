@@ -591,6 +591,8 @@ A meaningful alternate action taken at a different size preserves action
 accuracy while remaining an exact-line review outside those action patterns.
 Sizing drift below 0.01 BB remains an exact persisted match and does not create
 review work.
+Sizing differences at that boundary remain reviewable after decimal values are
+serialized through the frontend and backend.
 
 ## Success Criteria
 

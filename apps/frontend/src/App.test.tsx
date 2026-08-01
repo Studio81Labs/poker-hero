@@ -5124,6 +5124,7 @@ describe("App", () => {
       title: "accepts an alternate line at the policy-support boundary",
       frequency: 0.05,
       candidateSizing: 8,
+      candidateEv: 2.74,
       expectedLabel: "Solver-supported mix",
       hasEvLoss: true,
       includeRecommendedCandidate: true,
@@ -5133,6 +5134,7 @@ describe("App", () => {
       title: "rejects an alternate line below the policy-support boundary",
       frequency: 0.049999,
       candidateSizing: 8,
+      candidateEv: 2.74,
       expectedLabel: "Different action",
       hasEvLoss: true,
       includeRecommendedCandidate: true,
@@ -5142,6 +5144,7 @@ describe("App", () => {
       title: "rejects an alternate raise without valid sizing",
       frequency: 0.2,
       candidateSizing: null,
+      candidateEv: 2.74,
       expectedLabel: "Different action",
       hasEvLoss: false,
       includeRecommendedCandidate: true,
@@ -5151,14 +5154,26 @@ describe("App", () => {
       title: "does not grade EV when candidates omit the recommended line",
       frequency: 0.2,
       candidateSizing: 8,
+      candidateEv: 2.74,
       expectedLabel: "Solver-supported mix",
       hasEvLoss: false,
       includeRecommendedCandidate: false,
       needsReview: false,
     },
+    {
+      title: "keeps a supported alternate with nonnumeric EV ungraded",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: "2.74",
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: false,
+      includeRecommendedCandidate: true,
+      needsReview: false,
+    },
   ])("$title", async ({
     frequency,
     candidateSizing,
+    candidateEv,
     expectedLabel,
     hasEvLoss,
     includeRecommendedCandidate,
@@ -5170,8 +5185,8 @@ describe("App", () => {
       recorded_at: "2026-07-20T12:00:00Z",
     };
     const alternateCandidate = candidateSizing === null
-      ? { action: "raise", ev: 2.74, frequency }
-      : { action: "raise", sizing: candidateSizing, ev: 2.74, frequency };
+      ? { action: "raise", ev: candidateEv, frequency }
+      : { action: "raise", sizing: candidateSizing, ev: candidateEv, frequency };
     const mixedRecommendation: RecommendationResult = {
       action: "call",
       sizing: null,

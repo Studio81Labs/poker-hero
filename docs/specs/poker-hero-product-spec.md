@@ -592,6 +592,9 @@ unsupported and ungraded after persistence.
 A valid alternate policy line can remain supported when the provider omits its
 recommended line from candidate evidence, but that comparison remains ungraded
 for EV loss.
+A valid alternate policy line with missing or nonnumeric EV metadata likewise
+remains supported, but the comparison stays ungraded and does not affect EV
+analytics.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
 Duplicate entries for the same action and tolerance-equivalent sizing count as

@@ -140,6 +140,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("missing_recommended_line")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/nonnumeric-ev-next-recommendation":
+                state.arm_recommendation_evidence("nonnumeric_ev")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/single-line-evidence-next-recommendation":
                 state.arm_recommendation_evidence("single_line_evidence")
                 self._send_json(200, {"armed": True})
@@ -270,6 +274,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "below_frequency_boundary",
                 "malformed_policy",
                 "missing_recommended_line",
+                "nonnumeric_ev",
                 "single_line_evidence",
                 "duplicate_line_evidence",
             }:
@@ -293,6 +298,11 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_frequency = 0.0
                     raise_frequency = 0.2
                     fold_frequency = 0.8
+                elif recommendation_variant == "nonnumeric_ev":
+                    call_ev, raise_ev = 1.4, "1.1"
+                    call_frequency = 0.78
+                    raise_frequency = 0.2
+                    fold_frequency = 0.02
                 elif recommendation_variant in {
                     "single_line_evidence",
                     "duplicate_line_evidence",

@@ -5126,6 +5126,7 @@ describe("App", () => {
       candidateSizing: 8,
       expectedLabel: "Solver-supported mix",
       hasEvLoss: true,
+      includeRecommendedCandidate: true,
       needsReview: false,
     },
     {
@@ -5134,6 +5135,7 @@ describe("App", () => {
       candidateSizing: 8,
       expectedLabel: "Different action",
       hasEvLoss: true,
+      includeRecommendedCandidate: true,
       needsReview: true,
     },
     {
@@ -5142,13 +5144,24 @@ describe("App", () => {
       candidateSizing: null,
       expectedLabel: "Different action",
       hasEvLoss: false,
+      includeRecommendedCandidate: true,
       needsReview: true,
+    },
+    {
+      title: "does not grade EV when candidates omit the recommended line",
+      frequency: 0.2,
+      candidateSizing: 8,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: false,
+      includeRecommendedCandidate: false,
+      needsReview: false,
     },
   ])("$title", async ({
     frequency,
     candidateSizing,
     expectedLabel,
     hasEvLoss,
+    includeRecommendedCandidate,
     needsReview,
   }) => {
     const trainingDecision = {
@@ -5156,6 +5169,9 @@ describe("App", () => {
       sizing: 8,
       recorded_at: "2026-07-20T12:00:00Z",
     };
+    const alternateCandidate = candidateSizing === null
+      ? { action: "raise", ev: 2.74, frequency }
+      : { action: "raise", sizing: candidateSizing, ev: 2.74, frequency };
     const mixedRecommendation: RecommendationResult = {
       action: "call",
       sizing: null,
@@ -5165,10 +5181,11 @@ describe("App", () => {
         provider: "local_solver",
         engine: "postflop_solver",
         candidates: [
-          { action: "call", sizing: null, ev: 2.75, frequency: 0.84 },
-          candidateSizing === null
-            ? { action: "raise", ev: 2.74, frequency }
-            : { action: "raise", sizing: candidateSizing, ev: 2.74, frequency },
+          ...(includeRecommendedCandidate
+            ? [{ action: "call", sizing: null, ev: 2.75, frequency: 0.84 }]
+            : []),
+          alternateCandidate,
+          { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
         ],
       },
     };

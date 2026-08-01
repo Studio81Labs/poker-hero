@@ -136,6 +136,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("malformed_policy")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/missing-recommended-line-next-recommendation":
+                state.arm_recommendation_evidence("missing_recommended_line")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -257,6 +261,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "frequency_boundary",
                 "below_frequency_boundary",
                 "malformed_policy",
+                "missing_recommended_line",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
@@ -273,6 +278,11 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_frequency = 0.930001
                     raise_frequency = 0.049999
                     fold_frequency = 0.02
+                elif recommendation_variant == "missing_recommended_line":
+                    call_ev, raise_ev = 1.4, 1.1
+                    call_frequency = 0.0
+                    raise_frequency = 0.2
+                    fold_frequency = 0.8
                 elif recommendation_variant == "sizing_evidence":
                     call_ev, raise_ev = 0.8, 1.4
                     call_frequency = 0.3
@@ -297,26 +307,27 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 }
                 if recommendation_variant != "malformed_policy":
                     raise_candidate["sizing"] = 8
+                call_candidate = {
+                    "action": "call",
+                    "sizing": None,
+                    "ev": call_ev,
+                    "frequency": call_frequency,
+                }
+                fold_candidate = {
+                    "action": "fold",
+                    "sizing": None,
+                    "ev": 0,
+                    "frequency": fold_frequency,
+                }
+                policy_candidates = [raise_candidate, fold_candidate]
+                if recommendation_variant != "missing_recommended_line":
+                    policy_candidates.insert(0, call_candidate)
                 raw.update(
                     {
                         "equity": {"equity": 0.61},
                         "realized_equity": 0.55,
                         "required_equity": 0.2,
-                        "candidates": [
-                            {
-                                "action": "call",
-                                "sizing": None,
-                                "ev": call_ev,
-                                "frequency": call_frequency,
-                            },
-                            raise_candidate,
-                            {
-                                "action": "fold",
-                                "sizing": None,
-                                "ev": 0,
-                                "frequency": fold_frequency,
-                            },
-                        ],
+                        "candidates": policy_candidates,
                     },
                 )
             self._send_json(

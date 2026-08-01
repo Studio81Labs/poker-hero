@@ -1410,14 +1410,30 @@ def test_summarize_training_applies_sizing_tolerance() -> None:
             decision_sizing=5,
             recommended_sizing=5.02,
         ),
+        reviewed_job(
+            "7" * 32,
+            "flop",
+            "bet",
+            "bet",
+            datetime(2026, 7, 7, tzinfo=timezone.utc),
+            decision_sizing=5.01,
+            recommended_sizing=5,
+        ),
     ]
 
     progress = summarize_training(jobs)
 
-    assert progress.action_matches == 2
+    assert progress.action_matches == 3
     assert progress.exact_matches == 1
-    assert [hand.outcome for hand in progress.recent_hands] == ["same_action", "match"]
-    assert [hand.job_id for hand in progress.review_queue] == ["6" * 32]
+    assert [hand.outcome for hand in progress.recent_hands] == [
+        "same_action",
+        "same_action",
+        "match",
+    ]
+    assert [hand.job_id for hand in progress.review_queue] == [
+        "7" * 32,
+        "6" * 32,
+    ]
 
 
 def test_summarize_training_scores_meaningful_solver_mixes() -> None:

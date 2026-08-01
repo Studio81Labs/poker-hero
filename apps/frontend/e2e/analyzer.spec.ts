@@ -2361,7 +2361,7 @@ test("keeps a solver-supported mixed action out of review", async ({
   });
 });
 
-test("reviews a sizing-only difference without grouping it as an action mistake", async ({
+test("reviews a sizing difference at the tolerance boundary", async ({
   page,
 }, testInfo) => {
   await openUploadInput(page);
@@ -2387,7 +2387,7 @@ test("reviews a sizing-only difference without grouping it as an action mistake"
     reviewed_hands: number;
   };
 
-  const filename = attemptFilename("sizing-only-review", testInfo);
+  const filename = attemptFilename("sizing-boundary-review", testInfo);
   const uploadedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   const decisionPanel = page.getByRole("region", {
@@ -2397,7 +2397,7 @@ test("reviews a sizing-only difference without grouping it as an action mistake"
     name: "raise",
     exact: true,
   }).click();
-  await decisionPanel.getByLabel("Decision sizing in BB").fill("6");
+  await decisionPanel.getByLabel("Decision sizing in BB").fill("8.01");
   await decisionPanel.getByRole("button", {
     name: "medium",
     exact: true,
@@ -2476,7 +2476,7 @@ test("reviews a sizing-only difference without grouping it as an action mistake"
   expect(persistedJob).toMatchObject({
     archived_at: expect.any(String),
     recommendation: { action: "raise", sizing: 8 },
-    training_decision: { action: "raise", sizing: 6 },
+    training_decision: { action: "raise", sizing: 8.01 },
     training_reviewed_at: null,
   });
 });

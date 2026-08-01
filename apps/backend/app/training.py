@@ -30,6 +30,7 @@ from app.models import (
 
 
 SIZING_MATCH_TOLERANCE = 0.01
+SIZING_MATCH_FLOAT_EPSILON = 1e-9
 MIN_SUPPORTED_FREQUENCY = 0.05
 MAX_TREND_WINDOW = 10
 STREET_ORDER: tuple[Street, ...] = ("preflop", "flop", "turn", "river")
@@ -961,7 +962,10 @@ def _line_matches(
 def _sizing_matches(left: float | None, right: float | None) -> bool:
     if left is None or right is None:
         return left == right
-    return abs(left - right) < SIZING_MATCH_TOLERANCE
+    return (
+        abs(left - right) + SIZING_MATCH_FLOAT_EPSILON
+        < SIZING_MATCH_TOLERANCE
+    )
 
 
 def _training_recorded_at(job: JobRecord) -> datetime:

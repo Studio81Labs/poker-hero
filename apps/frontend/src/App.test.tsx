@@ -5064,6 +5064,41 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(5);
   });
 
+  it("keeps sizing at the match-tolerance boundary reviewable", async () => {
+    const trainingDecision = {
+      action: "raise" as const,
+      sizing: 7.51,
+      certainty: "high" as const,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const decisionJob = { ...approvedJob(), training_decision: trainingDecision };
+    const revealedJob = {
+      ...recommendedJob(),
+      training_decision: trainingDecision,
+    };
+    const created = jobRecord();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(decisionJob))
+      .mockResolvedValueOnce(jsonResponse(revealedJob));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
+    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "7.51");
+    await user.click(within(decisionPanel).getByRole("button", { name: "high" }));
+    await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    expect(within(comparison).getByText("Same action, different size")).toBeInTheDocument();
+    expect(within(comparison).getByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
+  });
+
   it("accepts an exact alternate line from a meaningful solver mix", async () => {
     const trainingDecision = {
       action: "raise" as const,

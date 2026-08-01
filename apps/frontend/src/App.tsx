@@ -87,6 +87,8 @@ const FACING_ACTIONS = new Set<string>(["bet", "raise"]);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
 const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
 const MIN_SUPPORTED_FREQUENCY = 0.05;
+const SIZING_MATCH_TOLERANCE = 0.01;
+const SIZING_MATCH_FLOAT_EPSILON = 1e-9;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
@@ -859,7 +861,7 @@ function trainingSizingMatches(left: number | null, right: number | null): boole
   if (left === null || right === null) {
     return left === right;
   }
-  return Math.abs(left - right) < 0.01;
+  return Math.abs(left - right) + SIZING_MATCH_FLOAT_EPSILON < SIZING_MATCH_TOLERANCE;
 }
 
 function parseTrainingSizing(

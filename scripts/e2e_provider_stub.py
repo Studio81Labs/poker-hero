@@ -116,6 +116,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("lower_evidence")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/pattern-evidence-next-recommendation":
+                state.arm_recommendation_evidence("pattern_evidence")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -227,8 +231,26 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                         "fallback_reason": RECOMMENDATION_FALLBACK_REASON,
                     },
                 )
-            elif recommendation_variant in {"evidence", "lower_evidence"}:
-                lower_evidence = recommendation_variant == "lower_evidence"
+            elif recommendation_variant in {
+                "evidence",
+                "lower_evidence",
+                "pattern_evidence",
+            }:
+                if recommendation_variant == "pattern_evidence":
+                    call_ev, raise_ev = 2.4, 0.2
+                    call_frequency = 0.96
+                    raise_frequency = 0.02
+                    fold_frequency = 0.02
+                elif recommendation_variant == "lower_evidence":
+                    call_ev, raise_ev = 0.4, 0.3
+                    call_frequency = 0.78
+                    raise_frequency = 0.2
+                    fold_frequency = 0.02
+                else:
+                    call_ev, raise_ev = 1.4, 1.1
+                    call_frequency = 0.78
+                    raise_frequency = 0.2
+                    fold_frequency = 0.02
                 raw.update(
                     {
                         "equity": {"equity": 0.61},
@@ -238,20 +260,20 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                             {
                                 "action": "call",
                                 "sizing": None,
-                                "ev": 0.4 if lower_evidence else 1.4,
-                                "frequency": 0.78,
+                                "ev": call_ev,
+                                "frequency": call_frequency,
                             },
                             {
                                 "action": "raise",
                                 "sizing": 8,
-                                "ev": 0.3 if lower_evidence else 1.1,
-                                "frequency": 0.2,
+                                "ev": raise_ev,
+                                "frequency": raise_frequency,
                             },
                             {
                                 "action": "fold",
                                 "sizing": None,
                                 "ev": 0,
-                                "frequency": 0.02,
+                                "frequency": fold_frequency,
                             },
                         ],
                     },

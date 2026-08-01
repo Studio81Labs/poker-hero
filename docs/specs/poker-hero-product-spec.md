@@ -569,7 +569,9 @@ Archived and unarchived hands are also reconstructed from the backend after all
 browser-local and session storage is cleared. Persisted training differences
 can be narrowed by street and certainty, then completed in sequence without
 losing the active review filters. Persisted solver attribution can also be
-inspected by engine route and used to reopen the exact training hand.
+inspected by engine route and used to reopen the exact training hand. Recorded
+solver fallbacks expose their requested engine and reason, and support the same
+persisted drilldown workflow.
 
 ## Success Criteria
 

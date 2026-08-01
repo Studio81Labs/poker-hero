@@ -8,12 +8,14 @@ from threading import Event, Lock
 
 # Keep the gate beyond Playwright's 30-second test timeout.
 RECOMMENDATION_BLOCK_TIMEOUT_SECONDS = 35
+RECOMMENDATION_FALLBACK_REASON = "E2E fallback: unsupported postflop tree"
 
 
 class ProviderState:
     def __init__(self) -> None:
         self._fail_next_parser = False
         self._fail_next_recommendation = False
+        self._fallback_next_recommendation = False
         self._block_next_recommendation = False
         self._recommendation_started = Event()
         self._recommendation_release = Event()
@@ -26,6 +28,10 @@ class ProviderState:
     def arm_recommendation_failure(self) -> None:
         with self._lock:
             self._fail_next_recommendation = True
+
+    def arm_recommendation_fallback(self) -> None:
+        with self._lock:
+            self._fallback_next_recommendation = True
 
     def arm_recommendation_block(self) -> None:
         with self._lock:
@@ -44,6 +50,12 @@ class ProviderState:
             should_fail = self._fail_next_recommendation
             self._fail_next_recommendation = False
             return should_fail
+
+    def consume_recommendation_fallback(self) -> bool:
+        with self._lock:
+            should_fallback = self._fallback_next_recommendation
+            self._fallback_next_recommendation = False
+            return should_fallback
 
     def begin_recommendation(self) -> bool:
         with self._lock:
@@ -86,6 +98,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 return
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
+                self._send_json(200, {"armed": True})
+                return
+            if self.path == "/control/fallback-next-recommendation":
+                state.arm_recommendation_fallback()
                 self._send_json(200, {"armed": True})
                 return
             if self.path == "/control/block-next-recommendation":
@@ -187,6 +203,17 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             ):
                 self._send_json(504, {"detail": "Recommendation gate timed out"})
                 return
+            raw = {
+                "provider": "external_solver",
+                "engine": "e2e_provider_stub",
+            }
+            if state.consume_recommendation_fallback():
+                raw.update(
+                    {
+                        "requested_engine": "postflop_solver",
+                        "fallback_reason": RECOMMENDATION_FALLBACK_REASON,
+                    },
+                )
             self._send_json(
                 200,
                 {
@@ -194,10 +221,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     "sizing": None,
                     "confidence": 0.78,
                     "explanation": "E2E solver compared the available actions.",
-                    "raw": {
-                        "provider": "external_solver",
-                        "engine": "e2e_provider_stub",
-                    },
+                    "raw": raw,
                 },
             )
 

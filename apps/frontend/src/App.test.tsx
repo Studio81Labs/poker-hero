@@ -5223,6 +5223,56 @@ describe("App", () => {
     }
   });
 
+  it("does not grade EV from only the recommended candidate line", async () => {
+    const trainingDecision = {
+      action: "raise" as const,
+      sizing: 8,
+      recorded_at: "2026-07-20T12:00:00Z",
+    };
+    const singleLineRecommendation: RecommendationResult = {
+      action: "raise",
+      sizing: 8,
+      confidence: 0.87,
+      explanation: "Raise is the only modeled line.",
+      raw: {
+        provider: "local_solver",
+        engine: "postflop_solver",
+        candidates: [
+          { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        ],
+      },
+    };
+    const created = jobRecord();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse({
+        ...approvedJob(),
+        training_decision: trainingDecision,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        ...recommendedJob(),
+        training_decision: trainingDecision,
+        recommendation: singleLineRecommendation,
+      }));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
+    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "8");
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+
+    const comparison = await screen.findByLabelText("Training decision comparison");
+    expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
+    expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    expect(within(comparison).queryByRole("button", {
+      name: "Mark reviewed",
+    })).not.toBeInTheDocument();
+  });
+
   it("marks a differing training decision reviewed", async () => {
     const trainingDecision = {
       action: "call" as const,

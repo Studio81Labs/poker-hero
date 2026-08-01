@@ -573,7 +573,9 @@ inspected by engine route and used to reopen the exact training hand. Recorded
 solver fallbacks expose their requested engine and reason, and support the same
 persisted drilldown workflow. Candidate EV and equity evidence remains visible
 after persistence, grades the player's locked line, and can prioritize the
-highest-cost pending review.
+highest-cost pending review. The highest-cost repeated action difference can
+also open its persisted, pattern-scoped queue and retain that scope through
+review completion.
 
 ## Success Criteria
 

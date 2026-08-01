@@ -120,6 +120,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("pattern_evidence")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/sizing-evidence-next-recommendation":
+                state.arm_recommendation_evidence("sizing_evidence")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -223,6 +227,8 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "provider": "external_solver",
                 "engine": "e2e_provider_stub",
             }
+            recommendation_action = "call"
+            recommendation_sizing = None
             recommendation_variant = state.consume_recommendation_variant()
             if recommendation_variant == "fallback":
                 raw.update(
@@ -235,12 +241,20 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "evidence",
                 "lower_evidence",
                 "pattern_evidence",
+                "sizing_evidence",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
                     call_frequency = 0.96
                     raise_frequency = 0.02
                     fold_frequency = 0.02
+                elif recommendation_variant == "sizing_evidence":
+                    call_ev, raise_ev = 0.8, 1.4
+                    call_frequency = 0.3
+                    raise_frequency = 0.7
+                    fold_frequency = 0.0
+                    recommendation_action = "raise"
+                    recommendation_sizing = 8
                 elif recommendation_variant == "lower_evidence":
                     call_ev, raise_ev = 0.4, 0.3
                     call_frequency = 0.78
@@ -281,8 +295,8 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             self._send_json(
                 200,
                 {
-                    "action": "call",
-                    "sizing": None,
+                    "action": recommendation_action,
+                    "sizing": recommendation_sizing,
                     "confidence": 0.78,
                     "explanation": "E2E solver compared the available actions.",
                     "raw": raw,

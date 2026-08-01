@@ -589,6 +589,9 @@ The 5% support threshold is inclusive; an otherwise valid line immediately
 below it remains an unsupported action and enters review.
 A frequency-bearing bet or raise without its required valid sizing remains
 unsupported and ungraded after persistence.
+A valid alternate policy line can remain supported when the provider omits its
+recommended line from candidate evidence, but that comparison remains ungraded
+for EV loss.
 A same-action sizing difference remains available for review without being
 reported as a repeated unsupported-action pattern.
 A meaningful alternate action taken at a different size preserves action

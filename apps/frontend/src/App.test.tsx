@@ -5123,16 +5123,34 @@ describe("App", () => {
     {
       title: "accepts an alternate line at the policy-support boundary",
       frequency: 0.05,
+      candidateSizing: 8,
       expectedLabel: "Solver-supported mix",
+      hasEvLoss: true,
       needsReview: false,
     },
     {
       title: "rejects an alternate line below the policy-support boundary",
       frequency: 0.049999,
+      candidateSizing: 8,
       expectedLabel: "Different action",
+      hasEvLoss: true,
       needsReview: true,
     },
-  ])("$title", async ({ frequency, expectedLabel, needsReview }) => {
+    {
+      title: "rejects an alternate raise without valid sizing",
+      frequency: 0.2,
+      candidateSizing: null,
+      expectedLabel: "Different action",
+      hasEvLoss: false,
+      needsReview: true,
+    },
+  ])("$title", async ({
+    frequency,
+    candidateSizing,
+    expectedLabel,
+    hasEvLoss,
+    needsReview,
+  }) => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 8,
@@ -5148,7 +5166,9 @@ describe("App", () => {
         engine: "postflop_solver",
         candidates: [
           { action: "call", sizing: null, ev: 2.75, frequency: 0.84 },
-          { action: "raise", sizing: 8, ev: 2.74, frequency },
+          candidateSizing === null
+            ? { action: "raise", ev: 2.74, frequency }
+            : { action: "raise", sizing: candidateSizing, ev: 2.74, frequency },
         ],
       },
     };
@@ -5174,7 +5194,11 @@ describe("App", () => {
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText(expectedLabel)).toBeInTheDocument();
-    expect(within(comparison).getByText("0.01 BB EV loss")).toBeInTheDocument();
+    if (hasEvLoss) {
+      expect(within(comparison).getByText("0.01 BB EV loss")).toBeInTheDocument();
+    } else {
+      expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    }
     if (needsReview) {
       expect(within(comparison).getByRole("button", { name: "Mark reviewed" })).toBeInTheDocument();
     } else {

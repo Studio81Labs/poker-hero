@@ -132,6 +132,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("below_frequency_boundary")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/malformed-policy-next-recommendation":
+                state.arm_recommendation_evidence("malformed_policy")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/block-next-recommendation":
                 state.arm_recommendation_block()
                 self._send_json(200, {"armed": True})
@@ -252,6 +256,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "sizing_evidence",
                 "frequency_boundary",
                 "below_frequency_boundary",
+                "malformed_policy",
             }:
                 if recommendation_variant == "pattern_evidence":
                     call_ev, raise_ev = 2.4, 0.2
@@ -285,6 +290,13 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_frequency = 0.78
                     raise_frequency = 0.2
                     fold_frequency = 0.02
+                raise_candidate = {
+                    "action": "raise",
+                    "ev": raise_ev,
+                    "frequency": raise_frequency,
+                }
+                if recommendation_variant != "malformed_policy":
+                    raise_candidate["sizing"] = 8
                 raw.update(
                     {
                         "equity": {"equity": 0.61},
@@ -297,12 +309,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                                 "ev": call_ev,
                                 "frequency": call_frequency,
                             },
-                            {
-                                "action": "raise",
-                                "sizing": 8,
-                                "ev": raise_ev,
-                                "frequency": raise_frequency,
-                            },
+                            raise_candidate,
                             {
                                 "action": "fold",
                                 "sizing": None,

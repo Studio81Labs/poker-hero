@@ -1645,6 +1645,7 @@ def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> N
                 "candidates": [
                     {"action": "raise", "sizing": 8, "frequency": 0.049},
                     {"action": "raise", "sizing": 8, "frequency": "20%"},
+                    {"action": "raise", "frequency": 0.2},
                     {"action": "raise", "sizing": None, "frequency": 0.2},
                     {"action": "raise", "sizing": 8, "frequency": True},
                 ]

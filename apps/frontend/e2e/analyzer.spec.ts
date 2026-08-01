@@ -170,7 +170,7 @@ async function createPendingTrainingReview(
   filename: string,
   options: {
     boardCards?: string;
-    certainty: "high" | "medium" | "low";
+    certainty?: "high" | "medium" | "low";
     decisionAction?: "fold" | "check" | "call" | "bet" | "raise";
     decisionSizing?: number;
     heroPosition?: string;
@@ -202,10 +202,12 @@ async function createPendingTrainingReview(
       String(options.decisionSizing),
     );
   }
-  await decisionPanel.getByRole("button", {
-    name: options.certainty,
-    exact: true,
-  }).click();
+  if (options.certainty !== undefined) {
+    await decisionPanel.getByRole("button", {
+      name: options.certainty,
+      exact: true,
+    }).click();
+  }
   await decisionPanel.getByRole("button", { name: "Lock answer" }).click();
   await expect(decisionPanel).toContainText("Answer locked");
 
@@ -2132,6 +2134,113 @@ test("opens the suggested street review focus", async ({
     { data: { note: null } },
   );
   expect(cleanupResponse.ok()).toBe(true);
+});
+
+test("opens legacy review focus by unrated and unpositioned state", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  await page.getByRole("button", { name: "Automation On" }).click();
+  await expect(
+    page.getByRole("button", { name: "Automation Off" }),
+  ).toHaveAttribute("aria-pressed", "false");
+
+  await completeStaleTrainingReviews(page, "legacy-focus-");
+  const initialProgressResponse = await page.request.get(
+    `${BACKEND_URL}/api/training/progress`,
+  );
+  expect(initialProgressResponse.ok()).toBe(true);
+  const initialProgress = await initialProgressResponse.json() as {
+    needs_review_hands: number;
+  };
+
+  const filename = attemptFilename("legacy-focus", testInfo);
+  const legacyJob = await createPendingTrainingReview(
+    page,
+    filename,
+    {
+      heroPosition: "",
+      recommendationControl: "evidence-next-recommendation",
+      street: "flop",
+    },
+  );
+
+  await page.getByRole("button", { name: "Training progress" }).click();
+  const progressDialog = page.getByRole("dialog", {
+    name: "Training progress",
+  });
+  const unratedFocus = progressDialog.getByRole("button", {
+    name: "Focus unrated reviews: 1 legacy hand needs review",
+  });
+  const unpositionedFocus = progressDialog.getByRole("button", {
+    name: "Focus unpositioned reviews: 1 unpositioned hand needs review",
+  });
+  await expect(unratedFocus).toBeVisible();
+  await expect(unpositionedFocus).toBeVisible();
+
+  await unratedFocus.click();
+  await expect(progressDialog.getByLabel("Review certainty"))
+    .toHaveValue("unrated");
+  await expect(progressDialog).toContainText(
+    "1 pending review hand across all streets without a certainty rating.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Open ${filename} training review`,
+  })).toBeVisible();
+
+  const recentView = progressDialog.getByRole("button", { name: "Recent" });
+  await recentView.click();
+  await expect(recentView).toHaveAttribute("aria-pressed", "true");
+  const refreshedUnpositionedFocus = progressDialog.getByRole("button", {
+    name: "Focus unpositioned reviews: 1 unpositioned hand needs review",
+  });
+  await expect(refreshedUnpositionedFocus).toBeVisible();
+  await refreshedUnpositionedFocus.click();
+
+  await expect(progressDialog.getByLabel("Review certainty"))
+    .toHaveValue("all");
+  await expect(progressDialog.getByLabel("Active review position filter"))
+    .toContainText("Unpositioned");
+  await expect(progressDialog).toContainText(
+    "1 pending review hand across all streets without a recorded position.",
+  );
+  await progressDialog.getByRole("button", { name: "Review next" }).click();
+
+  await expect(progressDialog).toBeHidden();
+  await expect(page.getByAltText("Uploaded poker table screenshot"))
+    .toHaveAttribute(
+      "src",
+      `${BACKEND_URL}/api/jobs/${legacyJob.id}/image`,
+    );
+  await page.getByLabel("Training decision comparison")
+    .getByRole("button", { name: "Mark reviewed & next" })
+    .click();
+
+  await expect(progressDialog).toBeVisible();
+  await expect(progressDialog.getByLabel("Active review position filter"))
+    .toContainText("Unpositioned");
+  await expect(progressDialog).toContainText(
+    "No action or sizing differences need review.",
+  );
+  await expect(progressDialog.getByRole("button", {
+    name: `Needs review ${initialProgress.needs_review_hands}`,
+    exact: true,
+  })).toBeVisible();
+
+  const persistedResponse = await page.request.get(
+    `${BACKEND_URL}/api/jobs/${legacyJob.id}`,
+  );
+  expect(persistedResponse.ok()).toBe(true);
+  const persistedJob = await persistedResponse.json() as {
+    approved_state: { hero_position: string | null } | null;
+    training_decision: { certainty: string | null } | null;
+    training_reviewed_at: string | null;
+  };
+  expect(persistedJob).toMatchObject({
+    approved_state: { hero_position: null },
+    training_decision: { certainty: null },
+    training_reviewed_at: expect.any(String),
+  });
 });
 
 test("filters and exports persisted lesson notes", async ({

@@ -580,7 +580,9 @@ and the highest-loss normalized position can retain that scope while its queue
 is completed. The highest-loss rated certainty group can likewise open and
 complete its persisted queue without consuming hands from another certainty.
 The highest-loss street can open the same persisted workflow while retaining
-its approved board state and leaving other streets pending.
+its approved board state and leaving other streets pending. Legacy hands with
+neither a certainty rating nor a recorded position remain reachable from both
+fallback suggestions without fabricating either value.
 
 ## Success Criteria
 

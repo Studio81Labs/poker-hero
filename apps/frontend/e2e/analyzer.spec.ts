@@ -2760,7 +2760,7 @@ const nonDistinctEvidenceCases = [
     controlPath: "/control/duplicate-line-evidence-next-recommendation",
     candidates: [
       { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
-      { action: "raise", sizing: 8, ev: 1.3, frequency: 0 },
+      { action: "raise", sizing: 8.001, ev: 1.3, frequency: 0 },
     ],
   },
 ];

@@ -5229,15 +5229,25 @@ describe("App", () => {
       candidates: [
         { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
       ],
+      expectedEvLoss: null,
     },
     {
       title: "does not grade EV from duplicate recommended candidate lines",
       candidates: [
         { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
-        { action: "raise", sizing: 8, ev: 1.3, frequency: 0 },
+        { action: "raise", sizing: 8.001, ev: 1.3, frequency: 0 },
       ],
+      expectedEvLoss: null,
     },
-  ])("$title", async ({ candidates }) => {
+    {
+      title: "grades EV from an alternate at the sizing-tolerance boundary",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.01, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
+  ])("$title", async ({ candidates, expectedEvLoss }) => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 8,
@@ -5279,7 +5289,11 @@ describe("App", () => {
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
-    expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    if (expectedEvLoss) {
+      expect(within(comparison).getByText(expectedEvLoss)).toBeInTheDocument();
+    } else {
+      expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    }
     expect(within(comparison).queryByRole("button", {
       name: "Mark reviewed",
     })).not.toBeInTheDocument();

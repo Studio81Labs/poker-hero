@@ -1652,7 +1652,7 @@ def test_summarize_training_rejects_malformed_candidate_ev_metadata() -> None:
             },
             {
                 "action": "raise",
-                "sizing": 8,
+                "sizing": 8.001,
                 "ev": 1.3,
                 "frequency": 0.0,
             },
@@ -1684,6 +1684,32 @@ def test_summarize_training_does_not_grade_without_distinct_candidate_ev(
     assert progress.average_ev_loss_bb is None
     assert progress.recent_hands[0].outcome == "match"
     assert progress.recent_hands[0].ev_loss_bb is None
+
+
+def test_summarize_training_grades_candidate_at_sizing_tolerance_boundary() -> None:
+    jobs = [
+        reviewed_job(
+            "e" * 32,
+            "flop",
+            "raise",
+            "raise",
+            datetime(2026, 7, 24, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommended_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "raise", "sizing": 8, "ev": 1.4},
+                    {"action": "raise", "sizing": 8.01, "ev": 1.3},
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.ev_compared_hands == 1
+    assert progress.average_ev_loss_bb == 0
+    assert progress.recent_hands[0].ev_loss_bb == 0
 
 
 def test_summarize_training_ignores_noise_and_malformed_policy_candidates() -> None:

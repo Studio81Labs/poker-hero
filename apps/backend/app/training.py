@@ -863,7 +863,7 @@ def training_ev_loss_bb(job: JobRecord) -> float | None:
     best_ev: float | None = None
     decision_ev: float | None = None
     recommendation_line_found = False
-    valid_lines: set[tuple[str, float | None]] = set()
+    valid_lines: list[tuple[str, float | None]] = []
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -878,7 +878,11 @@ def training_ev_loss_bb(job: JobRecord) -> float | None:
         ev = _finite_number(candidate.get("ev"))
         if ev is None:
             continue
-        valid_lines.add((action, sizing))
+        if not any(
+            _line_matches(existing_action, existing_sizing, action, sizing)
+            for existing_action, existing_sizing in valid_lines
+        ):
+            valid_lines.append((action, sizing))
         best_ev = ev if best_ev is None else max(best_ev, ev)
         if _line_matches(
             recommendation.action,

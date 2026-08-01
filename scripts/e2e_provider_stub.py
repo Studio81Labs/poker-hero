@@ -346,7 +346,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                         raise_candidate,
                         {
                             "action": "raise",
-                            "sizing": 8,
+                            "sizing": 8.001,
                             "ev": 1.3,
                             "frequency": 0.0,
                         },

@@ -763,14 +763,7 @@ function recommendationEvLossBb(
     if (!candidateSizing.valid || ev === null) {
       continue;
     }
-    if (!validLines.some((line) => trainingLineMatches(
-      line.action,
-      line.sizing,
-      candidateAction,
-      candidateSizing.value,
-    ))) {
-      validLines.push({ action: candidateAction, sizing: candidateSizing.value });
-    }
+    validLines.push({ action: candidateAction, sizing: candidateSizing.value });
     bestEv = bestEv === null ? ev : Math.max(bestEv, ev);
     if (trainingLineMatches(
       recommendation.action,
@@ -784,11 +777,19 @@ function recommendationEvLossBb(
       decisionEv = decisionEv === null ? ev : Math.max(decisionEv, ev);
     }
   }
+  const hasDistinctLines = validLines.some((left, index) => (
+    validLines.slice(index + 1).some((right) => !trainingLineMatches(
+      left.action,
+      left.sizing,
+      right.action,
+      right.sizing,
+    ))
+  ));
   if (
     bestEv === null
     || decisionEv === null
     || !recommendationLineFound
-    || validLines.length < 2
+    || !hasDistinctLines
   ) {
     return null;
   }

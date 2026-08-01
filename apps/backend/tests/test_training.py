@@ -1686,7 +1686,18 @@ def test_summarize_training_does_not_grade_without_distinct_candidate_ev(
     assert progress.recent_hands[0].ev_loss_bb is None
 
 
-def test_summarize_training_grades_candidate_at_sizing_tolerance_boundary() -> None:
+@pytest.mark.parametrize(
+    "candidate_sizings",
+    [
+        [8, 8.01],
+        [8.009, 8, 8.018],
+        [8, 8.018, 8.009],
+    ],
+    ids=["boundary", "bridge-first", "endpoints-first"],
+)
+def test_summarize_training_grades_distinct_candidates_regardless_of_order(
+    candidate_sizings: list[float],
+) -> None:
     jobs = [
         reviewed_job(
             "e" * 32,
@@ -1698,8 +1709,12 @@ def test_summarize_training_grades_candidate_at_sizing_tolerance_boundary() -> N
             recommended_sizing=8,
             recommendation_raw={
                 "candidates": [
-                    {"action": "raise", "sizing": 8, "ev": 1.4},
-                    {"action": "raise", "sizing": 8.01, "ev": 1.3},
+                    {
+                        "action": "raise",
+                        "sizing": candidate_sizing,
+                        "ev": 1.4 if candidate_sizing == 8 else 1.3,
+                    }
+                    for candidate_sizing in candidate_sizings
                 ]
             },
         )

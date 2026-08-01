@@ -5247,6 +5247,24 @@ describe("App", () => {
       ],
       expectedEvLoss: "0 BB EV loss",
     },
+    {
+      title: "grades tolerance-bridged lines when the bridge is first",
+      candidates: [
+        { action: "raise", sizing: 8.009, ev: 1.3, frequency: 0 },
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.018, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
+    {
+      title: "grades tolerance-bridged lines when the endpoints are first",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.018, ev: 1.3, frequency: 0 },
+        { action: "raise", sizing: 8.009, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
   ])("$title", async ({ candidates, expectedEvLoss }) => {
     const trainingDecision = {
       action: "raise" as const,

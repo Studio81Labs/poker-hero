@@ -5240,6 +5240,16 @@ describe("App", () => {
       expectedEvLoss: null,
     },
     {
+      title: "does not grade EV from a large tolerance-equivalent candidate set",
+      candidates: Array.from({ length: 1_000 }, (_, index) => ({
+        action: "raise",
+        sizing: 8 + index / 200_000,
+        ev: 1.4,
+        frequency: 1,
+      })),
+      expectedEvLoss: null,
+    },
+    {
       title: "grades EV from an alternate at the sizing-tolerance boundary",
       candidates: [
         { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },

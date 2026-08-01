@@ -1657,8 +1657,17 @@ def test_summarize_training_rejects_malformed_candidate_ev_metadata() -> None:
                 "frequency": 0.0,
             },
         ],
+        [
+            {
+                "action": "raise",
+                "sizing": 8 + index / 200_000,
+                "ev": 1.4,
+                "frequency": 1.0,
+            }
+            for index in range(1_000)
+        ],
     ],
-    ids=["single", "duplicate"],
+    ids=["single", "duplicate", "large-equivalent"],
 )
 def test_summarize_training_does_not_grade_without_distinct_candidate_ev(
     candidates: list[dict[str, object]],

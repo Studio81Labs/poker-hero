@@ -594,6 +594,12 @@ recommended line from candidate evidence, but that comparison remains ungraded
 for EV loss.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
+Duplicate entries for the same action and tolerance-equivalent sizing count as
+one line for that requirement.
+Distinctness is evaluated across the complete candidate set and does not depend
+on provider candidate order.
+Candidate distinctness must be evaluated in linear time so unbounded provider
+metadata cannot stall training progress or the browser comparison.
 A same-action sizing difference remains available for review without being
 reported as a repeated unsupported-action pattern.
 A meaningful alternate action taken at a different size preserves action

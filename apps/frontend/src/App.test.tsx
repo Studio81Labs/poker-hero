@@ -5223,7 +5223,59 @@ describe("App", () => {
     }
   });
 
-  it("does not grade EV from only the recommended candidate line", async () => {
+  it.each([
+    {
+      title: "does not grade EV from only the recommended candidate line",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+      ],
+      expectedEvLoss: null,
+    },
+    {
+      title: "does not grade EV from duplicate recommended candidate lines",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.001, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: null,
+    },
+    {
+      title: "does not grade EV from a large tolerance-equivalent candidate set",
+      candidates: Array.from({ length: 1_000 }, (_, index) => ({
+        action: "raise",
+        sizing: 8 + index / 200_000,
+        ev: 1.4,
+        frequency: 1,
+      })),
+      expectedEvLoss: null,
+    },
+    {
+      title: "grades EV from an alternate at the sizing-tolerance boundary",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.01, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
+    {
+      title: "grades tolerance-bridged lines when the bridge is first",
+      candidates: [
+        { action: "raise", sizing: 8.009, ev: 1.3, frequency: 0 },
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.018, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
+    {
+      title: "grades tolerance-bridged lines when the endpoints are first",
+      candidates: [
+        { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
+        { action: "raise", sizing: 8.018, ev: 1.3, frequency: 0 },
+        { action: "raise", sizing: 8.009, ev: 1.3, frequency: 0 },
+      ],
+      expectedEvLoss: "0 BB EV loss",
+    },
+  ])("$title", async ({ candidates, expectedEvLoss }) => {
     const trainingDecision = {
       action: "raise" as const,
       sizing: 8,
@@ -5237,9 +5289,7 @@ describe("App", () => {
       raw: {
         provider: "local_solver",
         engine: "postflop_solver",
-        candidates: [
-          { action: "raise", sizing: 8, ev: 1.4, frequency: 1 },
-        ],
+        candidates,
       },
     };
     const created = jobRecord();
@@ -5267,7 +5317,11 @@ describe("App", () => {
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText("Matched solver")).toBeInTheDocument();
-    expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    if (expectedEvLoss) {
+      expect(within(comparison).getByText(expectedEvLoss)).toBeInTheDocument();
+    } else {
+      expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
+    }
     expect(within(comparison).queryByRole("button", {
       name: "Mark reviewed",
     })).not.toBeInTheDocument();

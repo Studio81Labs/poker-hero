@@ -863,7 +863,8 @@ def training_ev_loss_bb(job: JobRecord) -> float | None:
     best_ev: float | None = None
     decision_ev: float | None = None
     recommendation_line_found = False
-    valid_lines: set[tuple[str, float | None]] = set()
+    valid_actions: set[str] = set()
+    sizing_bounds: dict[str, tuple[float, float]] = {}
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
@@ -878,7 +879,13 @@ def training_ev_loss_bb(job: JobRecord) -> float | None:
         ev = _finite_number(candidate.get("ev"))
         if ev is None:
             continue
-        valid_lines.add((action, sizing))
+        valid_actions.add(action)
+        if sizing is not None:
+            bounds = sizing_bounds.get(action)
+            sizing_bounds[action] = (
+                sizing if bounds is None else min(bounds[0], sizing),
+                sizing if bounds is None else max(bounds[1], sizing),
+            )
         best_ev = ev if best_ev is None else max(best_ev, ev)
         if _line_matches(
             recommendation.action,
@@ -890,11 +897,15 @@ def training_ev_loss_bb(job: JobRecord) -> float | None:
         if _line_matches(decision.action, decision.sizing, action, sizing):
             decision_ev = ev if decision_ev is None else max(decision_ev, ev)
 
+    has_distinct_lines = len(valid_actions) > 1 or any(
+        not _sizing_matches(minimum, maximum)
+        for minimum, maximum in sizing_bounds.values()
+    )
     if (
         best_ev is None
         or decision_ev is None
         or not recommendation_line_found
-        or len(valid_lines) < 2
+        or not has_distinct_lines
     ):
         return None
     return round(max(0.0, best_ev - decision_ev), 6)

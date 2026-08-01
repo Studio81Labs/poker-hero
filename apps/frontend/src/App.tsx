@@ -747,7 +747,8 @@ function recommendationEvLossBb(
   let bestEv: number | null = null;
   let decisionEv: number | null = null;
   let recommendationLineFound = false;
-  const validLines: { action: RecommendationAction; sizing: number | null }[] = [];
+  const validActions = new Set<RecommendationAction>();
+  const sizingBounds = new Map<RecommendationAction, { maximum: number; minimum: number }>();
   for (const candidate of candidates) {
     const record = metadataRecord(candidate);
     const candidateAction = recommendationAction(record?.action);
@@ -763,13 +764,17 @@ function recommendationEvLossBb(
     if (!candidateSizing.valid || ev === null) {
       continue;
     }
-    if (!validLines.some((line) => trainingLineMatches(
-      line.action,
-      line.sizing,
-      candidateAction,
-      candidateSizing.value,
-    ))) {
-      validLines.push({ action: candidateAction, sizing: candidateSizing.value });
+    validActions.add(candidateAction);
+    if (candidateSizing.value !== null) {
+      const bounds = sizingBounds.get(candidateAction);
+      sizingBounds.set(candidateAction, {
+        maximum: bounds === undefined
+          ? candidateSizing.value
+          : Math.max(bounds.maximum, candidateSizing.value),
+        minimum: bounds === undefined
+          ? candidateSizing.value
+          : Math.min(bounds.minimum, candidateSizing.value),
+      });
     }
     bestEv = bestEv === null ? ev : Math.max(bestEv, ev);
     if (trainingLineMatches(
@@ -784,11 +789,14 @@ function recommendationEvLossBb(
       decisionEv = decisionEv === null ? ev : Math.max(decisionEv, ev);
     }
   }
+  const hasDistinctLines = validActions.size > 1 || Array.from(
+    sizingBounds.values(),
+  ).some((bounds) => !trainingSizingMatches(bounds.minimum, bounds.maximum));
   if (
     bestEv === null
     || decisionEv === null
     || !recommendationLineFound
-    || validLines.length < 2
+    || !hasDistinctLines
   ) {
     return null;
   }

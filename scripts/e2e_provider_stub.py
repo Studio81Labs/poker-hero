@@ -160,6 +160,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("unrelated_invalid_action")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/ev-candidate-invalid-frequency-next-recommendation":
+                state.arm_recommendation_evidence("ev_candidate_invalid_frequency")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/single-line-evidence-next-recommendation":
                 state.arm_recommendation_evidence("single_line_evidence")
                 self._send_json(200, {"armed": True})
@@ -295,6 +299,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "unrelated_nonnumeric_ev",
                 "unrelated_invalid_sizing",
                 "unrelated_invalid_action",
+                "ev_candidate_invalid_frequency",
                 "single_line_evidence",
                 "duplicate_line_evidence",
             }:
@@ -371,6 +376,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 third_action = "fold"
                 third_sizing = None
                 third_ev: int | str = 0
+                third_frequency: float | str = fold_frequency
                 if recommendation_variant == "unrelated_invalid_sizing":
                     third_action = "bet"
                     third_sizing = -1
@@ -378,13 +384,18 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 elif recommendation_variant == "unrelated_invalid_action":
                     third_action = "jam"
                     third_ev = 99
+                elif recommendation_variant == "ev_candidate_invalid_frequency":
+                    third_action = "bet"
+                    third_sizing = 6
+                    third_ev = 2.0
+                    third_frequency = "20%"
                 elif recommendation_variant == "unrelated_nonnumeric_ev":
                     third_ev = "99"
                 third_candidate = {
                     "action": third_action,
                     "sizing": third_sizing,
                     "ev": third_ev,
-                    "frequency": fold_frequency,
+                    "frequency": third_frequency,
                 }
                 if recommendation_variant == "single_line_evidence":
                     policy_candidates = [raise_candidate]

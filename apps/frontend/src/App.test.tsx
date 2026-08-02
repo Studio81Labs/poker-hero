@@ -5224,21 +5224,39 @@ describe("App", () => {
       includeRecommendedCandidate: true,
       needsReview: false,
     },
+    {
+      title: "grades EV candidates without valid frequency metadata",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedAction: "bet",
+      unrelatedEv: 3,
+      unrelatedFrequency: "20%",
+      unrelatedSizing: 6,
+      expectedEvLoss: "0.26 BB EV loss",
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      needsReview: false,
+    },
   ].map((testCase) => ({
+    expectedEvLoss: testCase.hasEvLoss ? "0.01 BB EV loss" : null,
     recommendedEv: 2.75,
     unrelatedAction: "fold",
+    unrelatedFrequency: 0.02,
     unrelatedSizing: null,
     ...testCase,
   })))("$title", async ({
     frequency,
     candidateSizing,
     candidateEv,
+    expectedEvLoss,
     unrelatedAction,
     unrelatedEv,
+    unrelatedFrequency,
     unrelatedSizing,
     recommendedEv,
     expectedLabel,
-    hasEvLoss,
     includeRecommendedCandidate,
     needsReview,
   }) => {
@@ -5267,7 +5285,7 @@ describe("App", () => {
             action: unrelatedAction,
             sizing: unrelatedSizing,
             ev: unrelatedEv,
-            frequency: 0.02,
+            frequency: unrelatedFrequency,
           },
         ],
       },
@@ -5294,8 +5312,8 @@ describe("App", () => {
 
     const comparison = await screen.findByLabelText("Training decision comparison");
     expect(within(comparison).getByText(expectedLabel)).toBeInTheDocument();
-    if (hasEvLoss) {
-      expect(within(comparison).getByText("0.01 BB EV loss")).toBeInTheDocument();
+    if (expectedEvLoss !== null) {
+      expect(within(comparison).getByText(expectedEvLoss)).toBeInTheDocument();
     } else {
       expect(within(comparison).queryByText(/BB EV loss/)).not.toBeInTheDocument();
     }

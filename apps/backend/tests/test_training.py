@@ -1696,6 +1696,38 @@ def test_summarize_training_ignores_unrelated_invalid_candidate_action() -> None
     assert progress.review_queue == []
 
 
+def test_summarize_training_ev_grading_does_not_require_frequency() -> None:
+    jobs = [
+        reviewed_job(
+            "1" * 32,
+            "flop",
+            "raise",
+            "call",
+            datetime(2026, 7, 17, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "ev": 1.4, "frequency": 0.78},
+                    {"action": "raise", "sizing": 8, "ev": 1.1, "frequency": 0.2},
+                    {"action": "bet", "sizing": 6, "ev": 2.0, "frequency": "20%"},
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 1
+    assert progress.exact_matches == 1
+    assert progress.different_actions == 0
+    assert progress.needs_review_hands == 0
+    assert progress.ev_compared_hands == 1
+    assert progress.average_ev_loss_bb == pytest.approx(0.9)
+    assert progress.recent_hands[0].outcome == "mixed"
+    assert progress.recent_hands[0].ev_loss_bb == pytest.approx(0.9)
+    assert progress.review_queue == []
+
+
 def test_summarize_training_reports_available_candidate_ev_loss() -> None:
     jobs = [
         reviewed_job(

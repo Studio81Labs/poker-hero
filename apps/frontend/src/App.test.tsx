@@ -5165,6 +5165,18 @@ describe("App", () => {
       needsReview: true,
     },
     {
+      title: "rejects policy support without explicit frequency but still grades EV",
+      frequency: 0.2,
+      includeCandidateFrequency: false,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Different action",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      needsReview: true,
+    },
+    {
       title: "rejects an alternate raise without valid sizing",
       frequency: 0.2,
       candidateSizing: null,
@@ -5263,6 +5275,7 @@ describe("App", () => {
     },
   ].map((testCase) => ({
     expectedEvLoss: testCase.hasEvLoss ? "0.01 BB EV loss" : null,
+    includeCandidateFrequency: true,
     recommendedEv: 2.75,
     unrelatedAction: "fold",
     unrelatedFrequency: 0.02,
@@ -5273,6 +5286,7 @@ describe("App", () => {
     candidateSizing,
     candidateEv,
     expectedEvLoss,
+    includeCandidateFrequency,
     unrelatedAction,
     unrelatedEv,
     unrelatedFrequency,
@@ -5287,9 +5301,12 @@ describe("App", () => {
       sizing: 8,
       recorded_at: "2026-07-20T12:00:00Z",
     };
-    const alternateCandidate = candidateSizing === null
-      ? { action: "raise", ev: candidateEv, frequency }
-      : { action: "raise", sizing: candidateSizing, ev: candidateEv, frequency };
+    const alternateCandidate = {
+      action: "raise",
+      ev: candidateEv,
+      ...(includeCandidateFrequency ? { frequency } : {}),
+      ...(candidateSizing === null ? {} : { sizing: candidateSizing }),
+    };
     const mixedRecommendation: RecommendationResult = {
       action: "call",
       sizing: null,

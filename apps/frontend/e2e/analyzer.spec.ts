@@ -2632,6 +2632,16 @@ const unsupportedPolicyCases = [
     },
     expectedEvLoss: 0.3,
   },
+  {
+    filename: "missing-policy-frequency",
+    controlPath: "/control/missing-policy-frequency-next-recommendation",
+    expectedCandidate: {
+      action: "raise",
+      sizing: 8,
+      ev: 1.1,
+    },
+    expectedEvLoss: 0.3,
+  },
 ];
 
 async function verifyUnsupportedPolicyCandidate(
@@ -2786,6 +2796,16 @@ test("rejects policy frequency above one while retaining EV grading", async ({
     page,
     testInfo,
     unsupportedPolicyCases[2],
+  );
+});
+
+test("rejects missing policy frequency while retaining EV grading", async ({
+  page,
+}, testInfo) => {
+  await verifyUnsupportedPolicyCandidate(
+    page,
+    testInfo,
+    unsupportedPolicyCases[3],
   );
 });
 

@@ -608,6 +608,8 @@ or missing frequency does not exclude otherwise valid action, sizing, and EV
 evidence from the EV comparison.
 Conversely, valid action, sizing, and EV metadata cannot grant policy support
 when the candidate frequency itself is missing or malformed.
+Missing frequency is not inferred from the headline recommendation, EV rank, or
+any default strategy weight.
 Candidate frequency must also remain within the inclusive 0-100% probability
 range; values above one are unsupported without invalidating separate EV data.
 An exact recommendation match also remains ungraded when candidate evidence

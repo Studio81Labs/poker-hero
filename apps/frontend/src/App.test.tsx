@@ -5198,11 +5198,31 @@ describe("App", () => {
       includeRecommendedCandidate: true,
       needsReview: false,
     },
-  ].map((testCase) => ({ recommendedEv: 2.75, ...testCase })))("$title", async ({
+    {
+      title: "ignores high EV on an unrelated candidate with invalid sizing",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedAction: "bet",
+      unrelatedEv: 99,
+      unrelatedSizing: -1,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      needsReview: false,
+    },
+  ].map((testCase) => ({
+    recommendedEv: 2.75,
+    unrelatedAction: "fold",
+    unrelatedSizing: null,
+    ...testCase,
+  })))("$title", async ({
     frequency,
     candidateSizing,
     candidateEv,
+    unrelatedAction,
     unrelatedEv,
+    unrelatedSizing,
     recommendedEv,
     expectedLabel,
     hasEvLoss,
@@ -5230,7 +5250,12 @@ describe("App", () => {
             ? [{ action: "call", sizing: null, ev: recommendedEv, frequency: 0.84 }]
             : []),
           alternateCandidate,
-          { action: "fold", sizing: null, ev: unrelatedEv, frequency: 0.02 },
+          {
+            action: unrelatedAction,
+            sizing: unrelatedSizing,
+            ev: unrelatedEv,
+            frequency: 0.02,
+          },
         ],
       },
     };

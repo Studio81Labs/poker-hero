@@ -152,6 +152,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("unrelated_nonnumeric_ev")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/unrelated-invalid-sizing-next-recommendation":
+                state.arm_recommendation_evidence("unrelated_invalid_sizing")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/single-line-evidence-next-recommendation":
                 state.arm_recommendation_evidence("single_line_evidence")
                 self._send_json(200, {"armed": True})
@@ -285,6 +289,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "nonnumeric_ev",
                 "nonnumeric_recommended_ev",
                 "unrelated_nonnumeric_ev",
+                "unrelated_invalid_sizing",
                 "single_line_evidence",
                 "duplicate_line_evidence",
             }:
@@ -358,14 +363,19 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     "ev": call_ev,
                     "frequency": call_frequency,
                 }
-                fold_candidate = {
-                    "action": "fold",
-                    "sizing": None,
-                    "ev": (
-                        "99"
-                        if recommendation_variant == "unrelated_nonnumeric_ev"
-                        else 0
-                    ),
+                third_action = "fold"
+                third_sizing = None
+                third_ev: int | str = 0
+                if recommendation_variant == "unrelated_invalid_sizing":
+                    third_action = "bet"
+                    third_sizing = -1
+                    third_ev = 99
+                elif recommendation_variant == "unrelated_nonnumeric_ev":
+                    third_ev = "99"
+                third_candidate = {
+                    "action": third_action,
+                    "sizing": third_sizing,
+                    "ev": third_ev,
                     "frequency": fold_frequency,
                 }
                 if recommendation_variant == "single_line_evidence":
@@ -381,7 +391,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                         },
                     ]
                 else:
-                    policy_candidates = [raise_candidate, fold_candidate]
+                    policy_candidates = [raise_candidate, third_candidate]
                     if recommendation_variant != "missing_recommended_line":
                         policy_candidates.insert(0, call_candidate)
                 raw.update(

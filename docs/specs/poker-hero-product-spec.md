@@ -606,6 +606,8 @@ otherwise valid policy support or EV evidence.
 Candidate frequency is required for policy support but not EV grading; malformed
 or missing frequency does not exclude otherwise valid action, sizing, and EV
 evidence from the EV comparison.
+Conversely, valid action, sizing, and EV metadata cannot grant policy support
+when the candidate frequency itself is missing or malformed.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
 Duplicate entries for the same action and tolerance-equivalent sizing count as

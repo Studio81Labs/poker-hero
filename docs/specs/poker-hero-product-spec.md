@@ -599,6 +599,8 @@ A present recommended candidate with nonnumeric EV is treated as unavailable
 for grading, just like an omitted recommended candidate.
 A non-sized recommended action must still carry explicit `sizing: null`; an
 omitted sizing key leaves the comparison ungraded.
+A numeric sizing value on a non-sized recommended action is likewise invalid
+and leaves an otherwise supported comparison ungraded.
 Malformed EV metadata on unrelated candidates does not suppress a comparison
 when the locked and recommended lines remain otherwise gradable.
 Malformed sizing on unrelated candidates is likewise excluded locally and

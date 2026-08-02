@@ -2603,9 +2603,31 @@ test("applies the solver policy-support frequency boundary", async ({
   });
 });
 
-test("keeps a malformed solver candidate out of policy support", async ({
-  page,
-}, testInfo) => {
+const unsupportedPolicyCases = [
+  {
+    filename: "malformed-policy-candidate",
+    controlPath: "/control/malformed-policy-next-recommendation",
+    expectedCandidate: { action: "raise", ev: 1.1, frequency: 0.2 },
+    expectedEvLoss: null,
+  },
+  {
+    filename: "malformed-policy-frequency",
+    controlPath: "/control/malformed-policy-frequency-next-recommendation",
+    expectedCandidate: {
+      action: "raise",
+      sizing: 8,
+      ev: 1.1,
+      frequency: "20%",
+    },
+    expectedEvLoss: 0.3,
+  },
+];
+
+async function verifyUnsupportedPolicyCandidate(
+  page: Page,
+  testInfo: TestInfo,
+  evidenceCase: (typeof unsupportedPolicyCases)[number],
+): Promise<void> {
   await openUploadInput(page);
   await page.getByRole("button", { name: "Automation On" }).click();
   await expect(
@@ -2619,13 +2641,14 @@ test("keeps a malformed solver candidate out of policy support", async ({
   const initialProgress = await initialProgressResponse.json() as {
     action_matches: number;
     different_actions: number;
+    ev_compared_hands: number;
     exact_matches: number;
     needs_review_hands: number;
     review_queue_hands: number;
     reviewed_hands: number;
   };
 
-  const filename = attemptFilename("malformed-policy-candidate", testInfo);
+  const filename = attemptFilename(evidenceCase.filename, testInfo);
   const uploadedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   const decisionPanel = page.getByRole("region", {
@@ -2644,7 +2667,7 @@ test("keeps a malformed solver candidate out of policy support", async ({
   await expect(decisionPanel).toContainText("Answer locked");
 
   const armResponse = await page.request.post(
-    `${PROVIDER_URL}/control/malformed-policy-next-recommendation`,
+    `${PROVIDER_URL}${evidenceCase.controlPath}`,
   );
   expect(armResponse.ok()).toBe(true);
   await page.getByRole("button", { name: "Request recommendation" }).click();
@@ -2652,7 +2675,13 @@ test("keeps a malformed solver candidate out of policy support", async ({
 
   const comparison = page.getByLabel("Training decision comparison");
   await expect(comparison).toContainText("Different action");
-  await expect(comparison).not.toContainText("BB EV loss");
+  if (evidenceCase.expectedEvLoss === null) {
+    await expect(comparison).not.toContainText("BB EV loss");
+  } else {
+    await expect(comparison).toContainText(
+      `${evidenceCase.expectedEvLoss} BB EV loss`,
+    );
+  }
   await expect(comparison.getByRole("button", {
     name: "Mark reviewed",
   })).toBeVisible();
@@ -2667,6 +2696,7 @@ test("keeps a malformed solver candidate out of policy support", async ({
   const updatedProgress = await updatedProgressResponse.json() as {
     action_matches: number;
     different_actions: number;
+    ev_compared_hands: number;
     exact_matches: number;
     needs_review_hands: number;
     recent_hands: Array<{
@@ -2681,6 +2711,8 @@ test("keeps a malformed solver candidate out of policy support", async ({
   expect(updatedProgress).toMatchObject({
     action_matches: initialProgress.action_matches,
     different_actions: initialProgress.different_actions + 1,
+    ev_compared_hands: initialProgress.ev_compared_hands
+      + (evidenceCase.expectedEvLoss === null ? 0 : 1),
     exact_matches: initialProgress.exact_matches,
     needs_review_hands: initialProgress.needs_review_hands + 1,
     review_queue_hands: initialProgress.review_queue_hands + 1,
@@ -2688,7 +2720,7 @@ test("keeps a malformed solver candidate out of policy support", async ({
   });
   expect(updatedProgress.recent_hands).toEqual(expect.arrayContaining([
     expect.objectContaining({
-      ev_loss_bb: null,
+      ev_loss_bb: evidenceCase.expectedEvLoss,
       job_id: uploadedJob.id,
       outcome: "different",
     }),
@@ -2711,8 +2743,28 @@ test("keeps a malformed solver candidate out of policy support", async ({
   };
   expect(persistedJob.recommendation?.raw.candidates).toEqual(
     expect.arrayContaining([
-      { action: "raise", ev: 1.1, frequency: 0.2 },
+      evidenceCase.expectedCandidate,
     ]),
+  );
+}
+
+test("keeps a malformed solver candidate out of policy support", async ({
+  page,
+}, testInfo) => {
+  await verifyUnsupportedPolicyCandidate(
+    page,
+    testInfo,
+    unsupportedPolicyCases[0],
+  );
+});
+
+test("grades EV without granting support to malformed frequency", async ({
+  page,
+}, testInfo) => {
+  await verifyUnsupportedPolicyCandidate(
+    page,
+    testInfo,
+    unsupportedPolicyCases[1],
   );
 });
 

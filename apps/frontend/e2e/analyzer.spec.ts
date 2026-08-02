@@ -2289,6 +2289,19 @@ const gradedSupportedMixCases = [
     unrelatedEv: 0,
     unrelatedSizing: null,
   },
+  {
+    filename: "supported-mix-malformed-recommended-frequency",
+    controlPath: "/control/malformed-recommended-frequency-next-recommendation",
+    recommendedCandidate: {
+      action: "call",
+      sizing: null,
+      ev: 1.4,
+      frequency: "78%",
+    },
+    unrelatedAction: "fold",
+    unrelatedEv: 0,
+    unrelatedSizing: null,
+  },
 ].map((evidenceCase) => ({
   expectedEvLoss: 0.3,
   recommendedCandidate: {
@@ -2472,6 +2485,12 @@ test("grades recommended-line EV without frequency metadata", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[5]);
+});
+
+test("grades recommended-line EV with malformed frequency metadata", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[6]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

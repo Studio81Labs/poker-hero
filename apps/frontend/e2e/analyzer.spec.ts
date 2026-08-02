@@ -2243,9 +2243,24 @@ test("opens legacy review focus by unrated and unpositioned state", async ({
   });
 });
 
-test("keeps a solver-supported mixed action out of review", async ({
-  page,
-}, testInfo) => {
+const gradedSupportedMixCases = [
+  {
+    filename: "supported-mix",
+    controlPath: "/control/evidence-next-recommendation",
+    unrelatedEv: 0,
+  },
+  {
+    filename: "supported-mix-unrelated-nonnumeric-ev",
+    controlPath: "/control/unrelated-nonnumeric-ev-next-recommendation",
+    unrelatedEv: "99",
+  },
+];
+
+async function verifyGradedSupportedMix(
+  page: Page,
+  testInfo: TestInfo,
+  evidenceCase: (typeof gradedSupportedMixCases)[number],
+): Promise<void> {
   await openUploadInput(page);
   await page.getByRole("button", { name: "Automation On" }).click();
   await expect(
@@ -2259,12 +2274,13 @@ test("keeps a solver-supported mixed action out of review", async ({
   const initialProgress = await initialProgressResponse.json() as {
     action_matches: number;
     different_actions: number;
+    ev_compared_hands: number;
     exact_matches: number;
     needs_review_hands: number;
     reviewed_hands: number;
   };
 
-  const filename = attemptFilename("supported-mix", testInfo);
+  const filename = attemptFilename(evidenceCase.filename, testInfo);
   const uploadedJob = await uploadValidScreenshot(page, filename);
   await page.getByRole("button", { name: "Approve state" }).click();
   const decisionPanel = page.getByRole("region", {
@@ -2283,7 +2299,7 @@ test("keeps a solver-supported mixed action out of review", async ({
   await expect(decisionPanel).toContainText("Answer locked");
 
   const armResponse = await page.request.post(
-    `${PROVIDER_URL}/control/evidence-next-recommendation`,
+    `${PROVIDER_URL}${evidenceCase.controlPath}`,
   );
   expect(armResponse.ok()).toBe(true);
   await page.getByRole("button", { name: "Request recommendation" }).click();
@@ -2306,20 +2322,27 @@ test("keeps a solver-supported mixed action out of review", async ({
   const updatedProgress = await updatedProgressResponse.json() as {
     action_matches: number;
     different_actions: number;
+    ev_compared_hands: number;
     exact_matches: number;
     needs_review_hands: number;
-    recent_hands: Array<{ job_id: string; outcome: string }>;
+    recent_hands: Array<{
+      ev_loss_bb: number | null;
+      job_id: string;
+      outcome: string;
+    }>;
     reviewed_hands: number;
   };
   expect(updatedProgress).toMatchObject({
     action_matches: initialProgress.action_matches + 1,
     different_actions: initialProgress.different_actions,
+    ev_compared_hands: initialProgress.ev_compared_hands + 1,
     exact_matches: initialProgress.exact_matches + 1,
     needs_review_hands: initialProgress.needs_review_hands,
     reviewed_hands: initialProgress.reviewed_hands + 1,
   });
   expect(updatedProgress.recent_hands).toEqual(expect.arrayContaining([
     expect.objectContaining({
+      ev_loss_bb: 0.3,
       job_id: uploadedJob.id,
       outcome: "mixed",
     }),
@@ -2353,12 +2376,30 @@ test("keeps a solver-supported mixed action out of review", async ({
       raw: {
         candidates: expect.arrayContaining([
           { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+          {
+            action: "fold",
+            sizing: null,
+            ev: evidenceCase.unrelatedEv,
+            frequency: 0.02,
+          },
         ]),
       },
     },
     training_decision: { action: "raise", sizing: 8 },
     training_reviewed_at: null,
   });
+}
+
+test("keeps a solver-supported mixed action out of review", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[0]);
+});
+
+test("ignores unrelated nonnumeric EV when grading a supported mix", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[1]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

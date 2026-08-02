@@ -1792,6 +1792,38 @@ def test_summarize_training_policy_support_rejects_frequency_above_one() -> None
     assert [hand.job_id for hand in progress.review_queue] == ["3" * 32]
 
 
+def test_summarize_training_policy_support_requires_explicit_frequency() -> None:
+    jobs = [
+        reviewed_job(
+            "4" * 32,
+            "flop",
+            "raise",
+            "call",
+            datetime(2026, 7, 20, tzinfo=timezone.utc),
+            decision_sizing=8,
+            recommendation_raw={
+                "candidates": [
+                    {"action": "call", "sizing": None, "ev": 1.4, "frequency": 0.78},
+                    {"action": "raise", "sizing": 8, "ev": 1.1},
+                    {"action": "fold", "sizing": None, "ev": 0, "frequency": 0.02},
+                ]
+            },
+        )
+    ]
+
+    progress = summarize_training(jobs)
+
+    assert progress.action_matches == 0
+    assert progress.exact_matches == 0
+    assert progress.different_actions == 1
+    assert progress.needs_review_hands == 1
+    assert progress.ev_compared_hands == 1
+    assert progress.average_ev_loss_bb == pytest.approx(0.3)
+    assert progress.recent_hands[0].outcome == "different"
+    assert progress.recent_hands[0].ev_loss_bb == pytest.approx(0.3)
+    assert [hand.job_id for hand in progress.review_queue] == ["4" * 32]
+
+
 def test_summarize_training_reports_available_candidate_ev_loss() -> None:
     jobs = [
         reviewed_job(

@@ -12,6 +12,7 @@ from app.models import (
     ParserResult,
     RecommendationAction,
     RecommendationResult,
+    TrainingDecisionRequest,
 )
 
 
@@ -258,6 +259,19 @@ def test_recommendation_rejects_sizing_for_non_wager_action(
             confidence=0.8,
             explanation="Malformed recommendation",
         )
+
+
+@pytest.mark.parametrize(
+    "model",
+    [RecommendationResult, TrainingDecisionRequest],
+)
+def test_action_line_rejects_nonfinite_sizing(model: type[Any]) -> None:
+    values: dict[str, Any] = {"action": "raise", "sizing": float("inf")}
+    if model is RecommendationResult:
+        values.update(confidence=0.8, explanation="Malformed recommendation")
+
+    with pytest.raises(ValidationError, match="finite number"):
+        model(**values)
 
 
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:

@@ -104,6 +104,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("invalid_headline_sizing")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/nonfinite-headline-sizing-next-recommendation":
+                state.arm_recommendation_evidence("nonfinite_headline_sizing")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
                 self._send_json(200, {"armed": True})
@@ -316,6 +320,9 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             recommendation_variant = state.consume_recommendation_variant()
             if recommendation_variant == "invalid_headline_sizing":
                 recommendation_sizing = 2.5
+            elif recommendation_variant == "nonfinite_headline_sizing":
+                recommendation_action = "raise"
+                recommendation_sizing = float("inf")
             elif recommendation_variant == "fallback":
                 raw.update(
                     {

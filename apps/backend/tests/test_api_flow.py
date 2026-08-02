@@ -1244,6 +1244,22 @@ def test_training_decision_rejects_sizing_for_non_wager_action(tmp_path: Path) -
     assert FileJobStore(tmp_path).get(job_id).training_decision is None
 
 
+def test_training_decision_rejects_nonfinite_sizing(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        content=b'{"action":"raise","sizing":1e309}',
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["input"] == "Infinity"
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
 def test_training_decision_rejects_unknown_certainty(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

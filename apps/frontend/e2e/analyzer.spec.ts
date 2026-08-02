@@ -4156,6 +4156,12 @@ const retryableRecommendationFailureCases = [
     controlPath: "/control/invalid-headline-sizing-next-recommendation",
     expectedError: "external_solver returned invalid payload",
   },
+  {
+    title: "rejects and retries nonfinite headline recommendation sizing",
+    filename: "nonfinite-headline-sizing",
+    controlPath: "/control/nonfinite-headline-sizing-next-recommendation",
+    expectedError: "external_solver returned invalid payload",
+  },
 ];
 
 for (const failureCase of retryableRecommendationFailureCases) {

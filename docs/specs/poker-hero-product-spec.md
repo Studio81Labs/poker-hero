@@ -603,6 +603,9 @@ Malformed sizing on unrelated candidates is likewise excluded locally and
 cannot become the best-EV line or suppress an otherwise valid comparison.
 Unknown actions on unrelated candidates are also ignored without poisoning
 otherwise valid policy support or EV evidence.
+Candidate frequency is required for policy support but not EV grading; malformed
+or missing frequency does not exclude otherwise valid action, sizing, and EV
+evidence from the EV comparison.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
 Duplicate entries for the same action and tolerance-equivalent sizing count as

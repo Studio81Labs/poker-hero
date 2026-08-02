@@ -2272,7 +2272,20 @@ const gradedSupportedMixCases = [
     unrelatedEv: 99,
     unrelatedSizing: null,
   },
-];
+  {
+    filename: "supported-mix-ev-candidate-invalid-frequency",
+    controlPath: "/control/ev-candidate-invalid-frequency-next-recommendation",
+    expectedEvLoss: 0.9,
+    unrelatedAction: "bet",
+    unrelatedEv: 2,
+    unrelatedFrequency: "20%",
+    unrelatedSizing: 6,
+  },
+].map((evidenceCase) => ({
+  expectedEvLoss: 0.3,
+  unrelatedFrequency: 0.02,
+  ...evidenceCase,
+}));
 
 async function verifyGradedSupportedMix(
   page: Page,
@@ -2325,7 +2338,9 @@ async function verifyGradedSupportedMix(
 
   const comparison = page.getByLabel("Training decision comparison");
   await expect(comparison).toContainText("Solver-supported mix");
-  await expect(comparison).toContainText("0.3 BB EV loss");
+  await expect(comparison).toContainText(
+    `${evidenceCase.expectedEvLoss} BB EV loss`,
+  );
   await expect(comparison.getByRole("button", {
     name: "Mark reviewed",
   })).toBeHidden();
@@ -2360,7 +2375,7 @@ async function verifyGradedSupportedMix(
   });
   expect(updatedProgress.recent_hands).toEqual(expect.arrayContaining([
     expect.objectContaining({
-      ev_loss_bb: 0.3,
+      ev_loss_bb: evidenceCase.expectedEvLoss,
       job_id: uploadedJob.id,
       outcome: "mixed",
     }),
@@ -2398,7 +2413,7 @@ async function verifyGradedSupportedMix(
             action: evidenceCase.unrelatedAction,
             sizing: evidenceCase.unrelatedSizing,
             ev: evidenceCase.unrelatedEv,
-            frequency: 0.02,
+            frequency: evidenceCase.unrelatedFrequency,
           },
         ]),
       },
@@ -2430,6 +2445,12 @@ test("ignores unrelated invalid action when grading a supported mix", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[3]);
+});
+
+test("grades valid EV evidence without candidate frequency metadata", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[4]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

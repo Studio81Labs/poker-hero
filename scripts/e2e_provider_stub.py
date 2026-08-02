@@ -152,6 +152,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("missing_recommended_line")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/missing-recommended-sizing-next-recommendation":
+                state.arm_recommendation_evidence("missing_recommended_sizing")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/nonnumeric-ev-next-recommendation":
                 state.arm_recommendation_evidence("nonnumeric_ev")
                 self._send_json(200, {"armed": True})
@@ -309,6 +313,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "malformed_policy_frequency",
                 "missing_policy_frequency",
                 "missing_recommended_line",
+                "missing_recommended_sizing",
                 "nonnumeric_ev",
                 "nonnumeric_recommended_ev",
                 "unrelated_nonnumeric_ev",
@@ -400,6 +405,8 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     "ev": call_ev,
                     "frequency": call_frequency,
                 }
+                if recommendation_variant == "missing_recommended_sizing":
+                    call_candidate.pop("sizing")
                 third_action = "fold"
                 third_sizing = None
                 third_ev: int | str = 0

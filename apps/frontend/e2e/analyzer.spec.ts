@@ -2836,6 +2836,15 @@ const supportedUngradedMixCases = [
       { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
     ],
   },
+  {
+    filename: "missing-recommended-sizing",
+    controlPath: "/control/missing-recommended-sizing-next-recommendation",
+    candidates: [
+      { action: "call", ev: 1.4, frequency: 0.78 },
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+      { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
+    ],
+  },
 ];
 
 async function verifySupportedUngradedMix(
@@ -2980,6 +2989,16 @@ test("keeps a supported mix with nonnumeric recommended EV ungraded", async ({
     page,
     testInfo,
     supportedUngradedMixCases[2],
+  );
+});
+
+test("keeps a supported mix with missing recommended sizing ungraded", async ({
+  page,
+}, testInfo) => {
+  await verifySupportedUngradedMix(
+    page,
+    testInfo,
+    supportedUngradedMixCases[3],
   );
 });
 

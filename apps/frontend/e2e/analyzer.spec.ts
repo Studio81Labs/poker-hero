@@ -2247,12 +2247,23 @@ const gradedSupportedMixCases = [
   {
     filename: "supported-mix",
     controlPath: "/control/evidence-next-recommendation",
+    unrelatedAction: "fold",
     unrelatedEv: 0,
+    unrelatedSizing: null,
   },
   {
     filename: "supported-mix-unrelated-nonnumeric-ev",
     controlPath: "/control/unrelated-nonnumeric-ev-next-recommendation",
+    unrelatedAction: "fold",
     unrelatedEv: "99",
+    unrelatedSizing: null,
+  },
+  {
+    filename: "supported-mix-unrelated-invalid-sizing",
+    controlPath: "/control/unrelated-invalid-sizing-next-recommendation",
+    unrelatedAction: "bet",
+    unrelatedEv: 99,
+    unrelatedSizing: -1,
   },
 ];
 
@@ -2377,8 +2388,8 @@ async function verifyGradedSupportedMix(
         candidates: expect.arrayContaining([
           { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
           {
-            action: "fold",
-            sizing: null,
+            action: evidenceCase.unrelatedAction,
+            sizing: evidenceCase.unrelatedSizing,
             ev: evidenceCase.unrelatedEv,
             frequency: 0.02,
           },
@@ -2400,6 +2411,12 @@ test("ignores unrelated nonnumeric EV when grading a supported mix", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[1]);
+});
+
+test("ignores unrelated invalid sizing when grading a supported mix", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[2]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

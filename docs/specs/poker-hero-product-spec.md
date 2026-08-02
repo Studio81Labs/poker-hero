@@ -599,6 +599,8 @@ A present recommended candidate with nonnumeric EV is treated as unavailable
 for grading, just like an omitted recommended candidate.
 Malformed EV metadata on unrelated candidates does not suppress a comparison
 when the locked and recommended lines remain otherwise gradable.
+Malformed sizing on unrelated candidates is likewise excluded locally and
+cannot become the best-EV line or suppress an otherwise valid comparison.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
 Duplicate entries for the same action and tolerance-equivalent sizing count as

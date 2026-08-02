@@ -5199,6 +5199,18 @@ describe("App", () => {
       needsReview: false,
     },
     {
+      title: "does not grade EV when the recommended line omits sizing",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: false,
+      includeRecommendedCandidate: true,
+      includeRecommendedSizing: false,
+      needsReview: false,
+    },
+    {
       title: "keeps a supported alternate with nonnumeric EV ungraded",
       frequency: 0.2,
       candidateSizing: 8,
@@ -5277,6 +5289,7 @@ describe("App", () => {
     expectedEvLoss: testCase.hasEvLoss ? "0.01 BB EV loss" : null,
     includeCandidateFrequency: true,
     recommendedEv: 2.75,
+    includeRecommendedSizing: true,
     unrelatedAction: "fold",
     unrelatedFrequency: 0.02,
     unrelatedSizing: null,
@@ -5294,6 +5307,7 @@ describe("App", () => {
     recommendedEv,
     expectedLabel,
     includeRecommendedCandidate,
+    includeRecommendedSizing,
     needsReview,
   }) => {
     const trainingDecision = {
@@ -5317,7 +5331,12 @@ describe("App", () => {
         engine: "postflop_solver",
         candidates: [
           ...(includeRecommendedCandidate
-            ? [{ action: "call", sizing: null, ev: recommendedEv, frequency: 0.84 }]
+            ? [{
+              action: "call",
+              ev: recommendedEv,
+              frequency: 0.84,
+              ...(includeRecommendedSizing ? { sizing: null } : {}),
+            }]
             : []),
           alternateCandidate,
           {

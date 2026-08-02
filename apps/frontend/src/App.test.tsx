@@ -5165,6 +5165,17 @@ describe("App", () => {
       needsReview: true,
     },
     {
+      title: "accepts policy support at the frequency maximum",
+      frequency: 1,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      needsReview: false,
+    },
+    {
       title: "rejects policy support without explicit frequency but still grades EV",
       frequency: 0.2,
       includeCandidateFrequency: false,

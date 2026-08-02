@@ -2302,7 +2302,16 @@ const gradedSupportedMixCases = [
     unrelatedEv: 0,
     unrelatedSizing: null,
   },
+  {
+    filename: "supported-mix-maximum-frequency-boundary",
+    controlPath: "/control/maximum-frequency-boundary-next-recommendation",
+    alternateFrequency: 1,
+    unrelatedAction: "fold",
+    unrelatedEv: 0,
+    unrelatedSizing: null,
+  },
 ].map((evidenceCase) => ({
+  alternateFrequency: 0.2,
   expectedEvLoss: 0.3,
   recommendedCandidate: {
     action: "call",
@@ -2436,7 +2445,12 @@ async function verifyGradedSupportedMix(
       raw: {
         candidates: expect.arrayContaining([
           evidenceCase.recommendedCandidate,
-          { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+          {
+            action: "raise",
+            sizing: 8,
+            ev: 1.1,
+            frequency: evidenceCase.alternateFrequency,
+          },
           {
             action: evidenceCase.unrelatedAction,
             sizing: evidenceCase.unrelatedSizing,
@@ -2491,6 +2505,12 @@ test("grades recommended-line EV with malformed frequency metadata", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[6]);
+});
+
+test("supports a policy candidate at the maximum frequency boundary", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[7]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

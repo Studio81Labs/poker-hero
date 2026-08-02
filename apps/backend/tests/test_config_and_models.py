@@ -5,7 +5,14 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings
-from app.models import Card, CanonicalState, DetectedState, ParserResult, RecommendationResult
+from app.models import (
+    Card,
+    CanonicalState,
+    DetectedState,
+    ParserResult,
+    RecommendationAction,
+    RecommendationResult,
+)
 
 
 def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
@@ -235,6 +242,22 @@ def test_canonical_state_rejects_duplicate_cards_across_state() -> None:
 def test_detected_state_rejects_unknown_facing_action() -> None:
     with pytest.raises(ValidationError):
         DetectedState(facing_action="call")
+
+
+@pytest.mark.parametrize("action", ["fold", "check", "call"])
+def test_recommendation_rejects_sizing_for_non_wager_action(
+    action: RecommendationAction,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="Sizing is only valid for bet or raise recommendations",
+    ):
+        RecommendationResult(
+            action=action,
+            sizing=2.5,
+            confidence=0.8,
+            explanation="Malformed recommendation",
+        )
 
 
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:

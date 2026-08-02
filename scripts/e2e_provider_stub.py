@@ -100,6 +100,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_failure()
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/invalid-headline-sizing-next-recommendation":
+                state.arm_recommendation_evidence("invalid_headline_sizing")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
                 self._send_json(200, {"armed": True})
@@ -310,7 +314,9 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             recommendation_action = "call"
             recommendation_sizing = None
             recommendation_variant = state.consume_recommendation_variant()
-            if recommendation_variant == "fallback":
+            if recommendation_variant == "invalid_headline_sizing":
+                recommendation_sizing = 2.5
+            elif recommendation_variant == "fallback":
                 raw.update(
                     {
                         "requested_engine": "postflop_solver",

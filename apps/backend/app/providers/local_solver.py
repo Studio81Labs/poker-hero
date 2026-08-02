@@ -14,6 +14,10 @@ from app.providers.base import ProviderConfigurationError, ProviderError, Provid
 from app.solvers.preflop_context import supports_preflop_chart
 
 
+class _LocalSolverResponseError(ProviderError):
+    pass
+
+
 class LocalSolverProvider:
     name = "local_solver"
     required_fields = ["hero_cards", "street", "pot_size", "current_bet", "effective_stack", "players_in_hand"]
@@ -35,6 +39,8 @@ class LocalSolverProvider:
         command, cwd, fallback_reason = self._command(request)
         try:
             result = self._run(command, cwd, request)
+        except _LocalSolverResponseError:
+            raise
         except ProviderError as exc:
             if not self._can_fallback():
                 raise
@@ -87,12 +93,16 @@ class LocalSolverProvider:
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
-            raise ProviderError("Local solver returned invalid JSON") from exc
+            raise _LocalSolverResponseError(
+                "Local solver returned invalid JSON"
+            ) from exc
 
         try:
             return RecommendationResult.model_validate(payload)
         except ValidationError as exc:
-            raise ProviderError("Local solver returned invalid payload") from exc
+            raise _LocalSolverResponseError(
+                "Local solver returned invalid payload"
+            ) from exc
 
     def _command(
         self, request: RecommendationRequest

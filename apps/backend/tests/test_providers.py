@@ -386,6 +386,43 @@ def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
     assert "range/EV fallback" in result.explanation
 
 
+@pytest.mark.parametrize(
+    ("solver_output", "error_message"),
+    [
+        ("not-json", "invalid JSON"),
+        (
+            '{"action":"call","sizing":2.5,"confidence":0.8,'
+            '"explanation":"Malformed recommendation"}',
+            "invalid payload",
+        ),
+    ],
+)
+def test_postflop_solver_malformed_response_does_not_use_ev_fallback(
+    tmp_path: Path,
+    solver_output: str,
+    error_message: str,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(f"print({solver_output!r})\n")
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="postflop_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=True,
+        )
+    )
+
+    with pytest.raises(ProviderError, match=error_message):
+        provider.recommend(
+            RecommendationRequest(
+                state=heads_up_postflop_state(),
+                provider=provider.name,
+            )
+        )
+
+
 def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
     state.hero_position = "SB"
@@ -568,6 +605,26 @@ def test_local_solver_invalid_payload_raises_provider_error(tmp_path: Path) -> N
 
     with pytest.raises(ProviderError, match="invalid payload"):
         provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+
+
+def test_local_solver_rejects_sizing_for_non_wager_action(tmp_path: Path) -> None:
+    solver_script = tmp_path / "solver.py"
+    solver_script.write_text(
+        "print('{\"action\":\"call\",\"sizing\":2.5,\"confidence\":0.8,"
+        "\"explanation\":\"Malformed recommendation\"}')\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    with pytest.raises(ProviderError, match="invalid payload"):
+        provider.recommend(
+            RecommendationRequest(state=approved_state(), provider=provider.name)
+        )
 
 
 def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

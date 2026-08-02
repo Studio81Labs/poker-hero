@@ -1424,6 +1424,31 @@ def test_app_startup_recovers_interrupted_recommendation(tmp_path: Path) -> None
     assert retry_response.json()["status"] == "recommended"
 
 
+def test_app_startup_loads_legacy_non_actionable_recommendation_sizing(
+    tmp_path: Path,
+) -> None:
+    initial_client = make_client(tmp_path)
+    job_id = upload_job(initial_client).json()["id"]
+    approve_job(initial_client, job_id)
+    recommendation_response = initial_client.post(f"/api/jobs/{job_id}/recommend")
+    assert recommendation_response.status_code == 200
+    assert recommendation_response.json()["recommendation"]["action"] == "call"
+
+    record_path = tmp_path / "jobs" / job_id / "job.json"
+    legacy_record = json.loads(record_path.read_text())
+    legacy_record["recommendation"]["sizing"] = 2.5
+    record_path.write_text(json.dumps(legacy_record))
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{job_id}")
+    assert recovered_response.status_code == 200
+    assert recovered_response.json()["recommendation"]["sizing"] is None
+    listed_response = restarted_client.get("/api/jobs")
+    assert listed_response.status_code == 200
+    assert listed_response.json()["jobs"][0]["recommendation"]["sizing"] is None
+
+
 def test_app_startup_recovers_interrupted_parser_job(tmp_path: Path) -> None:
     store = FileJobStore(tmp_path)
     interrupted_job = store.create_job(

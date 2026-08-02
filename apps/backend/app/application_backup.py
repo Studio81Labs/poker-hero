@@ -20,6 +20,7 @@ from app.storage import (
     FileBenchmarkStore,
     FileJobStore,
     JobNotFoundError,
+    load_persisted_job_record,
 )
 
 
@@ -473,7 +474,7 @@ def _read_backup_job(
             f"Application backup checksum failed for job {entry.job_id}"
         )
     try:
-        job = JobRecord.model_validate_json(record_bytes)
+        job = load_persisted_job_record(record_bytes)
     except ValidationError as exc:
         raise ApplicationBackupError(
             f"Application backup job {entry.job_id} is invalid"

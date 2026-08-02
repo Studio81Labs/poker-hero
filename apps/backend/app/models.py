@@ -191,6 +191,12 @@ class RecommendationResult(BaseModel):
     explanation: str
     raw: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_sizing(self) -> Self:
+        if self.action not in {"bet", "raise"} and self.sizing is not None:
+            raise ValueError("Sizing is only valid for bet or raise recommendations")
+        return self
+
 
 class TrainingDecisionRequest(BaseModel):
     action: RecommendationAction

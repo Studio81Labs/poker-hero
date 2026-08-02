@@ -618,7 +618,8 @@ when the candidate frequency itself is missing or malformed.
 Missing frequency is not inferred from the headline recommendation, EV rank, or
 any default strategy weight.
 Candidate frequency must also remain within the inclusive 0-100% probability
-range; values above one are unsupported without invalidating separate EV data.
+range; exactly one remains supported, while values above one are unsupported
+without invalidating separate EV data.
 An exact recommendation match also remains ungraded when candidate evidence
 contains no distinct alternative line.
 Duplicate entries for the same action and tolerance-equivalent sizing count as

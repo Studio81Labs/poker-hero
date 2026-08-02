@@ -2265,6 +2265,13 @@ const gradedSupportedMixCases = [
     unrelatedEv: 99,
     unrelatedSizing: -1,
   },
+  {
+    filename: "supported-mix-unrelated-invalid-action",
+    controlPath: "/control/unrelated-invalid-action-next-recommendation",
+    unrelatedAction: "jam",
+    unrelatedEv: 99,
+    unrelatedSizing: null,
+  },
 ];
 
 async function verifyGradedSupportedMix(
@@ -2417,6 +2424,12 @@ test("ignores unrelated invalid sizing when grading a supported mix", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[2]);
+});
+
+test("ignores unrelated invalid action when grading a supported mix", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[3]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

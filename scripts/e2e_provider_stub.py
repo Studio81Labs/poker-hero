@@ -156,6 +156,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("unrelated_invalid_sizing")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/unrelated-invalid-action-next-recommendation":
+                state.arm_recommendation_evidence("unrelated_invalid_action")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/single-line-evidence-next-recommendation":
                 state.arm_recommendation_evidence("single_line_evidence")
                 self._send_json(200, {"armed": True})
@@ -290,6 +294,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "nonnumeric_recommended_ev",
                 "unrelated_nonnumeric_ev",
                 "unrelated_invalid_sizing",
+                "unrelated_invalid_action",
                 "single_line_evidence",
                 "duplicate_line_evidence",
             }:
@@ -369,6 +374,9 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 if recommendation_variant == "unrelated_invalid_sizing":
                     third_action = "bet"
                     third_sizing = -1
+                    third_ev = 99
+                elif recommendation_variant == "unrelated_invalid_action":
+                    third_action = "jam"
                     third_ev = 99
                 elif recommendation_variant == "unrelated_nonnumeric_ev":
                     third_ev = "99"

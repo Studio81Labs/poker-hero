@@ -5186,11 +5186,24 @@ describe("App", () => {
       includeRecommendedCandidate: true,
       needsReview: false,
     },
-  ])("$title", async ({
+    {
+      title: "leaves EV ungraded when the recommended line is nonnumeric",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      recommendedEv: "2.75",
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: false,
+      includeRecommendedCandidate: true,
+      needsReview: false,
+    },
+  ].map((testCase) => ({ recommendedEv: 2.75, ...testCase })))("$title", async ({
     frequency,
     candidateSizing,
     candidateEv,
     unrelatedEv,
+    recommendedEv,
     expectedLabel,
     hasEvLoss,
     includeRecommendedCandidate,
@@ -5214,7 +5227,7 @@ describe("App", () => {
         engine: "postflop_solver",
         candidates: [
           ...(includeRecommendedCandidate
-            ? [{ action: "call", sizing: null, ev: 2.75, frequency: 0.84 }]
+            ? [{ action: "call", sizing: null, ev: recommendedEv, frequency: 0.84 }]
             : []),
           alternateCandidate,
           { action: "fold", sizing: null, ev: unrelatedEv, frequency: 0.02 },

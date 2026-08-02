@@ -595,6 +595,8 @@ for EV loss.
 A valid alternate policy line with missing or nonnumeric EV metadata likewise
 remains supported, but the comparison stays ungraded and does not affect EV
 analytics.
+A present recommended candidate with nonnumeric EV is treated as unavailable
+for grading, just like an omitted recommended candidate.
 Malformed EV metadata on unrelated candidates does not suppress a comparison
 when the locked and recommended lines remain otherwise gradable.
 An exact recommendation match also remains ungraded when candidate evidence

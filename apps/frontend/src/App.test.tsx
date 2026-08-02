@@ -5211,6 +5211,18 @@ describe("App", () => {
       needsReview: false,
     },
     {
+      title: "does not grade EV when the recommended line has invalid sizing",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: false,
+      includeRecommendedCandidate: true,
+      recommendedCandidateSizing: 2.5,
+      needsReview: false,
+    },
+    {
       title: "keeps a supported alternate with nonnumeric EV ungraded",
       frequency: 0.2,
       candidateSizing: 8,
@@ -5290,6 +5302,7 @@ describe("App", () => {
     includeCandidateFrequency: true,
     recommendedEv: 2.75,
     includeRecommendedSizing: true,
+    recommendedCandidateSizing: null,
     unrelatedAction: "fold",
     unrelatedFrequency: 0.02,
     unrelatedSizing: null,
@@ -5308,6 +5321,7 @@ describe("App", () => {
     expectedLabel,
     includeRecommendedCandidate,
     includeRecommendedSizing,
+    recommendedCandidateSizing,
     needsReview,
   }) => {
     const trainingDecision = {
@@ -5335,7 +5349,7 @@ describe("App", () => {
               action: "call",
               ev: recommendedEv,
               frequency: 0.84,
-              ...(includeRecommendedSizing ? { sizing: null } : {}),
+              ...(includeRecommendedSizing ? { sizing: recommendedCandidateSizing } : {}),
             }]
             : []),
           alternateCandidate,

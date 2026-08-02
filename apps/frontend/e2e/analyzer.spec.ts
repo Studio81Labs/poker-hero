@@ -2845,6 +2845,15 @@ const supportedUngradedMixCases = [
       { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
     ],
   },
+  {
+    filename: "invalid-recommended-sizing",
+    controlPath: "/control/invalid-recommended-sizing-next-recommendation",
+    candidates: [
+      { action: "call", sizing: 2.5, ev: 1.4, frequency: 0.78 },
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+      { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
+    ],
+  },
 ];
 
 async function verifySupportedUngradedMix(
@@ -2999,6 +3008,16 @@ test("keeps a supported mix with missing recommended sizing ungraded", async ({
     page,
     testInfo,
     supportedUngradedMixCases[3],
+  );
+});
+
+test("keeps a supported mix with invalid recommended sizing ungraded", async ({
+  page,
+}, testInfo) => {
+  await verifySupportedUngradedMix(
+    page,
+    testInfo,
+    supportedUngradedMixCases[4],
   );
 });
 

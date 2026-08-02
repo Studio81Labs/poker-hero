@@ -2683,6 +2683,15 @@ const supportedUngradedMixCases = [
       { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
     ],
   },
+  {
+    filename: "nonnumeric-recommended-ev",
+    controlPath: "/control/nonnumeric-recommended-ev-next-recommendation",
+    candidates: [
+      { action: "call", sizing: null, ev: "1.4", frequency: 0.78 },
+      { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
+      { action: "fold", sizing: null, ev: 0, frequency: 0.02 },
+    ],
+  },
 ];
 
 async function verifySupportedUngradedMix(
@@ -2817,6 +2826,16 @@ test("keeps a supported mix with nonnumeric candidate EV ungraded", async ({
     page,
     testInfo,
     supportedUngradedMixCases[1],
+  );
+});
+
+test("keeps a supported mix with nonnumeric recommended EV ungraded", async ({
+  page,
+}, testInfo) => {
+  await verifySupportedUngradedMix(
+    page,
+    testInfo,
+    supportedUngradedMixCases[2],
   );
 });
 

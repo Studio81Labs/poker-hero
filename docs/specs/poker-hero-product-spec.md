@@ -610,6 +610,8 @@ otherwise valid policy support or EV evidence.
 Candidate frequency is required for policy support but not EV grading; malformed
 or missing frequency does not exclude otherwise valid action, sizing, and EV
 evidence from the EV comparison.
+That rule also applies to the candidate matching the headline recommendation;
+its missing frequency does not suppress otherwise complete EV evidence.
 Conversely, valid action, sizing, and EV metadata cannot grant policy support
 when the candidate frequency itself is missing or malformed.
 Missing frequency is not inferred from the headline recommendation, EV rank, or

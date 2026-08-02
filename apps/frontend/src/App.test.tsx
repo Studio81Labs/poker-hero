@@ -5223,6 +5223,18 @@ describe("App", () => {
       needsReview: false,
     },
     {
+      title: "grades EV when the recommended line omits frequency",
+      frequency: 0.2,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Solver-supported mix",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      includeRecommendedFrequency: false,
+      needsReview: false,
+    },
+    {
       title: "keeps a supported alternate with nonnumeric EV ungraded",
       frequency: 0.2,
       candidateSizing: 8,
@@ -5302,6 +5314,7 @@ describe("App", () => {
     includeCandidateFrequency: true,
     recommendedEv: 2.75,
     includeRecommendedSizing: true,
+    includeRecommendedFrequency: true,
     recommendedCandidateSizing: null,
     unrelatedAction: "fold",
     unrelatedFrequency: 0.02,
@@ -5321,6 +5334,7 @@ describe("App", () => {
     expectedLabel,
     includeRecommendedCandidate,
     includeRecommendedSizing,
+    includeRecommendedFrequency,
     recommendedCandidateSizing,
     needsReview,
   }) => {
@@ -5348,7 +5362,7 @@ describe("App", () => {
             ? [{
               action: "call",
               ev: recommendedEv,
-              frequency: 0.84,
+              ...(includeRecommendedFrequency ? { frequency: 0.84 } : {}),
               ...(includeRecommendedSizing ? { sizing: recommendedCandidateSizing } : {}),
             }]
             : []),

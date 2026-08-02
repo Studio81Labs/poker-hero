@@ -2281,8 +2281,22 @@ const gradedSupportedMixCases = [
     unrelatedFrequency: "20%",
     unrelatedSizing: 6,
   },
+  {
+    filename: "supported-mix-missing-recommended-frequency",
+    controlPath: "/control/missing-recommended-frequency-next-recommendation",
+    recommendedCandidate: { action: "call", sizing: null, ev: 1.4 },
+    unrelatedAction: "fold",
+    unrelatedEv: 0,
+    unrelatedSizing: null,
+  },
 ].map((evidenceCase) => ({
   expectedEvLoss: 0.3,
+  recommendedCandidate: {
+    action: "call",
+    sizing: null,
+    ev: 1.4,
+    frequency: 0.78,
+  },
   unrelatedFrequency: 0.02,
   ...evidenceCase,
 }));
@@ -2408,6 +2422,7 @@ async function verifyGradedSupportedMix(
     recommendation: {
       raw: {
         candidates: expect.arrayContaining([
+          evidenceCase.recommendedCandidate,
           { action: "raise", sizing: 8, ev: 1.1, frequency: 0.2 },
           {
             action: evidenceCase.unrelatedAction,
@@ -2451,6 +2466,12 @@ test("grades valid EV evidence without candidate frequency metadata", async ({
   page,
 }, testInfo) => {
   await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[4]);
+});
+
+test("grades recommended-line EV without frequency metadata", async ({
+  page,
+}, testInfo) => {
+  await verifyGradedSupportedMix(page, testInfo, gradedSupportedMixCases[5]);
 });
 
 test("applies the solver policy-support frequency boundary", async ({

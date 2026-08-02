@@ -258,6 +258,8 @@ frequencies.
    sizing, and optional low, medium, or high certainty as a training answer.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
+   Headline sizing is accepted only for bet and raise recommendations; malformed
+   provider responses remain retryable errors and are not persisted as advice.
 10. When a training answer exists, the UI compares it with the recommendation
     and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with

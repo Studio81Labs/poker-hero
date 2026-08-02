@@ -4143,73 +4143,88 @@ test("continues an automated batch after a recommendation provider failure", asy
   ).toBeEnabled();
 });
 
-test("recovers from a failed recommendation and retries it", async ({
-  page,
-}, testInfo) => {
-  await openUploadInput(page);
-  const filename = attemptFilename("provider-retry", testInfo);
+const retryableRecommendationFailureCases = [
+  {
+    title: "recovers from a failed recommendation and retries it",
+    filename: "provider-retry",
+    controlPath: "/control/fail-next-recommendation",
+    expectedError: "external_solver request failed with status 503",
+  },
+  {
+    title: "rejects and retries malformed headline recommendation sizing",
+    filename: "invalid-headline-sizing",
+    controlPath: "/control/invalid-headline-sizing-next-recommendation",
+    expectedError: "external_solver returned invalid payload",
+  },
+];
 
-  await page.getByRole("button", { name: "Automation On" }).click();
-  const uploadedJob = await uploadValidScreenshot(page, filename);
-  await page.getByRole("button", { name: "Approve state" }).click();
-  await expect(
-    page.getByRole("region", { name: "Your training decision" }),
-  ).toBeVisible();
+for (const failureCase of retryableRecommendationFailureCases) {
+  test(failureCase.title, async ({ page }, testInfo) => {
+    await openUploadInput(page);
+    const filename = attemptFilename(failureCase.filename, testInfo);
 
-  const armFailureResponse = await page.request.post(
-    `${PROVIDER_URL}/control/fail-next-recommendation`,
-  );
-  expect(armFailureResponse.ok()).toBe(true);
+    await page.getByRole("button", { name: "Automation On" }).click();
+    const uploadedJob = await uploadValidScreenshot(page, filename);
+    await page.getByRole("button", { name: "Approve state" }).click();
+    await expect(
+      page.getByRole("region", { name: "Your training decision" }),
+    ).toBeVisible();
 
-  await page.getByRole("button", { name: "Request recommendation" }).click();
-  await expect(
-    page.getByText("external_solver request failed with status 503").first(),
-  ).toBeVisible();
-  await expect(uploadedJob.queueItem).toContainText("error");
-  await expect.poll(
-    () => page.evaluate(
-      () => sessionStorage.getItem("poker-training-processing-mutation-v1"),
-    ),
-  ).toBeNull();
-  const failedJobResponse = await page.request.get(
-    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
-  );
-  expect(failedJobResponse.ok()).toBe(true);
-  const failedJob = await failedJobResponse.json() as {
-    error: string | null;
-    recommendation_pending: boolean;
-    recommendation_request_id: string | null;
-    status: string;
-  };
-  expect(failedJob).toMatchObject({
-    error: "external_solver request failed with status 503",
-    recommendation_pending: false,
-    status: "error",
+    const armFailureResponse = await page.request.post(
+      `${PROVIDER_URL}${failureCase.controlPath}`,
+    );
+    expect(armFailureResponse.ok()).toBe(true);
+
+    await page.getByRole("button", { name: "Request recommendation" }).click();
+    await expect(
+      page.getByText(failureCase.expectedError).first(),
+    ).toBeVisible();
+    await expect(uploadedJob.queueItem).toContainText("error");
+    await expect.poll(
+      () => page.evaluate(
+        () => sessionStorage.getItem("poker-training-processing-mutation-v1"),
+      ),
+    ).toBeNull();
+    const failedJobResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+    );
+    expect(failedJobResponse.ok()).toBe(true);
+    const failedJob = await failedJobResponse.json() as {
+      error: string | null;
+      recommendation_pending: boolean;
+      recommendation_request_id: string | null;
+      status: string;
+    };
+    expect(failedJob).toMatchObject({
+      error: failureCase.expectedError,
+      recommendation_pending: false,
+      status: "error",
+    });
+    expect(failedJob.recommendation_request_id).not.toBeNull();
+
+    await page.getByRole("button", { name: "Request recommendation" }).click();
+    await expect(
+      page.getByRole("region", { name: "Recommendation" }),
+    ).toBeVisible();
+    await expect(uploadedJob.queueItem).toContainText("recommended");
+    const recommendedJobResponse = await page.request.get(
+      `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
+    );
+    expect(recommendedJobResponse.ok()).toBe(true);
+    const recommendedJob = await recommendedJobResponse.json() as {
+      error: string | null;
+      recommendation: { raw: { engine: string } } | null;
+      status: string;
+    };
+    expect(recommendedJob).toMatchObject({
+      error: null,
+      recommendation: {
+        raw: { engine: "e2e_provider_stub" },
+      },
+      status: "recommended",
+    });
   });
-  expect(failedJob.recommendation_request_id).not.toBeNull();
-
-  await page.getByRole("button", { name: "Request recommendation" }).click();
-  await expect(
-    page.getByRole("region", { name: "Recommendation" }),
-  ).toBeVisible();
-  await expect(uploadedJob.queueItem).toContainText("recommended");
-  const recommendedJobResponse = await page.request.get(
-    `${BACKEND_URL}/api/jobs/${uploadedJob.id}`,
-  );
-  expect(recommendedJobResponse.ok()).toBe(true);
-  const recommendedJob = await recommendedJobResponse.json() as {
-    error: string | null;
-    recommendation: { raw: { engine: string } } | null;
-    status: string;
-  };
-  expect(recommendedJob).toMatchObject({
-    error: null,
-    recommendation: {
-      raw: { engine: "e2e_provider_stub" },
-    },
-    status: "recommended",
-  });
-});
+}
 
 test("reconciles a recommendation that completes after page reload", async ({
   page,

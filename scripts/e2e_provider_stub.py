@@ -132,6 +132,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("below_frequency_boundary")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/above-frequency-maximum-next-recommendation":
+                state.arm_recommendation_evidence("above_frequency_maximum")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/malformed-policy-next-recommendation":
                 state.arm_recommendation_evidence("malformed_policy")
                 self._send_json(200, {"armed": True})
@@ -296,6 +300,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 "sizing_evidence",
                 "frequency_boundary",
                 "below_frequency_boundary",
+                "above_frequency_maximum",
                 "malformed_policy",
                 "malformed_policy_frequency",
                 "missing_recommended_line",
@@ -322,6 +327,11 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     call_ev, raise_ev = 1.4, 1.1
                     call_frequency = 0.930001
                     raise_frequency = 0.049999
+                    fold_frequency = 0.02
+                elif recommendation_variant == "above_frequency_maximum":
+                    call_ev, raise_ev = 1.4, 1.1
+                    call_frequency = 0.78
+                    raise_frequency = 1.000001
                     fold_frequency = 0.02
                 elif recommendation_variant == "malformed_policy_frequency":
                     call_ev, raise_ev = 1.4, 1.1

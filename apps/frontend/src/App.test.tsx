@@ -5154,6 +5154,17 @@ describe("App", () => {
       needsReview: true,
     },
     {
+      title: "rejects policy support above the frequency maximum but still grades EV",
+      frequency: 1.000001,
+      candidateSizing: 8,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Different action",
+      hasEvLoss: true,
+      includeRecommendedCandidate: true,
+      needsReview: true,
+    },
+    {
       title: "rejects an alternate raise without valid sizing",
       frequency: 0.2,
       candidateSizing: null,

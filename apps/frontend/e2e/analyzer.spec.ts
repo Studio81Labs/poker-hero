@@ -2621,6 +2621,17 @@ const unsupportedPolicyCases = [
     },
     expectedEvLoss: 0.3,
   },
+  {
+    filename: "above-policy-frequency-maximum",
+    controlPath: "/control/above-frequency-maximum-next-recommendation",
+    expectedCandidate: {
+      action: "raise",
+      sizing: 8,
+      ev: 1.1,
+      frequency: 1.000001,
+    },
+    expectedEvLoss: 0.3,
+  },
 ];
 
 async function verifyUnsupportedPolicyCandidate(
@@ -2765,6 +2776,16 @@ test("grades EV without granting support to malformed frequency", async ({
     page,
     testInfo,
     unsupportedPolicyCases[1],
+  );
+});
+
+test("rejects policy frequency above one while retaining EV grading", async ({
+  page,
+}, testInfo) => {
+  await verifyUnsupportedPolicyCandidate(
+    page,
+    testInfo,
+    unsupportedPolicyCases[2],
   );
 });
 

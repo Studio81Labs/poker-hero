@@ -4,6 +4,9 @@ import shutil
 import tempfile
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
+
+from pydantic import TypeAdapter
 
 from app.models import (
     BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
@@ -17,6 +20,20 @@ from app.models import (
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
 BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
+JOB_RECORD_PAYLOAD_ADAPTER = TypeAdapter(dict[str, Any])
+LEGACY_ACTIONS_WITHOUT_SIZING = frozenset({"fold", "check", "call"})
+
+
+def load_persisted_job_record(payload: str | bytes) -> JobRecord:
+    values = JOB_RECORD_PAYLOAD_ADAPTER.validate_json(payload)
+    recommendation = values.get("recommendation")
+    if (
+        isinstance(recommendation, dict)
+        and recommendation.get("action") in LEGACY_ACTIONS_WITHOUT_SIZING
+        and recommendation.get("sizing") is not None
+    ):
+        recommendation["sizing"] = None
+    return JobRecord.model_validate(values)
 
 
 class JobNotFoundError(KeyError):
@@ -105,11 +122,11 @@ class FileJobStore:
         path = self._job_path(job_id)
         if not path.exists():
             raise JobNotFoundError(job_id)
-        return JobRecord.model_validate_json(path.read_text())
+        return load_persisted_job_record(path.read_bytes())
 
     def list(self) -> list[JobRecord]:
         jobs = [
-            JobRecord.model_validate_json(path.read_text())
+            load_persisted_job_record(path.read_bytes())
             for path in self.jobs_dir.glob("*/job.json")
         ]
         return sorted(jobs, key=lambda job: job.created_at)

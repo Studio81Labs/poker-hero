@@ -68,6 +68,21 @@ def make_client(tmp_path: Path, **settings_overrides: object) -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture
+def access_log_records(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[logging.LogRecord]:
+    records: list[logging.LogRecord] = []
+
+    class RecordHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    monkeypatch.setattr(api_module.LOGGER, "handlers", [RecordHandler()])
+    monkeypatch.setattr(api_module.LOGGER, "propagate", False)
+    return records
+
+
 def upload_job(
     client: TestClient,
     content: bytes = VALID_PNG,
@@ -147,28 +162,28 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
 
 def test_request_id_is_returned_and_access_log_is_structured(
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
+    access_log_records: list[logging.LogRecord],
 ) -> None:
     client = make_client(tmp_path)
 
-    with caplog.at_level(logging.INFO, logger="uvicorn.error.poker"):
-        response = client.get(
-            "/api/jobs?limit=1",
-            headers={"X-Request-ID": "worker-request-123"},
-        )
+    response = client.get(
+        "/api/jobs?limit=1",
+        headers={"X-Request-ID": "worker-request-123"},
+    )
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "worker-request-123"
     messages = [
         json.loads(record.message)
-        for record in caplog.records
-        if record.name == "uvicorn.error.poker"
+        for record in access_log_records
+        if record.name == "poker.access"
     ]
     assert len(messages) == 1
     assert messages == [
         {
             "duration_ms": messages[0]["duration_ms"],
             "event": "http_request",
+            "level": "info",
             "method": "GET",
             "outcome": "completed",
             "path": "/api/jobs",
@@ -196,7 +211,7 @@ def test_invalid_request_id_is_replaced(tmp_path: Path) -> None:
 
 def test_unhandled_error_response_keeps_request_id(
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
+    access_log_records: list[logging.LogRecord],
 ) -> None:
     app = create_app(
         Settings(
@@ -211,14 +226,13 @@ def test_unhandled_error_response_keeps_request_id(
         raise RuntimeError("test crash")
 
     client = TestClient(app, raise_server_exceptions=False)
-    with caplog.at_level(logging.ERROR, logger="uvicorn.error.poker"):
-        response = client.get(
-            "/api/test-crash",
-            headers={
-                "Origin": "http://localhost:5173",
-                "X-Request-ID": "failed-request-123",
-            },
-        )
+    response = client.get(
+        "/api/test-crash",
+        headers={
+            "Origin": "http://localhost:5173",
+            "X-Request-ID": "failed-request-123",
+        },
+    )
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal Server Error"}
@@ -229,8 +243,8 @@ def test_unhandled_error_response_keeps_request_id(
     assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
     access_events = [
         json.loads(record.message)
-        for record in caplog.records
-        if record.name == "uvicorn.error.poker"
+        for record in access_log_records
+        if record.name == "poker.access"
     ]
     assert len(access_events) == 1
     assert access_events[0]["request_id"] == "failed-request-123"
@@ -240,7 +254,7 @@ def test_unhandled_error_response_keeps_request_id(
 
 def test_stream_failure_is_logged_after_response_start(
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
+    access_log_records: list[logging.LogRecord],
 ) -> None:
     app = create_app(
         Settings(
@@ -254,8 +268,8 @@ def test_stream_failure_is_logged_after_response_start(
         yield b"partial"
         assert not [
             record
-            for record in caplog.records
-            if record.name == "uvicorn.error.poker"
+            for record in access_log_records
+            if record.name == "poker.access"
         ]
         raise RuntimeError("stream failed")
 
@@ -264,17 +278,16 @@ def test_stream_failure_is_logged_after_response_start(
         return StreamingResponse(stream_chunks())
 
     client = TestClient(app, raise_server_exceptions=False)
-    with caplog.at_level(logging.ERROR, logger="uvicorn.error.poker"):
-        response = client.get(
-            "/api/test-stream",
-            headers={"X-Request-ID": "failed-stream-123"},
-        )
+    response = client.get(
+        "/api/test-stream",
+        headers={"X-Request-ID": "failed-stream-123"},
+    )
 
     assert response.status_code == 200
     access_events = [
         json.loads(record.message)
-        for record in caplog.records
-        if record.name == "uvicorn.error.poker"
+        for record in access_log_records
+        if record.name == "poker.access"
     ]
     assert len(access_events) == 1
     assert access_events[0]["request_id"] == "failed-stream-123"
@@ -282,31 +295,54 @@ def test_stream_failure_is_logged_after_response_start(
     assert access_events[0]["outcome"] == "failed"
 
 
-def test_cors_preflight_is_observed(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_cors_preflight_is_observed(
+    tmp_path: Path,
+    access_log_records: list[logging.LogRecord],
+) -> None:
     client = make_client(tmp_path)
 
-    with caplog.at_level(logging.INFO, logger="uvicorn.error.poker"):
-        response = client.options(
-            "/api/jobs",
-            headers={
-                "Access-Control-Request-Headers": "X-Recommendation-Request-ID",
-                "Access-Control-Request-Method": "POST",
-                "Origin": "http://localhost:5173",
-                "X-Request-ID": "preflight-request-123",
-            },
-        )
+    response = client.options(
+        "/api/jobs",
+        headers={
+            "Access-Control-Request-Headers": "X-Recommendation-Request-ID",
+            "Access-Control-Request-Method": "POST",
+            "Origin": "http://localhost:5173",
+            "X-Request-ID": "preflight-request-123",
+        },
+    )
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == "preflight-request-123"
     access_events = [
         json.loads(record.message)
-        for record in caplog.records
-        if record.name == "uvicorn.error.poker"
+        for record in access_log_records
+        if record.name == "poker.access"
     ]
     assert len(access_events) == 1
     assert access_events[0]["method"] == "OPTIONS"
     assert access_events[0]["request_id"] == "preflight-request-123"
     assert access_events[0]["outcome"] == "completed"
+
+
+def test_access_logger_formats_events_as_plain_json() -> None:
+    handler = next(
+        handler
+        for handler in api_module.LOGGER.handlers
+        if handler.get_name() == api_module.ACCESS_LOG_HANDLER_NAME
+    )
+    message = '{"event":"http_request","level":"info"}'
+    record = api_module.LOGGER.makeRecord(
+        api_module.LOGGER.name,
+        logging.INFO,
+        __file__,
+        1,
+        message,
+        (),
+        None,
+    )
+
+    assert api_module.LOGGER.propagate is False
+    assert handler.format(record) == message
 
 
 def test_cors_exposes_request_id_header(tmp_path: Path) -> None:

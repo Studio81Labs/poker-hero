@@ -53,7 +53,9 @@ the ID to correlate a browser or Worker response with Coolify container logs.
 Query strings and request bodies are not logged. Successful `/api/health`
 probes are logged at debug level to keep routine platform checks quiet. The
 event is emitted after the response body completes and identifies interrupted
-or failed streams with `"outcome":"failed"`.
+or failed streams with `"outcome":"failed"`. Each container log line is a
+standalone JSON object with its severity in the `level` field, ready for a JSON
+log collector without stripping a Uvicorn prefix.
 
 ## Frontend On Cloudflare Workers
 

@@ -132,7 +132,25 @@ PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-LOGGER = logging.getLogger("uvicorn.error.poker")
+ACCESS_LOG_HANDLER_NAME = "poker-json-access"
+
+
+def _build_access_logger() -> logging.Logger:
+    logger = logging.getLogger("poker.access")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    if not any(
+        handler.get_name() == ACCESS_LOG_HANDLER_NAME
+        for handler in logger.handlers
+    ):
+        handler = logging.StreamHandler()
+        handler.set_name(ACCESS_LOG_HANDLER_NAME)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+    return logger
+
+
+LOGGER = _build_access_logger()
 
 
 def _request_id(value: str | None) -> str:
@@ -149,11 +167,13 @@ def _request_log_message(
     status_code: int,
     duration_ms: float,
     outcome: str,
+    level: str,
 ) -> str:
     return json.dumps(
         {
             "duration_ms": round(duration_ms, 3),
             "event": "http_request",
+            "level": level,
             "method": method,
             "outcome": outcome,
             "path": path,
@@ -174,6 +194,14 @@ def _log_http_request(
     duration_ms: float,
     outcome: str,
 ) -> None:
+    if outcome == "failed" or status_code >= 500:
+        log_level = logging.ERROR
+    elif status_code >= 400:
+        log_level = logging.WARNING
+    elif path == "/api/health":
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
     message = _request_log_message(
         request_id=request_id,
         method=method,
@@ -181,15 +209,9 @@ def _log_http_request(
         status_code=status_code,
         duration_ms=duration_ms,
         outcome=outcome,
+        level=logging.getLevelName(log_level).lower(),
     )
-    if outcome == "failed" or status_code >= 500:
-        LOGGER.error(message)
-    elif status_code >= 400:
-        LOGGER.warning(message)
-    elif path == "/api/health":
-        LOGGER.debug(message)
-    else:
-        LOGGER.info(message)
+    LOGGER.log(log_level, message)
 
 
 class RequestObservabilityMiddleware:

@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
@@ -56,6 +57,17 @@ def _validate_unique_cards(hero_cards: list["Card"], board_cards: list["Card"]) 
         if card.code in seen:
             raise ValueError(f"Duplicate card in state: {card.code}")
         seen.add(card.code)
+
+
+def _validate_accuracy(
+    correct: int,
+    total: int,
+    accuracy: float,
+    label: str,
+) -> None:
+    expected = correct / total if total else 0
+    if not math.isclose(accuracy, expected, rel_tol=0, abs_tol=1e-12):
+        raise ValueError(f"{label} accuracy does not match its counts")
 
 
 class Card(BaseModel):
@@ -570,12 +582,46 @@ class BenchmarkCaseResult(BaseModel):
     error: str | None = None
     comparisons: list[BenchmarkFieldComparison] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_metrics(self) -> Self:
+        fields = [comparison.field for comparison in self.comparisons]
+        if len(fields) != len(set(fields)):
+            raise ValueError("Benchmark case comparison fields must be unique")
+        if self.evaluated_fields != len(self.comparisons):
+            raise ValueError("Benchmark case evaluated_fields does not match comparisons")
+        matched = sum(comparison.matched for comparison in self.comparisons)
+        if self.correct_fields != matched:
+            raise ValueError("Benchmark case correct_fields does not match comparisons")
+        _validate_accuracy(
+            self.correct_fields,
+            self.evaluated_fields,
+            self.accuracy,
+            "Benchmark case",
+        )
+        if self.status == "completed" and self.error is not None:
+            raise ValueError("Completed benchmark cases cannot contain an error")
+        if self.status == "error" and self.error is None:
+            raise ValueError("Failed benchmark cases require an error")
+        return self
+
 
 class BenchmarkFieldMetric(BaseModel):
     field: str
     correct: NonNegativeInteger
     total: NonNegativeInteger
     accuracy: UnitIntervalNumber
+
+    @model_validator(mode="after")
+    def validate_metrics(self) -> Self:
+        if self.correct > self.total:
+            raise ValueError("Benchmark field correct count cannot exceed total")
+        _validate_accuracy(
+            self.correct,
+            self.total,
+            self.accuracy,
+            "Benchmark field",
+        )
+        return self
 
 
 class BenchmarkReport(BaseModel):
@@ -591,6 +637,50 @@ class BenchmarkReport(BaseModel):
     accuracy: UnitIntervalNumber
     field_metrics: list[BenchmarkFieldMetric] = Field(default_factory=list)
     cases: list[BenchmarkCaseResult] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_metrics(self) -> Self:
+        case_ids = [case.job_id for case in self.cases]
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("Benchmark report case job IDs must be unique")
+        if self.total_cases != len(self.cases):
+            raise ValueError("Benchmark report total_cases does not match cases")
+        successful_cases = sum(case.status == "completed" for case in self.cases)
+        failed_cases = len(self.cases) - successful_cases
+        if self.successful_cases != successful_cases:
+            raise ValueError("Benchmark report successful_cases does not match cases")
+        if self.failed_cases != failed_cases:
+            raise ValueError("Benchmark report failed_cases does not match cases")
+        correct_fields = sum(case.correct_fields for case in self.cases)
+        evaluated_fields = sum(case.evaluated_fields for case in self.cases)
+        if self.correct_fields != correct_fields:
+            raise ValueError("Benchmark report correct_fields does not match cases")
+        if self.evaluated_fields != evaluated_fields:
+            raise ValueError("Benchmark report evaluated_fields does not match cases")
+        _validate_accuracy(
+            self.correct_fields,
+            self.evaluated_fields,
+            self.accuracy,
+            "Benchmark report",
+        )
+
+        field_counts: dict[str, list[int]] = {}
+        for case in self.cases:
+            for comparison in case.comparisons:
+                counts = field_counts.setdefault(comparison.field, [0, 0])
+                counts[1] += 1
+                if comparison.matched:
+                    counts[0] += 1
+        metric_fields = [metric.field for metric in self.field_metrics]
+        if len(metric_fields) != len(set(metric_fields)):
+            raise ValueError("Benchmark report field metrics must be unique")
+        if set(metric_fields) != set(field_counts):
+            raise ValueError("Benchmark report field metrics do not match comparisons")
+        for metric in self.field_metrics:
+            correct, total = field_counts[metric.field]
+            if metric.correct != correct or metric.total != total:
+                raise ValueError("Benchmark report field metric counts do not match comparisons")
+        return self
 
 
 class BenchmarkReportSummary(BaseModel):

@@ -123,7 +123,9 @@ portable user data.
 Restored benchmark reports also require strict JSON booleans, non-negative
 integer counters, and finite numeric accuracy/confidence values. Boolean and
 string coercion is rejected throughout, and floating-point values cannot be
-coerced into integer counters.
+coerced into integer counters. Report, case, and per-field totals must agree
+with their nested comparisons, including exact accuracy ratios and unique case
+and field identities.
 
 ## State Flow
 

@@ -724,6 +724,67 @@ def test_restore_rejects_coerced_benchmark_report_metrics_before_writing(
     assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 
 
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("total_cases", 2),
+        ("successful_cases", 0),
+        ("failed_cases", 1),
+        ("correct_fields", 10),
+        ("evaluated_fields", 12),
+        ("accuracy", 0.5),
+        ("cases.0.correct_fields", 10),
+        ("cases.0.evaluated_fields", 12),
+        ("cases.0.accuracy", 0.5),
+        ("cases.0.status", "error"),
+        ("cases.0.comparisons.1.field", "hero_cards"),
+        ("field_metrics.0.correct", 0),
+        ("field_metrics.1.field", "hero_cards"),
+    ],
+)
+def test_restore_rejects_inconsistent_benchmark_report_metrics_before_writing(
+    tmp_path: Path,
+    field_path: str,
+    value: object,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        report_name = manifest["benchmark_reports"][0]["report_file"]
+        report = json.loads(archive.read(report_name))
+    cursor: Any = report
+    path_parts = field_path.split(".")
+    for part in path_parts[:-1]:
+        cursor = cursor[int(part)] if isinstance(cursor, list) else cursor[part]
+    cursor[path_parts[-1]] = value
+    report_bytes = (json.dumps(report, indent=2) + "\n").encode()
+    manifest["benchmark_reports"][0]["report_sha256"] = sha256(
+        report_bytes
+    ).hexdigest()
+    modified = rebuild_archive(
+        export.content,
+        {
+            report_name: report_bytes,
+            "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("inconsistent-report.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "report" in response.json()["detail"]
+    assert "is invalid" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
 def test_restore_rejects_conflicting_existing_job_without_partial_import(
     tmp_path: Path,
 ) -> None:

@@ -693,6 +693,32 @@ def test_local_solver_rejects_coerced_wager_sizing(
         )
 
 
+@pytest.mark.parametrize("confidence_json", ["true", '"0.8"'])
+def test_local_solver_rejects_coerced_confidence(
+    tmp_path: Path,
+    confidence_json: str,
+) -> None:
+    solver_script = tmp_path / "solver.py"
+    payload = (
+        '{"action":"check","sizing":null,"confidence":'
+        f"{confidence_json},"
+        '"explanation":"Malformed recommendation"}'
+    )
+    solver_script.write_text(f"print({payload!r})\n")
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    with pytest.raises(ProviderError, match="invalid payload"):
+        provider.recommend(
+            RecommendationRequest(state=approved_state(), provider=provider.name)
+        )
+
+
 def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     request = httpx.Request("POST", "https://solver.example/recommend")
     captured: dict[str, object] = {}

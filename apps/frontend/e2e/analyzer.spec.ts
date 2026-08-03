@@ -4174,6 +4174,12 @@ const retryableRecommendationFailureCases = [
     controlPath: "/control/coerced-headline-sizing-next-recommendation",
     expectedError: "external_solver returned invalid payload",
   },
+  {
+    title: "rejects and retries coerced recommendation confidence",
+    filename: "coerced-recommendation-confidence",
+    controlPath: "/control/coerced-confidence-next-recommendation",
+    expectedError: "external_solver returned invalid payload",
+  },
 ];
 
 for (const failureCase of retryableRecommendationFailureCases) {

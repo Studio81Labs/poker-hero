@@ -18,6 +18,15 @@ ParserConfidence = Annotated[
     float,
     Field(allow_inf_nan=False, strict=True),
 ]
+NonNegativeFiniteNumber = Annotated[
+    float,
+    Field(ge=0, allow_inf_nan=False, strict=True),
+]
+PositiveFiniteNumber = Annotated[
+    float,
+    Field(gt=0, allow_inf_nan=False, strict=True),
+]
+PositiveInteger = Annotated[int, Field(ge=1, strict=True)]
 
 BENCHMARK_IMPORT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
@@ -89,39 +98,14 @@ class Card(BaseModel):
 class DetectedState(BaseModel):
     hero_cards: list[Card] = Field(default_factory=list)
     board_cards: list[Card] = Field(default_factory=list)
-    pot_size: float | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-        strict=True,
-    )
-    current_bet: float | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-        strict=True,
-    )
-    hero_stack: float | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-        strict=True,
-    )
-    effective_stack: float | None = Field(
-        default=None,
-        ge=0,
-        allow_inf_nan=False,
-        strict=True,
-    )
-    players_in_hand: int | None = Field(default=None, ge=1, strict=True)
+    pot_size: NonNegativeFiniteNumber | None = None
+    current_bet: NonNegativeFiniteNumber | None = None
+    hero_stack: NonNegativeFiniteNumber | None = None
+    effective_stack: NonNegativeFiniteNumber | None = None
+    players_in_hand: PositiveInteger | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
-    preflop_open_size: float | None = Field(
-        default=None,
-        gt=0,
-        allow_inf_nan=False,
-        strict=True,
-    )
+    preflop_open_size: PositiveFiniteNumber | None = None
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)
@@ -160,14 +144,14 @@ class ParserResult(BaseModel):
 class CanonicalState(BaseModel):
     hero_cards: list[Card] = Field(default_factory=list)
     board_cards: list[Card] = Field(default_factory=list)
-    pot_size: float | None = Field(default=None, ge=0)
-    current_bet: float | None = Field(default=None, ge=0)
-    hero_stack: float | None = Field(default=None, ge=0)
-    effective_stack: float | None = Field(default=None, ge=0)
-    players_in_hand: int | None = Field(default=None, ge=1)
+    pot_size: NonNegativeFiniteNumber | None = None
+    current_bet: NonNegativeFiniteNumber | None = None
+    hero_stack: NonNegativeFiniteNumber | None = None
+    effective_stack: NonNegativeFiniteNumber | None = None
+    players_in_hand: PositiveInteger | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
-    preflop_open_size: float | None = Field(default=None, gt=0)
+    preflop_open_size: PositiveFiniteNumber | None = None
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)

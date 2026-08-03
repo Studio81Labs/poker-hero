@@ -181,6 +181,36 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("pot_size", True),
+        ("pot_size", "12.5"),
+        ("players_in_hand", True),
+        ("players_in_hand", "3"),
+        ("players_in_hand", 3.0),
+    ],
+)
+def test_approval_rejects_coerced_numeric_state(
+    tmp_path: Path,
+    field_name: str,
+    value: object,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    response = approve_job(
+        client,
+        job_id,
+        {**APPROVED_STATE, field_name: value},
+    )
+
+    assert response.status_code == 422
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "parsed"
+    assert job.approved_state is None
+
+
 def test_upload_persists_client_request_identity(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"

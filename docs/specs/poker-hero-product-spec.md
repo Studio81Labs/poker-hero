@@ -258,7 +258,10 @@ frequencies.
    preflop open size must be a finite positive JSON number, and player count
    must be a positive JSON integer. Boolean and string coercion is invalid.
 5. The UI displays the selected screenshot beside editable detected fields.
-6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
+6. The user corrects and approves the state, or automation approves it when all
+   configured requirements pass. Corrected numeric fields follow the same
+   finite-number and integer contract as parser output; malformed approval
+   requests do not mutate the parsed job.
 7. Before revealing guidance, the user may lock their own action, optional
    finite positive numeric sizing, and optional low, medium, or high certainty
    as a training answer. Boolean and string sizing values are invalid.

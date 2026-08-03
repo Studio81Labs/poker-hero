@@ -848,6 +848,65 @@ def test_response_start_does_not_create_concurrent_receive_calls(
     assert access_events[0]["outcome"] == "failed"
 
 
+def test_preexisting_disconnect_is_seen_before_synchronous_final_send(
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    response_started = False
+
+    async def receive() -> dict[str, object]:
+        assert response_started
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, object]) -> None:
+        nonlocal response_started
+        if message["type"] == "http.response.start":
+            response_started = True
+
+    async def synchronous_response(
+        _scope: dict[str, object],
+        _receive,
+        send_response,
+    ) -> None:
+        await send_response({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+        })
+        await send_response({
+            "type": "http.response.body",
+            "body": b"complete",
+            "more_body": False,
+        })
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/jobs",
+        "raw_path": b"/api/jobs",
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(
+        api_module.RequestObservabilityMiddleware(synchronous_response)(
+            scope,
+            receive,
+            send,
+        )
+    )
+
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["status_code"] == 200
+    assert access_events[0]["outcome"] == "failed"
+
+
 def test_completed_response_is_logged_before_post_response_failure(
     access_log_records: list[logging.LogRecord],
 ) -> None:

@@ -350,6 +350,7 @@ class RequestObservabilityMiddleware:
                 if status_code >= 200:
                     discard_unread_request_frames = not request_body_consumed
                     start_receive_task()
+                    await asyncio.sleep(0)
                 return
 
             is_final_body = (

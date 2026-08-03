@@ -249,17 +249,6 @@ class RequestObservabilityMiddleware:
         scope.setdefault("state", {})["request_id"] = request_id
         method = scope.get("method", "")
         path = scope.get("path", "")
-        content_length = request_headers.get("content-length")
-        try:
-            has_content_length_body = (
-                content_length is not None and int(content_length) > 0
-            )
-        except ValueError:
-            has_content_length_body = True
-        request_body_consumed = not (
-            has_content_length_body
-            or request_headers.get("transfer-encoding") is not None
-        )
         started_at = perf_counter()
         status_code: int | None = None
         response_completed = False
@@ -295,7 +284,7 @@ class RequestObservabilityMiddleware:
                 receive_task = asyncio.create_task(pump_receive())
 
         async def receive_observed() -> Message:
-            nonlocal client_disconnected, request_body_consumed
+            nonlocal client_disconnected
             if receive_task is None:
                 message = await receive()
                 if message["type"] == "http.disconnect":
@@ -305,7 +294,6 @@ class RequestObservabilityMiddleware:
                     message["type"] == "http.request"
                     and not message.get("more_body", False)
                 ):
-                    request_body_consumed = True
                     start_receive_task()
                 return message
 
@@ -347,7 +335,7 @@ class RequestObservabilityMiddleware:
                 MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
                 await send(message)
                 status_code = message["status"]
-                if request_body_consumed:
+                if status_code >= 200:
                     start_receive_task()
                 return
 

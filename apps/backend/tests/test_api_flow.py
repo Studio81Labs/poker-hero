@@ -546,7 +546,7 @@ def test_client_disconnect_during_final_body_send_marks_response_failed(
     assert access_events[0]["outcome"] == "failed"
 
 
-def test_rejected_upload_does_not_start_receiving_request_body(
+def test_rejected_upload_monitors_receive_only_after_response_start(
     tmp_path: Path,
     access_log_records: list[logging.LogRecord],
 ) -> None:
@@ -555,12 +555,11 @@ def test_rejected_upload_does_not_start_receiving_request_body(
 
     async def receive() -> dict[str, object]:
         nonlocal receive_calls
+        assert sent_messages
+        assert sent_messages[0]["type"] == "http.response.start"
         receive_calls += 1
-        return {
-            "type": "http.request",
-            "body": b"unwanted upload body",
-            "more_body": False,
-        }
+        await asyncio.Event().wait()
+        raise AssertionError("receive monitor should be cancelled")
 
     async def send(message: dict[str, object]) -> None:
         sent_messages.append(message)
@@ -596,13 +595,72 @@ def test_rejected_upload_does_not_start_receiving_request_body(
 
     asyncio.run(app(scope, receive, send))
 
-    assert receive_calls == 0
+    assert receive_calls == 1
     assert sent_messages[0]["type"] == "http.response.start"
     assert sent_messages[0]["status"] == 401
     access_events = [json.loads(record.message) for record in access_log_records]
     assert len(access_events) == 1
     assert access_events[0]["status_code"] == 401
     assert access_events[0]["outcome"] == "completed"
+
+
+def test_disconnect_during_rejected_upload_response_is_logged_as_failed(
+    tmp_path: Path,
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    response_started = asyncio.Event()
+    final_send_started = asyncio.Event()
+    disconnect_delivered = asyncio.Event()
+
+    async def receive() -> dict[str, object]:
+        assert response_started.is_set()
+        await final_send_started.wait()
+        disconnect_delivered.set()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, object]) -> None:
+        if message["type"] == "http.response.start":
+            response_started.set()
+        elif (
+            message["type"] == "http.response.body"
+            and not message.get("more_body", False)
+        ):
+            final_send_started.set()
+            await disconnect_delivered.wait()
+
+    app = create_app(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="mock",
+            recommendation_provider="mock",
+            proxy_shared_secret="worker-to-backend-secret-value-123",
+        )
+    )
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/jobs",
+        "raw_path": b"/api/jobs",
+        "query_string": b"",
+        "headers": [
+            (b"content-length", b"1048576"),
+            (b"content-type", b"multipart/form-data; boundary=unread"),
+            (b"expect", b"100-continue"),
+        ],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(app(scope, receive, send))
+
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["status_code"] == 401
+    assert access_events[0]["outcome"] == "failed"
 
 
 def test_completed_response_is_logged_before_post_response_failure(

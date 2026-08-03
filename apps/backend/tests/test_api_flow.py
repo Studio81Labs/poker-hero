@@ -611,12 +611,27 @@ def test_disconnect_during_rejected_upload_response_is_logged_as_failed(
     response_started = asyncio.Event()
     final_send_started = asyncio.Event()
     disconnect_delivered = asyncio.Event()
+    received_messages = iter([
+        {
+            "type": "http.request",
+            "body": b"first unread upload frame",
+            "more_body": True,
+        },
+        {
+            "type": "http.request",
+            "body": b"second unread upload frame",
+            "more_body": True,
+        },
+        {"type": "http.disconnect"},
+    ])
 
     async def receive() -> dict[str, object]:
         assert response_started.is_set()
         await final_send_started.wait()
-        disconnect_delivered.set()
-        return {"type": "http.disconnect"}
+        message = next(received_messages)
+        if message["type"] == "http.disconnect":
+            disconnect_delivered.set()
+        return message
 
     async def send(message: dict[str, object]) -> None:
         if message["type"] == "http.response.start":

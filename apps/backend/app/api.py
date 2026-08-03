@@ -255,6 +255,8 @@ class RequestObservabilityMiddleware:
         final_body_started = False
         client_disconnected = False
         access_event_logged = False
+        request_body_consumed = False
+        discard_unread_request_frames = False
         receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
             maxsize=1
         )
@@ -270,6 +272,11 @@ class RequestObservabilityMiddleware:
                             client_disconnected = True
                         await receive_queue.put(message)
                         return
+                    if (
+                        discard_unread_request_frames
+                        and message["type"] == "http.request"
+                    ):
+                        continue
                     # One message of read-ahead observes disconnects without
                     # buffering an upload body in memory.
                     await receive_queue.put(message)
@@ -284,7 +291,7 @@ class RequestObservabilityMiddleware:
                 receive_task = asyncio.create_task(pump_receive())
 
         async def receive_observed() -> Message:
-            nonlocal client_disconnected
+            nonlocal client_disconnected, request_body_consumed
             if receive_task is None:
                 message = await receive()
                 if message["type"] == "http.disconnect":
@@ -294,6 +301,7 @@ class RequestObservabilityMiddleware:
                     message["type"] == "http.request"
                     and not message.get("more_body", False)
                 ):
+                    request_body_consumed = True
                     start_receive_task()
                 return message
 
@@ -329,13 +337,17 @@ class RequestObservabilityMiddleware:
             )
 
         async def send_observed(message: Message) -> None:
-            nonlocal final_body_started, response_completed, status_code
+            nonlocal discard_unread_request_frames, final_body_started
+            nonlocal response_completed, status_code
             message_type = message["type"]
             if message_type == "http.response.start":
                 MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
                 await send(message)
                 status_code = message["status"]
                 if status_code >= 200:
+                    discard_unread_request_frames = (
+                        status_code >= 400 and not request_body_consumed
+                    )
                     start_receive_task()
                 return
 

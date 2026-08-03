@@ -51,7 +51,9 @@ valid caller-supplied ID or generates one, and emits a single-line JSON access
 event containing that ID, the method, path, status, and request duration. Use
 the ID to correlate a browser or Worker response with Coolify container logs.
 Query strings and request bodies are not logged. Successful `/api/health`
-probes are logged at debug level to keep routine platform checks quiet.
+probes are logged at debug level to keep routine platform checks quiet. The
+event is emitted after the response body completes and identifies interrupted
+or failed streams with `"outcome":"failed"`.
 
 ## Frontend On Cloudflare Workers
 

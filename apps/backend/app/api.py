@@ -30,6 +30,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.application_backup import (
     ApplicationBackupError,
@@ -146,12 +148,14 @@ def _request_log_message(
     path: str,
     status_code: int,
     duration_ms: float,
+    outcome: str,
 ) -> str:
     return json.dumps(
         {
             "duration_ms": round(duration_ms, 3),
             "event": "http_request",
             "method": method,
+            "outcome": outcome,
             "path": path,
             "request_id": request_id,
             "status_code": status_code,
@@ -159,6 +163,95 @@ def _request_log_message(
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def _log_http_request(
+    *,
+    request_id: str,
+    method: str,
+    path: str,
+    status_code: int,
+    duration_ms: float,
+    outcome: str,
+) -> None:
+    message = _request_log_message(
+        request_id=request_id,
+        method=method,
+        path=path,
+        status_code=status_code,
+        duration_ms=duration_ms,
+        outcome=outcome,
+    )
+    if outcome == "failed" or status_code >= 500:
+        LOGGER.error(message)
+    elif status_code >= 400:
+        LOGGER.warning(message)
+    elif path == "/api/health":
+        LOGGER.debug(message)
+    else:
+        LOGGER.info(message)
+
+
+class RequestObservabilityMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = _request_id(Headers(scope=scope).get(REQUEST_ID_HEADER))
+        scope.setdefault("state", {})["request_id"] = request_id
+        method = scope.get("method", "")
+        path = scope.get("path", "")
+        started_at = perf_counter()
+        status_code: int | None = None
+        response_completed = False
+
+        async def send_observed(message: Message) -> None:
+            nonlocal response_completed, status_code
+            message_type = message["type"]
+            if message_type == "http.response.start":
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
+                await send(message)
+                status_code = message["status"]
+                return
+
+            await send(message)
+            if (
+                message_type == "http.response.body"
+                and not message.get("more_body", False)
+            ) or message_type == "http.response.pathsend":
+                response_completed = True
+
+        try:
+            await self.app(scope, receive, send_observed)
+        except Exception:
+            _log_http_request(
+                request_id=request_id,
+                method=method,
+                path=path,
+                status_code=status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+                duration_ms=(perf_counter() - started_at) * 1000,
+                outcome="failed",
+            )
+            raise
+
+        outcome = "completed" if response_completed else "failed"
+        _log_http_request(
+            request_id=request_id,
+            method=method,
+            path=path,
+            status_code=status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
+            duration_ms=(perf_counter() - started_at) * 1000,
+            outcome=outcome,
+        )
 
 
 def _json_safe_validation_content(value: Any) -> Any:
@@ -191,7 +284,7 @@ def recover_interrupted_jobs(store: FileJobStore) -> None:
             store.save(job)
 
 
-def create_app(settings: Settings | None = None) -> CORSMiddleware:
+def create_app(settings: Settings | None = None) -> RequestObservabilityMiddleware:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
     recover_interrupted_jobs(store)
@@ -430,43 +523,6 @@ def create_app(settings: Settings | None = None) -> CORSMiddleware:
                     content={"detail": "Unauthorized"},
                 )
         return await call_next(request)
-
-    @app.middleware("http")
-    async def observe_http_request(request: Request, call_next):
-        request_id = _request_id(request.headers.get(REQUEST_ID_HEADER))
-        request.state.request_id = request_id
-        started_at = perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
-            LOGGER.error(
-                _request_log_message(
-                    request_id=request_id,
-                    method=request.method,
-                    path=request.url.path,
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    duration_ms=(perf_counter() - started_at) * 1000,
-                )
-            )
-            raise
-
-        response.headers[REQUEST_ID_HEADER] = request_id
-        message = _request_log_message(
-            request_id=request_id,
-            method=request.method,
-            path=request.url.path,
-            status_code=response.status_code,
-            duration_ms=(perf_counter() - started_at) * 1000,
-        )
-        if request.url.path == "/api/health" and response.status_code < 400:
-            LOGGER.debug(message)
-        elif response.status_code >= 500:
-            LOGGER.error(message)
-        elif response.status_code >= 400:
-            LOGGER.warning(message)
-        else:
-            LOGGER.info(message)
-        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -1234,13 +1290,15 @@ def create_app(settings: Settings | None = None) -> CORSMiddleware:
                 ) from exc
             return benchmark_store.save(report)
 
-    return CORSMiddleware(
-        app,
-        allow_origins=active_settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
+    return RequestObservabilityMiddleware(
+        CORSMiddleware(
+            app,
+            allow_origins=active_settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=[REQUEST_ID_HEADER],
+        )
     )
 
 

@@ -1,4 +1,5 @@
-from contextlib import ExitStack
+import asyncio
+from contextlib import ExitStack, suppress
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
@@ -235,9 +236,40 @@ class RequestObservabilityMiddleware:
         started_at = perf_counter()
         status_code: int | None = None
         response_completed = False
+        final_body_started = False
+        client_disconnected = False
+        receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
+            maxsize=1
+        )
+
+        async def pump_receive() -> None:
+            nonlocal client_disconnected
+            try:
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        if not final_body_started:
+                            client_disconnected = True
+                        await receive_queue.put(message)
+                        return
+                    # One message of read-ahead observes disconnects without
+                    # buffering an upload body in memory.
+                    await receive_queue.put(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                await receive_queue.put(exc)
+
+        async def receive_observed() -> Message:
+            message = await receive_queue.get()
+            if isinstance(message, Exception):
+                raise message
+            return message
+
+        receive_task = asyncio.create_task(pump_receive())
 
         async def send_observed(message: Message) -> None:
-            nonlocal response_completed, status_code
+            nonlocal final_body_started, response_completed, status_code
             message_type = message["type"]
             if message_type == "http.response.start":
                 MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
@@ -245,16 +277,25 @@ class RequestObservabilityMiddleware:
                 status_code = message["status"]
                 return
 
-            await send(message)
-            if (
+            is_final_body = (
                 message_type == "http.response.body"
                 and not message.get("more_body", False)
-            ) or message_type == "http.response.pathsend":
+            ) or message_type == "http.response.pathsend"
+            if is_final_body:
+                final_body_started = True
+            await send(message)
+            if is_final_body:
                 response_completed = True
 
+        async def stop_receive_task() -> None:
+            receive_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await receive_task
+
         try:
-            await self.app(scope, receive, send_observed)
-        except Exception:
+            await self.app(scope, receive_observed, send_observed)
+        except BaseException:
+            await stop_receive_task()
             _log_http_request(
                 request_id=request_id,
                 method=method,
@@ -265,7 +306,12 @@ class RequestObservabilityMiddleware:
             )
             raise
 
-        outcome = "completed" if response_completed else "failed"
+        await stop_receive_task()
+        outcome = (
+            "completed"
+            if response_completed and not client_disconnected
+            else "failed"
+        )
         _log_http_request(
             request_id=request_id,
             method=method,

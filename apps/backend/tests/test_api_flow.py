@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -291,6 +292,77 @@ def test_stream_failure_is_logged_after_response_start(
     ]
     assert len(access_events) == 1
     assert access_events[0]["request_id"] == "failed-stream-123"
+    assert access_events[0]["status_code"] == 200
+    assert access_events[0]["outcome"] == "failed"
+
+
+def test_client_disconnect_marks_file_response_failed(
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    received_messages = iter([
+        {"type": "http.request", "body": b"", "more_body": False},
+        {"type": "http.disconnect"},
+    ])
+    sent_messages: list[dict[str, object]] = []
+
+    async def receive() -> dict[str, object]:
+        await asyncio.sleep(0)
+        return next(received_messages)
+
+    async def send(message: dict[str, object]) -> None:
+        sent_messages.append(message)
+        await asyncio.sleep(0)
+
+    async def file_response(
+        _scope: dict[str, object],
+        _receive,
+        send_response,
+    ) -> None:
+        await asyncio.sleep(0)
+        await send_response({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+        })
+        await send_response({
+            "type": "http.response.body",
+            "body": b"partial",
+            "more_body": True,
+        })
+        await asyncio.sleep(0)
+        await send_response({
+            "type": "http.response.body",
+            "body": b"complete",
+            "more_body": False,
+        })
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/jobs/example/image",
+        "raw_path": b"/api/jobs/example/image",
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(
+        api_module.RequestObservabilityMiddleware(file_response)(
+            scope,
+            receive,
+            send,
+        )
+    )
+
+    response_headers = dict(sent_messages[0]["headers"])
+    assert b"x-request-id" in response_headers
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
     assert access_events[0]["status_code"] == 200
     assert access_events[0]["outcome"] == "failed"
 

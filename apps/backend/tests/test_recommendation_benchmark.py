@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from app.config import Settings
 from app.models import Card, RecommendationRequest, RecommendationResult
+from app.providers.base import ProviderConfigurationError
 from app.recommendation_benchmark import (
     MAX_RECOMMENDATION_BENCHMARK_BYTES,
     RECOMMENDATION_BENCHMARK_SCHEMA,
@@ -600,6 +601,31 @@ def test_cli_reports_unknown_provider_as_configuration_error(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "Unknown recommendation provider: unknown" in captured.err
+
+
+def test_cli_reports_deferred_provider_configuration_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+    provider = SequenceProvider(
+        [ProviderConfigurationError("provider URL is required")]
+    )
+
+    exit_code = main(
+        [str(dataset_path)],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=provider,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "provider URL is required" in captured.err
 
 
 def test_benchmark_file_uses_configured_provider(tmp_path: Path) -> None:

@@ -300,11 +300,11 @@ def benchmark_recommendation_file(
     dataset = load_recommendation_benchmark_dataset(path)
     try:
         active_provider = provider or build_provider(settings)
+        return run_recommendation_benchmark(dataset, active_provider)
     except ProviderConfigurationError as exc:
         raise RecommendationBenchmarkError(
             f"Recommendation provider configuration error: {exc}"
         ) from exc
-    return run_recommendation_benchmark(dataset, active_provider)
 
 
 def format_recommendation_benchmark_report(
@@ -374,6 +374,8 @@ def _run_case(
         result = provider.recommend(
             RecommendationRequest(state=case.state, provider=provider.name)
         )
+    except ProviderConfigurationError:
+        raise
     except Exception as exc:
         return RecommendationBenchmarkCaseResult(
             case_id=case.id,

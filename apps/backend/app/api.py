@@ -230,10 +230,22 @@ class RequestObservabilityMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = _request_id(Headers(scope=scope).get(REQUEST_ID_HEADER))
+        request_headers = Headers(scope=scope)
+        request_id = _request_id(request_headers.get(REQUEST_ID_HEADER))
         scope.setdefault("state", {})["request_id"] = request_id
         method = scope.get("method", "")
         path = scope.get("path", "")
+        content_length = request_headers.get("content-length")
+        try:
+            has_content_length_body = (
+                content_length is not None and int(content_length) > 0
+            )
+        except ValueError:
+            has_content_length_body = True
+        request_body_consumed = not (
+            has_content_length_body
+            or request_headers.get("transfer-encoding") is not None
+        )
         started_at = perf_counter()
         status_code: int | None = None
         response_completed = False
@@ -243,6 +255,7 @@ class RequestObservabilityMiddleware:
         receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
             maxsize=1
         )
+        receive_task: asyncio.Task[None] | None = None
 
         async def pump_receive() -> None:
             nonlocal client_disconnected
@@ -262,15 +275,34 @@ class RequestObservabilityMiddleware:
             except Exception as exc:
                 await receive_queue.put(exc)
 
+        def start_receive_task() -> None:
+            nonlocal receive_task
+            if receive_task is None:
+                receive_task = asyncio.create_task(pump_receive())
+
         async def receive_observed() -> Message:
+            nonlocal client_disconnected, request_body_consumed
+            if receive_task is None:
+                message = await receive()
+                if message["type"] == "http.disconnect":
+                    if not final_body_started:
+                        client_disconnected = True
+                elif (
+                    message["type"] == "http.request"
+                    and not message.get("more_body", False)
+                ):
+                    request_body_consumed = True
+                    start_receive_task()
+                return message
+
             message = await receive_queue.get()
             if isinstance(message, Exception):
                 raise message
             return message
 
-        receive_task = asyncio.create_task(pump_receive())
-
         async def stop_receive_task() -> None:
+            if receive_task is None:
+                return
             receive_task.cancel()
             with suppress(asyncio.CancelledError):
                 await receive_task
@@ -300,6 +332,8 @@ class RequestObservabilityMiddleware:
                 MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
                 await send(message)
                 status_code = message["status"]
+                if request_body_consumed:
+                    start_receive_task()
                 return
 
             is_final_body = (

@@ -504,6 +504,65 @@ def test_client_disconnect_during_final_body_send_marks_response_failed(
     assert access_events[0]["outcome"] == "failed"
 
 
+def test_rejected_upload_does_not_start_receiving_request_body(
+    tmp_path: Path,
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    receive_calls = 0
+    sent_messages: list[dict[str, object]] = []
+
+    async def receive() -> dict[str, object]:
+        nonlocal receive_calls
+        receive_calls += 1
+        return {
+            "type": "http.request",
+            "body": b"unwanted upload body",
+            "more_body": False,
+        }
+
+    async def send(message: dict[str, object]) -> None:
+        sent_messages.append(message)
+        await asyncio.sleep(0)
+
+    app = create_app(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="mock",
+            recommendation_provider="mock",
+            proxy_shared_secret="worker-to-backend-secret-value-123",
+        )
+    )
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/jobs",
+        "raw_path": b"/api/jobs",
+        "query_string": b"",
+        "headers": [
+            (b"content-length", b"1048576"),
+            (b"content-type", b"multipart/form-data; boundary=unread"),
+            (b"expect", b"100-continue"),
+        ],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(app(scope, receive, send))
+
+    assert receive_calls == 0
+    assert sent_messages[0]["type"] == "http.response.start"
+    assert sent_messages[0]["status"] == 401
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["status_code"] == 401
+    assert access_events[0]["outcome"] == "completed"
+
+
 def test_completed_response_is_logged_before_post_response_failure(
     access_log_records: list[logging.LogRecord],
 ) -> None:

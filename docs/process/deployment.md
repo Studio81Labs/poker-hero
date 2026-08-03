@@ -46,6 +46,19 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
 curl --fail https://<worker-origin>/api/jobs?limit=1
 ```
 
+Every backend API response includes an `X-Request-ID`. The backend preserves a
+valid caller-supplied ID or generates one, and emits a single-line JSON access
+event containing that ID, the method, path, status, and request duration. Use
+the ID to correlate a browser or Worker response with Coolify container logs.
+Query strings and request bodies are not logged. Successful `/api/health`
+probes are logged at debug level to keep routine platform checks quiet. The
+event is emitted after the response body completes and identifies interrupted
+or failed streams with `"outcome":"failed"`. Each container log line is a
+standalone JSON object with its severity in the `level` field, ready for a JSON
+log collector without stripping a Uvicorn prefix.
+Set `POKER_ACCESS_LOG_LEVEL=DEBUG` when health-probe events are needed during
+deployment diagnosis; the default `INFO` threshold suppresses them.
+
 ## Frontend On Cloudflare Workers
 
 The `Frontend Deploy` workflow builds `apps/frontend` and deploys the Worker on

@@ -1,12 +1,17 @@
-from contextlib import ExitStack
+import asyncio
+from contextlib import ExitStack, suppress
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
+import json
+import logging
 import math
 import re
 from secrets import compare_digest
 from threading import Lock, RLock
+from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from fastapi import (
     BackgroundTasks,
@@ -26,6 +31,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.application_backup import (
     ApplicationBackupError,
@@ -124,6 +131,255 @@ HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
+REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+ACCESS_LOG_HANDLER_NAME = "poker-json-access"
+BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
+ACCESS_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
+
+
+def _build_access_logger() -> logging.Logger:
+    logger = logging.getLogger("poker.access")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    if not any(
+        handler.get_name() == ACCESS_LOG_HANDLER_NAME
+        for handler in logger.handlers
+    ):
+        handler = logging.StreamHandler()
+        handler.set_name(ACCESS_LOG_HANDLER_NAME)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+    return logger
+
+
+LOGGER = _build_access_logger()
+
+
+def _request_id(value: str | None) -> str:
+    if value is not None and REQUEST_ID_PATTERN.fullmatch(value) is not None:
+        return value
+    return uuid4().hex
+
+
+def _request_log_message(
+    *,
+    request_id: str,
+    method: str,
+    path: str,
+    status_code: int,
+    duration_ms: float,
+    outcome: str,
+    level: str,
+) -> str:
+    return json.dumps(
+        {
+            "duration_ms": round(duration_ms, 3),
+            "event": "http_request",
+            "level": level,
+            "method": method,
+            "outcome": outcome,
+            "path": path,
+            "request_id": request_id,
+            "status_code": status_code,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _log_http_request(
+    *,
+    request_id: str,
+    method: str,
+    path: str,
+    status_code: int,
+    duration_ms: float,
+    outcome: str,
+    minimum_log_level: int,
+) -> None:
+    if outcome == "failed" or status_code >= 500:
+        log_level = logging.ERROR
+    elif status_code >= 400:
+        log_level = logging.WARNING
+    elif path == "/api/health":
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+    if log_level < minimum_log_level:
+        return
+    message = _request_log_message(
+        request_id=request_id,
+        method=method,
+        path=path,
+        status_code=status_code,
+        duration_ms=duration_ms,
+        outcome=outcome,
+        level=logging.getLevelName(log_level).lower(),
+    )
+    LOGGER.log(log_level, message)
+
+
+class RequestObservabilityMiddleware:
+    def __init__(
+        self,
+        app: ASGIApp,
+        access_log_level: int = logging.INFO,
+    ) -> None:
+        self.app = app
+        self.access_log_level = access_log_level
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_headers = Headers(scope=scope)
+        request_id = _request_id(request_headers.get(REQUEST_ID_HEADER))
+        scope.setdefault("state", {})["request_id"] = request_id
+        method = scope.get("method", "")
+        path = scope.get("path", "")
+        started_at = perf_counter()
+        status_code: int | None = None
+        response_completed = False
+        final_body_started = False
+        client_disconnected = False
+        access_event_logged = False
+        request_body_consumed = False
+        discard_unread_request_frames = False
+        receive_lock = asyncio.Lock()
+        receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
+            maxsize=1
+        )
+        receive_task: asyncio.Task[None] | None = None
+
+        async def pump_receive() -> None:
+            nonlocal client_disconnected
+            try:
+                while True:
+                    async with receive_lock:
+                        message = await receive()
+                    if message["type"] == "http.disconnect":
+                        if not final_body_started:
+                            client_disconnected = True
+                        await receive_queue.put(message)
+                        return
+                    if (
+                        discard_unread_request_frames
+                        and message["type"] == "http.request"
+                    ):
+                        continue
+                    # One message of read-ahead observes disconnects without
+                    # buffering an upload body in memory.
+                    await receive_queue.put(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                await receive_queue.put(exc)
+
+        def start_receive_task() -> None:
+            nonlocal receive_task
+            if receive_task is None:
+                receive_task = asyncio.create_task(pump_receive())
+
+        async def receive_observed() -> Message:
+            nonlocal client_disconnected, request_body_consumed
+            if receive_task is None:
+                async with receive_lock:
+                    message = await receive()
+                if message["type"] == "http.disconnect":
+                    if not final_body_started:
+                        client_disconnected = True
+                elif (
+                    message["type"] == "http.request"
+                    and not message.get("more_body", False)
+                ):
+                    request_body_consumed = True
+                    start_receive_task()
+                return message
+
+            message = await receive_queue.get()
+            if isinstance(message, Exception):
+                raise message
+            return message
+
+        async def stop_receive_task() -> None:
+            if receive_task is None:
+                return
+            receive_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await receive_task
+
+        def log_access_event(outcome: str) -> None:
+            nonlocal access_event_logged
+            if access_event_logged:
+                return
+            access_event_logged = True
+            _log_http_request(
+                request_id=request_id,
+                method=method,
+                path=path,
+                status_code=(
+                    status_code
+                    if status_code is not None
+                    else status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                duration_ms=(perf_counter() - started_at) * 1000,
+                outcome=outcome,
+                minimum_log_level=self.access_log_level,
+            )
+
+        async def send_observed(message: Message) -> None:
+            nonlocal discard_unread_request_frames, final_body_started
+            nonlocal response_completed, status_code
+            message_type = message["type"]
+            if message_type == "http.response.start":
+                MutableHeaders(scope=message)[REQUEST_ID_HEADER] = request_id
+                await send(message)
+                status_code = message["status"]
+                if status_code >= 200:
+                    discard_unread_request_frames = not request_body_consumed
+                    start_receive_task()
+                    await asyncio.sleep(0)
+                return
+
+            is_final_body = (
+                message_type == "http.response.body"
+                and not message.get("more_body", False)
+            ) or message_type == "http.response.pathsend"
+            await send(message)
+            if is_final_body:
+                final_body_started = True
+                response_completed = True
+                if scope["state"].get(BACKGROUND_TASK_STATE_KEY, False):
+                    await stop_receive_task()
+                    log_access_event(
+                        "failed" if client_disconnected else "completed"
+                    )
+
+        try:
+            await self.app(scope, receive_observed, send_observed)
+        except BaseException:
+            await stop_receive_task()
+            log_access_event("failed")
+            raise
+
+        await stop_receive_task()
+        log_access_event(
+            "completed"
+            if response_completed and not client_disconnected
+            else "failed"
+        )
 
 
 def _json_safe_validation_content(value: Any) -> Any:
@@ -156,7 +412,7 @@ def recover_interrupted_jobs(store: FileJobStore) -> None:
             store.save(job)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> RequestObservabilityMiddleware:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
     recover_interrupted_jobs(store)
@@ -354,6 +610,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Poker Training Analyzer API")
 
+    @app.exception_handler(Exception)
+    async def unexpected_exception_handler(
+        request: Request,
+        _exc: Exception,
+    ) -> JSONResponse:
+        request_id = getattr(request.state, "request_id", None) or _request_id(None)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal Server Error"},
+            headers={REQUEST_ID_HEADER: request_id},
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_exception_handler(
         _request: Request,
@@ -364,14 +632,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=422,
             content=_json_safe_validation_content(content),
         )
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=active_settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 
     @app.middleware("http")
     async def require_proxy_shared_secret(request, call_next):
@@ -1112,6 +1372,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def get_benchmark_dataset_import(
         request_id: str,
+        request: Request,
         background_tasks: BackgroundTasks,
     ) -> BenchmarkDatasetImportReceipt:
         try:
@@ -1122,6 +1383,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 detail="Benchmark dataset import not found",
             ) from exc
         if receipt.status == "pending" and not dataset_import_lock.locked():
+            setattr(request.state, BACKGROUND_TASK_STATE_KEY, True)
             background_tasks.add_task(resume_benchmark_import, request_id)
         return receipt
 
@@ -1158,7 +1420,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ) from exc
             return benchmark_store.save(report)
 
-    return app
+    return RequestObservabilityMiddleware(
+        CORSMiddleware(
+            app,
+            allow_origins=active_settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+            expose_headers=[REQUEST_ID_HEADER],
+        ),
+        access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
+    )
 
 
 def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:

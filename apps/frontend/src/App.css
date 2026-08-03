@@ -1131,6 +1131,84 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.postflop-history-field {
+  background: var(--surface);
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 8px 9px;
+}
+
+.postflop-history-header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.postflop-history-header strong {
+  color: #605d5d;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.postflop-history-add {
+  align-items: center;
+  display: inline-flex;
+  font-size: 9px;
+  gap: 4px;
+  min-height: 26px;
+  padding: 3px 7px;
+}
+
+.postflop-history-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.postflop-history-row {
+  display: grid;
+  gap: 5px;
+  grid-template-columns: 20px minmax(54px, 0.7fr) minmax(74px, 1fr) minmax(55px, 0.75fr) 28px;
+}
+
+.postflop-history-row > span {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 9px;
+  font-weight: 800;
+  justify-content: center;
+}
+
+.postflop-history-row input,
+.postflop-history-row select {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+  font-size: 10px;
+  height: 28px;
+  min-width: 0;
+  padding: 3px 5px;
+  width: 100%;
+}
+
+.postflop-history-row button {
+  align-items: center;
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.postflop-history-field > p {
+  color: var(--muted);
+  font-size: 10px;
+  margin: 7px 0 0;
+}
+
 .confidence-track {
   background: #dcd8d8;
   display: block;

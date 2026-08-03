@@ -22,9 +22,12 @@ position reach the postflop engine. Canonical `dealer` positions map to IP
 because they identify the button; non-button seat labels remain unsupported
 without opponent position. Facing-bet states also require
 hero's visible stack so the adapter can reconstruct whether hero or the bettor
-was covered before the wager, plus an explicit classification that the facing
-action is a first bet. Raised pots remain on fallback until full action history
-is represented in canonical state. The adapter models the current decision
+was covered before the wager, plus an explicit classification of the facing
+action. Raised heads-up decisions require the opponent's visible stack and
+ordered OOP/IP actions from the start of the current street. Wager amounts are
+totals committed on the street, allowing the adapter to restore the starting
+pot and stacks, inject exact observed sizes, and replay the history. The adapter
+models the current decision
 from pot, call amount, position, visible stacks, configured ranges, and a
 constrained action tree. It records those assumptions, candidate frequencies,
 exploitability, memory estimate, and modeled history in recommendation metadata.

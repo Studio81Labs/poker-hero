@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.models import CanonicalState, Card, RecommendationRequest
+from app.models import CanonicalState, Card, PostflopAction, RecommendationRequest
 from app.providers.base import (
     ProviderConfigurationError,
     ProviderError,
@@ -37,6 +37,22 @@ def heads_up_postflop_state() -> CanonicalState:
     state = approved_state().model_copy(deep=True)
     state.players_in_hand = 2
     state.hero_position = "IP"
+    return state
+
+
+def raised_postflop_state() -> CanonicalState:
+    state = heads_up_postflop_state()
+    state.pot_size = 19.0
+    state.current_bet = 5.0
+    state.hero_stack = 98.0
+    state.opponent_stack = 93.0
+    state.effective_stack = 93.0
+    state.hero_position = "OOP"
+    state.facing_action = "raise"
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0),
+        PostflopAction(actor="ip", action="raise", amount=7.0),
+    ]
     return state
 
 
@@ -399,6 +415,42 @@ def test_postflop_solver_routes_dealer_as_ip(tmp_path: Path) -> None:
     assert "fallback_reason" not in result.raw
 
 
+def test_postflop_solver_routes_complete_raised_history(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "state = payload['state']\n"
+        "assert state['opponent_stack'] == 93.0\n"
+        "assert state['postflop_action_history'] == [\n"
+        "    {'actor': 'oop', 'action': 'bet', 'amount': 2.0},\n"
+        "    {'actor': 'ip', 'action': 'raise', 'amount': 7.0},\n"
+        "]\n"
+        "print(json.dumps({"
+        "'action': 'call', "
+        "'sizing': None, "
+        "'confidence': 0.86, "
+        "'explanation': 'Raised tree response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=raised_postflop_state(), provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text("import sys\nprint('tree too large', file=sys.stderr)\nsys.exit(8)\n")
@@ -487,12 +539,9 @@ def test_postflop_solver_requires_hero_stack_when_facing_bet(tmp_path: Path) -> 
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
-@pytest.mark.parametrize("facing_action", [None, "raise"])
-def test_postflop_solver_rejects_unknown_or_raised_action_history(
-    tmp_path: Path, facing_action: str | None
-) -> None:
+def test_postflop_solver_rejects_unknown_facing_action(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
-    state.facing_action = facing_action
+    state.facing_action = None
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
@@ -501,7 +550,52 @@ def test_postflop_solver_rejects_unknown_or_raised_action_history(
         )
     )
 
-    with pytest.raises(ProviderInputError, match="raises require full action history"):
+    with pytest.raises(ProviderInputError, match="identify the outstanding wager"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_rejects_facing_action_without_call_amount(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="requires a positive amount to call"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_rejects_raise_without_structured_history(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.facing_action = "raise"
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="requires structured action history"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_rejects_history_that_does_not_end_at_hero(tmp_path: Path) -> None:
+    state = raised_postflop_state()
+    state.hero_position = "IP"
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="does not end at the hero decision"):
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 

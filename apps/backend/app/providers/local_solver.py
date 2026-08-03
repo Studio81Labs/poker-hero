@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -9,7 +10,12 @@ from typing import Literal
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.models import CanonicalState, RecommendationRequest, RecommendationResult
+from app.models import (
+    CanonicalState,
+    FacingAction,
+    RecommendationRequest,
+    RecommendationResult,
+)
 from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
 from app.solvers.preflop_context import supports_preflop_chart
 
@@ -33,6 +39,8 @@ class LocalSolverProvider:
         required_fields.extend(["board_cards", "hero_position"])
         if (state.current_bet or 0) > 0:
             required_fields.extend(["facing_action", "hero_stack"])
+        if state.facing_action == "raise":
+            required_fields.extend(["opponent_stack", "postflop_action_history"])
         return required_fields
 
     def recommend(self, request: RecommendationRequest) -> RecommendationResult:
@@ -176,8 +184,9 @@ class LocalSolverProvider:
             return "the open-source engine supports heads-up postflop spots only"
         if _postflop_position(state.hero_position) is None:
             return "hero position must identify IP or OOP"
-        if (state.current_bet or 0) > 0 and state.facing_action != "bet":
-            return "facing action must identify a single bet; raises require full action history"
+        history_reason = _postflop_history_unsupported_reason(state)
+        if history_reason is not None:
+            return history_reason
         if (state.current_bet or 0) > 0 and (state.hero_stack is None or state.hero_stack <= 0):
             return "hero stack is required to reconstruct a facing-bet postflop tree"
         return None
@@ -231,4 +240,80 @@ def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
         return "ip"
     if normalized in {"oop", "out of position"}:
         return "oop"
+    return None
+
+
+def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
+    current_bet = state.current_bet or 0
+    history = state.postflop_action_history
+    if current_bet <= 0 and state.facing_action is not None:
+        return "facing action requires a positive amount to call"
+    if not history:
+        if current_bet > 0 and state.facing_action == "raise":
+            return "a raised postflop spot requires structured action history"
+        if current_bet > 0 and state.facing_action != "bet":
+            return "facing action must identify the outstanding wager"
+        return None
+
+    hero_actor = _postflop_position(state.hero_position)
+    if hero_actor is None:
+        return "hero position must identify IP or OOP"
+    if state.hero_stack is None or state.hero_stack <= 0:
+        return "hero stack is required for structured postflop action history"
+    if state.opponent_stack is None:
+        return "opponent stack is required for structured postflop action history"
+
+    commitments = {"oop": 0.0, "ip": 0.0}
+    next_actor: Literal["oop", "ip"] = "oop"
+    last_aggression: FacingAction | None = None
+    for index, item in enumerate(history, start=1):
+        if item.actor != next_actor:
+            return f"postflop action {index} must be by {next_actor.upper()}"
+        opponent: Literal["oop", "ip"] = "ip" if item.actor == "oop" else "oop"
+        if item.action == "check":
+            if index != 1:
+                return "only the opening OOP action can be a check in current-street history"
+            if not math.isclose(
+                commitments[item.actor], commitments[opponent], abs_tol=0.01
+            ):
+                return f"postflop action {index} cannot check while facing a wager"
+        elif item.action == "bet":
+            if not math.isclose(
+                commitments[item.actor], commitments[opponent], abs_tol=0.01
+            ):
+                return f"postflop action {index} must be a raise, not a bet"
+            commitments[item.actor] = item.amount or 0
+            last_aggression = "bet"
+        else:
+            if commitments[item.actor] >= commitments[opponent]:
+                return f"postflop action {index} cannot raise without facing a wager"
+            if (item.amount or 0) <= commitments[opponent]:
+                return f"postflop action {index} raise-to amount must exceed the previous wager"
+            commitments[item.actor] = item.amount or 0
+            last_aggression = "raise"
+        next_actor = opponent
+
+    if next_actor != hero_actor:
+        return "structured postflop action history does not end at the hero decision"
+
+    opponent_actor = "ip" if hero_actor == "oop" else "oop"
+    expected_call = commitments[opponent_actor] - commitments[hero_actor]
+    if expected_call < -0.01:
+        return "structured postflop action history ends with the opponent facing a wager"
+    expected_call = max(expected_call, 0)
+    if not math.isclose(expected_call, current_bet, abs_tol=0.01):
+        return (
+            "current bet does not match the amount to call implied by structured "
+            "postflop action history"
+        )
+    expected_facing_action = last_aggression if expected_call > 0 else None
+    if state.facing_action != expected_facing_action:
+        return "facing action does not match structured postflop action history"
+
+    if state.pot_size is not None and state.pot_size <= sum(commitments.values()):
+        return "pot size must exceed the wagers in structured postflop action history"
+    if state.effective_stack is not None:
+        visible_effective = min(state.hero_stack, state.opponent_stack)
+        if not math.isclose(state.effective_stack, visible_effective, abs_tol=0.01):
+            return "effective stack does not match the visible hero and opponent stacks"
     return None

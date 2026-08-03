@@ -7,7 +7,10 @@ revision `9d1509fe5077d019825f833eed04b16d342dfda1`.
 
 It supports heads-up flop, turn, and river decisions with explicit IP/OOP
 position. Canonical `dealer` positions are equivalent to the button and use the
-IP route. Poker Hero routes supported preflop states to its position-aware
+IP route. A raised decision requires ordered current-street OOP/IP actions and
+both visible player stacks. Bet and raise amounts are total chips committed by
+that player on the street; contradictory or incomplete histories are rejected
+before solving. Poker Hero routes supported preflop states to its position-aware
 training chart, and routes ambiguous positions, ambiguous preflop, multiway
 postflop, incomplete, and resource-limited spots to the bundled range/EV engine
 when fallback is enabled.

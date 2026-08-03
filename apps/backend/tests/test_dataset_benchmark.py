@@ -1,6 +1,8 @@
 import base64
+from io import BytesIO
 import json
 from pathlib import Path
+from zipfile import ZipFile
 
 import pytest
 
@@ -15,7 +17,7 @@ from app.dataset_export import (
     ParserDatasetArchiveCase,
     build_parser_dataset_archive_from_cases,
 )
-from app.models import CanonicalState, Card
+from app.models import CanonicalState, Card, PostflopAction
 
 
 VALID_PNG = base64.b64decode(
@@ -70,6 +72,50 @@ def write_dataset_archive(
     finally:
         archive.close()
     return path
+
+
+def test_dataset_archive_preserves_structured_postflop_history() -> None:
+    expected_state = expected_mock_state(
+        pot_size=19,
+        current_bet=5,
+        hero_stack=8,
+        opponent_stack=3,
+        effective_stack=3,
+        players_in_hand=2,
+        hero_position="OOP",
+        facing_action="raise",
+        postflop_action_history=[
+            PostflopAction(actor="oop", action="bet", amount=2),
+            PostflopAction(actor="ip", action="raise", amount=7),
+        ],
+    )
+
+    archive = build_parser_dataset_archive_from_cases(
+        [
+            ParserDatasetArchiveCase(
+                job_id="a" * 32,
+                original_filename="raised.png",
+                image_suffix=".png",
+                image_source=VALID_PNG,
+                expected_state=expected_state,
+            )
+        ],
+        parser_provider="ocr_cv",
+        layout_profile="fortuna_nations",
+        max_archive_bytes=1024 * 1024,
+    )
+    try:
+        with ZipFile(BytesIO(archive.read())) as dataset:
+            manifest = json.loads(dataset.read("manifest.json"))
+    finally:
+        archive.close()
+
+    exported = manifest["cases"][0]["expected_state"]
+    assert exported["opponent_stack"] == 3
+    assert exported["postflop_action_history"] == [
+        {"actor": "oop", "action": "bet", "amount": 2},
+        {"actor": "ip", "action": "raise", "amount": 7},
+    ]
 
 
 def test_benchmark_dataset_archive_scores_without_mutating_configured_data(

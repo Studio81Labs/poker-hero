@@ -11,6 +11,7 @@ from app.models import (
     CanonicalState,
     DetectedState,
     ParserResult,
+    PostflopAction,
     RecommendationAction,
     RecommendationResult,
     TrainingDecisionRequest,
@@ -279,6 +280,19 @@ def test_detected_state_rejects_unknown_facing_action() -> None:
         DetectedState(facing_action="call")
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"actor": "oop", "action": "check", "amount": 1.0},
+        {"actor": "ip", "action": "bet"},
+        {"actor": "oop", "action": "raise", "amount": 0},
+    ],
+)
+def test_postflop_action_rejects_inconsistent_amount(values: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        PostflopAction.model_validate(values)
+
+
 @pytest.mark.parametrize("action", ["fold", "check", "call"])
 def test_recommendation_rejects_sizing_for_non_wager_action(
     action: RecommendationAction,
@@ -401,6 +415,7 @@ def test_parser_result_accepts_integer_confidence() -> None:
         "pot_size",
         "current_bet",
         "hero_stack",
+        "opponent_stack",
         "effective_stack",
         "preflop_open_size",
     ],
@@ -425,6 +440,7 @@ def test_table_state_rejects_invalid_numeric_amounts(
         "pot_size",
         "current_bet",
         "hero_stack",
+        "opponent_stack",
         "effective_stack",
         "preflop_open_size",
     ],
@@ -467,6 +483,7 @@ def test_canonical_state_copies_detected_values() -> None:
         pot_size=12.5,
         current_bet=2.5,
         hero_stack=97.5,
+        opponent_stack=96.0,
         effective_stack=96.0,
         players_in_hand=3,
         hero_position="button",
@@ -474,6 +491,9 @@ def test_canonical_state_copies_detected_values() -> None:
         preflop_open_size=2.5,
         street="flop",
         facing_action="bet",
+        postflop_action_history=[
+            PostflopAction(actor="oop", action="bet", amount=2.5)
+        ],
         action_context="Cutoff bet 2.5 into 12.5",
     )
     parser_result = ParserResult(
@@ -489,7 +509,9 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.board_cards == detected.board_cards
     assert canonical.pot_size == 12.5
     assert canonical.hero_stack == 97.5
+    assert canonical.opponent_stack == 96.0
     assert canonical.facing_action == "bet"
+    assert canonical.postflop_action_history == detected.postflop_action_history
     assert canonical.preflop_opener_position == "cutoff"
     assert canonical.preflop_open_size == 2.5
     assert canonical.user_approved is False

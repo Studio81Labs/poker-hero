@@ -287,6 +287,38 @@ def test_action_line_rejects_zero_wager_sizing(model: type[Any]) -> None:
         model(**values)
 
 
+@pytest.mark.parametrize(
+    ("model", "sizing"),
+    [
+        (RecommendationResult, True),
+        (RecommendationResult, "7.5"),
+        (TrainingDecisionRequest, True),
+        (TrainingDecisionRequest, "7.5"),
+    ],
+)
+def test_action_line_rejects_coerced_wager_sizing(
+    model: type[Any],
+    sizing: object,
+) -> None:
+    values: dict[str, Any] = {"action": "raise", "sizing": sizing}
+    if model is RecommendationResult:
+        values.update(confidence=0.8, explanation="Malformed recommendation")
+
+    with pytest.raises(ValidationError, match="valid number"):
+        model(**values)
+
+
+@pytest.mark.parametrize("model", [RecommendationResult, TrainingDecisionRequest])
+def test_action_line_accepts_integer_wager_sizing(model: type[Any]) -> None:
+    values: dict[str, Any] = {"action": "raise", "sizing": 8}
+    if model is RecommendationResult:
+        values.update(confidence=0.8, explanation="Valid recommendation")
+
+    result = model(**values)
+
+    assert result.sizing == 8.0
+
+
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
     with pytest.raises(ValidationError):
         CanonicalState(preflop_open_size=0)

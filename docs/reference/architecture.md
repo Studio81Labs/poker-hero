@@ -91,6 +91,8 @@ parser output, recommendations, and player decisions are excluded.
 
 The same archive can be imported to restore or share a corpus. Import validates
 the complete manifest, paths, limits, and image payloads before creating jobs.
+Schema version and declared case count must be JSON integers; coercion from
+booleans, strings, or floating-point values is rejected.
 Stable job IDs make exact re-imports idempotent; an existing job with different
 image bytes or approved state rejects the archive instead of being overwritten.
 Imported cases are approved benchmark jobs, while recommendation and training
@@ -109,7 +111,8 @@ recommendation work.
 
 Restore parses and verifies the complete archive before acquiring the mutation
 locks. It checks declared paths, entry counts and sizes, supported images,
-record models, report references, and SHA-256 checksums. Under the locks it
+record models, report references, and SHA-256 checksums. Schema version, entry
+counts, and image byte sizes must be JSON integers. Under the locks it
 rechecks current state, reuses exact records, creates only missing records, and
 rejects divergent stable IDs. New job directories and report files are
 published atomically; a write failure rolls back files created by that restore

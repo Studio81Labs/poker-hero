@@ -7,7 +7,13 @@ from typing import Literal, Self
 from zipfile import BadZipFile, ZipFile, ZipInfo
 
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.dataset_export import (
     DATASET_SCHEMA,
@@ -52,8 +58,15 @@ class _DatasetManifest(BaseModel):
     schema_version: Literal[DATASET_SCHEMA_VERSION]
     parser_provider: str = Field(min_length=1, max_length=100)
     layout_profile: str = Field(min_length=1, max_length=100)
-    case_count: int = Field(ge=1, le=MAX_DATASET_CASES)
+    case_count: int = Field(ge=1, le=MAX_DATASET_CASES, strict=True)
     cases: list[_ManifestCase] = Field(min_length=1, max_length=MAX_DATASET_CASES)
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def validate_schema_version_type(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("Schema version must be a JSON integer")
+        return value
 
     @model_validator(mode="after")
     def validate_cases(self) -> Self:

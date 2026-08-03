@@ -302,14 +302,16 @@ class RequestObservabilityMiddleware:
                 status_code = message["status"]
                 return
 
+            is_pathsend = message_type == "http.response.pathsend"
             is_final_body = (
                 message_type == "http.response.body"
                 and not message.get("more_body", False)
-            ) or message_type == "http.response.pathsend"
-            if is_final_body:
+            ) or is_pathsend
+            if is_final_body and not is_pathsend:
                 final_body_started = True
             await send(message)
             if is_final_body:
+                final_body_started = True
                 response_completed = True
                 if scope["state"].get(BACKGROUND_TASK_STATE_KEY, False):
                     await stop_receive_task()

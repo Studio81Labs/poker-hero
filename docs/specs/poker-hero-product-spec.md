@@ -254,6 +254,9 @@ frequencies.
 4. Each parser result includes structured detected state and field confidence.
    Confidence values must be finite numbers between zero and one; boolean or
    string values are malformed and cannot satisfy automation thresholds.
+   Detected pot, bet, and stack values must be finite non-negative JSON numbers,
+   preflop open size must be a finite positive JSON number, and player count
+   must be a positive JSON integer. Boolean and string coercion is invalid.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
 7. Before revealing guidance, the user may lock their own action, optional

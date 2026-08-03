@@ -89,14 +89,39 @@ class Card(BaseModel):
 class DetectedState(BaseModel):
     hero_cards: list[Card] = Field(default_factory=list)
     board_cards: list[Card] = Field(default_factory=list)
-    pot_size: float | None = Field(default=None, ge=0)
-    current_bet: float | None = Field(default=None, ge=0)
-    hero_stack: float | None = Field(default=None, ge=0)
-    effective_stack: float | None = Field(default=None, ge=0)
-    players_in_hand: int | None = Field(default=None, ge=1)
+    pot_size: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        strict=True,
+    )
+    current_bet: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        strict=True,
+    )
+    hero_stack: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        strict=True,
+    )
+    effective_stack: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+        strict=True,
+    )
+    players_in_hand: int | None = Field(default=None, ge=1, strict=True)
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
-    preflop_open_size: float | None = Field(default=None, gt=0)
+    preflop_open_size: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        strict=True,
+    )
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     action_context: str | None = Field(default=None)

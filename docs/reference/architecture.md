@@ -54,6 +54,16 @@ tokens are attached only as `Authorization` headers, and authenticated external
 URLs must use HTTPS. This keeps external provider credentials behind the
 backend integration boundary without changing the frontend workflow.
 
+The offline recommendation benchmark calls the same provider registry with
+canonical states from a strict, versioned JSON corpus. It does not create jobs
+or read persisted application data. Failures are isolated per case. Aggregate
+output separates supported-action agreement from exact sizing-line agreement,
+and reports mixed-policy total-variation distance, reference EV loss, and
+recorded fallback use only when the corpus or provider supplies the required
+evidence. Reference frequencies must sum to one, sizing identities must be
+unambiguous at the configured tolerance, and EV labels cover either every line
+in a case or none.
+
 ### Frontend
 
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and

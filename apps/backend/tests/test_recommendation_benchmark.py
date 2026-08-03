@@ -1,0 +1,675 @@
+import json
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from app.config import Settings, get_settings
+from app.models import Card, RecommendationRequest, RecommendationResult
+from app.providers.base import ProviderConfigurationError
+from app.recommendation_benchmark import (
+    MAX_RECOMMENDATION_BENCHMARK_BYTES,
+    RECOMMENDATION_BENCHMARK_SCHEMA,
+    RecommendationBenchmarkCase,
+    RecommendationBenchmarkDataset,
+    RecommendationBenchmarkError,
+    RecommendationBenchmarkState,
+    RecommendationReferenceLine,
+    benchmark_recommendation_file,
+    format_recommendation_benchmark_report,
+    load_recommendation_benchmark_dataset,
+    main,
+    run_recommendation_benchmark,
+)
+
+
+class SequenceProvider:
+    name = "test_solver"
+    required_fields = ["hero_cards", "street"]
+
+    def __init__(self, outcomes: list[RecommendationResult | Exception]) -> None:
+        self.outcomes = list(outcomes)
+
+    def required_fields_for(
+        self,
+        state: RecommendationBenchmarkState,
+    ) -> list[str]:
+        return self.required_fields
+
+    def recommend(self, request: RecommendationRequest) -> RecommendationResult:
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+def benchmark_state(**overrides: object) -> RecommendationBenchmarkState:
+    values = {
+        "hero_cards": [Card.from_code("Ah"), Card.from_code("Kd")],
+        "board_cards": [
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+        ],
+        "street": "flop",
+        "pot_size": 10.0,
+        "current_bet": 0.0,
+        "hero_stack": 100.0,
+        "effective_stack": 100.0,
+        "players_in_hand": 2,
+        "hero_position": "button",
+    }
+    values.update(overrides)
+    return RecommendationBenchmarkState.model_validate(values)
+
+
+def reference_line(
+    action: str,
+    *,
+    sizing: float | None = None,
+    frequency: float = 1.0,
+    ev_bb: float | None = None,
+) -> RecommendationReferenceLine:
+    return RecommendationReferenceLine.model_validate(
+        {
+            "action": action,
+            "sizing": sizing,
+            "frequency": frequency,
+            "ev_bb": ev_bb,
+        }
+    )
+
+
+def benchmark_case(
+    case_id: str,
+    lines: list[RecommendationReferenceLine],
+    **state_overrides: object,
+) -> RecommendationBenchmarkCase:
+    return RecommendationBenchmarkCase(
+        id=case_id,
+        description=f"Reference case {case_id}",
+        state=benchmark_state(**state_overrides),
+        reference_lines=lines,
+    )
+
+
+def benchmark_dataset(
+    cases: list[RecommendationBenchmarkCase],
+    **overrides: object,
+) -> RecommendationBenchmarkDataset:
+    values = {
+        "schema": RECOMMENDATION_BENCHMARK_SCHEMA,
+        "schema_version": 1,
+        "name": "Trusted solver sample",
+        "sizing_tolerance_bb": 0.01,
+        "minimum_policy_frequency": 0.05,
+        "cases": cases,
+    }
+    values.update(overrides)
+    return RecommendationBenchmarkDataset.model_validate(values)
+
+
+def recommendation(
+    action: str,
+    *,
+    sizing: float | None = None,
+    candidates: list[dict[str, object]] | None = None,
+    fallback_reason: str | None = None,
+) -> RecommendationResult:
+    raw: dict[str, object] = {"engine": "reference_test_v1"}
+    if candidates is not None:
+        raw["candidates"] = candidates
+    if fallback_reason is not None:
+        raw["fallback_reason"] = fallback_reason
+    return RecommendationResult.model_validate(
+        {
+            "action": action,
+            "sizing": sizing,
+            "confidence": 0.8,
+            "explanation": "Test recommendation.",
+            "raw": raw,
+        }
+    )
+
+
+def write_dataset(path: Path, dataset: RecommendationBenchmarkDataset) -> Path:
+    path.write_text(dataset.model_dump_json(indent=2, by_alias=True), encoding="utf-8")
+    return path
+
+
+def test_recommendation_benchmark_scores_policy_ev_fallback_and_failures() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "mixed-flop",
+                [
+                    reference_line("check", frequency=0.4, ev_bb=0.5),
+                    reference_line("bet", sizing=5.0, frequency=0.6, ev_bb=0.7),
+                ],
+            ),
+            benchmark_case(
+                "unsupported-action",
+                [reference_line("fold", frequency=1.0, ev_bb=0.3)],
+            ),
+            benchmark_case(
+                "provider-failure",
+                [reference_line("check", frequency=1.0)],
+            ),
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.5},
+                    {"action": "bet", "sizing": 5.0, "frequency": 0.5},
+                ],
+            ),
+            recommendation(
+                "call",
+                fallback_reason="raised pots are not supported",
+            ),
+            RuntimeError("solver unavailable"),
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.total_cases == 3
+    assert report.completed_cases == 2
+    assert report.failed_cases == 1
+    assert report.action_correct == 1
+    assert report.action_accuracy == 0.5
+    assert report.line_correct == 1
+    assert report.line_evaluated == 2
+    assert report.line_accuracy == 0.5
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0.1
+    assert report.ev_evaluated_cases == 1
+    assert report.average_reference_ev_loss_bb == 0.2
+    assert report.maximum_reference_ev_loss_bb == 0.2
+    assert report.fallback_cases == 1
+    assert report.fallback_rate == 0.5
+    assert report.cases[0].engine == "reference_test_v1"
+    assert report.cases[1].action_match is False
+    assert report.cases[1].line_match is False
+    assert report.cases[2].status == "error"
+    assert report.cases[2].error == "solver unavailable"
+    formatted = format_recommendation_benchmark_report(report)
+    assert "Action agreement: 1/2 (50.0%)" in formatted
+    assert "Average policy distance: 0.100 across 1 case(s)" in formatted
+    assert "unsupported-action: mismatched action, line" in formatted
+    assert "provider-failure: solver unavailable" in formatted
+
+
+def test_action_only_wager_reference_skips_line_accuracy() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "action-only",
+                [reference_line("bet", frequency=1.0, ev_bb=1.0)],
+            )
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "bet",
+                sizing=7.0,
+                candidates=[
+                    {"action": "bet", "sizing": 7.0, "frequency": 1.0}
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.action_accuracy == 1
+    assert report.line_evaluated == 0
+    assert report.line_accuracy is None
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0
+    assert report.average_reference_ev_loss_bb == 0
+    assert "Line agreement: not evaluated" in format_recommendation_benchmark_report(
+        report
+    )
+
+
+def test_sizing_tolerance_boundary_is_not_a_line_match() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "sizing-boundary",
+                [reference_line("bet", sizing=5.0)],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(
+        dataset,
+        SequenceProvider([recommendation("bet", sizing=5.01)]),
+    )
+
+    assert report.action_accuracy == 1
+    assert report.line_accuracy == 0
+    assert report.cases[0].line_match is False
+
+
+def test_reference_sizes_exactly_two_tolerances_apart_are_unambiguous() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "adjacent-sizes",
+                [
+                    reference_line("bet", sizing=5.0, frequency=0.5),
+                    reference_line("bet", sizing=5.02, frequency=0.5),
+                ],
+            )
+        ]
+    )
+
+    assert dataset.cases[0].reference_lines[1].sizing == 5.02
+
+
+def test_malformed_candidate_metadata_skips_policy_metric() -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("bad-candidates", [reference_line("check")])]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": ["check"], "sizing": None, "frequency": 1.0}
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_accuracy == 1
+    assert report.policy_evaluated_cases == 0
+    assert report.average_policy_distance is None
+
+
+def test_zero_frequency_unsized_wager_does_not_hide_policy_metric() -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("deterministic-check", [reference_line("check")])]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 1.0},
+                    {"action": "raise", "sizing": None, "frequency": 0.0},
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0
+
+
+def test_rounded_candidate_frequencies_are_normalized() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "rounded-policy",
+                [
+                    reference_line("check", frequency=1 / 3),
+                    reference_line("bet", sizing=5.0, frequency=1 / 3),
+                    reference_line("bet", sizing=7.0, frequency=1 / 3),
+                ],
+            )
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.3333},
+                    {"action": "bet", "sizing": 5.0, "frequency": 0.3333},
+                    {"action": "bet", "sizing": 7.0, "frequency": 0.3333},
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0
+
+
+def test_incomplete_candidate_frequencies_hide_policy_metric() -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("incomplete-policy", [reference_line("check")])]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.999}
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 0
+    assert report.average_policy_distance is None
+
+
+def test_missing_required_state_is_an_isolated_case_failure() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "missing-cards",
+                [reference_line("check")],
+                hero_cards=[],
+            ),
+            benchmark_case("valid", [reference_line("check")]),
+        ]
+    )
+    provider = SequenceProvider([recommendation("check")])
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.failed_cases == 1
+    assert report.completed_cases == 1
+    assert report.cases[0].error == "Missing required fields: hero_cards"
+    assert report.cases[1].action_match is True
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "coerced_version",
+        "duplicate_case",
+        "frequency_total",
+        "partial_ev",
+        "ambiguous_sizing",
+        "extra_state_field",
+    ],
+)
+def test_recommendation_benchmark_dataset_rejects_invalid_schema(
+    mutation: str,
+) -> None:
+    payload = {
+        "schema": RECOMMENDATION_BENCHMARK_SCHEMA,
+        "schema_version": 1,
+        "name": "Invalid sample",
+        "sizing_tolerance_bb": 0.01,
+        "minimum_policy_frequency": 0.05,
+        "cases": [
+            {
+                "id": "case-1",
+                "state": benchmark_state().model_dump(mode="json"),
+                "reference_lines": [
+                    {
+                        "action": "check",
+                        "sizing": None,
+                        "frequency": 1.0,
+                        "ev_bb": None,
+                    }
+                ],
+            }
+        ],
+    }
+    if mutation == "coerced_version":
+        payload["schema_version"] = True
+    elif mutation == "duplicate_case":
+        payload["cases"].append(payload["cases"][0])
+    elif mutation == "frequency_total":
+        payload["cases"][0]["reference_lines"][0]["frequency"] = 0.9
+    elif mutation == "partial_ev":
+        payload["cases"][0]["reference_lines"] = [
+            {"action": "check", "frequency": 0.5, "ev_bb": 0.1},
+            {"action": "bet", "sizing": 5.0, "frequency": 0.5},
+        ]
+    elif mutation == "ambiguous_sizing":
+        payload["cases"][0]["reference_lines"] = [
+            {"action": "bet", "sizing": 5.0, "frequency": 0.5},
+            {"action": "bet", "sizing": 5.01, "frequency": 0.5},
+        ]
+    else:
+        payload["cases"][0]["state"]["invented"] = "value"
+
+    with pytest.raises(ValidationError):
+        RecommendationBenchmarkDataset.model_validate(payload)
+
+
+def test_benchmark_file_rejects_invalid_and_oversized_json(tmp_path: Path) -> None:
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(RecommendationBenchmarkError, match="invalid"):
+        load_recommendation_benchmark_dataset(invalid_path)
+
+    oversized_path = tmp_path / "oversized.json"
+    oversized_path.write_bytes(b"x" * (MAX_RECOMMENDATION_BENCHMARK_BYTES + 1))
+    with pytest.raises(RecommendationBenchmarkError, match="4 MiB"):
+        load_recommendation_benchmark_dataset(oversized_path)
+
+
+def test_recommendation_benchmark_cli_emits_json_and_enforces_thresholds(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [
+                benchmark_case(
+                    "mixed-flop",
+                    [
+                        reference_line("check", frequency=0.4, ev_bb=0.5),
+                        reference_line(
+                            "bet",
+                            sizing=5.0,
+                            frequency=0.6,
+                            ev_bb=0.7,
+                        ),
+                    ],
+                )
+            ]
+        ),
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.5},
+                    {"action": "bet", "sizing": 5.0, "frequency": 0.5},
+                ],
+            )
+        ]
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--json",
+            "--minimum-action-accuracy",
+            "1",
+            "--minimum-line-accuracy",
+            "1",
+            "--maximum-policy-distance",
+            "0.05",
+            "--maximum-ev-loss",
+            "0.1",
+            "--maximum-fallback-rate",
+            "0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=provider,
+    )
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert exit_code == 1
+    assert report["provider"] == "test_solver"
+    assert report["action_accuracy"] == 1
+    assert "Average policy distance 0.100 is above the maximum 0.050" in captured.err
+    assert "Average reference EV loss 0.200 BB is above the maximum 0.100 BB" in (
+        captured.err
+    )
+
+
+def test_recommendation_benchmark_cli_resolves_relative_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invocation_dir = tmp_path / "repository-root"
+    invocation_dir.mkdir()
+    write_dataset(
+        invocation_dir / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+    monkeypatch.setenv("POKER_BENCHMARK_BASE_DIR", str(invocation_dir))
+
+    exit_code = main(
+        ["recommendations.json"],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Action agreement: 1/1 (100.0%)" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_fails_when_a_required_optional_metric_is_unavailable(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [
+                benchmark_case(
+                    "action-only",
+                    [reference_line("bet")],
+                )
+            ]
+        ),
+    )
+
+    exit_code = main(
+        [str(dataset_path), "--minimum-line-accuracy", "0"],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("bet", sizing=5.0)]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Line accuracy was not evaluated" in captured.err
+
+
+def test_cli_reports_unknown_provider_as_configuration_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+
+    exit_code = main(
+        [str(dataset_path), "--provider", "unknown"],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Unknown recommendation provider: unknown" in captured.err
+
+
+def test_cli_reports_deferred_provider_configuration_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+    provider = SequenceProvider(
+        [ProviderConfigurationError("provider URL is required")]
+    )
+
+    exit_code = main(
+        [str(dataset_path)],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=provider,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "provider URL is required" in captured.err
+
+
+def test_cli_reports_environment_settings_validation_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+    raw_value = "not-a-number-sensitive-sentinel"
+    monkeypatch.setenv("POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS", raw_value)
+    get_settings.cache_clear()
+
+    try:
+        exit_code = main([str(dataset_path)])
+    finally:
+        get_settings.cache_clear()
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Settings configuration is invalid" in captured.err
+    assert "external_request_timeout_seconds" in captured.err
+    assert raw_value not in captured.err
+
+
+def test_benchmark_file_uses_configured_provider(tmp_path: Path) -> None:
+    path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+
+    report = benchmark_recommendation_file(
+        path,
+        Settings(
+            data_dir=tmp_path / "unused",
+            recommendation_provider="mock",
+        ),
+    )
+
+    assert report.provider == "mock"
+    assert report.total_cases == 1

@@ -7,3 +7,6 @@
 
 The canonical product source is
 [`specs/poker-hero-product-spec.md`](./specs/poker-hero-product-spec.md).
+
+Reference formats include the
+[recommendation benchmark corpus](./reference/recommendation-benchmark.md).

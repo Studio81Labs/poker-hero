@@ -52,6 +52,7 @@ poker-hero/
 | `pnpm bootstrap` | Install dependencies and build the local postflop solver |
 | `pnpm backend:dev` | Start FastAPI with reload on port 8000 |
 | `pnpm backend:benchmark <dataset.zip>` | Benchmark a parser against an exported labeled dataset |
+| `pnpm backend:recommendation-benchmark <dataset.json>` | Benchmark a recommendation provider against trusted references |
 | `pnpm backend:test` | Run the backend pytest suite |
 | `pnpm frontend:dev` | Start Vite on port 5173 |
 | `pnpm frontend:test` | Run frontend tests |
@@ -261,6 +262,27 @@ The command prints overall and per-field accuracy plus cases needing review. Add
 any case fails or accuracy is below the optional threshold, making the same
 dataset suitable for local regression checks and CI. Evaluation uses temporary
 storage and never changes the configured `POKER_DATA_DIR` or the source ZIP.
+
+### Offline Recommendation Benchmarks
+
+Run the configured recommendation provider against a versioned JSON corpus of
+canonical hands and trusted reference policies:
+
+```bash
+pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
+  --provider local_solver \
+  --minimum-action-accuracy 0.90 \
+  --maximum-ev-loss 0.05
+```
+
+The report measures supported-action and exact sizing-line agreement, mixed
+policy distance, reference EV loss, provider failures, and recorded fallback
+use. Optional thresholds make the command suitable for local regression gates
+and CI; `--json` emits the complete case report. It reads no screenshots and
+does not change application data. Reference policy frequencies and EVs must
+come from a trusted solver or reviewed strategy source rather than the provider
+being evaluated. See
+[the recommendation benchmark format](./docs/reference/recommendation-benchmark.md).
 
 ## Docker
 

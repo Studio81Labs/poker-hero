@@ -1260,6 +1260,20 @@ def test_training_decision_rejects_nonfinite_sizing(tmp_path: Path) -> None:
     assert FileJobStore(tmp_path).get(job_id).training_decision is None
 
 
+def test_training_decision_rejects_zero_wager_sizing(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 0},
+    )
+
+    assert response.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
 def test_training_decision_rejects_unknown_certainty(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
@@ -1463,6 +1477,34 @@ def test_app_startup_loads_legacy_non_actionable_recommendation_sizing(
     listed_response = restarted_client.get("/api/jobs")
     assert listed_response.status_code == 200
     assert listed_response.json()["jobs"][0]["recommendation"]["sizing"] is None
+
+
+def test_app_startup_loads_legacy_zero_wager_sizing(tmp_path: Path) -> None:
+    initial_client = make_client(tmp_path)
+    job_id = upload_job(initial_client).json()["id"]
+    approve_job(initial_client, job_id)
+    decision_response = initial_client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": 7.5},
+    )
+    assert decision_response.status_code == 200
+    recommendation_response = initial_client.post(f"/api/jobs/{job_id}/recommend")
+    assert recommendation_response.status_code == 200
+
+    record_path = tmp_path / "jobs" / job_id / "job.json"
+    legacy_record = json.loads(record_path.read_text())
+    legacy_record["training_decision"]["sizing"] = 0
+    legacy_record["recommendation"]["action"] = "raise"
+    legacy_record["recommendation"]["sizing"] = 0
+    record_path.write_text(json.dumps(legacy_record))
+
+    restarted_client = make_client(tmp_path)
+
+    recovered_response = restarted_client.get(f"/api/jobs/{job_id}")
+    assert recovered_response.status_code == 200
+    recovered_job = recovered_response.json()
+    assert recovered_job["training_decision"]["sizing"] is None
+    assert recovered_job["recommendation"]["sizing"] is None
 
 
 def test_app_startup_recovers_interrupted_parser_job(tmp_path: Path) -> None:

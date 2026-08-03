@@ -217,6 +217,51 @@ def test_application_backup_restores_legacy_non_actionable_recommendation_sizing
     assert restored_job.recommendation.sizing is None
 
 
+def test_application_backup_restores_legacy_zero_wager_sizing(
+    tmp_path: Path,
+) -> None:
+    source = make_client(tmp_path / "source")
+    source_job = create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    assert export.status_code == 200
+
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        record_path = manifest["jobs"][0]["record_file"]
+        legacy_record = json.loads(archive.read(record_path))
+    legacy_record["training_decision"]["action"] = "raise"
+    legacy_record["training_decision"]["sizing"] = 0
+    legacy_record["recommendation"]["action"] = "raise"
+    legacy_record["recommendation"]["sizing"] = 0
+    legacy_record_bytes = json.dumps(legacy_record).encode()
+    manifest["jobs"][0]["record_sha256"] = sha256(
+        legacy_record_bytes
+    ).hexdigest()
+    legacy_archive = rebuild_archive(
+        export.content,
+        {
+            "manifest.json": json.dumps(manifest).encode(),
+            record_path: legacy_record_bytes,
+        },
+    )
+
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+    restore = destination.post(
+        "/api/backups/restore",
+        files={"file": ("legacy-backup.zip", legacy_archive, "application/zip")},
+    )
+
+    assert restore.status_code == 200
+    restored_job = FileJobStore(destination_dir).get(str(source_job["id"]))
+    assert restored_job.training_decision is not None
+    assert restored_job.training_decision.action == "raise"
+    assert restored_job.training_decision.sizing is None
+    assert restored_job.recommendation is not None
+    assert restored_job.recommendation.action == "raise"
+    assert restored_job.recommendation.sizing is None
+
+
 def test_empty_application_backup_round_trips(
     tmp_path: Path,
 ) -> None:

@@ -186,7 +186,7 @@ class RecommendationRequest(BaseModel):
 
 class RecommendationResult(BaseModel):
     action: RecommendationAction
-    sizing: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    sizing: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     confidence: float = Field(ge=0, le=1)
     explanation: str
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -200,7 +200,7 @@ class RecommendationResult(BaseModel):
 
 class TrainingDecisionRequest(BaseModel):
     action: RecommendationAction
-    sizing: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    sizing: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     certainty: TrainingCertainty | None = None
 
     @model_validator(mode="after")
@@ -272,10 +272,10 @@ class TrainingRecentHand(BaseModel):
     street: Street | None
     hero_cards: list[Card] = Field(default_factory=list)
     decision_action: RecommendationAction
-    decision_sizing: float | None = Field(default=None, ge=0)
+    decision_sizing: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     decision_certainty: TrainingCertainty | None = None
     recommended_action: RecommendationAction
-    recommended_sizing: float | None = Field(default=None, ge=0)
+    recommended_sizing: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     outcome: TrainingOutcome
     recorded_at: datetime
     reviewed_at: datetime | None = None

@@ -204,7 +204,7 @@ def test_unhandled_error_response_keeps_request_id(
         )
     )
 
-    @app.get("/api/test-crash")
+    @app.app.get("/api/test-crash")
     def crash() -> None:
         raise RuntimeError("test crash")
 
@@ -212,12 +212,19 @@ def test_unhandled_error_response_keeps_request_id(
     with caplog.at_level(logging.ERROR, logger="uvicorn.error.poker"):
         response = client.get(
             "/api/test-crash",
-            headers={"X-Request-ID": "failed-request-123"},
+            headers={
+                "Origin": "http://localhost:5173",
+                "X-Request-ID": "failed-request-123",
+            },
         )
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal Server Error"}
     assert response.headers["X-Request-ID"] == "failed-request-123"
+    assert response.headers["Access-Control-Allow-Origin"] == (
+        "http://localhost:5173"
+    )
+    assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
     access_events = [
         json.loads(record.message)
         for record in caplog.records
@@ -247,10 +254,17 @@ def test_proxy_shared_secret_protects_api_but_not_health(tmp_path: Path) -> None
     assert client.get("/api/health").status_code == 200
     rejected = client.get(
         "/api/jobs",
-        headers={"X-Request-ID": "rejected-request-123"},
+        headers={
+            "Origin": "http://localhost:5173",
+            "X-Request-ID": "rejected-request-123",
+        },
     )
     assert rejected.status_code == 401
     assert rejected.headers["X-Request-ID"] == "rejected-request-123"
+    assert rejected.headers["Access-Control-Allow-Origin"] == (
+        "http://localhost:5173"
+    )
+    assert rejected.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
     assert client.get(
         "/api/jobs",
         headers={"X-Poker-Proxy-Secret": "incorrect-secret-value-123456789"},

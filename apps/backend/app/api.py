@@ -191,7 +191,7 @@ def recover_interrupted_jobs(store: FileJobStore) -> None:
             store.save(job)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> CORSMiddleware:
     active_settings = settings or get_settings()
     store = FileJobStore(active_settings.data_dir)
     recover_interrupted_jobs(store)
@@ -412,15 +412,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=_json_safe_validation_content(content),
         )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=active_settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-        expose_headers=[REQUEST_ID_HEADER],
-    )
-
     @app.middleware("http")
     async def require_proxy_shared_secret(request, call_next):
         configured_secret = active_settings.proxy_shared_secret
@@ -448,7 +439,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             response = await call_next(request)
         except Exception:
-            LOGGER.exception(
+            LOGGER.error(
                 _request_log_message(
                     request_id=request_id,
                     method=request.method,
@@ -1243,7 +1234,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ) from exc
             return benchmark_store.save(report)
 
-    return app
+    return CORSMiddleware(
+        app,
+        allow_origins=active_settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
+    )
 
 
 def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:

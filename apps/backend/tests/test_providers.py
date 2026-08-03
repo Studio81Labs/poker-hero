@@ -627,6 +627,26 @@ def test_local_solver_rejects_sizing_for_non_wager_action(tmp_path: Path) -> Non
         )
 
 
+def test_local_solver_rejects_nonfinite_sizing(tmp_path: Path) -> None:
+    solver_script = tmp_path / "solver.py"
+    solver_script.write_text(
+        "print('{\"action\":\"raise\",\"sizing\":Infinity,\"confidence\":0.8,"
+        "\"explanation\":\"Malformed recommendation\"}')\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_command=f"{sys.executable} {solver_script}",
+        )
+    )
+
+    with pytest.raises(ProviderError, match="invalid payload"):
+        provider.recommend(
+            RecommendationRequest(state=approved_state(), provider=provider.name)
+        )
+
+
 def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     request = httpx.Request("POST", "https://solver.example/recommend")
     captured: dict[str, object] = {}

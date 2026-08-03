@@ -186,7 +186,7 @@ class RecommendationRequest(BaseModel):
 
 class RecommendationResult(BaseModel):
     action: RecommendationAction
-    sizing: float | None = Field(default=None, ge=0)
+    sizing: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     confidence: float = Field(ge=0, le=1)
     explanation: str
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -200,7 +200,7 @@ class RecommendationResult(BaseModel):
 
 class TrainingDecisionRequest(BaseModel):
     action: RecommendationAction
-    sizing: float | None = Field(default=None, ge=0)
+    sizing: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     certainty: TrainingCertainty | None = None
 
     @model_validator(mode="after")

@@ -227,7 +227,8 @@ complete pair. That pair selects unsupported action outcomes before optional
 street, certainty, and normalized-position filtering, ordering, and limiting,
 so solver-supported mixed actions are not pulled into a focused pattern queue.
 Normalized position and explicit unpositioned review selectors are mutually
-exclusive. The headline recommendation is always supported. Alternate provider
+exclusive. Player-decision and headline-recommendation sizing must be finite.
+The headline recommendation is always supported. Alternate provider
 candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is

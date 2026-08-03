@@ -2,9 +2,11 @@ from contextlib import ExitStack
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
+import math
 import re
 from secrets import compare_digest
 from threading import Lock, RLock
+from typing import Any
 
 from fastapi import (
     BackgroundTasks,
@@ -14,9 +16,12 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from PIL import Image, UnidentifiedImageError
@@ -119,6 +124,21 @@ HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
+
+
+def _json_safe_validation_content(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return "NaN"
+        return "Infinity" if value > 0 else "-Infinity"
+    if isinstance(value, dict):
+        return {
+            key: _json_safe_validation_content(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_json_safe_validation_content(item) for item in value]
+    return value
 
 
 def recover_interrupted_jobs(store: FileJobStore) -> None:
@@ -333,6 +353,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) from exc
 
     app = FastAPI(title="Poker Training Analyzer API")
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_exception_handler(
+        _request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        content = jsonable_encoder({"detail": exc.errors()})
+        return JSONResponse(
+            status_code=422,
+            content=_json_safe_validation_content(content),
+        )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=active_settings.cors_origins,

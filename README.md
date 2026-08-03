@@ -331,6 +331,9 @@ copy of its private header before proxying. FastAPI then rejects direct requests
 to application API routes that do not carry the configured value; `/api/health`
 remains available to platform health probes.
 
+Backend responses carry `X-Request-ID`, which is also written to structured
+container access logs for tracing requests through the Worker and Coolify.
+
 Leave `VITE_API_BASE_URL` unset for the deployed Worker so browser requests use
 same-origin `/api/*`.
 

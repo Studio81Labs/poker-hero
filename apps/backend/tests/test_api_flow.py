@@ -1,6 +1,8 @@
 import base64
 import json
+import logging
 import os
+import re
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -142,12 +144,113 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     }
 
 
+def test_request_id_is_returned_and_access_log_is_structured(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = make_client(tmp_path)
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error.poker"):
+        response = client.get(
+            "/api/jobs?limit=1",
+            headers={"X-Request-ID": "worker-request-123"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "worker-request-123"
+    messages = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "uvicorn.error.poker"
+    ]
+    assert len(messages) == 1
+    assert messages == [
+        {
+            "duration_ms": messages[0]["duration_ms"],
+            "event": "http_request",
+            "method": "GET",
+            "path": "/api/jobs",
+            "request_id": "worker-request-123",
+            "status_code": 200,
+        }
+    ]
+    assert isinstance(messages[0]["duration_ms"], float)
+    assert messages[0]["duration_ms"] >= 0
+
+
+def test_invalid_request_id_is_replaced(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get(
+        "/api/jobs",
+        headers={"X-Request-ID": "invalid request id"},
+    )
+
+    assert response.status_code == 200
+    generated_request_id = response.headers["X-Request-ID"]
+    assert generated_request_id != "invalid request id"
+    assert re.fullmatch(r"[0-9a-f]{32}", generated_request_id)
+
+
+def test_unhandled_error_response_keeps_request_id(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = create_app(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="mock",
+            recommendation_provider="mock",
+        )
+    )
+
+    @app.get("/api/test-crash")
+    def crash() -> None:
+        raise RuntimeError("test crash")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    with caplog.at_level(logging.ERROR, logger="uvicorn.error.poker"):
+        response = client.get(
+            "/api/test-crash",
+            headers={"X-Request-ID": "failed-request-123"},
+        )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal Server Error"}
+    assert response.headers["X-Request-ID"] == "failed-request-123"
+    access_events = [
+        json.loads(record.message)
+        for record in caplog.records
+        if record.name == "uvicorn.error.poker"
+    ]
+    assert len(access_events) == 1
+    assert access_events[0]["request_id"] == "failed-request-123"
+    assert access_events[0]["status_code"] == 500
+
+
+def test_cors_exposes_request_id_header(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get(
+        "/api/jobs",
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+
+
 def test_proxy_shared_secret_protects_api_but_not_health(tmp_path: Path) -> None:
     proxy_secret = "worker-to-backend-secret-value-123"
     client = make_client(tmp_path, proxy_shared_secret=proxy_secret)
 
     assert client.get("/api/health").status_code == 200
-    assert client.get("/api/jobs").status_code == 401
+    rejected = client.get(
+        "/api/jobs",
+        headers={"X-Request-ID": "rejected-request-123"},
+    )
+    assert rejected.status_code == 401
+    assert rejected.headers["X-Request-ID"] == "rejected-request-123"
     assert client.get(
         "/api/jobs",
         headers={"X-Poker-Proxy-Secret": "incorrect-secret-value-123456789"},

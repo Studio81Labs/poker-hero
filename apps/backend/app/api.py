@@ -2,11 +2,15 @@ from contextlib import ExitStack
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
+import json
+import logging
 import math
 import re
 from secrets import compare_digest
 from threading import Lock, RLock
+from time import perf_counter
 from typing import Any
+from uuid import uuid4
 
 from fastapi import (
     BackgroundTasks,
@@ -124,6 +128,37 @@ HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
 PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
+REQUEST_ID_HEADER = "X-Request-ID"
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+LOGGER = logging.getLogger("uvicorn.error.poker")
+
+
+def _request_id(value: str | None) -> str:
+    if value is not None and REQUEST_ID_PATTERN.fullmatch(value) is not None:
+        return value
+    return uuid4().hex
+
+
+def _request_log_message(
+    *,
+    request_id: str,
+    method: str,
+    path: str,
+    status_code: int,
+    duration_ms: float,
+) -> str:
+    return json.dumps(
+        {
+            "duration_ms": round(duration_ms, 3),
+            "event": "http_request",
+            "method": method,
+            "path": path,
+            "request_id": request_id,
+            "status_code": status_code,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 def _json_safe_validation_content(value: Any) -> Any:
@@ -354,6 +389,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Poker Training Analyzer API")
 
+    @app.exception_handler(Exception)
+    async def unexpected_exception_handler(
+        request: Request,
+        _exc: Exception,
+    ) -> JSONResponse:
+        request_id = getattr(request.state, "request_id", None) or _request_id(None)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal Server Error"},
+            headers={REQUEST_ID_HEADER: request_id},
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_exception_handler(
         _request: Request,
@@ -371,6 +418,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
 
     @app.middleware("http")
@@ -391,6 +439,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     content={"detail": "Unauthorized"},
                 )
         return await call_next(request)
+
+    @app.middleware("http")
+    async def observe_http_request(request: Request, call_next):
+        request_id = _request_id(request.headers.get(REQUEST_ID_HEADER))
+        request.state.request_id = request_id
+        started_at = perf_counter()
+        try:
+            response = await call_next(request)
+        except Exception:
+            LOGGER.exception(
+                _request_log_message(
+                    request_id=request_id,
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    duration_ms=(perf_counter() - started_at) * 1000,
+                )
+            )
+            raise
+
+        response.headers[REQUEST_ID_HEADER] = request_id
+        message = _request_log_message(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=(perf_counter() - started_at) * 1000,
+        )
+        if request.url.path == "/api/health" and response.status_code < 400:
+            LOGGER.debug(message)
+        elif response.status_code >= 500:
+            LOGGER.error(message)
+        elif response.status_code >= 400:
+            LOGGER.warning(message)
+        else:
+            LOGGER.info(message)
+        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

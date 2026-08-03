@@ -120,7 +120,10 @@ portable user data.
 ## State Flow
 
 1. A capture or upload creates an independent job.
-2. The configured parser returns detected state, confidence, warnings, and raw metadata.
+2. The configured parser returns detected state, confidence, warnings, and raw
+   metadata. Field confidence values must be finite JSON numbers between zero
+   and one; boolean and string coercion is rejected before automation evaluates
+   them.
 3. The user or automation approves a canonical state when requirements are met.
 4. The user may lock an action, optional sizing, and optional self-rated
    certainty before revealing provider output.

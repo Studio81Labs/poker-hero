@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,6 +14,10 @@ TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 TrainingReviewOrder = Literal["recent", "ev_loss"]
 TrainingReviewCertainty = Literal["low", "medium", "high", "unrated"]
+ParserConfidence = Annotated[
+    float,
+    Field(allow_inf_nan=False, strict=True),
+]
 
 BENCHMARK_IMPORT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
@@ -115,7 +119,7 @@ class DetectedState(BaseModel):
 
 class ParserResult(BaseModel):
     state: DetectedState
-    confidences: dict[str, float] = Field(default_factory=dict)
+    confidences: dict[str, ParserConfidence] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)
 

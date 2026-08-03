@@ -339,6 +339,24 @@ def test_recommendation_accepts_integer_confidence() -> None:
     assert result.confidence == 1.0
 
 
+@pytest.mark.parametrize("confidence", [True, "0.99"])
+def test_parser_result_rejects_coerced_confidence(confidence: object) -> None:
+    with pytest.raises(ValidationError, match="valid number"):
+        ParserResult(
+            state=DetectedState(),
+            confidences={"hero_cards": confidence},
+        )
+
+
+def test_parser_result_accepts_integer_confidence() -> None:
+    result = ParserResult(
+        state=DetectedState(),
+        confidences={"hero_cards": 1},
+    )
+
+    assert result.confidences["hero_cards"] == 1.0
+
+
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
     with pytest.raises(ValidationError):
         CanonicalState(preflop_open_size=0)

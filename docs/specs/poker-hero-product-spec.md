@@ -252,6 +252,8 @@ frequencies.
 2. The frontend creates one queue item and backend job per image.
 3. The backend runs the configured parser independently for each job.
 4. Each parser result includes structured detected state and field confidence.
+   Confidence values must be finite numbers between zero and one; boolean or
+   string values are malformed and cannot satisfy automation thresholds.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
 7. Before revealing guidance, the user may lock their own action, optional

@@ -950,7 +950,7 @@ def _candidate_sizing(
 ) -> float | None | object:
     if action in {"bet", "raise"}:
         sizing = _finite_number(value)
-        return sizing if sizing is not None and sizing >= 0 else _INVALID_SIZING
+        return sizing if sizing is not None and sizing > 0 else _INVALID_SIZING
     return None if value is None else _INVALID_SIZING
 
 

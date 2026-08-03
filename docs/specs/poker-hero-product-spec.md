@@ -255,13 +255,13 @@ frequencies.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all configured requirements pass.
 7. Before revealing guidance, the user may lock their own action, optional
-   finite sizing, and optional low, medium, or high certainty as a training
-   answer.
+   finite positive sizing, and optional low, medium, or high certainty as a
+   training answer.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
 9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
-   Headline sizing must be finite and is accepted only for bet and raise
-   recommendations; malformed provider responses remain retryable errors and
-   are not persisted as advice.
+   Headline sizing must be finite and positive and is accepted only for bet and
+   raise recommendations; malformed provider responses remain retryable errors
+   and are not persisted as advice.
 10. When a training answer exists, the UI compares it with the recommendation
     and any meaningful frequency-bearing policy candidates.
 11. Completed comparisons contribute to an aggregate progress view with

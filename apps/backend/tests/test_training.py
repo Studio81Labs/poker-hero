@@ -1632,7 +1632,10 @@ def test_summarize_training_ignores_unrelated_nonnumeric_candidate_ev() -> None:
     assert progress.review_queue == []
 
 
-def test_summarize_training_ignores_unrelated_invalid_candidate_sizing() -> None:
+@pytest.mark.parametrize("invalid_sizing", [-1, 0])
+def test_summarize_training_ignores_unrelated_invalid_candidate_sizing(
+    invalid_sizing: int,
+) -> None:
     jobs = [
         reviewed_job(
             "f" * 32,
@@ -1645,7 +1648,12 @@ def test_summarize_training_ignores_unrelated_invalid_candidate_sizing() -> None
                 "candidates": [
                     {"action": "call", "sizing": None, "ev": 1.4, "frequency": 0.78},
                     {"action": "raise", "sizing": 8, "ev": 1.1, "frequency": 0.2},
-                    {"action": "bet", "sizing": -1, "ev": 99, "frequency": 0.02},
+                    {
+                        "action": "bet",
+                        "sizing": invalid_sizing,
+                        "ev": 99,
+                        "frequency": 0.02,
+                    },
                 ]
             },
         )

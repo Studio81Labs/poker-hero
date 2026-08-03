@@ -1197,7 +1197,13 @@ describe("App", () => {
     ))[0].parser_result.state.hero_cards).toEqual(detectedState.hero_cards);
   });
 
-  it("rejects malformed cached recommendations and restores the backend record", async () => {
+  it.each([
+    ["missing recommendation fields", {}],
+    ["zero wager sizing", { ...recommendation, action: "raise", sizing: 0 }],
+  ])("rejects cached recommendations with %s and restores the backend record", async (
+    _label,
+    malformedRecommendation,
+  ) => {
     const persistedJob = {
       ...recommendedJob(),
       id: "d".repeat(32),
@@ -1205,7 +1211,7 @@ describe("App", () => {
     };
     const malformedJob = {
       ...persistedJob,
-      recommendation: {},
+      recommendation: malformedRecommendation,
     };
     window.localStorage.setItem(
       "poker-training-processing-v1",
@@ -1235,6 +1241,17 @@ describe("App", () => {
         training_decision: {
           action: {},
           sizing: null,
+          certainty: "medium",
+          recorded_at: "2026-07-20T12:00:00Z",
+        },
+      },
+    },
+    {
+      label: "zero-sized training decision",
+      invalidFields: {
+        training_decision: {
+          action: "raise",
+          sizing: 0,
           certainty: "medium",
           recorded_at: "2026-07-20T12:00:00Z",
         },
@@ -5064,6 +5081,25 @@ describe("App", () => {
     expect(fetchMock()).toHaveBeenCalledTimes(5);
   });
 
+  it("rejects a zero-sized wager before locking the training answer", async () => {
+    const created = jobRecord();
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(await screen.findByRole("button", { name: "Approve state" }));
+    const decisionPanel = await screen.findByLabelText("Your training decision");
+    await user.click(within(decisionPanel).getByRole("button", { name: "raise" }));
+    await user.type(within(decisionPanel).getByLabelText("Decision sizing in BB"), "0");
+    await user.click(within(decisionPanel).getByRole("button", { name: "Lock answer" }));
+
+    expect(await screen.findByText("Enter a valid positive decision size")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(3);
+  });
+
   it.each([
     {
       title: "keeps sizing at the match-tolerance boundary reviewable",
@@ -5191,6 +5227,17 @@ describe("App", () => {
       title: "rejects an alternate raise without valid sizing",
       frequency: 0.2,
       candidateSizing: null,
+      candidateEv: 2.74,
+      unrelatedEv: 0,
+      expectedLabel: "Different action",
+      hasEvLoss: false,
+      includeRecommendedCandidate: true,
+      needsReview: true,
+    },
+    {
+      title: "rejects an alternate raise with zero sizing",
+      frequency: 0.2,
+      candidateSizing: 0,
       candidateEv: 2.74,
       unrelatedEv: 0,
       expectedLabel: "Different action",

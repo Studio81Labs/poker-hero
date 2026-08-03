@@ -274,6 +274,19 @@ def test_action_line_rejects_nonfinite_sizing(model: type[Any]) -> None:
         model(**values)
 
 
+@pytest.mark.parametrize(
+    "model",
+    [RecommendationResult, TrainingDecisionRequest],
+)
+def test_action_line_rejects_zero_wager_sizing(model: type[Any]) -> None:
+    values: dict[str, Any] = {"action": "raise", "sizing": 0}
+    if model is RecommendationResult:
+        values.update(confidence=0.8, explanation="Malformed recommendation")
+
+    with pytest.raises(ValidationError, match="greater than 0"):
+        model(**values)
+
+
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
     with pytest.raises(ValidationError):
         CanonicalState(preflop_open_size=0)

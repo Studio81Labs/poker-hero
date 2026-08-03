@@ -22,17 +22,38 @@ BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
 BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 JOB_RECORD_PAYLOAD_ADAPTER = TypeAdapter(dict[str, Any])
 LEGACY_ACTIONS_WITHOUT_SIZING = frozenset({"fold", "check", "call"})
+LEGACY_WAGER_ACTIONS = frozenset({"bet", "raise"})
+
+
+def _normalize_legacy_action_sizing(
+    value: Any,
+    *,
+    normalize_non_wager: bool,
+) -> None:
+    if not isinstance(value, dict):
+        return
+    action = value.get("action")
+    sizing = value.get("sizing")
+    if action in LEGACY_WAGER_ACTIONS and sizing == 0:
+        value["sizing"] = None
+    elif (
+        normalize_non_wager
+        and action in LEGACY_ACTIONS_WITHOUT_SIZING
+        and sizing is not None
+    ):
+        value["sizing"] = None
 
 
 def load_persisted_job_record(payload: str | bytes) -> JobRecord:
     values = JOB_RECORD_PAYLOAD_ADAPTER.validate_json(payload)
-    recommendation = values.get("recommendation")
-    if (
-        isinstance(recommendation, dict)
-        and recommendation.get("action") in LEGACY_ACTIONS_WITHOUT_SIZING
-        and recommendation.get("sizing") is not None
-    ):
-        recommendation["sizing"] = None
+    _normalize_legacy_action_sizing(
+        values.get("recommendation"),
+        normalize_non_wager=True,
+    )
+    _normalize_legacy_action_sizing(
+        values.get("training_decision"),
+        normalize_non_wager=False,
+    )
     return JobRecord.model_validate(values)
 
 

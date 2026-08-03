@@ -846,7 +846,7 @@ function policyCandidateSizing(
 ): { valid: boolean; value: number | null } {
   if (action === "bet" || action === "raise") {
     const sizing = metadataNumber(value);
-    return sizing !== null && sizing >= 0
+    return sizing !== null && sizing > 0
       ? { valid: true, value: sizing }
       : { valid: false, value: null };
   }
@@ -923,8 +923,8 @@ function parseTrainingSizing(
     return { sizing: null, error: null };
   }
   const sizing = Number(rawSizing);
-  if (!Number.isFinite(sizing) || sizing < 0) {
-    return { sizing: null, error: "Enter a valid non-negative decision size" };
+  if (!Number.isFinite(sizing) || sizing <= 0) {
+    return { sizing: null, error: "Enter a valid positive decision size" };
   }
   return { sizing, error: null };
 }
@@ -1723,6 +1723,18 @@ function isCachedCanonicalState(value: unknown): value is CanonicalState {
     && typeof (value as Partial<CanonicalState>).user_approved === "boolean";
 }
 
+function isCachedActionSizing(action: unknown, sizing: unknown): boolean {
+  if (action === "bet" || action === "raise") {
+    return sizing === null
+      || (
+        typeof sizing === "number"
+        && Number.isFinite(sizing)
+        && sizing > 0
+      );
+  }
+  return sizing === null;
+}
+
 function isCachedRecommendation(value: unknown): value is RecommendationResult {
   if (value === null || typeof value !== "object") {
     return false;
@@ -1730,14 +1742,7 @@ function isCachedRecommendation(value: unknown): value is RecommendationResult {
   const recommendation = value as Record<string, unknown>;
   return typeof recommendation.action === "string"
     && TRAINING_ACTIONS.some((action) => action === recommendation.action)
-    && (
-      recommendation.sizing === null
-      || (
-        typeof recommendation.sizing === "number"
-        && Number.isFinite(recommendation.sizing)
-        && recommendation.sizing >= 0
-      )
-    )
+    && isCachedActionSizing(recommendation.action, recommendation.sizing)
     && typeof recommendation.confidence === "number"
     && Number.isFinite(recommendation.confidence)
     && recommendation.confidence >= 0
@@ -1755,14 +1760,7 @@ function isCachedTrainingDecision(value: unknown): boolean {
   const decision = value as Record<string, unknown>;
   return typeof decision.action === "string"
     && TRAINING_ACTIONS.some((action) => action === decision.action)
-    && (
-      decision.sizing === null
-      || (
-        typeof decision.sizing === "number"
-        && Number.isFinite(decision.sizing)
-        && decision.sizing >= 0
-      )
-    )
+    && isCachedActionSizing(decision.action, decision.sizing)
     && (
       decision.certainty === undefined
       || decision.certainty === null
@@ -2160,14 +2158,7 @@ function isJobMutationExpectation(
   if (expectation.kind === "training-decision") {
     return typeof expectation.action === "string"
       && TRAINING_ACTIONS.some((action) => action === expectation.action)
-      && (
-        expectation.sizing === null
-        || (
-          typeof expectation.sizing === "number"
-          && Number.isFinite(expectation.sizing)
-          && expectation.sizing >= 0
-        )
-      )
+      && isCachedActionSizing(expectation.action, expectation.sizing)
       && (
         expectation.certainty === null
         || (

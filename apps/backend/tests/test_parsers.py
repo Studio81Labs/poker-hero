@@ -222,6 +222,39 @@ def test_http_vision_parser_invalid_payload_raises_parser_error(
         parser.parse(image_path)
 
 
+@pytest.mark.parametrize("confidence", [True, "0.91"])
+def test_http_vision_parser_rejects_coerced_confidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    confidence: object,
+) -> None:
+    image_path = tmp_path / "table.png"
+    image_path.write_bytes(b"fake image bytes")
+    request = httpx.Request("POST", "https://parser.example/parse")
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "state": {"street": "preflop"},
+                "confidences": {"street": confidence},
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    parser = build_parser(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="llm_vision",
+            external_parser_url="https://parser.example/parse",
+        )
+    )
+
+    with pytest.raises(ParserError, match="invalid payload"):
+        parser.parse(image_path)
+
+
 def test_registry_builds_ocr_cv_parser(tmp_path: Path) -> None:
     parser = build_parser(Settings(data_dir=tmp_path, parser_provider="ocr_cv"))
 

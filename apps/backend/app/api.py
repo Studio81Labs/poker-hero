@@ -134,6 +134,7 @@ PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 ACCESS_LOG_HANDLER_NAME = "poker-json-access"
+BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
 
 
 def _build_access_logger() -> logging.Logger:
@@ -238,6 +239,7 @@ class RequestObservabilityMiddleware:
         response_completed = False
         final_body_started = False
         client_disconnected = False
+        access_event_logged = False
         receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
             maxsize=1
         )
@@ -268,6 +270,29 @@ class RequestObservabilityMiddleware:
 
         receive_task = asyncio.create_task(pump_receive())
 
+        async def stop_receive_task() -> None:
+            receive_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await receive_task
+
+        def log_access_event(outcome: str) -> None:
+            nonlocal access_event_logged
+            if access_event_logged:
+                return
+            access_event_logged = True
+            _log_http_request(
+                request_id=request_id,
+                method=method,
+                path=path,
+                status_code=(
+                    status_code
+                    if status_code is not None
+                    else status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                duration_ms=(perf_counter() - started_at) * 1000,
+                outcome=outcome,
+            )
+
         async def send_observed(message: Message) -> None:
             nonlocal final_body_started, response_completed, status_code
             message_type = message["type"]
@@ -286,39 +311,24 @@ class RequestObservabilityMiddleware:
             await send(message)
             if is_final_body:
                 response_completed = True
-
-        async def stop_receive_task() -> None:
-            receive_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await receive_task
+                if scope["state"].get(BACKGROUND_TASK_STATE_KEY, False):
+                    await stop_receive_task()
+                    log_access_event(
+                        "failed" if client_disconnected else "completed"
+                    )
 
         try:
             await self.app(scope, receive_observed, send_observed)
         except BaseException:
             await stop_receive_task()
-            _log_http_request(
-                request_id=request_id,
-                method=method,
-                path=path,
-                status_code=status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
-                duration_ms=(perf_counter() - started_at) * 1000,
-                outcome="failed",
-            )
+            log_access_event("failed")
             raise
 
         await stop_receive_task()
-        outcome = (
+        log_access_event(
             "completed"
             if response_completed and not client_disconnected
             else "failed"
-        )
-        _log_http_request(
-            request_id=request_id,
-            method=method,
-            path=path,
-            status_code=status_code or status.HTTP_500_INTERNAL_SERVER_ERROR,
-            duration_ms=(perf_counter() - started_at) * 1000,
-            outcome=outcome,
         )
 
 
@@ -1312,6 +1322,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     )
     def get_benchmark_dataset_import(
         request_id: str,
+        request: Request,
         background_tasks: BackgroundTasks,
     ) -> BenchmarkDatasetImportReceipt:
         try:
@@ -1322,6 +1333,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 detail="Benchmark dataset import not found",
             ) from exc
         if receipt.status == "pending" and not dataset_import_lock.locked():
+            setattr(request.state, BACKGROUND_TASK_STATE_KEY, True)
             background_tasks.add_task(resume_benchmark_import, request_id)
         return receipt
 

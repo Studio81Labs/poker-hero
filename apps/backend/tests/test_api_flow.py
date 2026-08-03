@@ -367,6 +367,114 @@ def test_client_disconnect_marks_file_response_failed(
     assert access_events[0]["outcome"] == "failed"
 
 
+def test_completed_response_is_logged_before_post_response_failure(
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    async def receive() -> dict[str, object]:
+        await asyncio.Event().wait()
+        raise AssertionError("receive should be cancelled")
+
+    async def send(_message: dict[str, object]) -> None:
+        await asyncio.sleep(0)
+
+    async def response_then_fail(
+        _scope: dict[str, object],
+        _receive,
+        send_response,
+    ) -> None:
+        await send_response({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+        })
+        await send_response({
+            "type": "http.response.body",
+            "body": b"complete",
+            "more_body": False,
+        })
+        access_events = [
+            json.loads(record.message) for record in access_log_records
+        ]
+        assert len(access_events) == 1
+        assert access_events[0]["outcome"] == "completed"
+        raise RuntimeError("background task failed")
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/benchmarks/imports/example",
+        "raw_path": b"/api/benchmarks/imports/example",
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {api_module.BACKGROUND_TASK_STATE_KEY: True},
+    }
+
+    with pytest.raises(RuntimeError, match="background task failed"):
+        asyncio.run(
+            api_module.RequestObservabilityMiddleware(response_then_fail)(
+                scope,
+                receive,
+                send,
+            )
+        )
+
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["status_code"] == 200
+    assert access_events[0]["outcome"] == "completed"
+
+
+def test_benchmark_recovery_poll_logs_before_background_import_finishes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    request_id = "observed-background-import"
+    FileBenchmarkStore(tmp_path).begin_import(request_id, b"test archive")
+    import_started = Event()
+    release_import = Event()
+
+    def block_import_parse(*_args: object, **_kwargs: object):
+        import_started.set()
+        assert release_import.wait(timeout=2)
+        raise OSError("simulated interrupted background import")
+
+    monkeypatch.setattr(
+        api_module,
+        "parse_parser_dataset_archive",
+        block_import_parse,
+    )
+    client = make_client(tmp_path)
+    responses: list[object] = []
+
+    def poll_import() -> None:
+        responses.append(client.get(f"/api/benchmarks/imports/{request_id}"))
+
+    poll_thread = Thread(target=poll_import)
+    poll_thread.start()
+    assert import_started.wait(timeout=2)
+
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["path"] == (
+        f"/api/benchmarks/imports/{request_id}"
+    )
+    assert access_events[0]["status_code"] == 200
+    assert access_events[0]["outcome"] == "completed"
+    assert poll_thread.is_alive()
+
+    release_import.set()
+    poll_thread.join(timeout=2)
+    assert not poll_thread.is_alive()
+    assert len(responses) == 1
+    assert responses[0].status_code == 200
+
+
 def test_cors_preflight_is_observed(
     tmp_path: Path,
     access_log_records: list[logging.LogRecord],

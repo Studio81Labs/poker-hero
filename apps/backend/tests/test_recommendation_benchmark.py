@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.models import Card, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError
 from app.recommendation_benchmark import (
@@ -626,6 +626,33 @@ def test_cli_reports_deferred_provider_configuration_error(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "provider URL is required" in captured.err
+
+
+def test_cli_reports_environment_settings_validation_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("check", [reference_line("check")])]
+        ),
+    )
+    raw_value = "not-a-number-sensitive-sentinel"
+    monkeypatch.setenv("POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS", raw_value)
+    get_settings.cache_clear()
+
+    try:
+        exit_code = main([str(dataset_path)])
+    finally:
+        get_settings.cache_clear()
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Settings configuration is invalid" in captured.err
+    assert "external_request_timeout_seconds" in captured.err
+    assert raw_value not in captured.err
 
 
 def test_benchmark_file_uses_configured_provider(tmp_path: Path) -> None:

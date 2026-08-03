@@ -234,7 +234,9 @@ def load_recommendation_benchmark_dataset(
         return RecommendationBenchmarkDataset.model_validate_json(payload)
     except ValidationError as exc:
         first_error = exc.errors(include_url=False)[0]
-        location = ".".join(str(part) for part in first_error["loc"])
+        location = (
+            ".".join(str(part) for part in first_error["loc"]) or "settings"
+        )
         raise RecommendationBenchmarkError(
             "Recommendation benchmark is invalid at "
             f"{location}: {first_error['msg']}"
@@ -696,7 +698,17 @@ def main(
     provider: RecommendationProvider | None = None,
 ) -> int:
     args = _argument_parser().parse_args(argv)
-    active_settings = settings or get_settings()
+    try:
+        active_settings = settings or get_settings()
+    except ValidationError as exc:
+        first_error = exc.errors(include_url=False)[0]
+        location = ".".join(str(part) for part in first_error["loc"])
+        print(
+            "Settings configuration is invalid at "
+            f"{location}: {first_error['msg']}",
+            file=sys.stderr,
+        )
+        return 2
     if args.provider:
         active_settings = active_settings.model_copy(
             update={"recommendation_provider": args.provider}

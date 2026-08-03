@@ -361,7 +361,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> JSONResponse:
         content = jsonable_encoder({"detail": exc.errors()})
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=422,
             content=_json_safe_validation_content(content),
         )
 

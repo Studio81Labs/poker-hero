@@ -255,6 +255,43 @@ def test_http_vision_parser_rejects_coerced_confidence(
         parser.parse(image_path)
 
 
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("pot_size", "12.5"),
+        ("players_in_hand", True),
+    ],
+)
+def test_http_vision_parser_rejects_coerced_numeric_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field_name: str,
+    value: object,
+) -> None:
+    image_path = tmp_path / "table.png"
+    image_path.write_bytes(b"fake image bytes")
+    request = httpx.Request("POST", "https://parser.example/parse")
+
+    def fake_post(*args: object, **kwargs: object) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"state": {field_name: value}},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    parser = build_parser(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="llm_vision",
+            external_parser_url="https://parser.example/parse",
+        )
+    )
+
+    with pytest.raises(ParserError, match="invalid payload"):
+        parser.parse(image_path)
+
+
 def test_registry_builds_ocr_cv_parser(tmp_path: Path) -> None:
     parser = build_parser(Settings(data_dir=tmp_path, parser_provider="ocr_cv"))
 

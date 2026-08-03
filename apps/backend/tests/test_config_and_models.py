@@ -357,6 +357,55 @@ def test_parser_result_accepts_integer_confidence() -> None:
     assert result.confidences["hero_cards"] == 1.0
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "pot_size",
+        "current_bet",
+        "hero_stack",
+        "effective_stack",
+        "preflop_open_size",
+    ],
+)
+@pytest.mark.parametrize("value", [True, "2.5", float("inf")])
+def test_detected_state_rejects_invalid_numeric_amounts(
+    field_name: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        DetectedState(**{field_name: value})
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "pot_size",
+        "current_bet",
+        "hero_stack",
+        "effective_stack",
+        "preflop_open_size",
+    ],
+)
+def test_detected_state_accepts_integer_numeric_amounts(field_name: str) -> None:
+    result = DetectedState(**{field_name: 2})
+
+    assert getattr(result, field_name) == 2.0
+
+
+@pytest.mark.parametrize("players_in_hand", [True, "3", 3.0])
+def test_detected_state_rejects_coerced_player_count(
+    players_in_hand: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        DetectedState(players_in_hand=players_in_hand)
+
+
+def test_detected_state_accepts_integer_player_count() -> None:
+    result = DetectedState(players_in_hand=3)
+
+    assert result.players_in_hand == 3
+
+
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
     with pytest.raises(ValidationError):
         CanonicalState(preflop_open_size=0)

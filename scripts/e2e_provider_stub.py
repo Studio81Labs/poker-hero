@@ -112,6 +112,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("zero_headline_sizing")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/coerced-headline-sizing-next-recommendation":
+                state.arm_recommendation_evidence("coerced_headline_sizing")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
                 self._send_json(200, {"armed": True})
@@ -330,6 +334,9 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             elif recommendation_variant == "zero_headline_sizing":
                 recommendation_action = "raise"
                 recommendation_sizing = 0
+            elif recommendation_variant == "coerced_headline_sizing":
+                recommendation_action = "raise"
+                recommendation_sizing = "7.5"
             elif recommendation_variant == "fallback":
                 raw.update(
                     {

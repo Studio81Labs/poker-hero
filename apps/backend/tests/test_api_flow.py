@@ -1274,6 +1274,24 @@ def test_training_decision_rejects_zero_wager_sizing(tmp_path: Path) -> None:
     assert FileJobStore(tmp_path).get(job_id).training_decision is None
 
 
+@pytest.mark.parametrize("sizing", [True, "7.5"])
+def test_training_decision_rejects_coerced_wager_sizing(
+    tmp_path: Path,
+    sizing: object,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.put(
+        f"/api/jobs/{job_id}/decision",
+        json={"action": "raise", "sizing": sizing},
+    )
+
+    assert response.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).training_decision is None
+
+
 def test_training_decision_rejects_unknown_certainty(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]

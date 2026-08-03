@@ -295,6 +295,81 @@ def test_malformed_candidate_metadata_skips_policy_metric() -> None:
     assert report.average_policy_distance is None
 
 
+def test_zero_frequency_unsized_wager_does_not_hide_policy_metric() -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("deterministic-check", [reference_line("check")])]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 1.0},
+                    {"action": "raise", "sizing": None, "frequency": 0.0},
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0
+
+
+def test_rounded_candidate_frequencies_are_normalized() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "rounded-policy",
+                [
+                    reference_line("check", frequency=1 / 3),
+                    reference_line("bet", sizing=5.0, frequency=1 / 3),
+                    reference_line("bet", sizing=7.0, frequency=1 / 3),
+                ],
+            )
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.3333},
+                    {"action": "bet", "sizing": 5.0, "frequency": 0.3333},
+                    {"action": "bet", "sizing": 7.0, "frequency": 0.3333},
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 1
+    assert report.average_policy_distance == 0
+
+
+def test_incomplete_candidate_frequencies_hide_policy_metric() -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("incomplete-policy", [reference_line("check")])]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.999}
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.policy_evaluated_cases == 0
+    assert report.average_policy_distance is None
+
+
 def test_missing_required_state_is_an_isolated_case_failure() -> None:
     dataset = benchmark_dataset(
         [

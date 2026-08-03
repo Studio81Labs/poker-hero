@@ -91,6 +91,9 @@ The values above illustrate the file shape and are not strategy claims.
   best reference EV minus the selected reference line EV.
 - Policy distance is total-variation distance and is available only when the
   provider returns a complete valid `raw.candidates` frequency distribution.
+  Four-decimal provider frequencies are normalized when their total differs
+  from one only by bounded rounding error. Zero-frequency candidates do not
+  require sizing because they contribute no policy mass.
 - A provider exception or missing required canonical field fails only that case.
 - A non-empty `raw.fallback_reason` counts toward fallback rate;
   `routing_reason` does not.

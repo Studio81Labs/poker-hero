@@ -35,6 +35,8 @@ RECOMMENDATION_BENCHMARK_SCHEMA_VERSION = 1
 MAX_RECOMMENDATION_BENCHMARK_BYTES = 4 * 1024 * 1024
 MAX_RECOMMENDATION_BENCHMARK_CASES = 1_000
 MAX_REFERENCE_LINES = 20
+PROVIDER_FREQUENCY_ROUNDING_UNIT = 0.0001
+MAX_PROVIDER_FREQUENCY_ROUNDING_ERROR = 0.001
 WAGER_ACTIONS = {"bet", "raise"}
 VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendationAction))
 
@@ -460,6 +462,9 @@ def _policy_distance(
         frequency = _finite_number(candidate.get("frequency"))
         if frequency is None or frequency < 0 or frequency > 1:
             return None
+        total_frequency += frequency
+        if frequency == 0:
+            continue
         sizing = _candidate_sizing(action, candidate.get("sizing"))
         if sizing is _INVALID_SIZING:
             return None
@@ -474,9 +479,21 @@ def _policy_distance(
             provider_frequencies[matching_indexes[0]] += frequency
         else:
             unmatched_frequency += frequency
-        total_frequency += frequency
-    if not math.isclose(total_frequency, 1.0, rel_tol=0, abs_tol=1e-6):
+    rounding_tolerance = min(
+        len(candidates) * PROVIDER_FREQUENCY_ROUNDING_UNIT / 2 + 1e-9,
+        MAX_PROVIDER_FREQUENCY_ROUNDING_ERROR,
+    )
+    if not math.isclose(
+        total_frequency,
+        1.0,
+        rel_tol=0,
+        abs_tol=rounding_tolerance,
+    ):
         return None
+    provider_frequencies = [
+        frequency / total_frequency for frequency in provider_frequencies
+    ]
+    unmatched_frequency /= total_frequency
     difference = unmatched_frequency + sum(
         abs(provider_frequency - reference.frequency)
         for provider_frequency, reference in zip(

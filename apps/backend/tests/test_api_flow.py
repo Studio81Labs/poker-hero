@@ -161,6 +161,48 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     }
 
 
+def test_default_access_log_level_suppresses_health_event(
+    tmp_path: Path,
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    response = make_client(tmp_path).get("/api/health")
+
+    assert response.status_code == 200
+    assert access_log_records == []
+
+
+def test_debug_access_log_level_emits_health_event(
+    tmp_path: Path,
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    client = make_client(tmp_path, access_log_level="debug")
+
+    response = client.get(
+        "/api/health",
+        headers={"X-Request-ID": "health-request-123"},
+    )
+
+    assert response.status_code == 200
+    access_events = [
+        json.loads(record.message)
+        for record in access_log_records
+        if record.name == "poker.access"
+    ]
+    assert access_events == [
+        {
+            "duration_ms": access_events[0]["duration_ms"],
+            "event": "http_request",
+            "level": "debug",
+            "method": "GET",
+            "outcome": "completed",
+            "path": "/api/health",
+            "request_id": "health-request-123",
+            "status_code": 200,
+        }
+    ]
+    assert access_log_records[0].levelno == logging.DEBUG
+
+
 def test_request_id_is_returned_and_access_log_is_structured(
     tmp_path: Path,
     access_log_records: list[logging.LogRecord],

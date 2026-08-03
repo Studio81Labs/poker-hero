@@ -135,11 +135,17 @@ REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 ACCESS_LOG_HANDLER_NAME = "poker-json-access"
 BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
+ACCESS_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 
 def _build_access_logger() -> logging.Logger:
     logger = logging.getLogger("poker.access")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     logger.propagate = False
     if not any(
         handler.get_name() == ACCESS_LOG_HANDLER_NAME
@@ -195,6 +201,7 @@ def _log_http_request(
     status_code: int,
     duration_ms: float,
     outcome: str,
+    minimum_log_level: int,
 ) -> None:
     if outcome == "failed" or status_code >= 500:
         log_level = logging.ERROR
@@ -204,6 +211,8 @@ def _log_http_request(
         log_level = logging.DEBUG
     else:
         log_level = logging.INFO
+    if log_level < minimum_log_level:
+        return
     message = _request_log_message(
         request_id=request_id,
         method=method,
@@ -217,8 +226,13 @@ def _log_http_request(
 
 
 class RequestObservabilityMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        access_log_level: int = logging.INFO,
+    ) -> None:
         self.app = app
+        self.access_log_level = access_log_level
 
     async def __call__(
         self,
@@ -323,6 +337,7 @@ class RequestObservabilityMiddleware:
                 ),
                 duration_ms=(perf_counter() - started_at) * 1000,
                 outcome=outcome,
+                minimum_log_level=self.access_log_level,
             )
 
         async def send_observed(message: Message) -> None:
@@ -1411,7 +1426,8 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             allow_methods=["*"],
             allow_headers=["*"],
             expose_headers=[REQUEST_ID_HEADER],
-        )
+        ),
+        access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
     )
 
 

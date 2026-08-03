@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Field(default=Path("data"))
+    access_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     parser_provider: str = Field(default="mock")
     parser_layout_profile: str = Field(default="generic")
     parser_auto_approve_enabled: bool = Field(default=False)
@@ -61,6 +62,13 @@ class Settings(BaseSettings):
     max_backup_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     proxy_shared_secret: SecretStr | None = Field(default=None)
+
+    @field_validator("access_log_level", mode="before")
+    @classmethod
+    def normalize_access_log_level(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().upper()
+        return value
 
     @field_validator(
         "external_parser_bearer_token",

@@ -56,6 +56,8 @@ event is emitted after the response body completes and identifies interrupted
 or failed streams with `"outcome":"failed"`. Each container log line is a
 standalone JSON object with its severity in the `level` field, ready for a JSON
 log collector without stripping a Uvicorn prefix.
+Set `POKER_ACCESS_LOG_LEVEL=DEBUG` when health-probe events are needed during
+deployment diagnosis; the default `INFO` threshold suppresses them.
 
 ## Frontend On Cloudflare Workers
 

@@ -420,6 +420,23 @@ Schema version and declared case count must be JSON integers; boolean, string,
 and floating-point coercion is rejected.
 Parser dataset selection, export, and import share a 250-hand corpus limit.
 
+## Recommendation Benchmark
+
+A separate offline benchmark evaluates the configured recommendation provider
+against canonical hand states and trusted strategy references stored in a
+versioned JSON corpus. It does not use screenshots, mutate jobs, or treat the
+active provider's own output as ground truth. Each case defines a complete
+reference policy whose frequencies sum to one, optional unambiguous bet or
+raise sizes, and either complete per-line EV labels or no EV labels.
+
+The report isolates failed cases and measures supported-action agreement,
+exact sizing-line agreement where sizing is labeled, mixed-policy distance
+when provider candidate frequencies are complete, reference EV loss when the
+selected line has a trusted EV, and recorded fallback use. Human-readable and
+JSON output support optional regression thresholds for each aggregate. The
+same provider registry and canonical request contract used by the application
+must be used by the benchmark.
+
 ## Application Backup And Restore
 
 The full application backup is distinct from the parser dataset. It contains
@@ -526,6 +543,9 @@ Recommendation tests:
 
 - Use the mock provider for stable UI/backend tests.
 - Validate provider request/response contracts.
+- Run versioned trusted-reference corpora without changing configured data,
+  isolate provider failures per case, and enforce action, sizing-line, policy,
+  EV-loss, and fallback regression thresholds independently.
 - Treat an alternate candidate as policy-supported only when it has valid action,
   sizing, and frequency metadata and at least 5% modeled frequency.
 - Derive EV loss only when the locked line and a best candidate both have valid

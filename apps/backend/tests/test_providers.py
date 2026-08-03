@@ -365,6 +365,40 @@ def test_local_solver_runs_postflop_plugin_for_supported_spot(tmp_path: Path) ->
     assert "fallback_reason" not in result.raw
 
 
+def test_postflop_solver_routes_dealer_as_ip(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "assert payload['state']['hero_position'] == 'dealer'\n"
+        "print(json.dumps({"
+        "'action': 'call', "
+        "'sizing': None, "
+        "'confidence': 0.84, "
+        "'explanation': 'Dealer postflop response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.hero_position = "dealer"
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "postflop_solver"
+    assert "fallback_reason" not in result.raw
+
+
 def test_postflop_solver_failure_uses_ev_fallback(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text("import sys\nprint('tree too large', file=sys.stderr)\nsys.exit(8)\n")

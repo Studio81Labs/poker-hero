@@ -43,10 +43,12 @@ in the same evidence payload. Capped blind reraises reconstruct a total amount
 from stack behind, the hero's posted blind, and hero stack when available; the
 resolved effective cap is retained for review.
 `postflop_solver` runs as a pinned Rust stdin/stdout process for heads-up
-postflop decisions. `local_ev` remains available directly and is used as a
-recorded fallback for ambiguous preflop, multiway, incomplete,
-resource-limited, or failed postflop solves. Explicit custom commands still
-override the bundled engine selection.
+postflop decisions with explicit relative position. Canonical `dealer` labels
+map to button/IP; non-button seat labels remain ambiguous without opponent
+position. `local_ev` remains available directly and is used as a
+recorded fallback for ambiguous preflop, ambiguous position, multiway,
+incomplete, resource-limited, or failed postflop solves. Explicit custom
+commands still override the bundled engine selection.
 
 External vision, solver, and LLM adapters use independent optional bearer
 tokens held as masked settings and a shared configurable request timeout. The

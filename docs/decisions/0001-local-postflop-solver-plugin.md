@@ -18,9 +18,11 @@ pins the AGPL `b-inary/postflop-solver` dependency. `local_ev` remains a
 selectable engine and the default fallback.
 
 Only approved heads-up flop, turn, and river states with an explicit IP/OOP
-position reach the postflop engine. Facing-bet states also require hero's
-visible stack so the adapter can reconstruct whether hero or the bettor was
-covered before the wager, plus an explicit classification that the facing
+position reach the postflop engine. Canonical `dealer` positions map to IP
+because they identify the button; non-button seat labels remain unsupported
+without opponent position. Facing-bet states also require
+hero's visible stack so the adapter can reconstruct whether hero or the bettor
+was covered before the wager, plus an explicit classification that the facing
 action is a first bet. Raised pots remain on fallback until full action history
 is represented in canonical state. The adapter models the current decision
 from pot, call amount, position, visible stacks, configured ranges, and a

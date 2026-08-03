@@ -785,6 +785,101 @@ def test_restore_rejects_inconsistent_benchmark_report_metrics_before_writing(
     assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "unknown_field",
+        "incorrect_match",
+        "oversized_number",
+        "nested_oversized_number",
+        "nonfinite_number",
+        "duplicate_card_across_fields",
+        "unnormalized_text",
+    ],
+)
+def test_restore_rejects_invalid_benchmark_comparisons_before_writing(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        report_name = manifest["benchmark_reports"][0]["report_file"]
+        report = json.loads(archive.read(report_name))
+
+    case = report["cases"][0]
+    comparison = case["comparisons"][0]
+    metric = next(
+        item
+        for item in report["field_metrics"]
+        if item["field"] == comparison["field"]
+    )
+    if mutation == "unknown_field":
+        comparison["field"] = "invented_field"
+        metric["field"] = "invented_field"
+    elif mutation == "incorrect_match":
+        assert comparison["matched"] is True
+        comparison["matched"] = False
+        case["correct_fields"] -= 1
+        case["accuracy"] = case["correct_fields"] / case["evaluated_fields"]
+        report["correct_fields"] -= 1
+        report["accuracy"] = report["correct_fields"] / report["evaluated_fields"]
+        metric["correct"] -= 1
+        metric["accuracy"] = metric["correct"] / metric["total"]
+    elif mutation == "oversized_number":
+        comparison["expected"] = 10**400
+    elif mutation == "nested_oversized_number":
+        comparison["expected"] = [10**400]
+        comparison["detected"] = [10**400]
+    elif mutation == "nonfinite_number":
+        comparison["expected"] = float("inf")
+    elif mutation == "duplicate_card_across_fields":
+        hero_cards = next(
+            item for item in case["comparisons"] if item["field"] == "hero_cards"
+        )
+        board_cards = next(
+            item for item in case["comparisons"] if item["field"] == "board_cards"
+        )
+        for side in ("expected", "detected"):
+            board_cards[side][0] = hero_cards[side][0]
+            board_cards[side].sort()
+    else:
+        position = next(
+            item
+            for item in case["comparisons"]
+            if item["field"] == "hero_position"
+        )
+        position["expected"] = "BTN"
+        position["detected"] = "BTN"
+
+    report_bytes = (json.dumps(report, indent=2) + "\n").encode()
+    manifest["benchmark_reports"][0]["report_sha256"] = sha256(
+        report_bytes
+    ).hexdigest()
+    modified = rebuild_archive(
+        export.content,
+        {
+            report_name: report_bytes,
+            "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("invalid-comparison.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "report" in response.json()["detail"]
+    assert "is invalid" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
 def test_restore_rejects_conflicting_existing_job_without_partial_import(
     tmp_path: Path,
 ) -> None:

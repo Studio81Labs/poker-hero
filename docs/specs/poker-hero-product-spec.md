@@ -443,7 +443,12 @@ Restored benchmark reports require strict JSON booleans, non-negative integer
 counters, and finite numeric accuracy/confidence values; coercion from strings,
 booleans, or floating-point counters is rejected before writing. Report, case,
 and field totals, statuses, and accuracy ratios must agree with their nested
-comparisons, with unique case and field identities.
+comparisons, with unique case and field identities. Comparison fields must be
+recognized by the benchmark schema, and match flags must agree with the stored
+expected and detected values. Both values must match the canonical shape for
+their field; hero and board cards must remain jointly unique, text must retain
+its normalized representation, and numeric comparison evidence must be finite
+and representable by the benchmark matcher.
 
 ## Review And Auto-Approve
 

@@ -125,7 +125,12 @@ integer counters, and finite numeric accuracy/confidence values. Boolean and
 string coercion is rejected throughout, and floating-point values cannot be
 coerced into integer counters. Report, case, and per-field totals must agree
 with their nested comparisons, including exact accuracy ratios and unique case
-and field identities.
+and field identities. Comparison fields are limited to the benchmark schema,
+their expected and detected values must conform to each field's canonical
+shape, card identities must remain unique across hero and board fields, numeric
+comparison evidence must be finite and representable, normalized text must
+remain canonical, and each persisted match flag must agree with the shared
+benchmark matcher.
 
 ## State Flow
 

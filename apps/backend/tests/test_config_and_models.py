@@ -319,6 +319,26 @@ def test_action_line_accepts_integer_wager_sizing(model: type[Any]) -> None:
     assert result.sizing == 8.0
 
 
+@pytest.mark.parametrize("confidence", [True, "0.8"])
+def test_recommendation_rejects_coerced_confidence(confidence: object) -> None:
+    with pytest.raises(ValidationError, match="valid number"):
+        RecommendationResult(
+            action="check",
+            confidence=confidence,
+            explanation="Malformed recommendation",
+        )
+
+
+def test_recommendation_accepts_integer_confidence() -> None:
+    result = RecommendationResult(
+        action="check",
+        confidence=1,
+        explanation="Valid recommendation",
+    )
+
+    assert result.confidence == 1.0
+
+
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
     with pytest.raises(ValidationError):
         CanonicalState(preflop_open_size=0)

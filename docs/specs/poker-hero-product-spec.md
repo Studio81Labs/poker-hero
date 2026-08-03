@@ -258,7 +258,7 @@ frequencies.
    finite positive numeric sizing, and optional low, medium, or high certainty
    as a training answer. Boolean and string sizing values are invalid.
 8. The backend normalizes approved state into a canonical Texas Hold'em decision request.
-9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory.
+9. The configured recommendation provider returns action, sizing, confidence, explanation, and raw metadata; recognized evidence is shown without making provider-specific metadata mandatory. Confidence must be a finite number between zero and one; boolean or string values are malformed.
    Headline sizing must be a finite positive number and is accepted only for bet
    and raise recommendations; boolean or string sizing values are malformed,
    remain retryable errors, and are not persisted as advice.

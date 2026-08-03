@@ -192,7 +192,12 @@ class RecommendationResult(BaseModel):
         allow_inf_nan=False,
         strict=True,
     )
-    confidence: float = Field(ge=0, le=1)
+    confidence: float = Field(
+        ge=0,
+        le=1,
+        allow_inf_nan=False,
+        strict=True,
+    )
     explanation: str
     raw: dict[str, Any] = Field(default_factory=dict)
 

@@ -229,7 +229,9 @@ so solver-supported mixed actions are not pulled into a focused pattern queue.
 Normalized position and explicit unpositioned review selectors are mutually
 exclusive. Player-decision and headline-recommendation sizing must be finite
 positive JSON numbers when present; boolean and string coercion is rejected.
-The headline recommendation is always supported.
+Recommendation confidence must also be a finite JSON number between zero and
+one; boolean and string coercion is rejected. The headline recommendation is
+always supported.
 Alternate provider candidates are supported
 only when their action/sizing metadata is valid and modeled frequency is at
 least 5%, which filters numerical strategy noise. An exact alternate line is

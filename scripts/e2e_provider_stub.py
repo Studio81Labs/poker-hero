@@ -116,6 +116,10 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 state.arm_recommendation_evidence("coerced_headline_sizing")
                 self._send_json(200, {"armed": True})
                 return
+            if self.path == "/control/coerced-confidence-next-recommendation":
+                state.arm_recommendation_evidence("coerced_confidence")
+                self._send_json(200, {"armed": True})
+                return
             if self.path == "/control/fail-next-parser":
                 state.arm_parser_failure()
                 self._send_json(200, {"armed": True})
@@ -325,6 +329,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             }
             recommendation_action = "call"
             recommendation_sizing = None
+            recommendation_confidence: float | str = 0.78
             recommendation_variant = state.consume_recommendation_variant()
             if recommendation_variant == "invalid_headline_sizing":
                 recommendation_sizing = 2.5
@@ -337,6 +342,8 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
             elif recommendation_variant == "coerced_headline_sizing":
                 recommendation_action = "raise"
                 recommendation_sizing = "7.5"
+            elif recommendation_variant == "coerced_confidence":
+                recommendation_confidence = "0.78"
             elif recommendation_variant == "fallback":
                 raw.update(
                     {
@@ -518,7 +525,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                 {
                     "action": recommendation_action,
                     "sizing": recommendation_sizing,
-                    "confidence": 0.78,
+                    "confidence": recommendation_confidence,
                     "explanation": "E2E solver compared the available actions.",
                     "raw": raw,
                 },

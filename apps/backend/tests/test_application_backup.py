@@ -545,6 +545,54 @@ def test_restore_rejects_checksum_tampering_before_writing(
     assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 
 
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("schema_version", True),
+        ("schema_version", 1.0),
+        ("job_count", "1"),
+        ("job_count", 1.0),
+        ("benchmark_report_count", True),
+        ("jobs.0.image_size", str(len(VALID_PNG))),
+        ("jobs.0.image_size", float(len(VALID_PNG))),
+    ],
+)
+def test_restore_rejects_coerced_manifest_integers_before_writing(
+    tmp_path: Path,
+    field_path: str,
+    value: object,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    if field_path == "jobs.0.image_size":
+        manifest["jobs"][0]["image_size"] = value
+    else:
+        manifest[field_path] = value
+    modified = rebuild_archive(
+        export.content,
+        {
+            "manifest.json": (
+                json.dumps(manifest, indent=2) + "\n"
+            ).encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("coerced-manifest.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert f"invalid at {field_path}" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
 def test_restore_rejects_naive_job_timestamp_before_writing(
     tmp_path: Path,
 ) -> None:

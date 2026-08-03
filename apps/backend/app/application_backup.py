@@ -12,7 +12,13 @@ from typing import BinaryIO, Literal, Self
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile, ZipInfo
 
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.dataset_export import MAX_DATASET_CASES
 from app.models import ApplicationBackupRestoreResult, BenchmarkReport, JobRecord
@@ -57,7 +63,7 @@ class _BackupJobManifest(BaseModel):
     record_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     image_file: str = Field(min_length=1, max_length=512)
     image_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    image_size: int = Field(ge=1)
+    image_size: int = Field(ge=1, strict=True)
 
 
 class _BackupReportManifest(BaseModel):
@@ -70,12 +76,23 @@ class _ApplicationBackupManifest(BaseModel):
     schema_name: Literal[BACKUP_SCHEMA] = Field(alias="schema")
     schema_version: Literal[BACKUP_SCHEMA_VERSION]
     exported_at: datetime
-    job_count: int = Field(ge=0, le=MAX_BACKUP_JOBS)
-    benchmark_report_count: int = Field(ge=0, le=MAX_BACKUP_REPORTS)
+    job_count: int = Field(ge=0, le=MAX_BACKUP_JOBS, strict=True)
+    benchmark_report_count: int = Field(
+        ge=0,
+        le=MAX_BACKUP_REPORTS,
+        strict=True,
+    )
     jobs: list[_BackupJobManifest] = Field(max_length=MAX_BACKUP_JOBS)
     benchmark_reports: list[_BackupReportManifest] = Field(
         max_length=MAX_BACKUP_REPORTS
     )
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def validate_schema_version_type(cls, value: object) -> object:
+        if type(value) is not int:
+            raise ValueError("Schema version must be a JSON integer")
+        return value
 
     @model_validator(mode="after")
     def validate_entries(self) -> Self:

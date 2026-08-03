@@ -109,6 +109,21 @@ def archive_with_unsupported_compression(archive_bytes: bytes) -> bytes:
     return bytes(payload)
 
 
+def rebuild_zip_archive(
+    archive_bytes: bytes,
+    replacements: dict[str, bytes],
+) -> bytes:
+    output = BytesIO()
+    with ZipFile(BytesIO(archive_bytes)) as source:
+        with ZipFile(output, "w") as target:
+            for info in source.infolist():
+                target.writestr(
+                    info,
+                    replacements.get(info.filename, source.read(info)),
+                )
+    return output.getvalue()
+
+
 def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,
@@ -2079,6 +2094,52 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert imported_job.recommendation is None
     assert imported_job.training_decision is None
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("schema_version", True),
+        ("schema_version", 1.0),
+        ("case_count", "1"),
+        ("case_count", 1.0),
+    ],
+)
+def test_benchmark_dataset_import_rejects_coerced_manifest_integers(
+    tmp_path: Path,
+    field_name: str,
+    value: object,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    source_job_id = upload_job(source_client).json()["id"]
+    approve_job(source_client, source_job_id)
+    source_client.put(
+        f"/api/jobs/{source_job_id}/benchmark",
+        json={"included": True},
+    )
+    archive = source_client.get("/api/benchmarks/export").content
+    with ZipFile(BytesIO(archive)) as dataset:
+        manifest = json.loads(dataset.read("manifest.json"))
+    manifest[field_name] = value
+    modified = rebuild_zip_archive(
+        archive,
+        {
+            "manifest.json": (
+                json.dumps(manifest, indent=2) + "\n"
+            ).encode(),
+        },
+    )
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+
+    response = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("coerced-manifest.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert f"invalid at {field_name}" in response.json()["detail"]
+    assert FileJobStore(target_dir).list() == []
 
 
 def test_benchmark_dataset_import_persists_request_receipt_for_recovery(

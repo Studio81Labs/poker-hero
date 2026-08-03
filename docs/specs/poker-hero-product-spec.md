@@ -416,6 +416,8 @@ the whole archive before writing, preserves stable job IDs, reuses exact matches
 and rejects conflicting existing jobs without overwriting them. Imported cases
 are approved and selected as parser ground truth. They do not synthesize parser
 results or confidence from canonical labels.
+Schema version and declared case count must be JSON integers; boolean, string,
+and floating-point coercion is rejected.
 Parser dataset selection, export, and import share a 250-hand corpus limit.
 
 ## Application Backup And Restore
@@ -428,8 +430,10 @@ persisted benchmark report. It does not contain provider credentials,
 environment configuration, or transient import journals.
 
 The ZIP uses a versioned manifest with stable job/report paths, byte sizes, and
-SHA-256 checksums. Export refuses to snapshot active parser or recommendation
-operations. Restore validates the complete archive, model schemas, image
+SHA-256 checksums. Schema version, entry counts, and image byte sizes must be
+JSON integers without boolean, string, or floating-point coercion. Export
+refuses to snapshot active parser or recommendation operations. Restore
+validates the complete archive, model schemas, image
 payloads, path safety, report-to-job references, configured size limits, and
 checksums before writing. Missing records are created with their stable IDs;
 existing records are reused only when both structured data and source image

@@ -439,6 +439,9 @@ checksums before writing. Missing records are created with their stable IDs;
 existing records are reused only when both structured data and source image
 match exactly. Any divergent job or report rejects the operation without
 overwriting current data. Repeating a completed restore is idempotent.
+Restored benchmark reports require strict JSON booleans, non-negative integer
+counters, and finite numeric accuracy/confidence values; coercion from strings,
+booleans, or floating-point counters is rejected before writing.
 
 ## Review And Auto-Approve
 

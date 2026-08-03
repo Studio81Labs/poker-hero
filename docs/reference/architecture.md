@@ -120,6 +120,11 @@ and recomputes the latest-report pointer. Configuration, credentials, and
 transient benchmark-import journals remain deployment concerns and are not
 portable user data.
 
+Restored benchmark reports also require strict JSON booleans, non-negative
+integer counters, and finite numeric accuracy/confidence values. Boolean and
+string coercion is rejected throughout, and floating-point values cannot be
+coerced into integer counters.
+
 ## State Flow
 
 1. A capture or upload creates an independent job.

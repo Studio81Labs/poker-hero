@@ -1,10 +1,9 @@
-import math
-import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from app.models import (
+    BENCHMARK_FIELDS,
     BenchmarkCaseResult,
     BenchmarkFieldComparison,
     BenchmarkFieldMetric,
@@ -12,32 +11,10 @@ from app.models import (
     CanonicalState,
     DetectedState,
     JobRecord,
+    benchmark_values_match,
+    normalize_benchmark_value,
 )
 from app.parsers.base import ParserConfigurationError, ScreenshotParser
-
-
-BENCHMARK_FIELDS = (
-    "hero_cards",
-    "board_cards",
-    "street",
-    "pot_size",
-    "current_bet",
-    "hero_stack",
-    "effective_stack",
-    "players_in_hand",
-    "hero_position",
-    "preflop_opener_position",
-    "preflop_open_size",
-    "facing_action",
-    "action_context",
-)
-
-POSITION_ALIASES = {
-    "btn": "button",
-    "dealer": "button",
-    "ip": "in position",
-    "oop": "out of position",
-}
 
 
 def run_benchmark(
@@ -138,14 +115,17 @@ def _compare_states(
         if not _is_labeled(field, expected_value, expected.street):
             continue
         detected_value = getattr(detected, field) if detected is not None else None
-        normalized_expected = _normalize(field, expected_value)
-        normalized_detected = _normalize(field, detected_value)
+        normalized_expected = normalize_benchmark_value(field, expected_value)
+        normalized_detected = normalize_benchmark_value(field, detected_value)
         comparisons.append(
             BenchmarkFieldComparison(
                 field=field,
                 expected=normalized_expected,
                 detected=normalized_detected,
-                matched=_matches(normalized_expected, normalized_detected),
+                matched=benchmark_values_match(
+                    normalized_expected,
+                    normalized_detected,
+                ),
                 confidence=confidences.get(field),
             )
         )
@@ -162,23 +142,3 @@ def _is_labeled(field: str, value: Any, street: str | None) -> bool:
     if field == "action_context":
         return bool(str(value).strip())
     return True
-
-
-def _normalize(field: str, value: Any) -> Any:
-    if value is None:
-        return None
-    if field in {"hero_cards", "board_cards"}:
-        codes = [card.code for card in value]
-        return sorted(codes)
-    if isinstance(value, str):
-        normalized = re.sub(r"\s+", " ", value.strip().lower())
-        if field in {"hero_position", "preflop_opener_position"}:
-            return POSITION_ALIASES.get(normalized, normalized)
-        return normalized
-    return value
-
-
-def _matches(expected: Any, detected: Any) -> bool:
-    if isinstance(expected, (int, float)) and isinstance(detected, (int, float)):
-        return math.isclose(float(expected), float(detected), abs_tol=0.01)
-    return expected == detected

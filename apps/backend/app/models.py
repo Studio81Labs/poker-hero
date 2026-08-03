@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
@@ -15,6 +16,42 @@ TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 TrainingReviewOrder = Literal["recent", "ev_loss"]
 TrainingReviewCertainty = Literal["low", "medium", "high", "unrated"]
+BenchmarkFieldName = Literal[
+    "hero_cards",
+    "board_cards",
+    "street",
+    "pot_size",
+    "current_bet",
+    "hero_stack",
+    "effective_stack",
+    "players_in_hand",
+    "hero_position",
+    "preflop_opener_position",
+    "preflop_open_size",
+    "facing_action",
+    "action_context",
+]
+BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
+    "hero_cards",
+    "board_cards",
+    "street",
+    "pot_size",
+    "current_bet",
+    "hero_stack",
+    "effective_stack",
+    "players_in_hand",
+    "hero_position",
+    "preflop_opener_position",
+    "preflop_open_size",
+    "facing_action",
+    "action_context",
+)
+BENCHMARK_POSITION_ALIASES = {
+    "btn": "button",
+    "dealer": "button",
+    "ip": "in position",
+    "oop": "out of position",
+}
 ParserConfidence = Annotated[
     float,
     Field(allow_inf_nan=False, strict=True),
@@ -70,6 +107,27 @@ def _validate_accuracy(
         raise ValueError(f"{label} accuracy does not match its counts")
 
 
+def _finite_benchmark_number(value: Any) -> float | None:
+    if type(value) not in {int, float}:
+        return None
+    numeric_error = "Benchmark numeric values must be finite and representable"
+    try:
+        numeric_value = float(value)
+    except OverflowError as exc:
+        raise ValueError(numeric_error) from exc
+    if not math.isfinite(numeric_value):
+        raise ValueError(numeric_error)
+    return numeric_value
+
+
+def benchmark_values_match(expected: Any, detected: Any) -> bool:
+    expected_numeric = _finite_benchmark_number(expected)
+    detected_numeric = _finite_benchmark_number(detected)
+    if expected_numeric is not None and detected_numeric is not None:
+        return math.isclose(expected_numeric, detected_numeric, abs_tol=0.01)
+    return expected == detected
+
+
 class Card(BaseModel):
     rank: Rank
     suit: Suit
@@ -110,6 +168,20 @@ class Card(BaseModel):
         rank = stripped[:-1]
         suit = stripped[-1]
         return cls(rank=rank, suit=suit)
+
+
+def normalize_benchmark_value(field_name: BenchmarkFieldName, value: Any) -> Any:
+    if value is None:
+        return None
+    if field_name in {"hero_cards", "board_cards"}:
+        codes = [card.code if isinstance(card, Card) else card for card in value]
+        return sorted(codes)
+    if isinstance(value, str):
+        normalized = re.sub(r"\s+", " ", value.strip().lower())
+        if field_name in {"hero_position", "preflop_opener_position"}:
+            return BENCHMARK_POSITION_ALIASES.get(normalized, normalized)
+        return normalized
+    return value
 
 
 class DetectedState(BaseModel):
@@ -563,12 +635,119 @@ class BenchmarkDatasetImportReceipt(BaseModel):
         return self
 
 
+_BENCHMARK_CARD_LIMITS = {"hero_cards": 2, "board_cards": 5}
+_BENCHMARK_NONNEGATIVE_NUMERIC_FIELDS = {
+    "pot_size",
+    "current_bet",
+    "hero_stack",
+    "effective_stack",
+}
+_BENCHMARK_TEXT_FIELDS = {
+    "hero_position",
+    "preflop_opener_position",
+    "action_context",
+}
+
+
+def _validate_benchmark_comparison_value(
+    field_name: BenchmarkFieldName,
+    value: Any,
+    *,
+    allow_none: bool,
+) -> None:
+    if value is None:
+        if allow_none:
+            return
+        raise ValueError(f"Benchmark {field_name} expected value is required")
+
+    if field_name in _BENCHMARK_CARD_LIMITS:
+        if (
+            type(value) is not list
+            or len(value) > _BENCHMARK_CARD_LIMITS[field_name]
+        ):
+            raise ValueError(f"Benchmark {field_name} must contain card codes")
+        card_codes: list[str] = []
+        for code in value:
+            if type(code) is not str:
+                raise ValueError(f"Benchmark {field_name} must contain card codes")
+            try:
+                card = Card.from_code(code)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Benchmark {field_name} must contain card codes"
+                ) from exc
+            if card.code != code:
+                raise ValueError(f"Benchmark {field_name} card codes must be canonical")
+            card_codes.append(code)
+        if len(card_codes) != len(set(card_codes)):
+            raise ValueError(f"Benchmark {field_name} card codes must be unique")
+        if card_codes != sorted(card_codes):
+            raise ValueError(f"Benchmark {field_name} card codes must be sorted")
+        if not allow_none and field_name == "hero_cards" and not card_codes:
+            raise ValueError("Benchmark hero_cards expected value cannot be empty")
+        return
+
+    if field_name in _BENCHMARK_NONNEGATIVE_NUMERIC_FIELDS:
+        numeric_value = _finite_benchmark_number(value)
+        if numeric_value is None or numeric_value < 0:
+            raise ValueError(f"Benchmark {field_name} must be a non-negative number")
+        return
+
+    if field_name == "preflop_open_size":
+        numeric_value = _finite_benchmark_number(value)
+        if numeric_value is None or numeric_value <= 0:
+            raise ValueError("Benchmark preflop_open_size must be a positive number")
+        return
+
+    if field_name == "players_in_hand":
+        if type(value) is not int or value <= 0:
+            raise ValueError("Benchmark players_in_hand must be a positive integer")
+        return
+
+    if field_name == "street":
+        if type(value) is not str or value not in {"preflop", "flop", "turn", "river"}:
+            raise ValueError("Benchmark street value is invalid")
+        return
+
+    if field_name == "facing_action":
+        if type(value) is not str or value not in {"bet", "raise"}:
+            raise ValueError("Benchmark facing_action value is invalid")
+        return
+
+    if field_name in _BENCHMARK_TEXT_FIELDS:
+        if type(value) is not str:
+            raise ValueError(f"Benchmark {field_name} must be text")
+        if not allow_none and field_name == "action_context" and not value.strip():
+            raise ValueError("Benchmark action_context expected value cannot be empty")
+        if value != normalize_benchmark_value(field_name, value):
+            raise ValueError(f"Benchmark {field_name} text must be normalized")
+        return
+
+    raise ValueError(f"Benchmark comparison field {field_name} is unsupported")
+
+
 class BenchmarkFieldComparison(BaseModel):
-    field: str
+    field: BenchmarkFieldName
     expected: Any
     detected: Any
     matched: bool = Field(strict=True)
     confidence: UnitIntervalNumber | None = None
+
+    @model_validator(mode="after")
+    def validate_match(self) -> Self:
+        _validate_benchmark_comparison_value(
+            self.field,
+            self.expected,
+            allow_none=False,
+        )
+        _validate_benchmark_comparison_value(
+            self.field,
+            self.detected,
+            allow_none=True,
+        )
+        if self.matched != benchmark_values_match(self.expected, self.detected):
+            raise ValueError("Benchmark comparison matched flag is inconsistent")
+        return self
 
 
 class BenchmarkCaseResult(BaseModel):
@@ -587,6 +766,21 @@ class BenchmarkCaseResult(BaseModel):
         fields = [comparison.field for comparison in self.comparisons]
         if len(fields) != len(set(fields)):
             raise ValueError("Benchmark case comparison fields must be unique")
+        card_comparisons = [
+            comparison
+            for comparison in self.comparisons
+            if comparison.field in {"hero_cards", "board_cards"}
+        ]
+        for side in ("expected", "detected"):
+            card_codes = [
+                code
+                for comparison in card_comparisons
+                for code in getattr(comparison, side) or []
+            ]
+            if len(card_codes) != len(set(card_codes)):
+                raise ValueError(
+                    f"Benchmark case {side} cards must be unique across fields"
+                )
         if self.evaluated_fields != len(self.comparisons):
             raise ValueError("Benchmark case evaluated_fields does not match comparisons")
         matched = sum(comparison.matched for comparison in self.comparisons)
@@ -606,7 +800,7 @@ class BenchmarkCaseResult(BaseModel):
 
 
 class BenchmarkFieldMetric(BaseModel):
-    field: str
+    field: BenchmarkFieldName
     correct: NonNegativeInteger
     total: NonNegativeInteger
     accuracy: UnitIntervalNumber

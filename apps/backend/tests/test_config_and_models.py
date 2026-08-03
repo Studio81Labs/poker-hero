@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from app.config import Settings, get_settings
 from app.models import (
+    BenchmarkFieldComparison,
     Card,
     CanonicalState,
     DetectedState,
@@ -14,6 +15,39 @@ from app.models import (
     RecommendationResult,
     TrainingDecisionRequest,
 )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("hero_cards", [10**400]),
+        ("hero_cards", ["AX"]),
+        ("hero_cards", ["Kd", "Ah"]),
+        ("hero_cards", ["Ah", "Ah"]),
+        ("pot_size", "12.5"),
+        ("pot_size", float("inf")),
+        ("preflop_open_size", 0),
+        ("players_in_hand", True),
+        ("street", "showdown"),
+        ("facing_action", "check"),
+        ("hero_position", []),
+        ("hero_position", "BTN"),
+        ("preflop_opener_position", " OOP "),
+        ("action_context", ""),
+        ("action_context", "  cutoff   raises  "),
+    ],
+)
+def test_benchmark_comparison_rejects_values_outside_field_schema(
+    field_name: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        BenchmarkFieldComparison(
+            field=field_name,
+            expected=value,
+            detected=value,
+            matched=True,
+        )
 
 
 def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:

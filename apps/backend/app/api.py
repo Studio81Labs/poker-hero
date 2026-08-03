@@ -302,13 +302,10 @@ class RequestObservabilityMiddleware:
                 status_code = message["status"]
                 return
 
-            is_pathsend = message_type == "http.response.pathsend"
             is_final_body = (
                 message_type == "http.response.body"
                 and not message.get("more_body", False)
-            ) or is_pathsend
-            if is_final_body and not is_pathsend:
-                final_body_started = True
+            ) or message_type == "http.response.pathsend"
             await send(message)
             if is_final_body:
                 final_body_started = True

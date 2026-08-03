@@ -450,7 +450,7 @@ fn hero_player(position: Option<&str>) -> Result<usize, String> {
         .map(|value| value.to_lowercase().replace(['_', '-'], " "))
         .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "));
     match normalized.as_deref() {
-        Some("ip" | "in position" | "button" | "btn") => Ok(1),
+        Some("ip" | "in position" | "button" | "btn" | "dealer") => Ok(1),
         Some("oop" | "out of position") => Ok(0),
         _ => Err("hero position must identify IP or OOP".to_string()),
     }
@@ -635,6 +635,7 @@ mod tests {
     fn position_parser_accepts_explicit_and_unambiguous_labels() {
         assert_eq!(hero_player(Some("IP")), Ok(1));
         assert_eq!(hero_player(Some("button")), Ok(1));
+        assert_eq!(hero_player(Some("dealer")), Ok(1));
         assert_eq!(hero_player(Some("out-of-position")), Ok(0));
         assert!(hero_player(Some("SB")).is_err());
         assert!(hero_player(Some("BB")).is_err());

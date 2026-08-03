@@ -227,7 +227,7 @@ def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
     if value is None:
         return None
     normalized = " ".join(value.lower().replace("_", " ").replace("-", " ").split())
-    if normalized in {"ip", "in position", "button", "btn"}:
+    if normalized in {"ip", "in position", "button", "btn", "dealer"}:
         return "ip"
     if normalized in {"oop", "out of position"}:
         return "oop"

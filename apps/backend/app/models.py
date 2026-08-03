@@ -27,6 +27,11 @@ PositiveFiniteNumber = Annotated[
     Field(gt=0, allow_inf_nan=False, strict=True),
 ]
 PositiveInteger = Annotated[int, Field(ge=1, strict=True)]
+NonNegativeInteger = Annotated[int, Field(ge=0, strict=True)]
+UnitIntervalNumber = Annotated[
+    float,
+    Field(ge=0, le=1, allow_inf_nan=False, strict=True),
+]
 
 BENCHMARK_IMPORT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"
 RANKS = {"2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"}
@@ -550,17 +555,17 @@ class BenchmarkFieldComparison(BaseModel):
     field: str
     expected: Any
     detected: Any
-    matched: bool
-    confidence: float | None = Field(default=None, ge=0, le=1)
+    matched: bool = Field(strict=True)
+    confidence: UnitIntervalNumber | None = None
 
 
 class BenchmarkCaseResult(BaseModel):
     job_id: str
     original_filename: str
     status: Literal["completed", "error"]
-    correct_fields: int
-    evaluated_fields: int
-    accuracy: float = Field(ge=0, le=1)
+    correct_fields: NonNegativeInteger
+    evaluated_fields: NonNegativeInteger
+    accuracy: UnitIntervalNumber
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
     comparisons: list[BenchmarkFieldComparison] = Field(default_factory=list)
@@ -568,9 +573,9 @@ class BenchmarkCaseResult(BaseModel):
 
 class BenchmarkFieldMetric(BaseModel):
     field: str
-    correct: int
-    total: int
-    accuracy: float = Field(ge=0, le=1)
+    correct: NonNegativeInteger
+    total: NonNegativeInteger
+    accuracy: UnitIntervalNumber
 
 
 class BenchmarkReport(BaseModel):
@@ -578,12 +583,12 @@ class BenchmarkReport(BaseModel):
     parser_provider: str
     layout_profile: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    total_cases: int
-    successful_cases: int
-    failed_cases: int
-    correct_fields: int
-    evaluated_fields: int
-    accuracy: float = Field(ge=0, le=1)
+    total_cases: NonNegativeInteger
+    successful_cases: NonNegativeInteger
+    failed_cases: NonNegativeInteger
+    correct_fields: NonNegativeInteger
+    evaluated_fields: NonNegativeInteger
+    accuracy: UnitIntervalNumber
     field_metrics: list[BenchmarkFieldMetric] = Field(default_factory=list)
     cases: list[BenchmarkCaseResult] = Field(default_factory=list)
 
@@ -593,9 +598,9 @@ class BenchmarkReportSummary(BaseModel):
     parser_provider: str
     layout_profile: str
     created_at: datetime
-    total_cases: int
-    failed_cases: int
-    accuracy: float = Field(ge=0, le=1)
+    total_cases: NonNegativeInteger
+    failed_cases: NonNegativeInteger
+    accuracy: UnitIntervalNumber
     field_metrics: list[BenchmarkFieldMetric] = Field(default_factory=list)
 
     @classmethod
@@ -613,6 +618,6 @@ class BenchmarkReportSummary(BaseModel):
 
 
 class BenchmarkOverview(BaseModel):
-    included_cases: int
+    included_cases: NonNegativeInteger
     latest_report: BenchmarkReport | None = None
     recent_reports: list[BenchmarkReportSummary] = Field(default_factory=list)

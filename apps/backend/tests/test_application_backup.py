@@ -6,6 +6,7 @@ from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from threading import Event
+from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import httpx
@@ -661,6 +662,64 @@ def test_restore_rejects_naive_report_timestamp_before_writing(
     assert response.status_code == 400
     assert "report" in response.json()["detail"]
     assert "created_at must include a timezone" in response.json()["detail"]
+    assert FileJobStore(destination_dir).list() == []
+    assert FileBenchmarkStore(destination_dir).list(limit=None) == []
+
+
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("total_cases", True),
+        ("total_cases", "1"),
+        ("total_cases", 1.0),
+        ("accuracy", "1"),
+        ("cases.0.correct_fields", True),
+        ("cases.0.accuracy", "1"),
+        ("cases.0.comparisons.0.matched", "false"),
+        ("cases.0.comparisons.0.confidence", "0.99"),
+        ("field_metrics.0.correct", True),
+        ("field_metrics.0.accuracy", "1"),
+    ],
+)
+def test_restore_rejects_coerced_benchmark_report_metrics_before_writing(
+    tmp_path: Path,
+    field_path: str,
+    value: object,
+) -> None:
+    source = make_client(tmp_path / "source")
+    create_reviewed_job(source)
+    export = source.get("/api/backups/export")
+    with ZipFile(BytesIO(export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        report_name = manifest["benchmark_reports"][0]["report_file"]
+        report = json.loads(archive.read(report_name))
+    cursor: Any = report
+    path_parts = field_path.split(".")
+    for part in path_parts[:-1]:
+        cursor = cursor[int(part)] if isinstance(cursor, list) else cursor[part]
+    cursor[path_parts[-1]] = value
+    report_bytes = (json.dumps(report, indent=2) + "\n").encode()
+    manifest["benchmark_reports"][0]["report_sha256"] = sha256(
+        report_bytes
+    ).hexdigest()
+    modified = rebuild_archive(
+        export.content,
+        {
+            report_name: report_bytes,
+            "manifest.json": (json.dumps(manifest, indent=2) + "\n").encode(),
+        },
+    )
+    destination_dir = tmp_path / "destination"
+    destination = make_client(destination_dir)
+
+    response = destination.post(
+        "/api/backups/restore",
+        files={"file": ("coerced-report.zip", modified, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert "report" in response.json()["detail"]
+    assert "is invalid" in response.json()["detail"]
     assert FileJobStore(destination_dir).list() == []
     assert FileBenchmarkStore(destination_dir).list(limit=None) == []
 

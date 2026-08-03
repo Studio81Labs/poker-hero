@@ -678,6 +678,176 @@ def test_disconnect_during_rejected_upload_response_is_logged_as_failed(
     assert access_events[0]["outcome"] == "failed"
 
 
+def test_disconnect_during_successful_unread_body_response_is_logged_as_failed(
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    response_started = asyncio.Event()
+    final_send_started = asyncio.Event()
+    disconnect_delivered = asyncio.Event()
+    received_messages = iter([
+        {
+            "type": "http.request",
+            "body": b"first unread request frame",
+            "more_body": True,
+        },
+        {
+            "type": "http.request",
+            "body": b"second unread request frame",
+            "more_body": True,
+        },
+        {"type": "http.disconnect"},
+    ])
+
+    async def receive() -> dict[str, object]:
+        assert response_started.is_set()
+        await final_send_started.wait()
+        message = next(received_messages)
+        if message["type"] == "http.disconnect":
+            disconnect_delivered.set()
+        return message
+
+    async def send(message: dict[str, object]) -> None:
+        if message["type"] == "http.response.start":
+            response_started.set()
+        elif (
+            message["type"] == "http.response.body"
+            and not message.get("more_body", False)
+        ):
+            final_send_started.set()
+            await disconnect_delivered.wait()
+
+    async def successful_short_circuit(
+        _scope: dict[str, object],
+        _receive,
+        send_response,
+    ) -> None:
+        await send_response({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+        })
+        await send_response({
+            "type": "http.response.body",
+            "body": b"complete",
+            "more_body": False,
+        })
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/api/jobs",
+        "raw_path": b"/api/jobs",
+        "query_string": b"",
+        "headers": [(b"content-length", b"1048576")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(
+        api_module.RequestObservabilityMiddleware(successful_short_circuit)(
+            scope,
+            receive,
+            send,
+        )
+    )
+
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["status_code"] == 200
+    assert access_events[0]["outcome"] == "failed"
+
+
+def test_response_start_does_not_create_concurrent_receive_calls(
+    access_log_records: list[logging.LogRecord],
+) -> None:
+    first_receive_started = asyncio.Event()
+    release_first_receive = asyncio.Event()
+    disconnect_delivered = asyncio.Event()
+    receive_calls = 0
+    active_receive_calls = 0
+    maximum_active_receive_calls = 0
+
+    async def receive() -> dict[str, object]:
+        nonlocal active_receive_calls, maximum_active_receive_calls
+        nonlocal receive_calls
+        receive_calls += 1
+        active_receive_calls += 1
+        maximum_active_receive_calls = max(
+            maximum_active_receive_calls,
+            active_receive_calls,
+        )
+        try:
+            if receive_calls == 1:
+                first_receive_started.set()
+                await release_first_receive.wait()
+                return {
+                    "type": "http.request",
+                    "body": b"partial request",
+                    "more_body": True,
+                }
+            disconnect_delivered.set()
+            return {"type": "http.disconnect"}
+        finally:
+            active_receive_calls -= 1
+
+    async def send(_message: dict[str, object]) -> None:
+        await asyncio.sleep(0)
+
+    async def overlapping_response(
+        _scope: dict[str, object],
+        receive_request,
+        send_response,
+    ) -> None:
+        first_receive = asyncio.create_task(receive_request())
+        await first_receive_started.wait()
+        await send_response({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [],
+        })
+        release_first_receive.set()
+        await first_receive
+        await disconnect_delivered.wait()
+        await send_response({
+            "type": "http.response.body",
+            "body": b"complete",
+            "more_body": False,
+        })
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/jobs",
+        "raw_path": b"/api/jobs",
+        "query_string": b"",
+        "headers": [(b"content-length", b"1024")],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+
+    asyncio.run(
+        api_module.RequestObservabilityMiddleware(overlapping_response)(
+            scope,
+            receive,
+            send,
+        )
+    )
+
+    assert receive_calls == 2
+    assert maximum_active_receive_calls == 1
+    access_events = [json.loads(record.message) for record in access_log_records]
+    assert len(access_events) == 1
+    assert access_events[0]["outcome"] == "failed"
+
+
 def test_completed_response_is_logged_before_post_response_failure(
     access_log_records: list[logging.LogRecord],
 ) -> None:

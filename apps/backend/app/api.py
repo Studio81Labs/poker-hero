@@ -257,6 +257,7 @@ class RequestObservabilityMiddleware:
         access_event_logged = False
         request_body_consumed = False
         discard_unread_request_frames = False
+        receive_lock = asyncio.Lock()
         receive_queue: asyncio.Queue[Message | Exception] = asyncio.Queue(
             maxsize=1
         )
@@ -266,7 +267,8 @@ class RequestObservabilityMiddleware:
             nonlocal client_disconnected
             try:
                 while True:
-                    message = await receive()
+                    async with receive_lock:
+                        message = await receive()
                     if message["type"] == "http.disconnect":
                         if not final_body_started:
                             client_disconnected = True
@@ -293,7 +295,8 @@ class RequestObservabilityMiddleware:
         async def receive_observed() -> Message:
             nonlocal client_disconnected, request_body_consumed
             if receive_task is None:
-                message = await receive()
+                async with receive_lock:
+                    message = await receive()
                 if message["type"] == "http.disconnect":
                     if not final_body_started:
                         client_disconnected = True
@@ -345,9 +348,7 @@ class RequestObservabilityMiddleware:
                 await send(message)
                 status_code = message["status"]
                 if status_code >= 200:
-                    discard_unread_request_frames = (
-                        status_code >= 400 and not request_body_consumed
-                    )
+                    discard_unread_request_frames = not request_body_consumed
                     start_receive_task()
                 return
 

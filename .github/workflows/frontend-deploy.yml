@@ -36,6 +36,7 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      - "scripts/check-deployment.mjs"
       - ".github/workflows/frontend-deploy.yml"
   workflow_dispatch:
 
@@ -122,62 +123,13 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
           BACKEND_URL: ${{ vars.BACKEND_URL }}
           API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
-          ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
-          ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
         run: |
           set -euo pipefail
-          if { [ -n "$ACCESS_CLIENT_ID" ] && [ -z "$ACCESS_CLIENT_SECRET" ]; } || { [ -z "$ACCESS_CLIENT_ID" ] && [ -n "$ACCESS_CLIENT_SECRET" ]; }; then
-            echo "::error::Both CLOUDFLARE_ACCESS_CLIENT_ID and CLOUDFLARE_ACCESS_CLIENT_SECRET must be set for Access smoke testing"
-            exit 1
-          fi
-
-          CURL_ARGS=(-sL)
-          if [ -n "$ACCESS_CLIENT_ID" ]; then
-            CURL_ARGS+=(-H "CF-Access-Client-Id: ${ACCESS_CLIENT_ID}")
-            CURL_ARGS+=(-H "CF-Access-Client-Secret: ${ACCESS_CLIENT_SECRET}")
-          fi
-
-          for attempt in 1 2 3 4 5; do
-            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o spa.html -w '%{http_code}' "$URL" || echo '000')
-            if [ "$HTTP_CODE" = "200" ] && grep -qi "Poker Training Analyzer" spa.html; then
-              echo "::notice::Frontend smoke OK (${URL})"
-              break
-            fi
-            echo "Smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
-            sleep 5
-            if [ "$attempt" = "5" ]; then
-              echo "::error::Frontend smoke failed for ${URL}"
-              exit 1
-            fi
-          done
-
-          for attempt in 1 2 3 4 5; do
-            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-health.json -w '%{http_code}' "$URL/api/health" || echo '000')
-            if [ "$HTTP_CODE" = "200" ] && grep -q '"status"' api-health.json; then
-              echo "::notice::API proxy smoke OK (${URL}/api/health)"
-              break
-            fi
-            echo "API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
-            sleep 5
-            if [ "$attempt" = "5" ]; then
-              echo "::error::API proxy smoke failed for ${URL}/api/health"
-              exit 1
-            fi
-          done
-
-          for attempt in 1 2 3 4 5; do
-            HTTP_CODE=$(curl "${CURL_ARGS[@]}" -o api-jobs.json -w '%{http_code}' "$URL/api/jobs?limit=1" || echo '000')
-            if [ "$HTTP_CODE" = "200" ] && grep -q '"jobs"' api-jobs.json; then
-              echo "::notice::Protected API proxy smoke OK (${URL}/api/jobs)"
-              break
-            fi
-            echo "Protected API smoke attempt ${attempt}: HTTP=${HTTP_CODE}"
-            sleep 5
-            if [ "$attempt" = "5" ]; then
-              echo "::error::Protected API proxy smoke failed for ${URL}/api/jobs"
-              exit 1
-            fi
-          done
+          node scripts/check-deployment.mjs "$URL" \
+            --attempts 5 \
+            --retry-delay-ms 5000
 
           if [ -n "$API_PROXY_SECRET" ]; then
             DIRECT_API_URL=$(node -e '

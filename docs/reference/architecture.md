@@ -491,6 +491,10 @@ user.
 - Access control: Cloudflare Access can allowlist testing users at the public
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.
+- Monitoring: a scheduled GitHub Actions probe checks the SPA, proxied health,
+  and protected queue boundaries. It opens one incident issue after bounded
+  retries and closes that issue on recovery. Optional Cloudflare Access service
+  credentials are restricted to same-origin requests and redirects.
 
 The frontend Worker proxy removes mixed-content and browser CORS issues from the
 normal deployed path. Backend CORS remains configurable for local and direct API

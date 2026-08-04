@@ -23,9 +23,11 @@ RATE_LIMIT_CATEGORIES: frozenset[RateLimitCategory] = frozenset(
 
 RATE_LIMIT_WINDOW_SECONDS = 60.0
 RATE_LIMIT_BUCKET_SLOTS = 4096
-ACCESS_USER_HEADER = "CF-Access-Authenticated-User-Email"
 CONNECTING_IP_HEADER = "CF-Connecting-IP"
 _RECOMMENDATION_PATH = re.compile(r"^/api/jobs/[^/]+/recommend$")
+_BENCHMARK_IMPORT_RECOVERY_PATH = re.compile(
+    r"^/api/benchmarks/imports/[^/]+$"
+)
 _DATA_TRANSFER_ROUTES = frozenset(
     {
         ("GET", "/api/backups/export"),
@@ -132,6 +134,11 @@ def rate_limit_category(method: str, path: str) -> RateLimitCategory | None:
         return "recommendations"
     if normalized_method == "POST" and path == "/api/benchmarks/run":
         return "benchmarks"
+    if (
+        normalized_method == "GET"
+        and _BENCHMARK_IMPORT_RECOVERY_PATH.fullmatch(path)
+    ):
+        return "data_transfers"
     if (normalized_method, path) in _DATA_TRANSFER_ROUTES:
         return "data_transfers"
     return None
@@ -143,16 +150,6 @@ def request_rate_limit_identity(
     trust_proxy_headers: bool,
 ) -> str:
     if trust_proxy_headers:
-        access_user = request.headers.get(ACCESS_USER_HEADER)
-        if access_user is not None:
-            normalized_user = access_user.strip().casefold()
-            if (
-                3 <= len(normalized_user) <= 320
-                and "@" in normalized_user
-                and all(ord(character) >= 32 for character in normalized_user)
-            ):
-                return _private_identity("access", normalized_user)
-
         connecting_ip = request.headers.get(CONNECTING_IP_HEADER)
         if connecting_ip is not None:
             try:

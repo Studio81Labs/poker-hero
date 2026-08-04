@@ -35,7 +35,7 @@ describe("API Worker proxy", () => {
     expect(forwardedRequest.redirect).toBe("manual");
   });
 
-  it("preserves Cloudflare identity headers for authenticated backend limits", async () => {
+  it("strips Access email while preserving the edge client IP", async () => {
     let forwardedRequest;
     vi.stubGlobal(
       "fetch",
@@ -60,8 +60,8 @@ describe("API Worker proxy", () => {
     );
 
     expect(
-      forwardedRequest.headers.get("CF-Access-Authenticated-User-Email"),
-    ).toBe("player@example.com");
+      forwardedRequest.headers.has("CF-Access-Authenticated-User-Email"),
+    ).toBe(false);
     expect(forwardedRequest.headers.get("CF-Connecting-IP")).toBe(
       "203.0.113.10",
     );

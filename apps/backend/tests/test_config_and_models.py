@@ -55,6 +55,7 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)
 
     assert settings.data_dir == tmp_path
+    assert settings.data_volume_id is None
     assert settings.parser_provider == "mock"
     assert settings.parser_layout_profile == "generic"
     assert settings.parser_auto_approve_enabled is False
@@ -161,6 +162,17 @@ def test_settings_rejects_non_positive_max_upload_bytes() -> None:
         Settings(max_dataset_upload_bytes=0)
     with pytest.raises(ValidationError):
         Settings(max_backup_upload_bytes=0)
+
+
+def test_settings_validates_data_volume_identity() -> None:
+    assert Settings(data_volume_id="production-data-volume-01").data_volume_id == (
+        "production-data-volume-01"
+    )
+
+    with pytest.raises(ValidationError):
+        Settings(data_volume_id="too-short")
+    with pytest.raises(ValidationError):
+        Settings(data_volume_id="invalid volume identity")
 
 
 def test_settings_normalizes_and_validates_proxy_shared_secret() -> None:

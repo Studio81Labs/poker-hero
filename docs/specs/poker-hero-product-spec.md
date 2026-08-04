@@ -470,6 +470,28 @@ checksums before writing. Missing records are created with their stable IDs;
 existing records are reused only when both structured data and source image
 match exactly. Any divergent job or report rejects the operation without
 overwriting current data. Repeating a completed restore is idempotent.
+The deployment tooling can create timestamped copies of the same archive,
+validate a stored copy without accessing production records, and run a restore
+drill in disposable storage. The drill must verify idempotent re-restore and a
+content-equivalent re-export without writing to the configured application data
+directory. API mutations must participate in a cross-process data-volume lock;
+browser and operational exports must acquire its exclusive side while reading
+all persisted records so no partial import or restore can be archived.
+An operator must explicitly initialize a durable, versioned data-volume marker
+bound to the deployment's configured volume identity after verifying the
+production mount. Application startup must not create that marker. Operational
+export must require an exact identity match before reading stores, publishing
+an archive, or applying retention so a missing or wrong mount cannot be
+mistaken for an empty installation. Enrollment success must make the marker's
+directory entry durable. Operational export must reject a pending resumable
+benchmark import because its journal is not part of the application backup. It
+must revalidate the marker and require all store directories under the snapshot
+lock before opening constructors that could recreate missing storage.
+Publication and retention for one destination must be serialized across
+processes. Concurrent scheduled exports must leave a valid retained archive and
+must not both report success after deleting each other's output. Success must
+fsync the published archive, any newly created destination parent entries, and
+the destination directory, including directory metadata changed by retention.
 Restored benchmark reports require strict JSON booleans, non-negative integer
 counters, and finite numeric accuracy/confidence values; coercion from strings,
 booleans, or floating-point counters is rejected before writing. Report, case,

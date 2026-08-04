@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Field(default=Path("data"))
+    data_volume_id: str | None = Field(
+        default=None,
+        min_length=16,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
     access_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     parser_provider: str = Field(default="mock")
     parser_layout_profile: str = Field(default="generic")

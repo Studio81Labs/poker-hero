@@ -408,6 +408,57 @@ def test_upload_waiting_for_backup_does_not_block_unrelated_requests(
     asyncio.run(exercise_upload())
 
 
+def test_slow_backup_download_does_not_block_mutations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream_started = Event()
+    release_stream = Event()
+    original_stream = api_module.stream_application_backup
+
+    def paused_stream(archive_file):
+        stream_started.set()
+        assert release_stream.wait(timeout=5)
+        yield from original_stream(archive_file)
+
+    monkeypatch.setattr(
+        api_module,
+        "stream_application_backup",
+        paused_stream,
+    )
+    app = create_app(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="mock",
+            recommendation_provider="mock",
+        )
+    )
+
+    async def exercise_slow_download() -> None:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            export_task = asyncio.create_task(client.get("/api/backups/export"))
+            assert await asyncio.to_thread(stream_started.wait, 2)
+            try:
+                upload = await asyncio.wait_for(
+                    client.post(
+                        "/api/jobs",
+                        files={"file": ("table.png", VALID_PNG, "image/png")},
+                    ),
+                    timeout=2,
+                )
+                assert upload.status_code == 201
+            finally:
+                release_stream.set()
+            export = await export_task
+            assert export.status_code == 200
+
+    asyncio.run(exercise_slow_download())
+
+
 def test_restored_old_reports_do_not_displace_recent_report_history(
     tmp_path: Path,
 ) -> None:

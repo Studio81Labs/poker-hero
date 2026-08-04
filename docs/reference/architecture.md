@@ -130,9 +130,11 @@ Full application backups are a separate schema and recovery boundary. A
 versioned ZIP contains every durable `JobRecord`, its original image, and all
 persisted benchmark reports. Because training decisions, completed reviews,
 lesson notes, recommendations, history timestamps, and benchmark selection are
-job fields, they travel with the record. Export serializes against benchmark,
-job, and history mutations and refuses to capture active parser or
-recommendation work.
+job fields, they travel with the record. API mutations hold a shared
+data-volume lock across the full request, including background work. Browser
+and CLI exports take its exclusive side while building the archive, then refuse
+to capture any persisted active parser or recommendation work or a pending
+benchmark import journal.
 
 Restore parses and verifies the complete archive before acquiring the mutation
 locks. It checks declared paths, entry counts and sizes, supported images,
@@ -144,6 +146,30 @@ published atomically; a write failure rolls back files created by that restore
 and recomputes the latest-report pointer. Configuration, credentials, and
 transient benchmark-import journals remain deployment concerns and are not
 portable user data.
+
+The backend image also exposes an operational backup CLI over this same archive
+contract. It can export timestamped archives with bounded retention, validate
+an archive without opening the production stores, and perform an isolated
+restore drill in temporary storage. The drill repeats the restore to verify
+idempotency, then re-exports and compares all jobs, images, and benchmark
+reports. A separately mounted `POKER_BACKUP_DIR` is made writable by the
+container entrypoint; completed archives still require independent off-host
+replication because a second directory or volume on one host is not a disaster
+recovery boundary.
+An operator explicitly enrolls the verified production data mount by atomically
+writing a versioned marker bound to `POKER_DATA_VOLUME_ID`. Application startup
+does not manufacture this marker. Operational export requires an exact identity
+match before it opens the stores or touches the backup destination, preventing
+an unmounted or wrong data volume from producing an empty success and pruning
+valid archives. Enrollment fsyncs both the marker contents and data-directory
+entry before reporting success. Export revalidates the marker and required store
+directories under the snapshot lock before constructors may create anything.
+Each backup destination has a persistent advisory lock file. Atomic publication
+and retention execute under its exclusive operating-system lock so overlapping
+schedules cannot prune each other's preserved output. Archive bytes and the
+destination directory are fsynced after publication, newly created destination
+entries are made durable through their existing parent, and the directory is
+fsynced again after retention changes.
 
 Restored benchmark reports also require strict JSON booleans, non-negative
 integer counters, and finite numeric accuracy/confidence values. Boolean and

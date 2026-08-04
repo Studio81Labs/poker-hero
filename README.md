@@ -53,6 +53,7 @@ poker-hero/
 | `pnpm backend:dev` | Start FastAPI with reload on port 8000 |
 | `pnpm backend:benchmark <dataset.zip>` | Benchmark a parser against an exported labeled dataset |
 | `pnpm backend:recommendation-benchmark <dataset.json>` | Benchmark a recommendation provider against trusted references |
+| `pnpm backend:backup <command>` | Initialize, export, verify, or restore-drill application backups |
 | `pnpm backend:test` | Run the backend pytest suite |
 | `pnpm frontend:dev` | Start Vite on port 5173 |
 | `pnpm frontend:test` | Run frontend tests |
@@ -83,6 +84,8 @@ The main provider switches are:
 - `POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS`: timeout shared by external parser
   and recommendation requests (default 60 seconds)
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
+- `POKER_DATA_VOLUME_ID`: stable deployment identity required only by the
+  operational backup CLI
 - `POKER_MAX_DATASET_UPLOAD_BYTES`: maximum parser dataset ZIP size for
   benchmark selection, export, and import (default 100 MiB)
 - `POKER_MAX_BACKUP_UPLOAD_BYTES`: maximum full application backup ZIP size for
@@ -246,6 +249,22 @@ are merged, exact records are reused, and a divergent existing job, image, or
 report rejects the restore without overwriting current data. Provider
 credentials, environment configuration, and transient import journals are
 intentionally excluded.
+
+Operators can create and validate the same archive format without the browser:
+
+```bash
+pnpm backend:backup init-volume
+pnpm backend:backup export ./backups --retain 14
+pnpm backend:backup verify ./backups/<archive>.zip
+pnpm backend:backup drill ./backups/<archive>.zip
+```
+
+The drill restores only into temporary isolated storage, verifies a repeated
+restore is idempotent, and compares a re-export with the source. Operational
+exports coordinate with live API mutations through a shared data-volume lock,
+then durably publish and rotate archives under a destination lock. See
+[the deployment runbook](./docs/process/deployment.md#backup-schedule-and-restore-drill)
+for Coolify mounts, scheduling, off-host copies, and recovery procedure.
 
 ### Offline Parser Benchmarks
 

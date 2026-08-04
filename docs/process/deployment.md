@@ -59,6 +59,91 @@ log collector without stripping a Uvicorn prefix.
 Set `POKER_ACCESS_LOG_LEVEL=DEBUG` when health-probe events are needed during
 deployment diagnosis; the default `INFO` threshold suppresses them.
 
+## Backup Schedule And Restore Drill
+
+Mount a second persistent or bind-backed volume at `/app/backups` and set
+`POKER_BACKUP_DIR=/app/backups`. The entrypoint creates that directory and
+grants the non-root `poker` user access. Do not treat `/app/data/backups` or a
+second volume on the same host as disaster recovery: copy completed archives
+to independent object storage or another host.
+
+Create a stable volume identity and set it as `POKER_DATA_VOLUME_ID` in
+Coolify:
+
+```bash
+openssl rand -hex 32
+```
+
+After the backend is healthy, inspect `/app/data` in the running backend
+container and confirm the expected jobs are present. Then enroll that exact
+mounted volume once from the running container:
+
+```bash
+python -m app.backup_cli init-volume
+```
+
+The command atomically writes a versioned `.poker-hero-data-volume` marker bound
+to the configured identity. Do not run it from an unverified one-off container.
+Scheduled export requires an exact marker match before opening stores,
+publishing an archive, or applying retention. A container with a missing or
+wrong `/app/data` mount therefore fails closed instead of rotating known-good
+backups with an empty archive. Re-running initialization with the same identity
+is safe; a different identity is rejected. Export also rechecks the marker and
+requires both initialized store directories under the snapshot lock, so partial
+volume corruption cannot be silently recreated as an incomplete backup.
+
+Publication and retention hold a destination-wide operating-system file lock.
+Overlapping scheduled runs or retries therefore serialize their short publish
+phase, and `--retain` cannot let two exporters delete each other's archives.
+If the destination filesystem cannot provide the lock, export fails without
+publishing or pruning. Successful publication fsyncs the archive and backup
+directory; newly created destination entries are fsynced through their existing
+parent, and retention fsyncs the directory again after removing old entries.
+
+API mutations hold a shared data-volume lock for their complete request,
+including background work. Browser and operational exports take the exclusive
+side of that lock while building an archive, so they wait for active mutations
+and prevent a partial restore or import from becoming a scheduled backup.
+
+Schedule a daily Coolify task against the backend image or run this inside a
+one-off backend container:
+
+```bash
+python -m app.backup_cli export /app/backups --retain 14
+```
+
+The command prints the absolute archive path on success. It waits for live API
+mutations to finish and exits nonzero if persisted active parsing or
+recommendation work or a resumable benchmark import still prevents a consistent
+export. Configure the scheduler to alert on a nonzero exit and retry later; do
+not delete the last known-good off-host archive after a failed run. Retention
+only removes older files created with Poker Hero's timestamped backup filename
+pattern.
+
+Validate every copied archive at its final storage destination:
+
+```bash
+python -m app.backup_cli verify /app/backups/<archive>.zip
+```
+
+At least monthly, run the isolated recovery drill:
+
+```bash
+python -m app.backup_cli drill /app/backups/<archive>.zip
+```
+
+The drill validates the complete manifest, limits, models, images, and
+checksums; restores into a temporary directory; repeats the restore to prove
+idempotency; and re-exports and compares the recovered data. It never writes to
+`POKER_DATA_DIR`. A successful drill reports the restored job and benchmark
+report counts. Preserve scheduler logs and the tested archive name as recovery
+evidence.
+
+For an actual recovery, deploy a fresh backend data volume, use the information
+dialog to restore the tested archive, verify queue/history/benchmark counts,
+and only then switch traffic. Never test a recovery by restoring into the live
+data directory.
+
 ## Frontend On Cloudflare Workers
 
 The `Frontend Deploy` workflow builds `apps/frontend` and deploys the Worker on

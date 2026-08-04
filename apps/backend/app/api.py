@@ -43,6 +43,7 @@ from app.application_backup import (
     stream_application_backup,
 )
 from app.config import Settings, get_settings
+from app.data_lock import InterprocessDataLock
 from app.benchmarking import run_benchmark
 from app.dataset_export import (
     DatasetExportError,
@@ -382,6 +383,44 @@ class RequestObservabilityMiddleware:
         )
 
 
+class DataMutationLockMiddleware:
+    """Coordinate API mutations with consistent cross-process snapshots."""
+
+    MUTATING_METHODS = frozenset({"DELETE", "PATCH", "POST", "PUT"})
+    MUTATING_GET_PATH_PREFIXES = ("/api/benchmarks/imports/",)
+
+    def __init__(self, app: ASGIApp, data_lock: InterprocessDataLock) -> None:
+        self.app = app
+        self.data_lock = data_lock
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        path = scope.get("path", "")
+        mutating_get = method == "GET" and path.startswith(
+            self.MUTATING_GET_PATH_PREFIXES
+        )
+        if method not in self.MUTATING_METHODS and not mutating_get:
+            await self.app(scope, receive, send)
+            return
+
+        descriptor = await self.data_lock.acquire_async(
+            exclusive=False,
+        )
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            self.data_lock.release(descriptor)
+
+
 def _json_safe_validation_content(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         if math.isnan(value):
@@ -414,9 +453,11 @@ def recover_interrupted_jobs(store: FileJobStore) -> None:
 
 def create_app(settings: Settings | None = None) -> RequestObservabilityMiddleware:
     active_settings = settings or get_settings()
-    store = FileJobStore(active_settings.data_dir)
-    recover_interrupted_jobs(store)
-    benchmark_store = FileBenchmarkStore(active_settings.data_dir)
+    data_lock = InterprocessDataLock(active_settings.data_dir)
+    with data_lock.hold(exclusive=False):
+        store = FileJobStore(active_settings.data_dir)
+        benchmark_store = FileBenchmarkStore(active_settings.data_dir)
+        recover_interrupted_jobs(store)
     # Fixed stripes serialize each job without retaining caller-supplied IDs.
     job_locks = tuple(Lock() for _ in range(JOB_LOCK_STRIPES))
     history_lock = RLock()
@@ -609,6 +650,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ) from exc
 
     app = FastAPI(title="Poker Training Analyzer API")
+    app.add_middleware(DataMutationLockMiddleware, data_lock=data_lock)
 
     @app.exception_handler(Exception)
     async def unexpected_exception_handler(
@@ -1191,8 +1233,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ],
         )
 
-    @app.get("/api/backups/export")
-    def export_application_backup() -> StreamingResponse:
+    def build_browser_application_backup():
         with (
             application_backup_lock,
             dataset_import_lock,
@@ -1204,7 +1245,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 job_lock_stack.enter_context(job_lock)
             with history_lock:
                 try:
-                    archive_file = build_application_backup_archive(
+                    return build_application_backup_archive(
                         jobs=store.list(),
                         benchmark_reports=benchmark_store.list(limit=None),
                         image_path_for=store.image_path,
@@ -1216,6 +1257,18 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         status_code=exc.status_code,
                         detail=str(exc),
                     ) from exc
+
+    @app.get("/api/backups/export")
+    async def export_application_backup() -> StreamingResponse:
+        descriptor = await data_lock.acquire_async(
+            exclusive=True,
+        )
+        try:
+            archive_file = await run_in_threadpool(
+                build_browser_application_backup,
+            )
+        finally:
+            data_lock.release(descriptor)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return StreamingResponse(

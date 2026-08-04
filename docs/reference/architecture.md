@@ -31,11 +31,14 @@ The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
 route a single open, one open plus one caller before hero, or exactly one hero
-open followed by one later-position 3-bet. The sequence stores canonical seat,
-action, and total committed BB. The caller route requires exactly three active
+open followed by one later-position 3-bet. It can also route one opponent open
+and one opponent 3-bet before hero when exactly three players remain. The
+sequence stores canonical seat, action, and total committed BB. The caller route requires exactly three active
 players, matching open and call totals, and legal opener-caller-hero order. Its
 explicit conservative multipliers tighten continue and squeeze boundaries, and
-its raise target starts at 4x the open. The chart validates position order,
+its raise target starts at 4x the open. The cold 3-bet route requires legal
+opener-3-bettor-hero order and uses an explicit policy for every supported seat
+triple. The chart validates position order,
 full-raise minimums, amount to call, pot composition, and stack availability. A
 structured first raise also supplies the
 legacy opener position and total opening size fields at the provider boundary.
@@ -44,7 +47,8 @@ free-text fallback. Every resolved open must remain within the supported 2-4 BB
 range. Supported 3-bets select an ordered size-ratio band and matchup-specific
 continue/four-bet boundaries. Recommendation evidence records the resolved
 actors and totals, base response boundaries, size multipliers, stack policy,
-adjusted boundaries, represented caller seats, and maximum legal raise total.
+adjusted boundaries, represented caller seats, cold 3-bet policy, and maximum
+legal raise total.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

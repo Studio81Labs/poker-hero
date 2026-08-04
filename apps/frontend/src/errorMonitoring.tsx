@@ -49,6 +49,8 @@ export function browserMonitoringOptions(
     environment: environment.VITE_SENTRY_ENVIRONMENT?.trim() || "production",
     release: environment.VITE_SENTRY_RELEASE?.trim() || undefined,
     sampleRate: 1,
+    sendClientReports: false,
+    integrations: exceptionOnlyIntegrations,
     tracesSampleRate: 0,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
@@ -81,6 +83,12 @@ export function browserMonitoringOptions(
       },
     },
   };
+}
+
+export function exceptionOnlyIntegrations<T extends { name: string }>(
+  integrations: T[],
+): T[] {
+  return integrations.filter(({ name }) => name !== "BrowserSession");
 }
 
 function isCompleteHttpsDsn(value: string): boolean {

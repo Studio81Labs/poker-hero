@@ -81,6 +81,7 @@ the adapters remove request bodies, headers, query strings, cookies, user
 context, breadcrumbs, arbitrary extras, local variables, and free-form error
 messages. Browser session replay and performance tracing are disabled. Events
 retain the exception type and stack locations plus release/environment tags;
+automatic release-health sessions and client reports are also disabled;
 backend events also include the route template, HTTP method, and `X-Request-ID`
 for correlation with the JSON container log when that ID is a canonical UUIDv4.
 Other caller-supplied request IDs remain local to the response and access log.

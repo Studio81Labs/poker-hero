@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AppErrorBoundary,
   browserMonitoringOptions,
+  exceptionOnlyIntegrations,
   scrubBrowserEvent,
 } from "./errorMonitoring";
 
@@ -35,6 +36,7 @@ describe("browser error monitoring", () => {
       environment: "testing",
       release: "abc123",
       sampleRate: 1,
+      sendClientReports: false,
       tracesSampleRate: 0,
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
@@ -50,6 +52,11 @@ describe("browser error monitoring", () => {
     });
     expect(options?.beforeBreadcrumb?.({})).toBeNull();
     expect(options?.beforeSend).toBe(scrubBrowserEvent);
+    expect(options?.integrations).toBe(exceptionOnlyIntegrations);
+    expect(exceptionOnlyIntegrations([
+      { name: "GlobalHandlers" },
+      { name: "BrowserSession" },
+    ])).toEqual([{ name: "GlobalHandlers" }]);
   });
 
   it("removes poker and request data while retaining stack locations", () => {

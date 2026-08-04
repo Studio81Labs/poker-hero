@@ -21,10 +21,11 @@ Apply an outbound allowlist by stripping request metadata and bodies, user
 context, breadcrumbs, arbitrary extras, free-form exception values, and stack
 locals. Retain exception type and stack locations plus environment/release.
 Backend events also retain the route template, method, and request ID needed to
-find the corresponding scrubbed container log. Disable browser replay and all
-performance tracing. Initialization and delivery failures are swallowed at the
-adapter boundary, leaving optional monitoring disabled without preventing the
-application from starting.
+find the corresponding scrubbed container log. Disable browser replay,
+automatic session tracking, client reports, and all performance tracing so the
+browser emits exception events only. Initialization and delivery failures are
+swallowed at the adapter boundary, leaving optional monitoring disabled without
+preventing the application from starting.
 
 Use a native React error boundary for the recovery screen and load the browser
 SDK dynamically only when configured. This keeps recovery available without

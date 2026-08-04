@@ -10,6 +10,7 @@ dependencies = [
   "pydantic>=2.8",
   "pydantic-settings>=2.4",
   "python-multipart>=0.0.9",
+  "sentry-sdk>=2.66,<3",
   "uvicorn[standard]>=0.30"
 ]
 

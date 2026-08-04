@@ -59,6 +59,38 @@ log collector without stripping a Uvicorn prefix.
 Set `POKER_ACCESS_LOG_LEVEL=DEBUG` when health-probe events are needed during
 deployment diagnosis; the default `INFO` threshold suppresses them.
 
+## Runtime Error Monitoring
+
+Error reporting is optional and disabled when its DSN is blank. To enable
+backend reporting, configure these Coolify values:
+
+- secret `POKER_SENTRY_DSN`, using a complete HTTPS Sentry DSN;
+- `POKER_SENTRY_ENVIRONMENT=testing`;
+- optional `POKER_SENTRY_RELEASE`, normally the deployed commit or image tag;
+- optional `POKER_SENTRY_ERROR_SAMPLE_RATE`, from zero through one (default one).
+
+Set the public `VITE_SENTRY_DSN` repository or `testing` environment variable
+to enable browser reporting. The frontend workflow supplies `testing` as the
+environment and the deployed commit SHA as the release. A browser DSN is a
+public client key by design; do not place a Sentry API/auth token in any
+`VITE_*` value.
+
+Both adapters report unhandled exceptions only. Expected validation, provider
+input, and other handled API errors are not incidents. Before transmission,
+the adapters remove request bodies, headers, query strings, cookies, user
+context, breadcrumbs, arbitrary extras, local variables, and free-form error
+messages. Browser session replay and performance tracing are disabled. Events
+retain the exception type and stack locations plus release/environment tags;
+backend events also include the route template, HTTP method, and `X-Request-ID`
+for correlation with the JSON container log. Reporting failures never alter
+the application response.
+
+After configuration, trigger a test exception only in a non-production test
+deployment and confirm that the event contains no cards, screenshots, player
+names, request payloads, provider output, authorization data, or query values.
+Use Sentry project alerts for notification delivery; the GitHub uptime issue
+remains the independent availability signal.
+
 ## Backup Schedule And Restore Drill
 
 Mount a second persistent or bind-backed volume at `/app/backups` and set

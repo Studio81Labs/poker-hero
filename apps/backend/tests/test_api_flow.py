@@ -254,8 +254,15 @@ def test_invalid_request_id_is_replaced(tmp_path: Path) -> None:
 
 def test_unhandled_error_response_keeps_request_id(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     access_log_records: list[logging.LogRecord],
 ) -> None:
+    captured: list[tuple[Exception, dict[str, str | None]]] = []
+    monkeypatch.setattr(
+        api_module,
+        "capture_unhandled_exception",
+        lambda error, **context: captured.append((error, context)),
+    )
     app = create_app(
         Settings(
             data_dir=tmp_path,
@@ -293,6 +300,13 @@ def test_unhandled_error_response_keeps_request_id(
     assert access_events[0]["request_id"] == "failed-request-123"
     assert access_events[0]["status_code"] == 500
     assert access_events[0]["outcome"] == "failed"
+    assert len(captured) == 1
+    assert str(captured[0][0]) == "test crash"
+    assert captured[0][1] == {
+        "request_id": "failed-request-123",
+        "method": "GET",
+        "route": "/api/test-crash",
+    }
 
 
 def test_stream_failure_is_logged_after_response_start(

@@ -495,6 +495,11 @@ user.
   and protected queue boundaries. It opens one incident issue after bounded
   retries and closes that issue on recovery. Optional Cloudflare Access service
   credentials are restricted to same-origin requests and redirects.
+- Error reporting: optional backend and browser Sentry adapters capture only
+  unhandled exceptions. Provider-specific initialization stays behind local
+  adapters, reporting is disabled without a DSN, and an allowlisted evidence
+  shape removes poker/request/user data before transmission. The backend adds
+  only route, method, and request-ID correlation tags.
 
 The frontend Worker proxy removes mixed-content and browser CORS issues from the
 normal deployed path. Backend CORS remains configurable for local and direct API

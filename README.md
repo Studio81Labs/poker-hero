@@ -94,6 +94,11 @@ The main provider switches are:
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
 - `POKER_PROXY_SHARED_SECRET`: optional Worker-to-backend credential, at least
   32 characters; leave empty for local development
+- `POKER_SENTRY_DSN`: optional HTTPS Sentry DSN for scrubbed unhandled backend
+  exception reports; leave empty to disable
+- `POKER_SENTRY_ENVIRONMENT`, `POKER_SENTRY_RELEASE`, and
+  `POKER_SENTRY_ERROR_SAMPLE_RATE`: optional error-report attribution and
+  sampling controls
 
 See [apps/backend/.env.example](./apps/backend/.env.example) for the complete
 local contract and [infra/docker/backend.env.example](./infra/docker/backend.env.example)
@@ -366,6 +371,15 @@ remains available to platform health probes.
 
 Backend responses carry `X-Request-ID`, which is also written to structured
 container access logs for tracing requests through the Worker and Coolify.
+
+Runtime error monitoring is disabled by default. Set `POKER_SENTRY_DSN` in
+Coolify for backend failures and the public `VITE_SENTRY_DSN` repository or
+`testing` environment variable for browser failures. The frontend deployment
+uses its commit SHA as the release. Both adapters remove poker state, request
+bodies and metadata, user context, breadcrumbs, local variables, and free-form
+exception text before sending an event. Browser tracing and replay are off.
+Errors retain stack locations, exception type, environment/release, component,
+and backend request correlation tags.
 
 The `Uptime Monitor` workflow checks the deployed SPA, proxied health route,
 and protected queue route every hour. It derives the testing URL from

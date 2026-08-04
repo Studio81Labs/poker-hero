@@ -10069,11 +10069,17 @@ describe("App", () => {
   it("preserves hidden preflop history when approving a postflop state", async () => {
     const postflopState: DetectedState = {
       ...detectedState,
+      opponent_stack: 90,
       preflop_opener_position: "cutoff",
       preflop_open_size: 2.5,
       preflop_action_history: [
         { actor: "cutoff", action: "raise", amount: 2.5 },
         { actor: "button", action: "raise", amount: 8 },
+      ],
+      facing_action: "raise",
+      postflop_action_history: [
+        { actor: "oop", action: "bet", amount: 2.5 },
+        { actor: "ip", action: "raise", amount: 7.5 },
       ],
     };
     const parsedJob = jobRecord({
@@ -10090,6 +10096,8 @@ describe("App", () => {
 
     const user = await uploadScreenshot();
     expect(screen.queryByRole("button", { name: "Add preflop action" })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText(/Street/), "turn");
+    await user.selectOptions(screen.getByLabelText(/Facing action/), "bet");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
     await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));

@@ -6392,12 +6392,14 @@ export default function App() {
     setForm((current) => {
       const next = { ...current, [field]: value };
       if (
-        (field === "street" && value !== "preflop") ||
-        (field === "facing_action" && value !== "raise")
+        (
+          (field === "street" && value !== "preflop")
+          || (field === "facing_action" && value !== "raise")
+        )
+        && next.preflop_action_history.length === 0
       ) {
         next.preflop_opener_position = "";
         next.preflop_open_size = "";
-        next.preflop_action_history = [];
       }
       const usesPostflopHistory = next.facing_action === "raise"
         && next.street !== ""

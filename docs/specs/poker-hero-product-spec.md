@@ -436,10 +436,13 @@ raise sizes, and either complete per-line EV labels or no EV labels.
 The report isolates failed cases and measures supported-action agreement,
 exact sizing-line agreement where sizing is labeled, mixed-policy distance
 when provider candidate frequencies are complete, reference EV loss when the
-selected line has a trusted EV, and recorded fallback use. Human-readable and
-JSON output support optional regression thresholds for each aggregate. The
-same provider registry and canonical request contract used by the application
-must be used by the benchmark.
+selected line has a trusted EV, and recorded fallback use. It records line,
+policy, and EV evaluation coverage and groups the same metrics by street and
+optional scenario tags. The corpus may identify its independent reference
+source, version, and configuration. Human-readable and JSON output support
+optional regression thresholds for every aggregate and can require source
+provenance. The same provider registry and canonical request contract used by
+the application must be used by the benchmark.
 
 ## Application Backup And Restore
 

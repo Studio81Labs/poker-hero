@@ -10,8 +10,12 @@ generate the reference with the same provider being evaluated.
 ```bash
 pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --provider local_solver \
+  --require-reference-source \
   --minimum-action-accuracy 0.90 \
   --minimum-line-accuracy 0.80 \
+  --minimum-line-coverage 0.90 \
+  --minimum-policy-coverage 0.90 \
+  --minimum-ev-coverage 0.90 \
   --maximum-policy-distance 0.15 \
   --maximum-ev-loss 0.05 \
   --maximum-fallback-rate 0.20
@@ -26,14 +30,20 @@ status `2` when the corpus or provider configuration is invalid.
 ```json
 {
   "schema": "poker-hero-recommendation-benchmark",
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "Reviewed heads-up flop sample",
+  "reference_source": {
+    "name": "Independent solver export",
+    "version": "2026.08",
+    "configuration": "Heads-up cash, 100 BB, no rake"
+  },
   "sizing_tolerance_bb": 0.01,
   "minimum_policy_frequency": 0.05,
   "cases": [
     {
       "id": "btn-vs-bb-flop-001",
       "description": "Button checks or bets half pot on a dry flop",
+      "tags": ["single-raised-pot", "in-position", "checked-to"],
       "state": {
         "hero_cards": [
           { "rank": "A", "suit": "hearts" },
@@ -81,6 +91,12 @@ The values above illustrate the file shape and are not strategy claims.
 ## Evaluation Rules
 
 - Reference frequencies are strict finite JSON numbers and sum to `1.0` per case.
+- `reference_source` records the independent solver or reviewed strategy source.
+  Version-1 corpora without provenance or tags remain readable; new corpora use
+  version 2. Use `--require-reference-source` for trusted regression runs.
+- Lowercase case tags classify scenarios such as `single-raised-pot` and
+  `facing-bet`. Reports include deterministic street and tag breakdowns; a case
+  may contribute to more than one tag.
 - Lines at or above `minimum_policy_frequency` count as supported strategy.
 - Action agreement ignores sizing; line agreement uses `sizing_tolerance_bb`.
 - The sizing boundary is strict: a difference exactly equal to the tolerance
@@ -97,6 +113,9 @@ The values above illustrate the file shape and are not strategy claims.
 - A provider exception or missing required canonical field fails only that case.
 - A non-empty `raw.fallback_reason` counts toward fallback rate;
   `routing_reason` does not.
+- Line, policy, and EV coverage report how many completed cases supplied enough
+  evidence for each optional metric. Their minimum thresholds prevent missing
+  sizes, frequencies, or EV labels from making a partial result look healthy.
 
 The corpus is limited to 1,000 cases and 4 MiB. Unknown fields, coerced schema
 versions, duplicate IDs or line identities, partial EV labels, and ambiguous

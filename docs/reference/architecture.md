@@ -492,9 +492,12 @@ user.
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.
 - Resource protection: authenticated expensive operations use bounded in-memory
-  token buckets. The Worker strips unverified Access identity headers; the
-  backend hashes a validated Cloudflare connecting IP only after Worker-secret
-  authentication, then falls back to a shared proxy or direct-client identity.
+  token buckets keyed by full opaque identity digests. Inactive buckets expire
+  after one refill window, with least-recently-used eviction enforcing the
+  fixed memory bound without aliasing unrelated clients. The Worker strips
+  unverified Access identity headers; the backend hashes a validated Cloudflare
+  connecting IP only after Worker-secret authentication, then falls back to a
+  shared proxy or direct-client identity.
   Limits are configurable independently for uploads, recommendations,
   benchmarks, and archive transfers.
   Buckets are process-local for the single-container testing topology; a future

@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -22,7 +23,7 @@ RATE_LIMIT_CATEGORIES: frozenset[RateLimitCategory] = frozenset(
 )
 
 RATE_LIMIT_WINDOW_SECONDS = 60.0
-RATE_LIMIT_BUCKET_SLOTS = 4096
+RATE_LIMIT_MAX_BUCKETS = 4096
 CONNECTING_IP_HEADER = "CF-Connecting-IP"
 _RECOMMENDATION_PATH = re.compile(r"^/api/jobs/[^/]+/recommend$")
 _BENCHMARK_IMPORT_RECOVERY_PATH = re.compile(
@@ -60,22 +61,24 @@ class ApiRateLimiter:
         limits: Mapping[RateLimitCategory, int],
         *,
         window_seconds: float = RATE_LIMIT_WINDOW_SECONDS,
-        bucket_slots: int = RATE_LIMIT_BUCKET_SLOTS,
+        max_buckets: int = RATE_LIMIT_MAX_BUCKETS,
         clock: Callable[[], float] = monotonic,
     ) -> None:
         if window_seconds <= 0 or not math.isfinite(window_seconds):
             raise ValueError("window_seconds must be a positive finite number")
-        if bucket_slots <= 0:
-            raise ValueError("bucket_slots must be positive")
+        if max_buckets <= 0:
+            raise ValueError("max_buckets must be positive")
         if set(limits) != RATE_LIMIT_CATEGORIES:
             raise ValueError("limits must define every rate-limit category")
         if any(limit <= 0 for limit in limits.values()):
             raise ValueError("rate limits must be positive")
         self._limits = dict(limits)
         self._window_seconds = window_seconds
-        self._bucket_slots = bucket_slots
+        self._max_buckets = max_buckets
         self._clock = clock
-        self._buckets: dict[tuple[RateLimitCategory, int], _TokenBucket] = {}
+        self._buckets: OrderedDict[
+            tuple[RateLimitCategory, bytes], _TokenBucket
+        ] = OrderedDict()
         self._lock = Lock()
 
     def check(
@@ -85,16 +88,15 @@ class ApiRateLimiter:
     ) -> RateLimitDecision:
         limit = self._limits[category]
         refill_per_second = limit / self._window_seconds
-        slot = int.from_bytes(
-            sha256(identity.encode("utf-8")).digest()[:8],
-            "big",
-        ) % self._bucket_slots
-        key = (category, slot)
+        key = (category, sha256(identity.encode("utf-8")).digest())
 
         with self._lock:
             now = self._clock()
             bucket = self._buckets.get(key)
             if bucket is None:
+                self._discard_inactive_buckets(now)
+                if len(self._buckets) >= self._max_buckets:
+                    self._buckets.popitem(last=False)
                 bucket = _TokenBucket(tokens=float(limit), updated_at=now)
                 self._buckets[key] = bucket
             else:
@@ -104,6 +106,7 @@ class ApiRateLimiter:
                     bucket.tokens + elapsed * refill_per_second,
                 )
                 bucket.updated_at = now
+                self._buckets.move_to_end(key)
 
             if bucket.tokens >= 1.0:
                 bucket.tokens -= 1.0
@@ -124,6 +127,14 @@ class ApiRateLimiter:
                 remaining=0,
                 retry_after_seconds=retry_after,
             )
+
+    def _discard_inactive_buckets(self, now: float) -> None:
+        stale_before = now - self._window_seconds
+        while self._buckets:
+            _, bucket = next(iter(self._buckets.items()))
+            if bucket.updated_at > stale_before:
+                break
+            self._buckets.popitem(last=False)
 
 
 def rate_limit_category(method: str, path: str) -> RateLimitCategory | None:

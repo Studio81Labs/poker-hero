@@ -114,6 +114,67 @@ def test_token_buckets_are_independent_by_category_and_identity() -> None:
     assert limiter.check("uploads", "client-b").allowed is True
 
 
+def test_bounded_storage_does_not_alias_distinct_client_budgets() -> None:
+    limiter = ApiRateLimiter(
+        {
+            "uploads": 1,
+            "recommendations": 1,
+            "benchmarks": 1,
+            "data_transfers": 1,
+        },
+        max_buckets=1,
+    )
+
+    assert limiter.check("uploads", "client-a").allowed is True
+    assert limiter.check("uploads", "client-a").allowed is False
+    assert limiter.check("uploads", "client-b").allowed is True
+    assert len(limiter._buckets) == 1
+
+
+def test_limiter_discards_inactive_buckets_before_lru_eviction() -> None:
+    now = [100.0]
+    limiter = ApiRateLimiter(
+        {
+            "uploads": 1,
+            "recommendations": 1,
+            "benchmarks": 1,
+            "data_transfers": 1,
+        },
+        window_seconds=60,
+        max_buckets=2,
+        clock=lambda: now[0],
+    )
+
+    limiter.check("uploads", "client-a")
+    limiter.check("uploads", "client-b")
+    now[0] += 60
+    limiter.check("uploads", "client-c")
+
+    assert len(limiter._buckets) == 1
+
+
+def test_limiter_evicts_the_least_recently_used_active_bucket() -> None:
+    now = [100.0]
+    limiter = ApiRateLimiter(
+        {
+            "uploads": 1,
+            "recommendations": 1,
+            "benchmarks": 1,
+            "data_transfers": 1,
+        },
+        max_buckets=2,
+        clock=lambda: now[0],
+    )
+
+    assert limiter.check("uploads", "client-a").allowed is True
+    assert limiter.check("uploads", "client-b").allowed is True
+    now[0] += 1
+    assert limiter.check("uploads", "client-a").allowed is False
+    assert limiter.check("uploads", "client-c").allowed is True
+    assert limiter.check("uploads", "client-c").allowed is False
+    assert limiter.check("uploads", "client-b").allowed is True
+
+
 def test_limiter_requires_a_complete_positive_policy() -> None:
     partial_policy: dict[RateLimitCategory, int] = {"uploads": 1}
     with pytest.raises(ValueError, match="every rate-limit category"):
@@ -126,6 +187,16 @@ def test_limiter_requires_a_complete_positive_policy() -> None:
                 "benchmarks": 1,
                 "data_transfers": 1,
             }
+        )
+    with pytest.raises(ValueError, match="max_buckets must be positive"):
+        ApiRateLimiter(
+            {
+                "uploads": 1,
+                "recommendations": 1,
+                "benchmarks": 1,
+                "data_transfers": 1,
+            },
+            max_buckets=0,
         )
 
 

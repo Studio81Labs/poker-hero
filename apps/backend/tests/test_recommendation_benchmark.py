@@ -10,6 +10,7 @@ from app.providers.base import ProviderConfigurationError
 from app.recommendation_benchmark import (
     MAX_RECOMMENDATION_BENCHMARK_BYTES,
     RECOMMENDATION_BENCHMARK_SCHEMA,
+    RECOMMENDATION_BENCHMARK_SCHEMA_VERSION,
     RecommendationBenchmarkCase,
     RecommendationBenchmarkDataset,
     RecommendationBenchmarkError,
@@ -83,11 +84,14 @@ def reference_line(
 def benchmark_case(
     case_id: str,
     lines: list[RecommendationReferenceLine],
+    *,
+    tags: list[str] | None = None,
     **state_overrides: object,
 ) -> RecommendationBenchmarkCase:
     return RecommendationBenchmarkCase(
         id=case_id,
         description=f"Reference case {case_id}",
+        tags=tags or [],
         state=benchmark_state(**state_overrides),
         reference_lines=lines,
     )
@@ -99,7 +103,7 @@ def benchmark_dataset(
 ) -> RecommendationBenchmarkDataset:
     values = {
         "schema": RECOMMENDATION_BENCHMARK_SCHEMA,
-        "schema_version": 1,
+        "schema_version": RECOMMENDATION_BENCHMARK_SCHEMA_VERSION,
         "name": "Trusted solver sample",
         "sizing_tolerance_bb": 0.01,
         "minimum_policy_frequency": 0.05,
@@ -201,6 +205,76 @@ def test_recommendation_benchmark_scores_policy_ev_fallback_and_failures() -> No
     assert "Average policy distance: 0.100 across 1 case(s)" in formatted
     assert "unsupported-action: mismatched action, line" in formatted
     assert "provider-failure: solver unavailable" in formatted
+
+
+def test_report_exposes_provenance_coverage_and_scenario_breakdowns() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "flop-cbet",
+                [
+                    reference_line("check", frequency=0.4, ev_bb=0.5),
+                    reference_line("bet", sizing=5.0, frequency=0.6, ev_bb=0.7),
+                ],
+                tags=["single-raised-pot", "in-position"],
+            ),
+            benchmark_case(
+                "turn-facing-bet",
+                [
+                    reference_line("fold", frequency=0.25, ev_bb=0.0),
+                    reference_line("call", frequency=0.75, ev_bb=0.4),
+                ],
+                tags=["single-raised-pot", "facing-bet"],
+                street="turn",
+                board_cards=[
+                    Card.from_code("Qs"),
+                    Card.from_code("Jc"),
+                    Card.from_code("2h"),
+                    Card.from_code("4d"),
+                ],
+            ),
+        ],
+        reference_source={
+            "name": "Independent Solver",
+            "version": "2.1",
+            "configuration": "Heads-up cash, no rake",
+        },
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "bet",
+                sizing=5.0,
+                candidates=[
+                    {"action": "check", "sizing": None, "frequency": 0.5},
+                    {"action": "bet", "sizing": 5.0, "frequency": 0.5},
+                ],
+            ),
+            recommendation("call"),
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.reference_source is not None
+    assert report.reference_source.name == "Independent Solver"
+    assert report.line_coverage == 1
+    assert report.policy_coverage == 0.5
+    assert report.ev_coverage == 1
+    assert [item.key for item in report.street_metrics] == ["flop", "turn"]
+    assert report.street_metrics[0].policy_coverage == 1
+    assert report.street_metrics[1].policy_coverage == 0
+    assert [item.key for item in report.tag_metrics] == [
+        "facing-bet",
+        "in-position",
+        "single-raised-pot",
+    ]
+    assert report.tag_metrics[2].total_cases == 2
+    formatted = format_recommendation_benchmark_report(report)
+    assert "Reference: Independent Solver 2.1" in formatted
+    assert "Policy evaluation coverage: 1/2 (50.0%)" in formatted
+    assert "Street breakdown:" in formatted
+    assert "Tag breakdown:" in formatted
 
 
 def test_action_only_wager_reference_skips_line_accuracy() -> None:
@@ -392,6 +466,24 @@ def test_missing_required_state_is_an_isolated_case_failure() -> None:
     assert report.cases[1].action_match is True
 
 
+def test_missing_street_is_visible_in_unknown_breakdown() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "missing-street",
+                [reference_line("check")],
+                street=None,
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, SequenceProvider([]))
+
+    assert report.failed_cases == 1
+    assert [item.key for item in report.street_metrics] == ["unknown"]
+    assert report.street_metrics[0].failed_cases == 1
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -400,6 +492,9 @@ def test_missing_required_state_is_an_isolated_case_failure() -> None:
         "frequency_total",
         "partial_ev",
         "ambiguous_sizing",
+        "duplicate_tag",
+        "invalid_tag",
+        "extra_reference_source_field",
         "extra_state_field",
     ],
 )
@@ -408,7 +503,7 @@ def test_recommendation_benchmark_dataset_rejects_invalid_schema(
 ) -> None:
     payload = {
         "schema": RECOMMENDATION_BENCHMARK_SCHEMA,
-        "schema_version": 1,
+        "schema_version": RECOMMENDATION_BENCHMARK_SCHEMA_VERSION,
         "name": "Invalid sample",
         "sizing_tolerance_bb": 0.01,
         "minimum_policy_frequency": 0.05,
@@ -443,6 +538,15 @@ def test_recommendation_benchmark_dataset_rejects_invalid_schema(
             {"action": "bet", "sizing": 5.0, "frequency": 0.5},
             {"action": "bet", "sizing": 5.01, "frequency": 0.5},
         ]
+    elif mutation == "duplicate_tag":
+        payload["cases"][0]["tags"] = ["facing-bet", "facing-bet"]
+    elif mutation == "invalid_tag":
+        payload["cases"][0]["tags"] = ["Facing bet"]
+    elif mutation == "extra_reference_source_field":
+        payload["reference_source"] = {
+            "name": "Independent Solver",
+            "license_key": "not-allowed",
+        }
     else:
         payload["cases"][0]["state"]["invented"] = "value"
 
@@ -461,6 +565,23 @@ def test_benchmark_file_rejects_invalid_and_oversized_json(tmp_path: Path) -> No
     oversized_path.write_bytes(b"x" * (MAX_RECOMMENDATION_BENCHMARK_BYTES + 1))
     with pytest.raises(RecommendationBenchmarkError, match="4 MiB"):
         load_recommendation_benchmark_dataset(oversized_path)
+
+
+def test_loader_accepts_legacy_version_one_corpus(tmp_path: Path) -> None:
+    payload = benchmark_dataset(
+        [benchmark_case("legacy-check", [reference_line("check")])]
+    ).model_dump(mode="json", by_alias=True)
+    payload["schema_version"] = 1
+    payload.pop("reference_source")
+    payload["cases"][0].pop("tags")
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    dataset = load_recommendation_benchmark_dataset(path)
+
+    assert dataset.schema_version == 1
+    assert dataset.reference_source is None
+    assert dataset.cases[0].tags == []
 
 
 def test_recommendation_benchmark_cli_emits_json_and_enforces_thresholds(
@@ -553,6 +674,49 @@ def test_recommendation_benchmark_cli_resolves_relative_path(
     assert exit_code == 0
     assert "Action agreement: 1/1 (100.0%)" in captured.out
     assert captured.err == ""
+
+
+def test_cli_enforces_reference_source_and_evaluation_coverage(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [
+                benchmark_case(
+                    "action-only",
+                    [reference_line("bet")],
+                )
+            ]
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--require-reference-source",
+            "--minimum-line-coverage",
+            "1",
+            "--minimum-policy-coverage",
+            "1",
+            "--minimum-ev-coverage",
+            "1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("bet", sizing=5.0)]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Benchmark reference source is not recorded" in captured.err
+    assert "Line evaluation coverage 0.0% is below the minimum 100.0%" in (
+        captured.err
+    )
+    assert "Policy evaluation coverage 0.0% is below the minimum 100.0%" in (
+        captured.err
+    )
+    assert "EV evaluation coverage 0.0% is below the minimum 100.0%" in captured.err
 
 
 def test_cli_fails_when_a_required_optional_metric_is_unavailable(

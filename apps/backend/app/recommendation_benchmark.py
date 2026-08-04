@@ -21,6 +21,7 @@ from app.models import (
     RecommendationAction,
     RecommendationRequest,
     RecommendationResult,
+    Street,
 )
 from app.providers.base import (
     ProviderConfigurationError,
@@ -31,7 +32,8 @@ from app.providers.registry import build_provider
 
 
 RECOMMENDATION_BENCHMARK_SCHEMA = "poker-hero-recommendation-benchmark"
-RECOMMENDATION_BENCHMARK_SCHEMA_VERSION = 1
+RECOMMENDATION_BENCHMARK_SCHEMA_VERSION = 2
+RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION = 1
 MAX_RECOMMENDATION_BENCHMARK_BYTES = 4 * 1024 * 1024
 MAX_RECOMMENDATION_BENCHMARK_CASES = 1_000
 MAX_REFERENCE_LINES = 20
@@ -56,6 +58,14 @@ PositiveProbability = Annotated[
     float,
     Field(gt=0, le=1, allow_inf_nan=False, strict=True),
 ]
+BenchmarkTag = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9-]*$",
+    ),
+]
 
 
 class RecommendationBenchmarkError(RuntimeError):
@@ -64,6 +74,14 @@ class RecommendationBenchmarkError(RuntimeError):
 
 class RecommendationBenchmarkState(CanonicalState):
     model_config = ConfigDict(extra="forbid")
+
+
+class RecommendationReferenceSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=200)
+    version: str | None = Field(default=None, min_length=1, max_length=100)
+    configuration: str | None = Field(default=None, min_length=1, max_length=1_000)
 
 
 class RecommendationReferenceLine(BaseModel):
@@ -90,6 +108,7 @@ class RecommendationBenchmarkCase(BaseModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
     )
     description: str | None = Field(default=None, max_length=500)
+    tags: list[BenchmarkTag] = Field(default_factory=list, max_length=10)
     state: RecommendationBenchmarkState
     reference_lines: list[RecommendationReferenceLine] = Field(
         min_length=1,
@@ -98,6 +117,8 @@ class RecommendationBenchmarkCase(BaseModel):
 
     @model_validator(mode="after")
     def validate_reference_lines(self) -> Self:
+        if len(self.tags) != len(set(self.tags)):
+            raise ValueError("Recommendation benchmark case tags must be unique")
         line_keys = [(line.action, line.sizing) for line in self.reference_lines]
         if len(line_keys) != len(set(line_keys)):
             raise ValueError("Reference line identities must be unique")
@@ -128,8 +149,12 @@ class RecommendationBenchmarkDataset(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_name: Literal[RECOMMENDATION_BENCHMARK_SCHEMA] = Field(alias="schema")
-    schema_version: Literal[RECOMMENDATION_BENCHMARK_SCHEMA_VERSION]
+    schema_version: Literal[
+        RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION,
+        RECOMMENDATION_BENCHMARK_SCHEMA_VERSION,
+    ]
     name: str = Field(min_length=1, max_length=200)
+    reference_source: RecommendationReferenceSource | None = None
     sizing_tolerance_bb: PositiveFiniteNumber = 0.01
     minimum_policy_frequency: PositiveProbability = 0.05
     cases: list[RecommendationBenchmarkCase] = Field(
@@ -146,6 +171,13 @@ class RecommendationBenchmarkDataset(BaseModel):
 
     @model_validator(mode="after")
     def validate_cases(self) -> Self:
+        if self.schema_version == RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION:
+            if self.reference_source is not None or any(
+                case.tags for case in self.cases
+            ):
+                raise ValueError(
+                    "Reference source and case tags require schema version 2"
+                )
         case_ids = [case.id for case in self.cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("Recommendation benchmark case IDs must be unique")
@@ -176,6 +208,8 @@ class RecommendationBenchmarkDataset(BaseModel):
 class RecommendationBenchmarkCaseResult(BaseModel):
     case_id: str
     description: str | None = None
+    street: Street | None = None
+    tags: list[BenchmarkTag] = Field(default_factory=list)
     status: Literal["completed", "error"]
     error: str | None = None
     action: RecommendationAction | None = None
@@ -189,9 +223,7 @@ class RecommendationBenchmarkCaseResult(BaseModel):
     fallback_reason: str | None = None
 
 
-class RecommendationBenchmarkReport(BaseModel):
-    dataset_name: str
-    provider: str
+class RecommendationBenchmarkMetrics(BaseModel):
     total_cases: int = Field(ge=0)
     completed_cases: int = Field(ge=0)
     failed_cases: int = Field(ge=0)
@@ -201,13 +233,30 @@ class RecommendationBenchmarkReport(BaseModel):
     line_correct: int = Field(ge=0)
     line_evaluated: int = Field(ge=0)
     line_accuracy: float | None = Field(default=None, ge=0, le=1)
+    line_coverage: float = Field(ge=0, le=1)
     policy_evaluated_cases: int = Field(ge=0)
+    policy_coverage: float = Field(ge=0, le=1)
     average_policy_distance: float | None = Field(default=None, ge=0, le=1)
     ev_evaluated_cases: int = Field(ge=0)
+    ev_coverage: float = Field(ge=0, le=1)
     average_reference_ev_loss_bb: float | None = Field(default=None, ge=0)
     maximum_reference_ev_loss_bb: float | None = Field(default=None, ge=0)
     fallback_cases: int = Field(ge=0)
     fallback_rate: float = Field(ge=0, le=1)
+
+
+class RecommendationBenchmarkBreakdown(RecommendationBenchmarkMetrics):
+    key: str
+
+
+class RecommendationBenchmarkReport(RecommendationBenchmarkMetrics):
+    dataset_name: str
+    provider: str
+    reference_source: RecommendationReferenceSource | None = None
+    street_metrics: list[RecommendationBenchmarkBreakdown] = Field(
+        default_factory=list
+    )
+    tag_metrics: list[RecommendationBenchmarkBreakdown] = Field(default_factory=list)
     cases: list[RecommendationBenchmarkCaseResult] = Field(default_factory=list)
 
 
@@ -251,6 +300,40 @@ def run_recommendation_benchmark(
         _run_case(case, dataset, provider)
         for case in dataset.cases
     ]
+    metrics = _aggregate_metrics(results)
+    street_metrics = [
+        RecommendationBenchmarkBreakdown(
+            key=street or "unknown",
+            **_aggregate_metrics(
+                [result for result in results if result.street == street]
+            ).model_dump(),
+        )
+        for street in (*get_args(Street), None)
+        if any(result.street == street for result in results)
+    ]
+    tag_metrics = [
+        RecommendationBenchmarkBreakdown(
+            key=tag,
+            **_aggregate_metrics(
+                [result for result in results if tag in result.tags]
+            ).model_dump(),
+        )
+        for tag in sorted({tag for result in results for tag in result.tags})
+    ]
+    return RecommendationBenchmarkReport(
+        dataset_name=dataset.name,
+        provider=provider.name,
+        reference_source=dataset.reference_source,
+        street_metrics=street_metrics,
+        tag_metrics=tag_metrics,
+        cases=results,
+        **metrics.model_dump(),
+    )
+
+
+def _aggregate_metrics(
+    results: list[RecommendationBenchmarkCaseResult],
+) -> RecommendationBenchmarkMetrics:
     completed = [result for result in results if result.status == "completed"]
     action_correct = sum(result.action_match is True for result in completed)
     line_results = [
@@ -269,28 +352,31 @@ def run_recommendation_benchmark(
         if result.reference_ev_loss_bb is not None
     ]
     fallback_cases = sum(result.fallback_reason is not None for result in completed)
-    return RecommendationBenchmarkReport(
-        dataset_name=dataset.name,
-        provider=provider.name,
+    completed_count = len(completed)
+    return RecommendationBenchmarkMetrics(
         total_cases=len(results),
-        completed_cases=len(completed),
-        failed_cases=len(results) - len(completed),
+        completed_cases=completed_count,
+        failed_cases=len(results) - completed_count,
         action_correct=action_correct,
-        action_evaluated=len(completed),
-        action_accuracy=action_correct / len(completed) if completed else 0,
+        action_evaluated=completed_count,
+        action_accuracy=action_correct / completed_count if completed else 0,
         line_correct=sum(line_results),
         line_evaluated=len(line_results),
         line_accuracy=(
             sum(line_results) / len(line_results) if line_results else None
         ),
+        line_coverage=len(line_results) / completed_count if completed else 0,
         policy_evaluated_cases=len(policy_distances),
+        policy_coverage=(
+            len(policy_distances) / completed_count if completed else 0
+        ),
         average_policy_distance=_average(policy_distances),
         ev_evaluated_cases=len(ev_losses),
+        ev_coverage=len(ev_losses) / completed_count if completed else 0,
         average_reference_ev_loss_bb=_average(ev_losses),
         maximum_reference_ev_loss_bb=max(ev_losses) if ev_losses else None,
         fallback_cases=fallback_cases,
-        fallback_rate=fallback_cases / len(completed) if completed else 0,
-        cases=results,
+        fallback_rate=fallback_cases / completed_count if completed else 0,
     )
 
 
@@ -315,6 +401,7 @@ def format_recommendation_benchmark_report(
     lines = [
         "Recommendation benchmark",
         f"Dataset: {report.dataset_name}",
+        f"Reference: {_reference_source_label(report.reference_source)}",
         f"Provider: {report.provider}",
         (
             f"Cases: {report.completed_cases}/{report.total_cases} completed"
@@ -330,10 +417,22 @@ def format_recommendation_benchmark_report(
             report.line_evaluated,
             report.line_accuracy,
         ),
+        _coverage_metric(
+            "Line evaluation coverage",
+            report.line_evaluated,
+            report.completed_cases,
+            report.line_coverage,
+        ),
         _optional_metric(
             "Average policy distance",
             report.average_policy_distance,
             report.policy_evaluated_cases,
+        ),
+        _coverage_metric(
+            "Policy evaluation coverage",
+            report.policy_evaluated_cases,
+            report.completed_cases,
+            report.policy_coverage,
         ),
         _optional_metric(
             "Average reference EV loss",
@@ -341,11 +440,19 @@ def format_recommendation_benchmark_report(
             report.ev_evaluated_cases,
             suffix=" BB",
         ),
+        _coverage_metric(
+            "EV evaluation coverage",
+            report.ev_evaluated_cases,
+            report.completed_cases,
+            report.ev_coverage,
+        ),
         (
             f"Fallback: {report.fallback_cases}/{report.completed_cases}"
             f" ({report.fallback_rate:.1%})"
         ),
     ]
+    _append_breakdowns(lines, "Street breakdown", report.street_metrics)
+    _append_breakdowns(lines, "Tag breakdown", report.tag_metrics)
     cases_needing_review = [
         case
         for case in report.cases
@@ -382,6 +489,8 @@ def _run_case(
         return RecommendationBenchmarkCaseResult(
             case_id=case.id,
             description=case.description,
+            street=case.state.street,
+            tags=case.tags,
             status="error",
             error=str(exc) or exc.__class__.__name__,
         )
@@ -425,6 +534,8 @@ def _run_case(
     return RecommendationBenchmarkCaseResult(
         case_id=case.id,
         description=case.description,
+        street=case.state.street,
+        tags=case.tags,
         status="completed",
         action=result.action,
         sizing=result.sizing,
@@ -612,6 +723,57 @@ def _optional_metric(
     return f"{label}: {value:.3f}{suffix} across {evaluated} case(s)"
 
 
+def _coverage_metric(
+    label: str,
+    evaluated: int,
+    completed: int,
+    coverage: float,
+) -> str:
+    return f"{label}: {evaluated}/{completed} ({coverage:.1%})"
+
+
+def _reference_source_label(
+    source: RecommendationReferenceSource | None,
+) -> str:
+    if source is None:
+        return "not recorded"
+    return f"{source.name} {source.version}" if source.version else source.name
+
+
+def _append_breakdowns(
+    lines: list[str],
+    heading: str,
+    breakdowns: list[RecommendationBenchmarkBreakdown],
+) -> None:
+    if not breakdowns:
+        return
+    lines.append(f"{heading}:")
+    for item in breakdowns:
+        line_accuracy = (
+            f"{item.line_accuracy:.1%}"
+            if item.line_accuracy is not None
+            else "n/a"
+        )
+        policy_distance = (
+            f"{item.average_policy_distance:.3f}"
+            if item.average_policy_distance is not None
+            else "n/a"
+        )
+        ev_loss = (
+            f"{item.average_reference_ev_loss_bb:.3f} BB"
+            if item.average_reference_ev_loss_bb is not None
+            else "n/a"
+        )
+        lines.append(
+            f"  {item.key}: {item.completed_cases}/{item.total_cases} completed, "
+            f"action {item.action_accuracy:.1%}, "
+            f"line {line_accuracy} ({item.line_coverage:.1%} coverage), "
+            f"policy distance {policy_distance} ({item.policy_coverage:.1%} coverage), "
+            f"EV loss {ev_loss} ({item.ev_coverage:.1%} coverage), "
+            f"fallback {item.fallback_rate:.1%}"
+        )
+
+
 def _case_mismatch_detail(case: RecommendationBenchmarkCaseResult) -> str:
     mismatches = []
     if case.action_match is False:
@@ -670,6 +832,21 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Fail below this sizing-line agreement ratio",
     )
     parser.add_argument(
+        "--minimum-line-coverage",
+        type=_unit_interval,
+        help="Fail when too few completed cases evaluate exact sizing lines",
+    )
+    parser.add_argument(
+        "--minimum-policy-coverage",
+        type=_unit_interval,
+        help="Fail when too few completed cases expose comparable frequencies",
+    )
+    parser.add_argument(
+        "--minimum-ev-coverage",
+        type=_unit_interval,
+        help="Fail when too few completed cases produce comparable reference EV",
+    )
+    parser.add_argument(
         "--maximum-policy-distance",
         type=_unit_interval,
         help="Fail above this average policy distance",
@@ -683,6 +860,11 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--maximum-fallback-rate",
         type=_unit_interval,
         help="Fail above this provider fallback ratio",
+    )
+    parser.add_argument(
+        "--require-reference-source",
+        action="store_true",
+        help="Fail when the corpus does not identify its independent reference source",
     )
     parser.add_argument(
         "--json",
@@ -741,6 +923,8 @@ def _threshold_failures(
     failures = []
     if report.failed_cases:
         failures.append(f"Benchmark has {report.failed_cases} failed case(s)")
+    if args.require_reference_source and report.reference_source is None:
+        failures.append("Benchmark reference source is not recorded")
     if (
         args.minimum_action_accuracy is not None
         and report.action_accuracy < args.minimum_action_accuracy
@@ -754,6 +938,33 @@ def _threshold_failures(
             "Line accuracy",
             report.line_accuracy,
             args.minimum_line_accuracy,
+            comparison="minimum",
+            percent=True,
+        )
+    )
+    failures.extend(
+        _optional_threshold_failure(
+            "Line evaluation coverage",
+            report.line_coverage,
+            args.minimum_line_coverage,
+            comparison="minimum",
+            percent=True,
+        )
+    )
+    failures.extend(
+        _optional_threshold_failure(
+            "Policy evaluation coverage",
+            report.policy_coverage,
+            args.minimum_policy_coverage,
+            comparison="minimum",
+            percent=True,
+        )
+    )
+    failures.extend(
+        _optional_threshold_failure(
+            "EV evaluation coverage",
+            report.ev_coverage,
+            args.minimum_ev_coverage,
             comparison="minimum",
             percent=True,
         )

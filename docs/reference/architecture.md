@@ -65,7 +65,11 @@ or read persisted application data. Failures are isolated per case. Aggregate
 output separates supported-action agreement from exact sizing-line agreement,
 and reports mixed-policy total-variation distance, reference EV loss, and
 recorded fallback use only when the corpus or provider supplies the required
-evidence. Reference frequencies must sum to one, sizing identities must be
+evidence. Evaluation coverage makes missing optional evidence explicit, while
+street and scenario-tag breakdowns localize weak solver spots. Corpora may
+record the independent reference source, version, and configuration so CI can
+require provenance for trusted regression runs. Reference frequencies must sum
+to one, sizing identities must be
 unambiguous at the configured tolerance, and EV labels cover either every line
 in a case or none.
 

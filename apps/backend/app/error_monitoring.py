@@ -45,21 +45,24 @@ def configure_error_monitoring(settings: Settings) -> bool:
     """Configure sanitized exception reporting when a Sentry DSN is present."""
 
     global _monitoring_enabled
+    _monitoring_enabled = False
     if settings.sentry_dsn is None:
-        _monitoring_enabled = False
         return False
 
-    sentry_sdk.init(
-        dsn=settings.sentry_dsn.get_secret_value(),
-        environment=settings.sentry_environment,
-        release=settings.sentry_release,
-        sample_rate=settings.sentry_error_sample_rate,
-        traces_sample_rate=0.0,
-        send_default_pii=False,
-        max_request_body_size="never",
-        default_integrations=False,
-        before_send=_scrub_event,
-    )
+    try:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn.get_secret_value(),
+            environment=settings.sentry_environment,
+            release=settings.sentry_release,
+            sample_rate=settings.sentry_error_sample_rate,
+            traces_sample_rate=0.0,
+            send_default_pii=False,
+            max_request_body_size="never",
+            default_integrations=False,
+            before_send=_scrub_event,
+        )
+    except Exception:
+        return False
     _monitoring_enabled = True
     return True
 

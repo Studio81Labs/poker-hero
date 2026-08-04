@@ -57,6 +57,30 @@ def test_monitoring_initializes_with_privacy_safe_options(
     assert options["before_send"] is error_monitoring._scrub_event
 
 
+def test_monitoring_initialization_failure_leaves_adapter_disabled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(error_monitoring, "_monitoring_enabled", True)
+
+    def fail_init(**_kwargs: object) -> None:
+        raise ValueError("invalid provider configuration")
+
+    monkeypatch.setattr(error_monitoring.sentry_sdk, "init", fail_init)
+
+    enabled = error_monitoring.configure_error_monitoring(
+        Settings(
+            data_dir=tmp_path,
+            sentry_dsn="https://public@example.ingest.sentry.io/123",
+        )
+    )
+
+    assert enabled is False
+    assert error_monitoring.capture_unhandled_exception(
+        RuntimeError("application failed")
+    ) is None
+
+
 def test_scrub_event_removes_request_and_exception_data() -> None:
     original = {
         "breadcrumbs": {"values": [{"message": "Uploaded AhKd"}]},

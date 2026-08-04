@@ -527,6 +527,8 @@ request bodies, headers, cookies, query strings, breadcrumbs, local variables,
 arbitrary extras, and free-form exception messages before transmission.
 Browser replay and performance tracing remain disabled. A reporting-provider
 failure must never fail an application request or crash recovery surface.
+Automatic release-health sessions and client reports remain disabled in both
+adapters.
 
 ## Review And Auto-Approve
 

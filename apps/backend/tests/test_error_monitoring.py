@@ -52,6 +52,8 @@ def test_monitoring_initializes_with_privacy_safe_options(
     assert options["sample_rate"] == 0.5
     assert options["traces_sample_rate"] == 0
     assert options["send_default_pii"] is False
+    assert options["auto_session_tracking"] is False
+    assert options["send_client_reports"] is False
     assert options["max_request_body_size"] == "never"
     assert options["default_integrations"] is False
     assert options["before_send"] is error_monitoring._scrub_event

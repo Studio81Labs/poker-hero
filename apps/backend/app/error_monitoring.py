@@ -57,6 +57,8 @@ def configure_error_monitoring(settings: Settings) -> bool:
             sample_rate=settings.sentry_error_sample_rate,
             traces_sample_rate=0.0,
             send_default_pii=False,
+            auto_session_tracking=False,
+            send_client_reports=False,
             max_request_body_size="never",
             default_integrations=False,
             before_send=_scrub_event,

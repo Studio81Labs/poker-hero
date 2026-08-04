@@ -4,7 +4,14 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 
 Rank = Literal["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"]
@@ -25,12 +32,14 @@ BenchmarkFieldName = Literal[
     "pot_size",
     "current_bet",
     "hero_stack",
+    "opponent_stack",
     "effective_stack",
     "players_in_hand",
     "hero_position",
     "preflop_opener_position",
     "preflop_open_size",
     "facing_action",
+    "postflop_action_history",
     "action_context",
 ]
 BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
@@ -40,12 +49,14 @@ BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
     "pot_size",
     "current_bet",
     "hero_stack",
+    "opponent_stack",
     "effective_stack",
     "players_in_hand",
     "hero_position",
     "preflop_opener_position",
     "preflop_open_size",
     "facing_action",
+    "postflop_action_history",
     "action_context",
 )
 BENCHMARK_POSITION_ALIASES = {
@@ -192,6 +203,15 @@ def normalize_benchmark_value(field_name: BenchmarkFieldName, value: Any) -> Any
     if field_name in {"hero_cards", "board_cards"}:
         codes = [card.code if isinstance(card, Card) else card for card in value]
         return sorted(codes)
+    if field_name == "postflop_action_history":
+        return [
+            (
+                action
+                if isinstance(action, PostflopAction)
+                else PostflopAction.model_validate(action)
+            ).model_dump(mode="json")
+            for action in value
+        ]
     if isinstance(value, str):
         normalized = re.sub(r"\s+", " ", value.strip().lower())
         if field_name in {"hero_position", "preflop_opener_position"}:
@@ -662,6 +682,7 @@ _BENCHMARK_NONNEGATIVE_NUMERIC_FIELDS = {
     "pot_size",
     "current_bet",
     "hero_stack",
+    "opponent_stack",
     "effective_stack",
 }
 _BENCHMARK_TEXT_FIELDS = {
@@ -734,6 +755,24 @@ def _validate_benchmark_comparison_value(
     if field_name == "facing_action":
         if type(value) is not str or value not in {"bet", "raise"}:
             raise ValueError("Benchmark facing_action value is invalid")
+        return
+
+    if field_name == "postflop_action_history":
+        if type(value) is not list or len(value) > 8:
+            raise ValueError("Benchmark postflop_action_history must contain actions")
+        if not allow_none and not value:
+            raise ValueError("Benchmark postflop_action_history expected value cannot be empty")
+        for item in value:
+            if type(item) is not dict:
+                raise ValueError("Benchmark postflop_action_history must contain actions")
+            try:
+                normalized = PostflopAction.model_validate(item).model_dump(mode="json")
+            except ValidationError as exc:
+                raise ValueError(
+                    "Benchmark postflop_action_history must contain valid actions"
+                ) from exc
+            if normalized != item:
+                raise ValueError("Benchmark postflop_action_history actions must be canonical")
         return
 
     if field_name in _BENCHMARK_TEXT_FIELDS:

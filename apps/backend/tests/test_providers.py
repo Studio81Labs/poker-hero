@@ -633,6 +633,28 @@ def test_postflop_solver_rejects_history_wager_that_rounds_to_zero(tmp_path: Pat
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
+def test_postflop_solver_rejects_history_beyond_reconstructed_effective_stack(
+    tmp_path: Path,
+) -> None:
+    state = raised_postflop_state()
+    state.pot_size = 25.0
+    state.current_bet = 10.0
+    state.hero_stack = 8.0
+    state.opponent_stack = 0.0
+    state.effective_stack = 0.0
+    state.postflop_action_history[1].amount = 12.0
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="exceeds the reconstructed effective stack"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
 def test_local_solver_rejects_unknown_engine(tmp_path: Path) -> None:
     provider = build_provider(
         Settings(

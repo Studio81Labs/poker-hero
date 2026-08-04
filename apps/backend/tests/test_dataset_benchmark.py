@@ -118,6 +118,30 @@ def test_dataset_archive_preserves_structured_postflop_history() -> None:
     ]
 
 
+def test_benchmark_scores_structured_postflop_fields(tmp_path: Path) -> None:
+    expected_state = expected_mock_state(
+        opponent_stack=93,
+        postflop_action_history=[
+            PostflopAction(actor="oop", action="bet", amount=2),
+            PostflopAction(actor="ip", action="raise", amount=7),
+        ],
+    )
+    dataset_path = write_dataset_archive(tmp_path / "raised-dataset.zip", expected_state)
+
+    report = benchmark_dataset_archive(
+        dataset_path,
+        Settings(data_dir=tmp_path / "unused", parser_provider="mock"),
+    )
+
+    metrics = {metric.field: metric for metric in report.field_metrics}
+    assert report.evaluated_fields == 13
+    assert report.correct_fields == 11
+    assert metrics["opponent_stack"].total == 1
+    assert metrics["opponent_stack"].correct == 0
+    assert metrics["postflop_action_history"].total == 1
+    assert metrics["postflop_action_history"].correct == 0
+
+
 def test_benchmark_dataset_archive_scores_without_mutating_configured_data(
     tmp_path: Path,
 ) -> None:

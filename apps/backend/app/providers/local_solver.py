@@ -336,10 +336,20 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
         if pot_size <= sum(commitments.values()):
             return "pot size must exceed the wagers in structured postflop action history"
     if state.effective_stack is not None:
-        visible_effective = _solver_cents(min(state.hero_stack, state.opponent_stack))
+        hero_stack = _solver_cents(state.hero_stack)
+        opponent_stack = _solver_cents(state.opponent_stack)
         effective_stack = _solver_cents(state.effective_stack)
-        if visible_effective is None or effective_stack is None:
+        if hero_stack is None or opponent_stack is None or effective_stack is None:
             return "effective stack is outside the postflop solver's supported range"
+        visible_effective = min(hero_stack, opponent_stack)
         if effective_stack != visible_effective:
             return "effective stack does not match the visible hero and opponent stacks"
+        starting_effective = min(
+            hero_stack + commitments[hero_actor],
+            opponent_stack + commitments[opponent_actor],
+        )
+        if starting_effective > _SOLVER_MAX_CENTS:
+            return "effective stack is outside the postflop solver's supported range"
+        if max(commitments.values()) > starting_effective:
+            return "postflop action history exceeds the reconstructed effective stack"
     return None

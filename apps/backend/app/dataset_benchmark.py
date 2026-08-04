@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Sequence
+from typing import Sequence, TypeVar
 
 from app.benchmarking import run_benchmark
 from app.config import Settings, get_settings
@@ -13,7 +13,7 @@ from app.dataset_import import (
     import_parser_dataset,
     parse_parser_dataset_archive,
 )
-from app.models import BenchmarkReport
+from app.models import BENCHMARK_FIELDS, BenchmarkReport
 from app.parsers.base import ParserConfigurationError
 from app.parsers.registry import build_parser
 from app.storage import FileJobStore
@@ -21,6 +21,9 @@ from app.storage import FileJobStore
 
 class DatasetBenchmarkError(RuntimeError):
     pass
+
+
+RequirementValue = TypeVar("RequirementValue", float, int)
 
 
 def _dataset_path_from_invocation(dataset_path: Path) -> Path:
@@ -130,6 +133,46 @@ def _accuracy_threshold(value: str) -> float:
     return threshold
 
 
+def _positive_integer(value: str) -> int:
+    try:
+        threshold = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if threshold <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return threshold
+
+
+def _field_accuracy_threshold(value: str) -> tuple[str, float]:
+    field, separator, raw_threshold = value.partition("=")
+    if not separator or not field or not raw_threshold:
+        raise argparse.ArgumentTypeError("must use FIELD=ACCURACY")
+    if field not in BENCHMARK_FIELDS:
+        raise argparse.ArgumentTypeError(f"unknown benchmark field: {field}")
+    return field, _accuracy_threshold(raw_threshold)
+
+
+def _field_case_threshold(value: str) -> tuple[str, int]:
+    field, separator, raw_threshold = value.partition("=")
+    if not separator or not field or not raw_threshold:
+        raise argparse.ArgumentTypeError("must use FIELD=COUNT")
+    if field not in BENCHMARK_FIELDS:
+        raise argparse.ArgumentTypeError(f"unknown benchmark field: {field}")
+    return field, _positive_integer(raw_threshold)
+
+
+def _requirement_map(
+    requirements: list[tuple[str, RequirementValue]],
+    option: str,
+) -> dict[str, RequirementValue]:
+    result: dict[str, RequirementValue] = {}
+    for field, threshold in requirements:
+        if field in result:
+            raise DatasetBenchmarkError(f"{option} repeats field {field}")
+        result[field] = threshold
+    return result
+
+
 def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Benchmark a Poker Hero parser against an exported dataset ZIP.",
@@ -149,6 +192,27 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Exit with status 1 when field accuracy is below this 0-1 threshold",
     )
     parser.add_argument(
+        "--minimum-cases",
+        type=_positive_integer,
+        help="Fail when the corpus contains fewer cases",
+    )
+    parser.add_argument(
+        "--minimum-field-accuracy",
+        action="append",
+        type=_field_accuracy_threshold,
+        default=[],
+        metavar="FIELD=ACCURACY",
+        help="Repeat to require an accuracy ratio for a specific labeled field",
+    )
+    parser.add_argument(
+        "--minimum-field-cases",
+        action="append",
+        type=_field_case_threshold,
+        default=[],
+        metavar="FIELD=COUNT",
+        help="Repeat to require enough labeled cases for a specific field",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Write the complete benchmark report as JSON",
@@ -161,6 +225,18 @@ def main(
     settings: Settings | None = None,
 ) -> int:
     args = _argument_parser().parse_args(argv)
+    try:
+        field_accuracy_thresholds = _requirement_map(
+            args.minimum_field_accuracy,
+            "--minimum-field-accuracy",
+        )
+        field_case_thresholds = _requirement_map(
+            args.minimum_field_cases,
+            "--minimum-field-cases",
+        )
+    except DatasetBenchmarkError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     active_settings = settings or get_settings()
     overrides: dict[str, str] = {}
     if args.parser_provider:
@@ -184,22 +260,58 @@ def main(
     else:
         print(format_benchmark_report(report))
 
+    failures = _threshold_failures(
+        report,
+        minimum_accuracy=args.minimum_accuracy,
+        minimum_cases=args.minimum_cases,
+        field_accuracy_thresholds=field_accuracy_thresholds,
+        field_case_thresholds=field_case_thresholds,
+    )
+    for failure in failures:
+        print(failure, file=sys.stderr)
+    return 1 if failures else 0
+
+
+def _threshold_failures(
+    report: BenchmarkReport,
+    *,
+    minimum_accuracy: float | None,
+    minimum_cases: int | None,
+    field_accuracy_thresholds: dict[str, float],
+    field_case_thresholds: dict[str, int],
+) -> list[str]:
+    failures: list[str] = []
     if report.failed_cases:
-        print(
-            f"Benchmark has {report.failed_cases} failed case(s)",
-            file=sys.stderr,
+        failures.append(f"Benchmark has {report.failed_cases} failed case(s)")
+    if minimum_cases is not None and report.total_cases < minimum_cases:
+        failures.append(
+            f"Benchmark corpus has {report.total_cases} case(s), below the minimum"
+            f" {minimum_cases}"
         )
-        return 1
-    if args.minimum_accuracy is not None and report.accuracy < args.minimum_accuracy:
-        print(
-            (
-                f"Benchmark accuracy {report.accuracy:.1%} is below the minimum"
-                f" {args.minimum_accuracy:.1%}"
-            ),
-            file=sys.stderr,
+    if minimum_accuracy is not None and report.accuracy < minimum_accuracy:
+        failures.append(
+            f"Benchmark accuracy {report.accuracy:.1%} is below the minimum"
+            f" {minimum_accuracy:.1%}"
         )
-        return 1
-    return 0
+
+    metrics = {metric.field: metric for metric in report.field_metrics}
+    for field, threshold in field_case_thresholds.items():
+        total = metrics[field].total if field in metrics else 0
+        if total < threshold:
+            failures.append(
+                f"Field {field} has {total} labeled case(s), below the minimum"
+                f" {threshold}"
+            )
+    for field, threshold in field_accuracy_thresholds.items():
+        metric = metrics.get(field)
+        if metric is None:
+            failures.append(f"Field {field} accuracy was not evaluated")
+        elif metric.accuracy < threshold:
+            failures.append(
+                f"Field {field} accuracy {metric.accuracy:.1%} is below the minimum"
+                f" {threshold:.1%}"
+            )
+    return failures
 
 
 if __name__ == "__main__":

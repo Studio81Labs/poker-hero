@@ -412,6 +412,13 @@ dataset import, and export so each report observes a complete ground-truth set.
 After a restart, corpus operations reject while a durable pending import journal
 still requires recovery.
 
+The offline dataset runner can fail on a minimum corpus size, minimum labeled
+case count per field, overall accuracy, and individual field accuracy. Field
+requirements are repeatable and reject duplicate declarations. Regression runs
+should keep separate trusted corpora and thresholds for each supported poker
+client/layout, covering cards, street, pot, current bet, stacks, player count,
+and position rather than relying on the overall average alone.
+
 The selected corpus can be exported independently of a benchmark run. The ZIP
 contains a versioned JSON manifest and original screenshots under stable,
 job-based paths. It excludes unselected jobs and recommendation/training data.

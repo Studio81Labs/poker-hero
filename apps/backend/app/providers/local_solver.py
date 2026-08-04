@@ -1,5 +1,4 @@
 import json
-import math
 import os
 from pathlib import Path
 import shlex
@@ -243,8 +242,13 @@ def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
     return None
 
 
+def _solver_cents(value: float) -> int:
+    # Rust's f64::round rounds positive half values away from zero.
+    return int(value * 100 + 0.5)
+
+
 def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
-    current_bet = state.current_bet or 0
+    current_bet = _solver_cents(state.current_bet or 0)
     history = state.postflop_action_history
     if current_bet <= 0 and state.facing_action is not None:
         return "facing action requires a positive amount to call"
@@ -263,7 +267,7 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
     if state.opponent_stack is None:
         return "opponent stack is required for structured postflop action history"
 
-    commitments = {"oop": 0.0, "ip": 0.0}
+    commitments = {"oop": 0, "ip": 0}
     next_actor: Literal["oop", "ip"] = "oop"
     last_aggression: FacingAction | None = None
     for index, item in enumerate(history, start=1):
@@ -273,23 +277,20 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
         if item.action == "check":
             if index != 1:
                 return "only the opening OOP action can be a check in current-street history"
-            if not math.isclose(
-                commitments[item.actor], commitments[opponent], abs_tol=0.01
-            ):
+            if commitments[item.actor] != commitments[opponent]:
                 return f"postflop action {index} cannot check while facing a wager"
         elif item.action == "bet":
-            if not math.isclose(
-                commitments[item.actor], commitments[opponent], abs_tol=0.01
-            ):
+            if commitments[item.actor] != commitments[opponent]:
                 return f"postflop action {index} must be a raise, not a bet"
-            commitments[item.actor] = item.amount or 0
+            commitments[item.actor] = _solver_cents(item.amount or 0)
             last_aggression = "bet"
         else:
             if commitments[item.actor] >= commitments[opponent]:
                 return f"postflop action {index} cannot raise without facing a wager"
-            if (item.amount or 0) <= commitments[opponent]:
+            amount = _solver_cents(item.amount or 0)
+            if amount <= commitments[opponent]:
                 return f"postflop action {index} raise-to amount must exceed the previous wager"
-            commitments[item.actor] = item.amount or 0
+            commitments[item.actor] = amount
             last_aggression = "raise"
         next_actor = opponent
 
@@ -298,10 +299,10 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
 
     opponent_actor = "ip" if hero_actor == "oop" else "oop"
     expected_call = commitments[opponent_actor] - commitments[hero_actor]
-    if expected_call < -0.01:
+    if expected_call < 0:
         return "structured postflop action history ends with the opponent facing a wager"
     expected_call = max(expected_call, 0)
-    if not math.isclose(expected_call, current_bet, abs_tol=0.01):
+    if expected_call != current_bet:
         return (
             "current bet does not match the amount to call implied by structured "
             "postflop action history"
@@ -310,10 +311,13 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
     if state.facing_action != expected_facing_action:
         return "facing action does not match structured postflop action history"
 
-    if state.pot_size is not None and state.pot_size <= sum(commitments.values()):
+    if (
+        state.pot_size is not None
+        and _solver_cents(state.pot_size) <= sum(commitments.values())
+    ):
         return "pot size must exceed the wagers in structured postflop action history"
     if state.effective_stack is not None:
-        visible_effective = min(state.hero_stack, state.opponent_stack)
-        if not math.isclose(state.effective_stack, visible_effective, abs_tol=0.01):
+        visible_effective = _solver_cents(min(state.hero_stack, state.opponent_stack))
+        if _solver_cents(state.effective_stack) != visible_effective:
             return "effective stack does not match the visible hero and opponent stacks"
     return None

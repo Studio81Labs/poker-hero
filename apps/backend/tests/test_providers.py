@@ -599,6 +599,23 @@ def test_postflop_solver_rejects_history_that_does_not_end_at_hero(tmp_path: Pat
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
+def test_postflop_solver_rejects_call_amount_that_differs_after_cent_rounding(
+    tmp_path: Path,
+) -> None:
+    state = raised_postflop_state()
+    state.current_bet = 4.991
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="current bet does not match"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
 def test_local_solver_rejects_unknown_engine(tmp_path: Path) -> None:
     provider = build_provider(
         Settings(

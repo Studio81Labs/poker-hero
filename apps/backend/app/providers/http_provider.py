@@ -34,9 +34,15 @@ class HttpRecommendationProvider:
 
         payload = request.model_dump(mode="json")
         state_payload = payload["state"]
-        for field in ("preflop_opener_position", "preflop_open_size"):
+        for field in (
+            "preflop_opener_position",
+            "preflop_open_size",
+            "opponent_stack",
+        ):
             if state_payload[field] is None:
                 del state_payload[field]
+        if not state_payload["postflop_action_history"]:
+            del state_payload["postflop_action_history"]
 
         try:
             response = httpx.post(

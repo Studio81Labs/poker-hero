@@ -110,8 +110,11 @@ iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
-facing action must be confirmed as a first bet; raised pots use fallback until
-the canonical state carries full action history.
+facing action must identify the outstanding wager. Raised heads-up decisions
+also require the opponent's visible stack and ordered current-street action
+history. Each history wager is the player's total BB committed on that street;
+the adapter validates the actors, pot, call amount, stacks, and final hero turn
+before replaying the line. Incomplete or contradictory histories use fallback.
 
 `pnpm bootstrap` builds the adapter into
 `solver-plugins/postflop/target/release/poker-postflop-solver`; the local backend

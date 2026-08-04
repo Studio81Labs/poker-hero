@@ -45,7 +45,10 @@ resolved effective cap is retained for review.
 `postflop_solver` runs as a pinned Rust stdin/stdout process for heads-up
 postflop decisions with explicit relative position. Canonical `dealer` labels
 map to button/IP; non-button seat labels remain ambiguous without opponent
-position. `local_ev` remains available directly and is used as a
+position. First-bet decisions retain the compact reconstruction path. Raised
+decisions additionally carry both visible stacks and ordered current-street
+OOP/IP actions; the adapter validates and replays that line before reading the
+hero strategy. `local_ev` remains available directly and is used as a
 recorded fallback for ambiguous preflop, ambiguous position, multiway,
 incomplete, resource-limited, or failed postflop solves. Explicit custom
 commands still override the bundled engine selection.

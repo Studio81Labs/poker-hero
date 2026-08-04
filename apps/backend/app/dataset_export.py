@@ -124,16 +124,19 @@ def build_parser_dataset_archive_from_cases(
                 ) from exc
 
             image_name = f"images/{case.job_id}{case.image_suffix}"
+            expected_state = case.expected_state.model_dump(
+                mode="json",
+                exclude={"user_approved"},
+                exclude_none=True,
+            )
+            if not expected_state["postflop_action_history"]:
+                del expected_state["postflop_action_history"]
             cases.append(
                 {
                     "job_id": case.job_id,
                     "original_filename": case.original_filename,
                     "image_file": image_name,
-                    "expected_state": case.expected_state.model_dump(
-                        mode="json",
-                        exclude={"user_approved"},
-                        exclude_none=True,
-                    ),
+                    "expected_state": expected_state,
                 }
             )
 

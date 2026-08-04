@@ -9888,6 +9888,49 @@ describe("App", () => {
     expect(payload.preflop_open_size).toBe(2.5);
   });
 
+  it("submits structured postflop history for a raised decision", async () => {
+    const raisedState: DetectedState = {
+      ...detectedState,
+      pot_size: 19,
+      current_bet: 5,
+      hero_stack: 98,
+      effective_stack: 93,
+      players_in_hand: 2,
+      hero_position: "OOP",
+      facing_action: "raise",
+      action_context: "Hero bet 2 BB and faces a raise to 7 BB",
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: raisedState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.type(await screen.findByLabelText(/Opponent stack/), "93");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 1 type"), "bet");
+    await user.type(screen.getByLabelText("Action 1 amount"), "2");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 2 type"), "raise");
+    await user.type(screen.getByLabelText("Action 2 amount"), "7");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_stack).toBe(93);
+    expect(payload.postflop_action_history).toEqual([
+      { actor: "oop", action: "bet", amount: 2 },
+      { actor: "ip", action: "raise", amount: 7 },
+    ]);
+  });
+
   it("adds an approved hand to ground truth and runs the parser benchmark", async () => {
     const pendingOverview = deferredResponse();
     const pendingInclusion = deferredResponse();
@@ -10863,7 +10906,10 @@ describe("App", () => {
       correct_fields: 9,
       evaluated_fields: 10,
       accuracy: 0.9,
-      field_metrics: [{ field: "pot_size", correct: 0, total: 1, accuracy: 0 }],
+      field_metrics: [
+        { field: "pot_size", correct: 0, total: 1, accuracy: 0 },
+        { field: "postflop_action_history", correct: 0, total: 1, accuracy: 0 },
+      ],
       cases: [
         {
           job_id: benchmarkJobId,
@@ -10881,6 +10927,19 @@ describe("App", () => {
               detected: 10,
               matched: false,
               confidence: 0.73,
+            },
+            {
+              field: "postflop_action_history",
+              expected: [
+                { actor: "oop", action: "bet", amount: 2 },
+                { actor: "ip", action: "raise", amount: 7 },
+              ],
+              detected: [
+                { actor: "oop", action: "bet", amount: 2 },
+                { actor: "ip", action: "raise", amount: 6 },
+              ],
+              matched: false,
+              confidence: null,
             },
           ],
         },
@@ -10904,10 +10963,18 @@ describe("App", () => {
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(within(dialog).getByRole("button", { name: "Toggle mismatch.png benchmark details" }));
 
-    const details = within(dialog).getByText("Expected").closest(".benchmark-case-details");
+    const details = within(dialog).getAllByText("Expected")[0].closest(
+      ".benchmark-case-details",
+    );
     expect(details).not.toBeNull();
     expect(within(details as HTMLElement).getByText("12.5")).toBeInTheDocument();
     expect(within(details as HTMLElement).getByText("10")).toBeInTheDocument();
+    expect(within(details as HTMLElement).getByText(
+      "OOP bet 2 BB; IP raise to 7 BB",
+    )).toBeInTheDocument();
+    expect(within(details as HTMLElement).getByText(
+      "OOP bet 2 BB; IP raise to 6 BB",
+    )).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
     expect(groundTruthSwitch).toBeDisabled();

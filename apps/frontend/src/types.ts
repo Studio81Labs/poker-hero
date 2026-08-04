@@ -2,6 +2,8 @@ export type Rank = "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "T" | "J" | "
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Street = "preflop" | "flop" | "turn" | "river";
 export type FacingAction = "bet" | "raise";
+export type PostflopActor = "oop" | "ip";
+export type PostflopActionType = "check" | "bet" | "raise";
 export type RecommendationAction = "fold" | "check" | "call" | "bet" | "raise";
 export type TrainingCertainty = "low" | "medium" | "high";
 
@@ -10,12 +12,19 @@ export interface Card {
   suit: Suit;
 }
 
+export interface PostflopAction {
+  actor: PostflopActor;
+  action: PostflopActionType;
+  amount: number | null;
+}
+
 export interface DetectedState {
   hero_cards: Card[];
   board_cards: Card[];
   pot_size: number | null;
   current_bet: number | null;
   hero_stack: number | null;
+  opponent_stack?: number | null;
   effective_stack: number | null;
   players_in_hand: number | null;
   hero_position: string | null;
@@ -23,6 +32,7 @@ export interface DetectedState {
   preflop_open_size: number | null;
   street: Street | null;
   facing_action: FacingAction | null;
+  postflop_action_history?: PostflopAction[];
   action_context: string | null;
 }
 

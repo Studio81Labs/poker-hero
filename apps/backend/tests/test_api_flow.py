@@ -2815,7 +2815,9 @@ def test_cfr_only_unsupported_state_is_user_correctable(tmp_path: Path) -> None:
     response = client.post(f"/api/jobs/{job_id}/recommend")
 
     assert response.status_code == 422
-    assert "raises require full action history" in response.json()["detail"]
+    assert response.json()["detail"] == {
+        "missing_fields": ["opponent_stack", "postflop_action_history"]
+    }
     job = FileJobStore(tmp_path).get(job_id)
     assert job.status == "approved"
     assert job.error is None
@@ -3034,7 +3036,10 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     imported_job = FileJobStore(target_dir).get(source_job_id)
     assert imported_job.original_filename == "labeled.tmp"
     assert imported_job.approved_state is not None
-    assert imported_job.approved_state.model_dump(mode="json", exclude_none=True) == corrected_state
+    assert imported_job.approved_state.model_dump(mode="json", exclude_none=True) == {
+        **corrected_state,
+        "postflop_action_history": [],
+    }
     assert imported_job.benchmark_included is True
     assert imported_job.status == "approved"
     assert imported_job.parser_result is None

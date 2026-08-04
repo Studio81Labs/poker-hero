@@ -29,6 +29,14 @@ class DefensePolicy:
 
 
 @dataclass(frozen=True)
+class CallerAdjustmentPolicy:
+    name: str
+    continue_multiplier: float
+    reraise_multiplier: float
+    squeeze_open_multiple: float
+
+
+@dataclass(frozen=True)
 class ThreeBetDefensePolicy:
     continue_fraction: float
     four_bet_fraction: float
@@ -120,6 +128,13 @@ OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
     OpenSizePolicy("standard", 2.75, 1.00, 1.00),
     OpenSizePolicy("large", 3.25, 0.90, 0.95),
     OpenSizePolicy("very_large", 4.00, 0.78, 0.90),
+)
+
+SINGLE_CALLER_POLICY = CallerAdjustmentPolicy(
+    name="single_caller_conservative",
+    continue_multiplier=0.90,
+    reraise_multiplier=0.90,
+    squeeze_open_multiple=4.0,
 )
 
 THREE_BET_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
@@ -239,6 +254,12 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         size_policy,
         stack_policy,
     )
+    caller_policy = SINGLE_CALLER_POLICY if context.caller_positions else None
+    if caller_policy is not None:
+        defense_policy = adjusted_caller_defense_policy(
+            defense_policy,
+            caller_policy,
+        )
     maximum_reraise_total = _maximum_reraise_total(
         effective_stack=effective_stack,
         hero_stack=state.hero_stack,
@@ -249,6 +270,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         opener_size,
         state.pot_size or 0,
         maximum_reraise_total,
+        caller_policy.squeeze_open_multiple if caller_policy is not None else None,
     )
 
     can_reraise = (
@@ -258,18 +280,32 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     if can_reraise:
         action = "raise"
         sizing = reraise_size
-        tier = "reraise"
+        tier = "squeeze" if caller_policy is not None else "reraise"
         boundary = defense_policy.reraise_fraction
     elif top_fraction <= defense_policy.continue_fraction:
         action = "call"
         sizing = None
-        tier = "defend"
+        tier = "overcall" if caller_policy is not None else "defend"
         boundary = defense_policy.continue_fraction
     else:
         action = "fold"
         sizing = None
         tier = "fold"
         boundary = defense_policy.continue_fraction
+
+    if caller_policy is not None:
+        caller_position = context.caller_positions[0]
+        scenario = "facing_open_with_caller"
+        action_assumptions = [
+            "The structured preflop history contains one open and one call with no other active player.",
+            f"The caller is attributed to {POSITION_LABELS[caller_position]}.",
+            "The conservative single-caller adjustment tightens both continuing and squeezing ranges.",
+        ]
+    else:
+        scenario = "facing_open_raise"
+        action_assumptions = [
+            "The approved state represents one open raise with no callers or prior hero action.",
+        ]
 
     return _result(
         action=action,
@@ -278,11 +314,11 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         hand_class=hand_class,
         top_fraction=top_fraction,
         position=position,
-        scenario="facing_open_raise",
+        scenario=scenario,
         tier=tier,
         policy_fraction=boundary,
         assumptions=[
-            "The approved state represents one open raise with no callers or prior hero action.",
+            *action_assumptions,
             f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
             f"The defense chart uses matchup-specific {POSITION_LABELS[position]}-versus-"
             f"{POSITION_LABELS[opener_position]} boundaries.",
@@ -300,6 +336,8 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         opener_open_fraction=opener_open_fraction,
         opening_raise_size=opener_size,
         maximum_reraise_total=maximum_reraise_total,
+        caller_positions=context.caller_positions,
+        caller_adjustment_policy=caller_policy,
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
         size_policy=size_policy,
@@ -471,8 +509,13 @@ def _maximum_reraise_total(
     return min(hero_total, opponent_total)
 
 
-def _reraise_size(opener_size: float, pot_size: float, maximum_total: float) -> float:
-    target = max(opener_size * 3, pot_size * 1.1)
+def _reraise_size(
+    opener_size: float,
+    pot_size: float,
+    maximum_total: float,
+    squeeze_open_multiple: float | None = None,
+) -> float:
+    target = max(opener_size * (squeeze_open_multiple or 3), pot_size * 1.1)
     return round(min(target, maximum_total), 2)
 
 
@@ -549,6 +592,22 @@ def adjusted_defense_policy(
     )
 
 
+def adjusted_caller_defense_policy(
+    defense_policy: DefensePolicy,
+    caller_policy: CallerAdjustmentPolicy,
+) -> DefensePolicy:
+    return DefensePolicy(
+        continue_fraction=round(
+            defense_policy.continue_fraction * caller_policy.continue_multiplier,
+            4,
+        ),
+        reraise_fraction=round(
+            defense_policy.reraise_fraction * caller_policy.reraise_multiplier,
+            4,
+        ),
+    )
+
+
 def adjusted_three_bet_defense_policy(
     base_policy: ThreeBetDefensePolicy,
     size_policy: ThreeBetSizePolicy,
@@ -605,6 +664,8 @@ def _result(
     opener_open_fraction: float | None = None,
     opening_raise_size: float | None = None,
     maximum_reraise_total: float | None = None,
+    caller_positions: tuple[Position, ...] = (),
+    caller_adjustment_policy: CallerAdjustmentPolicy | None = None,
     three_bettor_position: Position | None = None,
     three_bet_size: float | None = None,
     maximum_four_bet_total: float | None = None,
@@ -655,6 +716,28 @@ def _result(
         raw["opening_raise_size"] = opening_raise_size
     if maximum_reraise_total is not None:
         raw["maximum_reraise_total"] = maximum_reraise_total
+    if caller_positions:
+        raw.update(
+            {
+                "caller_positions": list(caller_positions),
+                "caller_count": len(caller_positions),
+            }
+        )
+    if caller_adjustment_policy is not None:
+        raw.update(
+            {
+                "caller_adjustment_policy": caller_adjustment_policy.name,
+                "caller_continue_multiplier": (
+                    caller_adjustment_policy.continue_multiplier
+                ),
+                "caller_reraise_multiplier": (
+                    caller_adjustment_policy.reraise_multiplier
+                ),
+                "squeeze_open_multiple": (
+                    caller_adjustment_policy.squeeze_open_multiple
+                ),
+            }
+        )
     if three_bettor_position is not None:
         raw["three_bettor_position"] = three_bettor_position
     if three_bet_size is not None:
@@ -708,6 +791,8 @@ def _result(
                 "reraise_size_multiplier": size_policy.reraise_multiplier,
             }
         )
+        if caller_adjustment_policy is not None:
+            raw["policy_source"] = "hero_opener_caller_size_stack_matchup"
     if (
         three_bettor_position is not None
         and base_three_bet_defense_policy is not None

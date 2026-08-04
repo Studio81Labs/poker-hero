@@ -528,6 +528,29 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Opener", value: openerValue });
   }
 
+  const callerPositions = metadataStringList(raw.caller_positions)
+    .map((position) => metadataLabel(position))
+    .filter((position): position is string => position !== null);
+  if (callerPositions.length > 0) {
+    details.push({
+      label: callerPositions.length === 1 ? "Caller" : "Callers",
+      value: callerPositions.join(" · "),
+    });
+  }
+
+  const callerAdjustmentPolicy = metadataLabel(raw.caller_adjustment_policy);
+  const squeezeOpenMultiple = metadataNumber(raw.squeeze_open_multiple);
+  if (callerAdjustmentPolicy) {
+    details.push({
+      label: "Caller adjustment",
+      value: `${callerAdjustmentPolicy}${
+        squeezeOpenMultiple !== null && squeezeOpenMultiple > 0
+          ? ` · ${formatEvidenceNumber(squeezeOpenMultiple)}x squeeze`
+          : ""
+      }`,
+    });
+  }
+
   const openingRaiseSize = metadataNumber(raw.opening_raise_size);
   const openSizePolicy = metadataLabel(raw.open_size_policy);
   if (openingRaiseSize !== null && openingRaiseSize >= 0) {

@@ -432,6 +432,69 @@ def test_local_solver_routes_structured_three_bet_to_preflop_chart(tmp_path: Pat
     assert result.raw["routing_reason"] == "the hand is preflop"
 
 
+def test_local_solver_routes_single_caller_to_preflop_chart(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Jh")],
+        pot_size=6.5,
+        current_bet=2.5,
+        effective_stack=100,
+        players_in_hand=3,
+        hero_position="button",
+        preflop_opener_position="utg",
+        preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="hijack", action="call", amount=2.5),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "facing_open_with_caller"
+    assert result.raw["caller_positions"] == ["hijack"]
+    assert result.raw["routing_reason"] == "the hand is preflop"
+
+
+def test_local_solver_keeps_fallback_for_single_caller_with_hidden_player(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Jh")],
+        pot_size=6.5,
+        current_bet=2.5,
+        effective_stack=100,
+        players_in_hand=4,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="hijack", action="call", amount=2.5),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["fallback_reason"] == "the hand is preflop"
+
+
 def test_local_solver_keeps_ev_fallback_for_preflop_spot_without_position(tmp_path: Path) -> None:
     provider = build_provider(Settings(data_dir=tmp_path, recommendation_provider="local_solver"))
     state = CanonicalState(

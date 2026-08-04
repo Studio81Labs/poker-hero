@@ -49,3 +49,6 @@ money state decline chart routing and retain the configured fallback behavior.
   squeezes, cold 4-bets, tournaments, or arbitrary preflop trees.
 - A licensed solver can replace this route behind the provider boundary without
   changing canonical review data.
+
+ADR 0006 later uses the same structured sequence for one open followed by one
+caller before hero while preserving fallback for every broader multiway tree.

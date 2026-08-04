@@ -96,6 +96,7 @@ PreflopChartScenario = Literal[
     "first_in",
     "big_blind_option",
     "facing_open_raise",
+    "facing_open_with_caller",
     "facing_three_bet",
 ]
 
@@ -108,6 +109,7 @@ class PreflopChartContext:
     opening_raise_size: float | None = None
     latest_aggressor_position: Position | None = None
     latest_raise_size: float | None = None
+    caller_positions: tuple[Position, ...] = ()
 
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
@@ -221,9 +223,7 @@ def _structured_preflop_context(
 ) -> PreflopChartContext | None:
     state = request.state
     history = state.preflop_action_history
-    if len(history) not in {1, 2} or any(
-        action.action != "raise" for action in history
-    ):
+    if len(history) not in {1, 2} or history[0].action != "raise":
         return None
 
     opener = history[0]
@@ -268,7 +268,46 @@ def _structured_preflop_context(
             latest_raise_size=opener_size,
         )
 
-    three_bet = history[1]
+    second_action = history[1]
+    if second_action.action == "call":
+        caller_position: Position = second_action.actor
+        if (
+            state.players_in_hand != 3
+            or opener_position == hero_position
+            or caller_position == hero_position
+            or POSITION_ACTION_ORDER[opener_position]
+            >= POSITION_ACTION_ORDER[caller_position]
+            or POSITION_ACTION_ORDER[caller_position]
+            >= POSITION_ACTION_ORDER[hero_position]
+            or abs(second_action.amount - opener_size) > MONEY_TOLERANCE_BB
+        ):
+            return None
+        if not _amount_to_call_matches(
+            state.current_bet,
+            opener_size - POSTED_BLIND_BB[hero_position],
+        ):
+            return None
+        if not _pot_matches_actions(
+            state.pot_size,
+            (
+                (opener_position, opener_size),
+                (caller_position, second_action.amount),
+            ),
+        ):
+            return None
+        return PreflopChartContext(
+            scenario="facing_open_with_caller",
+            hero_position=hero_position,
+            opener_position=opener_position,
+            opening_raise_size=opener_size,
+            latest_aggressor_position=opener_position,
+            latest_raise_size=opener_size,
+            caller_positions=(caller_position,),
+        )
+    if second_action.action != "raise":
+        return None
+
+    three_bet = second_action
     three_bettor_position: Position = three_bet.actor
     if opener_position != hero_position:
         return None

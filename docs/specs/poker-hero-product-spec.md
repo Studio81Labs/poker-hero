@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense and supported hero-open/facing-3-bet matchup, sizing, and stack-depth boundaries, solves supported heads-up postflop trees with explicit relative position, maps canonical dealer labels to button/IP, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, and supported hero-open/facing-3-bet matchup, sizing, and stack-depth boundaries, solves supported heads-up postflop trees with explicit relative position, maps canonical dealer labels to button/IP, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -241,9 +241,19 @@ fall back to conservative action-text parsing. Defense ranges must use the
 resolved opener and hero positions instead of a single averaged response range,
 then tighten or widen transparently for supported 2-4 BB total opening sizes.
 The resolved total must agree with the amount to call plus any hero blind.
-Contradictory or unsupported amounts, hidden callers, later aggression, or
-implausible pot composition must decline the chart rather than inventing action
-history.
+Contradictory or unsupported amounts, unrepresented callers, later aggression,
+or implausible pot composition must decline the chart rather than inventing
+action history.
+
+Structured preflop history may route one open followed by exactly one call before
+hero when exactly three players remain active. The opener, caller, and hero must
+appear in legal seat order; the call total must equal the open total; and current
+call amount and pot composition must agree with both actions and replaced blinds.
+The chart must apply explicit conservative multipliers to both continue and
+squeeze boundaries, use a larger 4x-open squeeze target subject to the existing
+stack cap, and expose caller seat, policy, multipliers, and target in evidence.
+Any additional active player, caller, action, or contradictory amount must retain
+fallback behavior.
 
 Structured preflop history takes precedence over free text and may additionally
 route exactly one hero open followed by one later-position 3-bet. The chart must
@@ -254,8 +264,9 @@ hero has enough stack to call. Matchup-specific continue/four-bet boundaries
 must tighten monotonically across supported 3-bet-to-open ratio bands and apply
 the same explicit stack-depth policy. The output must expose both actors,
 totals, ratio band, adjusted boundaries, and maximum legal four-bet total.
-Limps, callers, squeezes, cold 4-bets, more than two actions, unsupported
-positions or sizes, and contradictory money state decline this route.
+Limps, multiple callers, already-squeezed pots, cold 4-bets, more than two
+actions, unsupported positions or sizes, and contradictory money state decline
+these routes.
 
 Effective stack selects an explicit preflop policy band: short at 20 BB or less,
 medium through 50 BB, standard through 150 BB, and deep above 150 BB. Shorter

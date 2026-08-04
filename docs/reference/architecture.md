@@ -30,17 +30,22 @@ registries so the frontend flow does not depend on a concrete engine.
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
-route a single open or exactly one hero open followed by one later-position
-3-bet. The sequence stores canonical seat, action, and total committed BB. The
-chart validates position order, full-raise minimums, amount to call, pot
-composition, and stack availability. A structured first raise also supplies the
+route a single open, one open plus one caller before hero, or exactly one hero
+open followed by one later-position 3-bet. The sequence stores canonical seat,
+action, and total committed BB. The caller route requires exactly three active
+players, matching open and call totals, and legal opener-caller-hero order. Its
+explicit conservative multipliers tighten continue and squeeze boundaries, and
+its raise target starts at 4x the open. The chart validates position order,
+full-raise minimums, amount to call, pot composition, and stack availability. A
+structured first raise also supplies the
 legacy opener position and total opening size fields at the provider boundary.
 Older states retain the structured single-opener fields and a conservative
 free-text fallback. Every resolved open must remain within the supported 2-4 BB
 range. Supported 3-bets select an ordered size-ratio band and matchup-specific
 continue/four-bet boundaries. Recommendation evidence records the resolved
 actors and totals, base response boundaries, size multipliers, stack policy,
-adjusted boundaries, and maximum legal raise total. Effective stack selects a
+adjusted boundaries, represented caller seats, and maximum legal raise total.
+Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and
 sizing plus continue/reraise boundaries; its band and multipliers are retained
@@ -54,8 +59,9 @@ position. First-bet decisions retain the compact reconstruction path. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a
-recorded fallback for ambiguous or unsupported preflop history, ambiguous position, multiway,
-incomplete, resource-limited, or failed postflop solves. Explicit custom
+recorded fallback for ambiguous or unsupported preflop history, ambiguous
+position, unsupported multiway states, incomplete context, resource-limited, or
+failed postflop solves. Explicit custom
 commands still override the bundled engine selection.
 
 External vision, solver, and LLM adapters use independent optional bearer

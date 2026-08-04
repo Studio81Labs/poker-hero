@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, supported hero-open/facing-3-bet matchups, and bounded opponent-open/opponent-3-bet seat policies, sizing, and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, and heads-up hero-3-bet/facing-4-bet responses with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -275,9 +275,20 @@ hero's actual prior blind commitment, and identify the cold 3-bet policy in
 recommendation evidence. Extra active players or contradictory stack state
 must retain fallback behavior.
 
-Limps, multiple callers, unsupported squeeze histories, cold 4-bets, more than two
-actions, unsupported positions or sizes, and contradictory money state decline
-these routes.
+Structured preflop history may additionally route one opponent open, one hero
+3-bet, and one 4-bet by the original opener with action returning to hero. This
+route requires exactly two active players, legal opener-before-hero initial
+order, full 3-bet and 4-bet increments, matching pot and call amounts, and known
+hero/effective stacks. Matchup-specific continue/five-bet boundaries must
+tighten across supported 4-bet-to-3-bet size bands and use the existing explicit
+stack-depth adjustment. Five-bets are all-in actions capped by hero stack plus
+the represented hero 3-bet and opponent stack plus the represented 4-bet. The
+output must expose all actors and totals, the size band, adjusted boundaries,
+and maximum legal five-bet total.
+
+Limps, multiple callers, unsupported squeeze histories, cold 4-bets, more than
+three actions, unsupported positions or sizes, and contradictory money state
+decline these routes.
 
 Effective stack selects an explicit preflop policy band: short at 20 BB or less,
 medium through 50 BB, standard through 150 BB, and deep above 150 BB. Shorter

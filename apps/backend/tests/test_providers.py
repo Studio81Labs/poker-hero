@@ -360,6 +360,58 @@ def test_local_solver_requires_hero_stack_for_cold_three_bet(tmp_path: Path) -> 
     assert "hero_stack" in provider.required_fields_for(state)
 
 
+def test_local_solver_requires_hero_stack_when_facing_four_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=29.5,
+        current_bet=12,
+        effective_stack=80,
+        players_in_hand=2,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="cutoff", action="raise", amount=20),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" in provider.required_fields_for(state)
+
+
+def test_local_solver_does_not_require_hero_stack_for_hidden_four_bet_player(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=29.5,
+        current_bet=12,
+        effective_stack=80,
+        players_in_hand=3,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="cutoff", action="raise", amount=20),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" not in provider.required_fields_for(state)
+
+
 def test_local_solver_does_not_require_hero_stack_for_unsupported_history(
     tmp_path: Path,
 ) -> None:
@@ -503,6 +555,72 @@ def test_local_solver_keeps_fallback_for_cold_three_bet_with_hidden_player(
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
             PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["fallback_reason"] == "the hand is preflop"
+
+
+def test_local_solver_routes_four_bet_response_to_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+        pot_size=29.5,
+        current_bet=12,
+        hero_stack=92,
+        effective_stack=80,
+        players_in_hand=2,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="cutoff", action="raise", amount=20),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "facing_four_bet"
+    assert result.raw["routing_reason"] == "the hand is preflop"
+
+
+def test_local_solver_keeps_fallback_for_four_bet_with_hidden_player(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+        pot_size=29.5,
+        current_bet=12,
+        hero_stack=92,
+        effective_stack=80,
+        players_in_hand=3,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="cutoff", action="raise", amount=20),
         ],
         street="preflop",
         facing_action="raise",

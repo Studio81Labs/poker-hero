@@ -583,13 +583,33 @@ function recommendationEvidenceFromRaw(
     });
   }
 
+  const fourBettorPosition = metadataLabel(raw.four_bettor_position);
+  if (fourBettorPosition) {
+    details.push({ label: "4-bettor", value: fourBettorPosition });
+  }
+
+  const fourBetSize = metadataNumber(raw.four_bet_size);
+  const fourBetRatio = metadataNumber(raw.four_bet_to_three_bet_ratio);
+  const fourBetSizePolicy = metadataLabel(raw.four_bet_size_policy);
+  if (fourBetSize !== null && fourBetSize > 0) {
+    const ratio = fourBetRatio !== null && fourBetRatio > 0
+      ? ` · ${formatEvidenceNumber(fourBetRatio, 2)}x`
+      : "";
+    details.push({
+      label: "4-bet size",
+      value: `${formatEvidenceBb(fourBetSize)}${ratio}${fourBetSizePolicy ? ` · ${fourBetSizePolicy}` : ""}`,
+    });
+  }
+
   const continueFraction = metadataRatio(raw.continue_fraction);
   const reraiseFraction = metadataRatio(raw.reraise_fraction);
   const fourBetFraction = metadataRatio(raw.four_bet_fraction);
+  const fiveBetFraction = metadataRatio(raw.five_bet_fraction);
   if (
     continueFraction !== null
     || reraiseFraction !== null
     || fourBetFraction !== null
+    || fiveBetFraction !== null
   ) {
     const responseParts: string[] = [];
     if (continueFraction !== null) {
@@ -600,6 +620,9 @@ function recommendationEvidenceFromRaw(
     }
     if (fourBetFraction !== null) {
       responseParts.push(`Four-bet ${formatEvidenceRatio(fourBetFraction)}`);
+    }
+    if (fiveBetFraction !== null) {
+      responseParts.push(`Five-bet ${formatEvidenceRatio(fiveBetFraction)}`);
     }
     details.push({ label: "Response range", value: responseParts.join(" · ") });
   }
@@ -620,7 +643,9 @@ function recommendationEvidenceFromRaw(
   }
 
   const maximumRaiseTotal = metadataNumber(
-    raw.maximum_four_bet_total ?? raw.maximum_reraise_total,
+    raw.maximum_five_bet_total
+      ?? raw.maximum_four_bet_total
+      ?? raw.maximum_reraise_total,
   );
   if (maximumRaiseTotal !== null && maximumRaiseTotal >= 0) {
     details.push({ label: "All-in cap", value: formatEvidenceBb(maximumRaiseTotal) });

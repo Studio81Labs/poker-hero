@@ -10006,6 +10006,64 @@ describe("App", () => {
     expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
   });
 
+  it("shows structured four-bet response evidence", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "four-bet-chart-job",
+      original_filename: "four-bet.png",
+      image_filename: "four-bet.png",
+      recommendation: {
+        action: "raise",
+        sizing: 100,
+        confidence: 0.78,
+        explanation: "The preflop chart recommends a five-bet all-in.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0059,
+          policy_fraction: 0.028,
+          stack_depth_policy: "standard",
+          effective_stack: 80,
+          opener_position: "cutoff",
+          opening_raise_size: 2.5,
+          three_bettor_position: "button",
+          three_bet_size: 8,
+          three_bet_to_open_ratio: 3.2,
+          four_bettor_position: "cutoff",
+          four_bet_size: 20,
+          four_bet_to_three_bet_ratio: 2.5,
+          four_bet_size_policy: "standard",
+          continue_fraction: 0.05,
+          five_bet_fraction: 0.028,
+          maximum_five_bet_total: 100,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 100, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getAllByText("Cutoff")).toHaveLength(2);
+    expect(within(chartContext).getByText("Button")).toBeInTheDocument();
+    expect(within(chartContext).getByText("8 BB · 3.2x")).toBeInTheDocument();
+    expect(within(chartContext).getByText("20 BB · 2.5x · Standard")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 5% · Five-bet 2.8%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
+  });
+
   it("displays backend upload errors as queue attention items", async () => {
     const validJob = jobRecord({ original_filename: "valid.png" });
     fetchMock()

@@ -44,6 +44,9 @@ import type {
   JobHistory,
   JobQueue,
   JobRecord,
+  PreflopAction,
+  PreflopActionType,
+  PreflopPosition,
   PostflopAction,
   PostflopActionType,
   PostflopActor,
@@ -112,6 +115,7 @@ const EMPTY_STATE: CanonicalState = {
   hero_position: null,
   preflop_opener_position: null,
   preflop_open_size: null,
+  preflop_action_history: [],
   street: null,
   facing_action: null,
   postflop_action_history: [],
@@ -239,6 +243,7 @@ interface StateForm {
   hero_position: string;
   preflop_opener_position: string;
   preflop_open_size: string;
+  preflop_action_history: PreflopActionForm[];
   street: StreetOption;
   facing_action: FacingActionOption;
   postflop_action_history: PostflopActionForm[];
@@ -248,6 +253,12 @@ interface StateForm {
 interface PostflopActionForm {
   actor: PostflopActor;
   action: PostflopActionType;
+  amount: string;
+}
+
+interface PreflopActionForm {
+  actor: PreflopPosition;
+  action: PreflopActionType;
   amount: string;
 }
 
@@ -354,6 +365,26 @@ const PREFLOP_POSITIONS = [
   { value: "small_blind", label: "Small blind" },
   { value: "big_blind", label: "Big blind" },
 ] as const;
+
+const PREFLOP_POSITION_ALIASES: Readonly<Record<string, PreflopPosition>> = {
+  utg: "utg",
+  "under the gun": "utg",
+  ep: "utg",
+  "early position": "utg",
+  hj: "hijack",
+  hijack: "hijack",
+  mp: "hijack",
+  "middle position": "hijack",
+  co: "cutoff",
+  cutoff: "cutoff",
+  btn: "button",
+  button: "button",
+  dealer: "button",
+  sb: "small_blind",
+  "small blind": "small_blind",
+  bb: "big_blind",
+  "big blind": "big_blind",
+};
 
 const CONFIDENCE_KEYS = [
   "hero_cards",
@@ -506,15 +537,41 @@ function recommendationEvidenceFromRaw(
     });
   }
 
+  const threeBettorPosition = metadataLabel(raw.three_bettor_position);
+  if (threeBettorPosition) {
+    details.push({ label: "3-bettor", value: threeBettorPosition });
+  }
+
+  const threeBetSize = metadataNumber(raw.three_bet_size);
+  const threeBetRatio = metadataNumber(raw.three_bet_to_open_ratio);
+  const threeBetSizePolicy = metadataLabel(raw.three_bet_size_policy);
+  if (threeBetSize !== null && threeBetSize > 0) {
+    const ratio = threeBetRatio !== null && threeBetRatio > 0
+      ? ` · ${formatEvidenceNumber(threeBetRatio, 2)}x`
+      : "";
+    details.push({
+      label: "3-bet size",
+      value: `${formatEvidenceBb(threeBetSize)}${ratio}${threeBetSizePolicy ? ` · ${threeBetSizePolicy}` : ""}`,
+    });
+  }
+
   const continueFraction = metadataRatio(raw.continue_fraction);
   const reraiseFraction = metadataRatio(raw.reraise_fraction);
-  if (continueFraction !== null || reraiseFraction !== null) {
+  const fourBetFraction = metadataRatio(raw.four_bet_fraction);
+  if (
+    continueFraction !== null
+    || reraiseFraction !== null
+    || fourBetFraction !== null
+  ) {
     const responseParts: string[] = [];
     if (continueFraction !== null) {
       responseParts.push(`Continue ${formatEvidenceRatio(continueFraction)}`);
     }
     if (reraiseFraction !== null) {
       responseParts.push(`Reraise ${formatEvidenceRatio(reraiseFraction)}`);
+    }
+    if (fourBetFraction !== null) {
+      responseParts.push(`Four-bet ${formatEvidenceRatio(fourBetFraction)}`);
     }
     details.push({ label: "Response range", value: responseParts.join(" · ") });
   }
@@ -534,9 +591,11 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Open target", value: formatEvidenceBb(targetOpenSize) });
   }
 
-  const maximumReraiseTotal = metadataNumber(raw.maximum_reraise_total);
-  if (maximumReraiseTotal !== null && maximumReraiseTotal >= 0) {
-    details.push({ label: "All-in cap", value: formatEvidenceBb(maximumReraiseTotal) });
+  const maximumRaiseTotal = metadataNumber(
+    raw.maximum_four_bet_total ?? raw.maximum_reraise_total,
+  );
+  if (maximumRaiseTotal !== null && maximumRaiseTotal >= 0) {
+    details.push({ label: "All-in cap", value: formatEvidenceBb(maximumRaiseTotal) });
   }
 
   if (engine === "postflop_solver") {
@@ -1585,6 +1644,16 @@ function benchmarkPointChange(current: number, previous: number): number {
   return Math.round((current - previous) * 100);
 }
 
+function normalizePreflopPosition(value: string | null | undefined): PreflopPosition | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.toLowerCase().replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return PREFLOP_POSITION_ALIASES[normalized] ?? null;
+}
+
 function previousBenchmarkFieldMetric(
   metric: BenchmarkFieldMetric,
   previousReport: BenchmarkReportSummary | null,
@@ -1598,13 +1667,35 @@ function benchmarkComparisonValue(value: unknown): string {
   }
   if (Array.isArray(value)) {
     return value.length > 0
-      ? value.map((item) => benchmarkPostflopActionValue(item) ?? String(item)).join("; ")
+      ? value.map((item) => benchmarkActionValue(item) ?? String(item)).join("; ")
       : "None";
   }
   if (typeof value === "object") {
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+function benchmarkActionValue(value: unknown): string | null {
+  return benchmarkPreflopActionValue(value) ?? benchmarkPostflopActionValue(value);
+}
+
+function benchmarkPreflopActionValue(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const item = value as Record<string, unknown>;
+  if (
+    !PREFLOP_POSITIONS.some((position) => position.value === item.actor)
+    || (item.action !== "call" && item.action !== "raise")
+    || typeof item.amount !== "number"
+    || !Number.isFinite(item.amount)
+  ) {
+    return null;
+  }
+  const actor = PREFLOP_POSITIONS.find((position) => position.value === item.actor)?.label;
+  const action = item.action === "raise" ? "raise to" : "call";
+  return `${actor} ${action} ${item.amount} BB`;
 }
 
 function benchmarkPostflopActionValue(value: unknown): string | null {
@@ -1722,6 +1813,18 @@ function isCachedPostflopAction(value: unknown): value is PostflopAction {
     );
 }
 
+function isCachedPreflopAction(value: unknown): value is PreflopAction {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const action = value as Partial<PreflopAction>;
+  return PREFLOP_POSITIONS.some((position) => position.value === action.actor)
+    && (action.action === "call" || action.action === "raise")
+    && typeof action.amount === "number"
+    && Number.isFinite(action.amount)
+    && action.amount > 0;
+}
+
 function isCachedDetectedState(value: unknown): value is DetectedState {
   if (value === null || typeof value !== "object") {
     return false;
@@ -1759,6 +1862,14 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
     && isNullableCachedString(state.hero_position)
     && isNullableCachedString(state.preflop_opener_position)
     && isNullableCachedNumber(state.preflop_open_size, 0, false)
+    && (
+      state.preflop_action_history === undefined
+      || (
+        Array.isArray(state.preflop_action_history)
+        && state.preflop_action_history.length <= 8
+        && state.preflop_action_history.every(isCachedPreflopAction)
+      )
+    )
     && (
       state.street === null
       || (typeof state.street === "string" && STREETS.has(state.street))
@@ -3080,6 +3191,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
+    preflop_action_history: state.preflop_action_history ?? [],
     street: state.street,
     facing_action: state.facing_action ?? null,
     postflop_action_history: state.postflop_action_history ?? [],
@@ -3103,6 +3215,16 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
+  const preflopActionHistory: PreflopActionForm[] = showPreflopOpen
+    ? (state.preflop_action_history ?? []).map((action) => ({
+        actor: action.actor,
+        action: action.action,
+        amount: String(action.amount),
+      }))
+    : [];
+  const structuredOpener = preflopActionHistory[0]?.action === "raise"
+    ? preflopActionHistory[0]
+    : null;
   return {
     hero_cards: formatCards(state.hero_cards),
     board_cards: formatCards(state.board_cards),
@@ -3115,11 +3237,20 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
-    preflop_opener_position: showPreflopOpen ? (state.preflop_opener_position ?? "") : "",
+    preflop_opener_position: showPreflopOpen
+      ? (
+        structuredOpener?.actor
+        ?? normalizePreflopPosition(state.preflop_opener_position)
+        ?? ""
+      )
+      : "",
     preflop_open_size:
-      showPreflopOpen && state.preflop_open_size !== null && state.preflop_open_size !== undefined
-        ? String(state.preflop_open_size)
+      structuredOpener !== null
+        ? structuredOpener.amount
+        : showPreflopOpen && state.preflop_open_size !== null && state.preflop_open_size !== undefined
+          ? String(state.preflop_open_size)
         : "",
+    preflop_action_history: preflopActionHistory,
     street: state.street ?? "",
     facing_action: state.facing_action ?? "",
     postflop_action_history: showPostflopHistory
@@ -3141,12 +3272,24 @@ function formToCanonical(form: StateForm): CanonicalState {
   const showPostflopHistory = form.street !== ""
     && form.street !== "preflop"
     && form.facing_action === "raise";
-  const preflopOpenSize = showPreflopOpen
+  const legacyPreflopOpenSize = showPreflopOpen && form.preflop_action_history.length === 0
     ? parseOptionalNumber(form.preflop_open_size, "Opening size")
     : null;
-  if (preflopOpenSize !== null && preflopOpenSize <= 0) {
+  if (legacyPreflopOpenSize !== null && legacyPreflopOpenSize <= 0) {
     throw new Error("Opening size must be greater than 0");
   }
+  const preflopActionHistory: PreflopAction[] = showPreflopOpen
+    ? form.preflop_action_history.map((item, index) => {
+        const amount = parseOptionalNumber(item.amount, `Preflop action ${index + 1} amount`);
+        if (amount === null || amount <= 0) {
+          throw new Error(`Preflop action ${index + 1} amount must be greater than 0`);
+        }
+        return { actor: item.actor, action: item.action, amount };
+      })
+    : [];
+  const structuredOpener = preflopActionHistory[0]?.action === "raise"
+    ? preflopActionHistory[0]
+    : null;
   const postflopActionHistory: PostflopAction[] = showPostflopHistory
     ? form.postflop_action_history.map((item, index) => {
         const amount = item.action === "check"
@@ -3172,10 +3315,14 @@ function formToCanonical(form: StateForm): CanonicalState {
     players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
     preflop_opener_position:
-      showPreflopOpen && form.preflop_opener_position !== ""
-        ? form.preflop_opener_position
-        : null,
-    preflop_open_size: preflopOpenSize,
+      structuredOpener?.actor
+      ?? (
+        showPreflopOpen && form.preflop_opener_position !== ""
+          ? form.preflop_opener_position
+          : null
+      ),
+    preflop_open_size: structuredOpener?.amount ?? legacyPreflopOpenSize,
+    preflop_action_history: preflopActionHistory,
     street: form.street === "" ? null : form.street,
     facing_action: form.facing_action === "" ? null : form.facing_action,
     postflop_action_history: postflopActionHistory,
@@ -3197,6 +3344,7 @@ function approvalKey(state: CanonicalState): string {
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
+    preflop_action_history: state.preflop_action_history ?? [],
     street: state.street,
     facing_action: state.facing_action ?? null,
     postflop_action_history: state.postflop_action_history ?? [],
@@ -6256,6 +6404,7 @@ export default function App() {
       ) {
         next.preflop_opener_position = "";
         next.preflop_open_size = "";
+        next.preflop_action_history = [];
       }
       const usesPostflopHistory = next.facing_action === "raise"
         && next.street !== ""
@@ -6269,6 +6418,50 @@ export default function App() {
       return next;
     });
     setApprovedStateKey(null);
+  }
+
+  function addPreflopAction() {
+    const previous = form.preflop_action_history[
+      form.preflop_action_history.length - 1
+    ];
+    const previousIndex = previous
+      ? PREFLOP_POSITIONS.findIndex((position) => position.value === previous.actor)
+      : -1;
+    const legacyOpener = normalizePreflopPosition(form.preflop_opener_position);
+    const heroPosition = normalizePreflopPosition(form.hero_position);
+    const actor = form.preflop_action_history.length === 0
+      ? (legacyOpener ?? heroPosition ?? "cutoff")
+      : (PREFLOP_POSITIONS[previousIndex + 1]?.value ?? "big_blind");
+    updateForm("preflop_action_history", [
+      ...form.preflop_action_history,
+      {
+        actor,
+        action: "raise",
+        amount: form.preflop_action_history.length === 0
+          ? form.preflop_open_size
+          : "",
+      },
+    ]);
+  }
+
+  function updatePreflopAction(
+    index: number,
+    field: keyof PreflopActionForm,
+    value: string,
+  ) {
+    const next = form.preflop_action_history.map((action, actionIndex) => (
+      actionIndex === index
+        ? { ...action, [field]: value } as PreflopActionForm
+        : action
+    ));
+    updateForm("preflop_action_history", next);
+  }
+
+  function removePreflopAction(index: number) {
+    updateForm(
+      "preflop_action_history",
+      form.preflop_action_history.filter((_, actionIndex) => actionIndex !== index),
+    );
   }
 
   function addPostflopAction() {
@@ -7631,14 +7824,14 @@ export default function App() {
                       placeholder="BB behind"
                     />
                   </Field>
-                  <div className="postflop-history-field">
-                    <div className="postflop-history-header">
+                  <div className="action-history-field">
+                    <div className="action-history-header">
                       <div>
                         <strong>Postflop history (total BB)</strong>
                       </div>
                       <button
                         type="button"
-                        className="postflop-history-add"
+                        className="action-history-add"
                         disabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
                         onClick={addPostflopAction}
                       >
@@ -7647,9 +7840,9 @@ export default function App() {
                       </button>
                     </div>
                     {form.postflop_action_history.length > 0 ? (
-                      <div className="postflop-history-list">
+                      <div className="action-history-list">
                         {form.postflop_action_history.map((action, index) => (
-                          <div className="postflop-history-row" key={index}>
+                          <div className="action-history-row" key={index}>
                             <span>{index + 1}</span>
                             <select
                               aria-label={`Action ${index + 1} actor`}
@@ -7698,29 +7891,98 @@ export default function App() {
               ) : null}
               {form.street === "preflop" && form.facing_action === "raise" ? (
                 <>
-                  <Field label="Opener position" confidence="manual">
-                    <select
-                      disabled={stateControlsDisabled}
-                      value={form.preflop_opener_position}
-                      onChange={(event) => updateForm("preflop_opener_position", event.target.value)}
-                    >
-                      <option value="">Select position</option>
-                      {PREFLOP_POSITIONS.map((position) => (
-                        <option key={position.value} value={position.value}>
-                          {position.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Opening size" confidence="manual">
-                    <input
-                      disabled={stateControlsDisabled}
-                      inputMode="decimal"
-                      value={form.preflop_open_size}
-                      onChange={(event) => updateForm("preflop_open_size", event.target.value)}
-                      placeholder="BB"
-                    />
-                  </Field>
+                  {form.preflop_action_history.length === 0 ? (
+                    <>
+                      <Field label="Opener position" confidence="manual">
+                        <select
+                          disabled={stateControlsDisabled}
+                          value={form.preflop_opener_position}
+                          onChange={(event) => updateForm("preflop_opener_position", event.target.value)}
+                        >
+                          <option value="">Select position</option>
+                          {PREFLOP_POSITIONS.map((position) => (
+                            <option key={position.value} value={position.value}>
+                              {position.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Opening size" confidence="manual">
+                        <input
+                          disabled={stateControlsDisabled}
+                          inputMode="decimal"
+                          value={form.preflop_open_size}
+                          onChange={(event) => updateForm("preflop_open_size", event.target.value)}
+                          placeholder="BB"
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                  <div className="action-history-field">
+                    <div className="action-history-header">
+                      <div>
+                        <strong>Preflop history (total BB)</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="action-history-add"
+                        disabled={stateControlsDisabled || form.preflop_action_history.length >= 8}
+                        onClick={addPreflopAction}
+                      >
+                        <Plus size={13} aria-hidden="true" />
+                        Add preflop action
+                      </button>
+                    </div>
+                    {form.preflop_action_history.length > 0 ? (
+                      <div className="action-history-list">
+                        {form.preflop_action_history.map((action, index) => (
+                          <div className="action-history-row" key={index}>
+                            <span>{index + 1}</span>
+                            <select
+                              aria-label={`Preflop action ${index + 1} actor`}
+                              disabled={stateControlsDisabled}
+                              value={action.actor}
+                              onChange={(event) => updatePreflopAction(index, "actor", event.target.value)}
+                            >
+                              {PREFLOP_POSITIONS.map((position) => (
+                                <option key={position.value} value={position.value}>
+                                  {position.label}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              aria-label={`Preflop action ${index + 1} type`}
+                              disabled={stateControlsDisabled}
+                              value={action.action}
+                              onChange={(event) => updatePreflopAction(index, "action", event.target.value)}
+                            >
+                              <option value="raise">Raise to</option>
+                              <option value="call">Call</option>
+                            </select>
+                            <input
+                              aria-label={`Preflop action ${index + 1} amount`}
+                              disabled={stateControlsDisabled}
+                              inputMode="decimal"
+                              value={action.amount}
+                              onChange={(event) => updatePreflopAction(index, "amount", event.target.value)}
+                              placeholder="BB"
+                            />
+                            <button
+                              type="button"
+                              disabled={stateControlsDisabled}
+                              onClick={() => removePreflopAction(index)}
+                              title={`Remove preflop action ${index + 1}`}
+                              aria-label={`Remove preflop action ${index + 1}`}
+                            >
+                              <X size={13} aria-hidden="true" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>No actions recorded</p>
+                    )}
+                  </div>
                 </>
               ) : null}
               <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>

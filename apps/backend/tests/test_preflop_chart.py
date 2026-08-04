@@ -1,12 +1,24 @@
+from collections.abc import Callable
+
 import pytest
 
-from app.models import CanonicalState, Card, FacingAction, RecommendationRequest
+from app.models import (
+    CanonicalState,
+    Card,
+    FacingAction,
+    PreflopAction,
+    PreflopPosition,
+    RecommendationRequest,
+)
 from app.solvers.preflop_chart import (
     DEFENSE_POLICIES,
     OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
     STACK_DEPTH_POLICIES,
+    THREE_BET_DEFENSE_POLICIES,
+    THREE_BET_SIZE_POLICIES,
     adjusted_defense_policy,
+    adjusted_three_bet_defense_policy,
     canonical_hand_class,
     hand_top_fraction,
     normalize_position,
@@ -33,6 +45,7 @@ def request_for(
     action_context: str | None = None,
     preflop_opener_position: str | None = None,
     preflop_open_size: float | None = None,
+    preflop_action_history: list[PreflopAction] | None = None,
 ) -> RecommendationRequest:
     return RecommendationRequest(
         provider="local_solver",
@@ -46,11 +59,61 @@ def request_for(
             hero_position=position,
             preflop_opener_position=preflop_opener_position,
             preflop_open_size=preflop_open_size,
+            preflop_action_history=preflop_action_history or [],
             street="preflop",
             facing_action=facing_action,
             action_context=action_context,
             user_approved=True,
         ),
+    )
+
+
+def structured_three_bet_request(
+    cards: tuple[str, str],
+    *,
+    hero_position: PreflopPosition = "cutoff",
+    three_bettor_position: PreflopPosition = "button",
+    opening_size: float = 2.5,
+    three_bet_size: float = 8.0,
+    hero_stack: float | None = 97.5,
+    effective_stack: float = 92.0,
+    preflop_opener_position: str | None = None,
+    preflop_open_size: float | None = None,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    pot_size = (
+        1.5
+        - posted_blinds[hero_position]
+        - posted_blinds[three_bettor_position]
+        + opening_size
+        + three_bet_size
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=three_bet_size - opening_size,
+        pot_size=pot_size,
+        hero_stack=hero_stack,
+        effective_stack=effective_stack,
+        facing_action="raise",
+        action_context="Ambiguous OCR text is ignored when history is approved",
+        preflop_opener_position=preflop_opener_position,
+        preflop_open_size=preflop_open_size,
+        preflop_action_history=[
+            PreflopAction(actor=hero_position, action="raise", amount=opening_size),
+            PreflopAction(
+                actor=three_bettor_position,
+                action="raise",
+                amount=three_bet_size,
+            ),
+        ],
     )
 
 
@@ -99,6 +162,21 @@ def test_defense_policies_cover_every_legal_position_matchup() -> None:
     )
 
 
+def test_three_bet_defense_policies_cover_every_legal_position_matchup() -> None:
+    expected_matchups = {
+        (hero, three_bettor)
+        for hero in POSITION_POLICIES
+        for three_bettor in POSITION_POLICIES
+        if POSITION_ACTION_ORDER[hero] < POSITION_ACTION_ORDER[three_bettor]
+    }
+
+    assert set(THREE_BET_DEFENSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.four_bet_fraction <= policy.continue_fraction <= 1
+        for policy in THREE_BET_DEFENSE_POLICIES.values()
+    )
+
+
 def test_open_size_policies_tighten_as_the_raise_grows() -> None:
     assert MIN_SINGLE_OPEN_SIZE_BB <= OPEN_SIZE_POLICIES[0].maximum_size
     assert OPEN_SIZE_POLICIES[-1].maximum_size == MAX_SINGLE_OPEN_SIZE_BB
@@ -109,6 +187,20 @@ def test_open_size_policies_tighten_as_the_raise_grows() -> None:
         current.continue_multiplier >= following.continue_multiplier
         and current.reraise_multiplier >= following.reraise_multiplier
         for current, following in zip(OPEN_SIZE_POLICIES, OPEN_SIZE_POLICIES[1:])
+    )
+
+
+def test_three_bet_size_policies_tighten_as_the_raise_grows() -> None:
+    assert [policy.maximum_ratio for policy in THREE_BET_SIZE_POLICIES] == sorted(
+        policy.maximum_ratio for policy in THREE_BET_SIZE_POLICIES
+    )
+    assert all(
+        current.continue_multiplier >= following.continue_multiplier
+        and current.four_bet_multiplier >= following.four_bet_multiplier
+        for current, following in zip(
+            THREE_BET_SIZE_POLICIES,
+            THREE_BET_SIZE_POLICIES[1:],
+        )
     )
 
 
@@ -137,6 +229,15 @@ def test_stack_depth_policies_are_ordered_and_keep_reraises_inside_continues() -
                     stack_policy,
                 )
                 assert adjusted.reraise_fraction <= adjusted.continue_fraction
+    for base_policy in THREE_BET_DEFENSE_POLICIES.values():
+        for size_policy in THREE_BET_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_three_bet_defense_policy(
+                    base_policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert adjusted.four_bet_fraction <= adjusted.continue_fraction
 
 
 @pytest.mark.parametrize(
@@ -593,6 +694,176 @@ def test_prefers_structured_preflop_opener_context() -> None:
     assert result.sizing == 7.5
     assert result.raw["opener_position"] == "button"
     assert result.raw["opening_raise_size"] == 2.5
+
+
+def test_structured_single_open_takes_precedence_over_ambiguous_text() -> None:
+    result = solve_preflop_chart(
+        request_for(
+            ("Ah", "Jd"),
+            position="button",
+            current_bet=2.5,
+            pot_size=4,
+            facing_action="raise",
+            action_context="OCR could not identify the action",
+            preflop_action_history=[
+                PreflopAction(actor="cutoff", action="raise", amount=2.5)
+            ],
+        )
+    )
+
+    assert result is not None
+    assert result.action == "call"
+    assert result.raw["scenario"] == "facing_open_raise"
+    assert result.raw["opener_position"] == "cutoff"
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "four_bet"),
+        (("8h", "8s"), "call", "continue"),
+        (("7h", "2d"), "fold", "fold"),
+    ],
+)
+def test_structured_three_bet_history_routes_position_aware_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    result = solve_preflop_chart(structured_three_bet_request(cards))
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_three_bet"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["opener_position"] == "cutoff"
+    assert result.raw["three_bettor_position"] == "button"
+    assert result.raw["opening_raise_size"] == 2.5
+    assert result.raw["three_bet_size"] == 8
+    assert result.raw["three_bet_to_open_ratio"] == 3.2
+
+
+def test_three_bet_size_tightens_continue_boundary() -> None:
+    small = solve_preflop_chart(
+        structured_three_bet_request(
+            ("Ah", "Qd"),
+            three_bet_size=6.5,
+            effective_stack=93.5,
+        )
+    )
+    very_large = solve_preflop_chart(
+        structured_three_bet_request(
+            ("Ah", "Qd"),
+            three_bet_size=12,
+            effective_stack=88,
+        )
+    )
+
+    assert small is not None
+    assert very_large is not None
+    assert small.action == "call"
+    assert very_large.action == "fold"
+    assert small.raw["three_bet_size_policy"] == "small"
+    assert very_large.raw["three_bet_size_policy"] == "very_large"
+    assert small.raw["continue_fraction"] > very_large.raw["continue_fraction"]
+
+
+def test_short_stack_moves_boundary_hand_into_four_bet_range() -> None:
+    short = solve_preflop_chart(
+        structured_three_bet_request(
+            ("8h", "8s"),
+            hero_stack=17.5,
+            effective_stack=12,
+        )
+    )
+    standard = solve_preflop_chart(structured_three_bet_request(("8h", "8s")))
+
+    assert short is not None
+    assert standard is not None
+    assert short.action == "raise"
+    assert standard.action == "call"
+    assert short.raw["stack_depth_policy"] == "short"
+    assert short.raw["four_bet_fraction"] > standard.raw["four_bet_fraction"]
+
+
+def test_four_bet_size_is_capped_by_hero_total_stack() -> None:
+    result = solve_preflop_chart(
+        structured_three_bet_request(
+            ("Ah", "Ad"),
+            hero_stack=9.5,
+            effective_stack=92,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 12
+    assert result.raw["maximum_four_bet_total"] == 12
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "current_bet", 5),
+        lambda state: setattr(state, "pot_size", 11),
+        lambda state: setattr(state, "hero_stack", None),
+        lambda state: setattr(state, "hero_stack", 5),
+        lambda state: setattr(state, "preflop_opener_position", "hijack"),
+        lambda state: setattr(state, "preflop_open_size", 3),
+    ],
+)
+def test_declines_inconsistent_structured_three_bet_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_three_bet_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        [PreflopAction(actor="cutoff", action="call", amount=2.5)],
+        [PreflopAction(actor="button", action="raise", amount=2.5)],
+        [
+            PreflopAction(actor="hijack", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        [
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="hijack", action="raise", amount=8),
+        ],
+        [
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=3.5),
+        ],
+        [
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="small_blind", action="raise", amount=20),
+        ],
+    ],
+)
+def test_declines_unsupported_structured_preflop_histories(
+    history: list[PreflopAction],
+) -> None:
+    request = structured_three_bet_request(("Ah", "Ad"))
+    request.state.preflop_action_history = history
+
+    assert solve_preflop_chart(request) is None
+
+
+def test_declines_three_bet_larger_than_supported_size_band() -> None:
+    result = solve_preflop_chart(
+        structured_three_bet_request(
+            ("Ah", "Ad"),
+            three_bet_size=13,
+            effective_stack=87,
+        )
+    )
+
+    assert result is None
 
 
 def test_checks_big_blind_when_no_amount_is_required() -> None:

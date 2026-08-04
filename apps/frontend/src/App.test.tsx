@@ -294,6 +294,48 @@ describe("App", () => {
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
+  it("restores structured preflop history from the browser cache", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 12,
+      current_bet: 5.5,
+      hero_stack: 97.5,
+      effective_stack: 92,
+      players_in_hand: 2,
+      hero_position: "cutoff",
+      preflop_opener_position: "cutoff",
+      preflop_open_size: 2.5,
+      preflop_action_history: [
+        { actor: "cutoff", action: "raise", amount: 2.5 },
+        { actor: "button", action: "raise", amount: 8 },
+      ],
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Hero faces a 3-bet",
+    };
+    const cachedJob = jobRecord({
+      id: "b".repeat(32),
+      original_filename: "cached-three-bet.png",
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+
+    render(<App />);
+
+    expect(await screen.findByLabelText("Preflop action 1 actor")).toHaveValue("cutoff");
+    expect(screen.getByLabelText("Preflop action 2 actor")).toHaveValue("button");
+    expect(screen.getByLabelText("Preflop action 2 amount")).toHaveValue("8");
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
   it("does not overwrite a newer processing cache record from another tab", async () => {
     const jobId = "1".repeat(32);
     const staleJob = jobRecord({
@@ -9802,6 +9844,59 @@ describe("App", () => {
     expect(within(chartContext).getByText("3.6 BB")).toBeInTheDocument();
   });
 
+  it("shows structured three-bet chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "three-bet-chart-job",
+      original_filename: "three-bet.png",
+      image_filename: "three-bet.png",
+      recommendation: {
+        action: "raise",
+        sizing: 17.6,
+        confidence: 0.78,
+        explanation: "The preflop chart recommends a four-bet.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0059,
+          policy_fraction: 0.045,
+          stack_depth_policy: "standard",
+          effective_stack: 92,
+          opener_position: "cutoff",
+          opening_raise_size: 2.5,
+          three_bettor_position: "button",
+          three_bet_size: 8,
+          three_bet_to_open_ratio: 3.2,
+          three_bet_size_policy: "standard",
+          continue_fraction: 0.12,
+          four_bet_fraction: 0.045,
+          maximum_four_bet_total: 100,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 17.6, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Button")).toBeInTheDocument();
+    expect(within(chartContext).getByText("8 BB · 3.2x · Standard")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 12% · Four-bet 4.5%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
+  });
+
   it("displays backend upload errors as queue attention items", async () => {
     const validJob = jobRecord({ original_filename: "valid.png" });
     fetchMock()
@@ -9886,6 +9981,89 @@ describe("App", () => {
     const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
     expect(payload.preflop_opener_position).toBe("button");
     expect(payload.preflop_open_size).toBe(2.5);
+  });
+
+  it("submits structured preflop history and synchronizes opener context", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 12,
+      current_bet: 5.5,
+      hero_stack: 97.5,
+      effective_stack: 92,
+      players_in_hand: 6,
+      hero_position: "cutoff",
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Hero faces a 3-bet",
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Add preflop action" }));
+    await user.type(screen.getByLabelText("Preflop action 1 amount"), "2.5");
+    await user.click(screen.getByRole("button", { name: "Add preflop action" }));
+    await user.type(screen.getByLabelText("Preflop action 2 amount"), "8");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.preflop_opener_position).toBe("cutoff");
+    expect(payload.preflop_open_size).toBe(2.5);
+    expect(payload.preflop_action_history).toEqual([
+      { actor: "cutoff", action: "raise", amount: 2.5 },
+      { actor: "button", action: "raise", amount: 8 },
+    ]);
+  });
+
+  it("loads structured preflop history into editable controls", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 12,
+      current_bet: 5.5,
+      hero_stack: 97.5,
+      effective_stack: 92,
+      players_in_hand: 6,
+      hero_position: "cutoff",
+      preflop_opener_position: "cutoff",
+      preflop_open_size: 2.5,
+      preflop_action_history: [
+        { actor: "cutoff", action: "raise", amount: 2.5 },
+        { actor: "button", action: "raise", amount: 8 },
+      ],
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Hero faces a 3-bet",
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]));
+    render(<App />);
+
+    await uploadScreenshot();
+
+    expect(await screen.findByLabelText("Preflop action 1 actor")).toHaveValue("cutoff");
+    expect(screen.getByLabelText("Preflop action 1 amount")).toHaveValue("2.5");
+    expect(screen.getByLabelText("Preflop action 2 actor")).toHaveValue("button");
+    expect(screen.getByLabelText("Preflop action 2 amount")).toHaveValue("8");
+    expect(screen.queryByLabelText(/Opener position/)).not.toBeInTheDocument();
   });
 
   it("submits structured postflop history for a raised decision", async () => {

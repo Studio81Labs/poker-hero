@@ -1,12 +1,19 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 
 from app.config import Settings
-from app.models import CanonicalState, Card, PostflopAction, RecommendationRequest
+from app.models import (
+    CanonicalState,
+    Card,
+    PostflopAction,
+    PreflopAction,
+    RecommendationRequest,
+)
 from app.providers.base import (
     ProviderConfigurationError,
     ProviderError,
@@ -305,6 +312,62 @@ def test_local_solver_routes_supported_preflop_spot_to_chart(
     assert "fallback_reason" not in result.raw
     assert "routed this hand to the preflop chart" in result.explanation
     assert "range/EV fallback" not in result.explanation
+
+
+def test_local_solver_requires_hero_stack_for_structured_three_bet(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=12,
+        current_bet=5.5,
+        effective_stack=92,
+        players_in_hand=6,
+        hero_position="cutoff",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" in provider.required_fields_for(state)
+
+
+def test_local_solver_routes_structured_three_bet_to_preflop_chart(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("8h"), Card.from_code("8s")],
+        pot_size=12,
+        current_bet=5.5,
+        hero_stack=97.5,
+        effective_stack=92,
+        players_in_hand=2,
+        hero_position="cutoff",
+        preflop_opener_position="cutoff",
+        preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "facing_three_bet"
+    assert result.raw["routing_reason"] == "the hand is preflop"
 
 
 def test_local_solver_keeps_ev_fallback_for_preflop_spot_without_position(tmp_path: Path) -> None:
@@ -981,7 +1044,7 @@ def test_local_solver_rejects_coerced_confidence(
 
 def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     request = httpx.Request("POST", "https://solver.example/recommend")
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_post(
         url: str,
@@ -1050,6 +1113,67 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
         "headers": {"Authorization": "Bearer solver-token"},
         "timeout": 9.5,
     }
+
+
+def test_external_solver_posts_structured_preflop_history(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = httpx.Request("POST", "https://solver.example/recommend")
+    captured: dict[str, Any] = {}
+
+    def fake_post(
+        url: str,
+        *,
+        json: dict[str, object],
+        headers: dict[str, str],
+        timeout: float,
+    ) -> httpx.Response:
+        captured.update(json)
+        return httpx.Response(
+            200,
+            json={
+                "action": "call",
+                "sizing": None,
+                "confidence": 0.8,
+                "explanation": "External three-bet response",
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="external_solver",
+            external_provider_url="https://solver.example/recommend",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("8h"), Card.from_code("8s")],
+        pot_size=12,
+        current_bet=5.5,
+        hero_stack=97.5,
+        effective_stack=92,
+        players_in_hand=6,
+        hero_position="cutoff",
+        preflop_opener_position="cutoff",
+        preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert captured["state"]["preflop_action_history"] == [
+        {"actor": "cutoff", "action": "raise", "amount": 2.5},
+        {"actor": "button", "action": "raise", "amount": 8.0},
+    ]
 
 
 def test_llm_advice_uses_its_own_bearer_token(

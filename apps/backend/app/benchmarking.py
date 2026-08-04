@@ -139,7 +139,7 @@ def _is_labeled(field: str, value: Any, street: str | None) -> bool:
         return bool(value)
     if field == "board_cards":
         return bool(value) or street == "preflop"
-    if field == "postflop_action_history":
+    if field in {"preflop_action_history", "postflop_action_history"}:
         return bool(value)
     if field == "action_context":
         return bool(str(value).strip())

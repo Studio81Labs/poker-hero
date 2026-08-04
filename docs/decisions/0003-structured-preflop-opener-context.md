@@ -29,3 +29,7 @@ values, so adding the fields does not create artificial ground-truth labels.
 - Future parsers can emit field confidence for opener evidence independently.
 - Full limper, caller, ante, and multi-raise support still requires structured
   action history beyond a single opener.
+
+ADR 0005 later adds that ordered history for single opens and one narrowly
+supported hero-open/facing-3-bet route. The opener fields remain as a backward-
+compatible projection of the first raise.

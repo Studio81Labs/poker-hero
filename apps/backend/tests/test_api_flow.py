@@ -3056,6 +3056,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert imported_job.approved_state is not None
     assert imported_job.approved_state.model_dump(mode="json", exclude_none=True) == {
         **corrected_state,
+        "preflop_action_history": [],
         "postflop_action_history": [],
     }
     assert imported_job.benchmark_included is True

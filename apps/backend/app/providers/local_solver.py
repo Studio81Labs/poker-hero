@@ -33,6 +33,8 @@ class LocalSolverProvider:
 
     def required_fields_for(self, state: CanonicalState) -> list[str]:
         required_fields = list(self.required_fields)
+        if state.street == "preflop" and len(state.preflop_action_history) == 2:
+            required_fields.append("hero_stack")
         if not self._requires_postflop_solver_inputs(state):
             return required_fields
 

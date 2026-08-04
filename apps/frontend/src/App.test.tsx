@@ -187,6 +187,12 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
+function nextDeferredResponse(
+  deferred: ReturnType<typeof deferredResponse>,
+): Promise<Response> {
+  return deferred.promise.then((response) => response.clone());
+}
+
 function fetchMock() {
   return vi.mocked(fetch);
 }
@@ -4591,7 +4597,7 @@ describe("App", () => {
         processingReads += 1;
         return processingReads === 1
           ? pendingQueue.promise
-          : finalQueue.promise;
+          : nextDeferredResponse(finalQueue);
       }
       if (url === `http://localhost:8000/api/jobs/${jobId}/approve`) {
         return Promise.resolve(jsonResponse(approved));
@@ -4659,6 +4665,10 @@ describe("App", () => {
       "poker-training-processing-mutation-v1",
     )).not.toBeNull();
     await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(2));
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: "poker-training-processing-v1",
+    }));
+    await waitFor(() => expect(processingReads).toBeGreaterThanOrEqual(3));
 
     const persistedAttempt: JobRecord = {
       ...approved,

@@ -37,6 +37,9 @@ VALID_PNG = (
         "AAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
     )
 )
+CORS_EXPOSED_HEADERS = (
+    "X-Request-ID, Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining"
+)
 
 APPROVED_STATE = {
     "hero_cards": [{"rank": "A", "suit": "hearts"}, {"rank": "K", "suit": "diamonds"}],
@@ -291,7 +294,7 @@ def test_unhandled_error_response_keeps_request_id(
     assert response.headers["Access-Control-Allow-Origin"] == (
         "http://localhost:5173"
     )
-    assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+    assert response.headers["Access-Control-Expose-Headers"] == CORS_EXPOSED_HEADERS
     access_events = [
         json.loads(record.message)
         for record in access_log_records
@@ -1089,7 +1092,7 @@ def test_cors_exposes_request_id_header(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 200
-    assert response.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+    assert response.headers["Access-Control-Expose-Headers"] == CORS_EXPOSED_HEADERS
 
 
 def test_proxy_shared_secret_protects_api_but_not_health(tmp_path: Path) -> None:
@@ -1109,7 +1112,7 @@ def test_proxy_shared_secret_protects_api_but_not_health(tmp_path: Path) -> None
     assert rejected.headers["Access-Control-Allow-Origin"] == (
         "http://localhost:5173"
     )
-    assert rejected.headers["Access-Control-Expose-Headers"] == "X-Request-ID"
+    assert rejected.headers["Access-Control-Expose-Headers"] == CORS_EXPOSED_HEADERS
     assert client.get(
         "/api/jobs",
         headers={"X-Poker-Proxy-Secret": "incorrect-secret-value-123456789"},

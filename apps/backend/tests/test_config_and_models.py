@@ -77,6 +77,11 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.sentry_environment == "local"
     assert settings.sentry_release is None
     assert settings.sentry_error_sample_rate == 1
+    assert settings.api_rate_limit_enabled is True
+    assert settings.api_rate_limit_uploads_per_minute == 120
+    assert settings.api_rate_limit_recommendations_per_minute == 120
+    assert settings.api_rate_limit_benchmarks_per_minute == 6
+    assert settings.api_rate_limit_data_transfers_per_minute == 6
     assert settings.external_parser_bearer_token is None
     assert settings.external_provider_bearer_token is None
     assert settings.llm_advice_bearer_token is None
@@ -181,6 +186,17 @@ def test_settings_rejects_non_positive_max_upload_bytes() -> None:
         Settings(max_dataset_upload_bytes=0)
     with pytest.raises(ValidationError):
         Settings(max_backup_upload_bytes=0)
+
+
+def test_settings_rejects_invalid_api_rate_limits() -> None:
+    with pytest.raises(ValidationError):
+        Settings(api_rate_limit_uploads_per_minute=0)
+    with pytest.raises(ValidationError):
+        Settings(api_rate_limit_recommendations_per_minute=10_001)
+    with pytest.raises(ValidationError):
+        Settings(api_rate_limit_benchmarks_per_minute=0)
+    with pytest.raises(ValidationError):
+        Settings(api_rate_limit_data_transfers_per_minute=10_001)
 
 
 def test_settings_validates_data_volume_identity() -> None:

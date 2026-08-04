@@ -530,6 +530,18 @@ failure must never fail an application request or crash recovery surface.
 Automatic release-health sessions and client reports remain disabled in both
 adapters.
 
+## Resource Rate Limiting
+
+The backend must limit parser uploads, solver recommendations, parser benchmark
+runs, and benchmark/application archive transfers before starting expensive
+work. Proxy authentication must run first so unauthorized requests cannot spend
+or exhaust an authenticated user's budget. When Cloudflare Access supplies a
+user identity, the backend must use a one-way digest rather than retaining the
+email; a validated connecting IP and then a shared proxy identity are fallbacks.
+Direct development requests use the direct client identity. Limiter storage
+must remain bounded, limits must be configurable without code changes, and a
+rejected request must return HTTP 429 with `Retry-After` metadata.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.

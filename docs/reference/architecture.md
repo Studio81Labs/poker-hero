@@ -491,6 +491,13 @@ user.
 - Access control: Cloudflare Access can allowlist testing users at the public
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.
+- Resource protection: authenticated expensive operations use bounded in-memory
+  token buckets. Cloudflare Access identities are hashed before use, with a
+  validated connecting IP or direct client fallback; limits are configurable
+  independently for uploads, recommendations, benchmarks, and archive transfers.
+  Buckets are process-local for the single-container testing topology; a future
+  multi-replica deployment must enforce the same policy at the edge or in a
+  shared limiter.
 - Monitoring: a scheduled GitHub Actions probe checks the SPA, proxied health,
   and protected queue boundaries. It opens one incident issue after bounded
   retries and closes that issue on recovery. Optional Cloudflare Access service

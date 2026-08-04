@@ -565,6 +565,11 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "3-bettor", value: threeBettorPosition });
   }
 
+  const coldThreeBetPolicy = metadataLabel(raw.cold_three_bet_policy);
+  if (coldThreeBetPolicy) {
+    details.push({ label: "Cold 3-bet policy", value: coldThreeBetPolicy });
+  }
+
   const threeBetSize = metadataNumber(raw.three_bet_size);
   const threeBetRatio = metadataNumber(raw.three_bet_to_open_ratio);
   const threeBetSizePolicy = metadataLabel(raw.three_bet_size_policy);

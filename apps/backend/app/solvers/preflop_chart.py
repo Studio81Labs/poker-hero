@@ -121,6 +121,35 @@ THREE_BET_DEFENSE_POLICIES: dict[
     ("small_blind", "big_blind"): ThreeBetDefensePolicy(0.200, 0.070),
 }
 
+# Cold 3-bet responses are deliberately narrower than hero-open defense. The
+# explicit three-seat keys prevent a generic range from leaking into ambiguous
+# multiway action and keep each supported six-max action order auditable.
+COLD_THREE_BET_POLICY_NAME = "conservative_three_player"
+COLD_THREE_BET_DEFENSE_POLICIES: dict[
+    tuple[Position, Position, Position], ThreeBetDefensePolicy
+] = {
+    ("utg", "hijack", "cutoff"): ThreeBetDefensePolicy(0.045, 0.020),
+    ("utg", "hijack", "button"): ThreeBetDefensePolicy(0.045, 0.020),
+    ("utg", "hijack", "small_blind"): ThreeBetDefensePolicy(0.045, 0.020),
+    ("utg", "hijack", "big_blind"): ThreeBetDefensePolicy(0.050, 0.020),
+    ("utg", "cutoff", "button"): ThreeBetDefensePolicy(0.050, 0.020),
+    ("utg", "cutoff", "small_blind"): ThreeBetDefensePolicy(0.050, 0.022),
+    ("utg", "cutoff", "big_blind"): ThreeBetDefensePolicy(0.055, 0.022),
+    ("utg", "button", "small_blind"): ThreeBetDefensePolicy(0.055, 0.022),
+    ("utg", "button", "big_blind"): ThreeBetDefensePolicy(0.060, 0.025),
+    ("utg", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.060, 0.025),
+    ("hijack", "cutoff", "button"): ThreeBetDefensePolicy(0.055, 0.022),
+    ("hijack", "cutoff", "small_blind"): ThreeBetDefensePolicy(0.055, 0.025),
+    ("hijack", "cutoff", "big_blind"): ThreeBetDefensePolicy(0.060, 0.025),
+    ("hijack", "button", "small_blind"): ThreeBetDefensePolicy(0.060, 0.025),
+    ("hijack", "button", "big_blind"): ThreeBetDefensePolicy(0.065, 0.028),
+    ("hijack", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.065, 0.028),
+    ("cutoff", "button", "small_blind"): ThreeBetDefensePolicy(0.070, 0.030),
+    ("cutoff", "button", "big_blind"): ThreeBetDefensePolicy(0.075, 0.032),
+    ("cutoff", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.080, 0.035),
+    ("button", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.090, 0.040),
+}
+
 # The standard band preserves the 2.5 BB matchup chart. Adjacent bands make
 # modest, monotonic changes instead of pretending to solve a continuous tree.
 OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
@@ -225,7 +254,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             stack_policy=stack_policy,
         )
 
-    if context.scenario == "facing_three_bet":
+    if context.scenario in {"facing_three_bet", "facing_cold_three_bet"}:
         return _solve_facing_three_bet(
             request=request,
             context=context,
@@ -355,20 +384,32 @@ def _solve_facing_three_bet(
 ) -> RecommendationResult | None:
     state = request.state
     hero_position = context.hero_position
+    opener_position = context.opener_position
     three_bettor_position = context.latest_aggressor_position
     opener_size = context.opening_raise_size
     three_bet_size = context.latest_raise_size
     if (
-        three_bettor_position is None
+        opener_position is None
+        or three_bettor_position is None
         or opener_size is None
         or three_bet_size is None
         or state.hero_stack is None
         or state.effective_stack is None
     ):
         return None
-    base_policy = THREE_BET_DEFENSE_POLICIES.get(
-        (hero_position, three_bettor_position)
-    )
+    cold_three_bet = context.scenario == "facing_cold_three_bet"
+    if cold_three_bet:
+        base_policy = COLD_THREE_BET_DEFENSE_POLICIES.get(
+            (opener_position, three_bettor_position, hero_position)
+        )
+        hero_committed = POSTED_BLIND_BB[hero_position]
+        policy_source = "hero_opener_three_bettor_size_stack_matchup"
+    else:
+        base_policy = THREE_BET_DEFENSE_POLICIES.get(
+            (hero_position, three_bettor_position)
+        )
+        hero_committed = opener_size
+        policy_source = "hero_three_bettor_size_stack_matchup"
     if base_policy is None:
         return None
     size_policy = policy_for_three_bet_size(three_bet_size / opener_size)
@@ -380,7 +421,7 @@ def _solve_facing_three_bet(
         stack_policy,
     )
     maximum_four_bet_total = min(
-        state.hero_stack + opener_size,
+        state.hero_stack + hero_committed,
         state.effective_stack + three_bet_size,
     )
     four_bet_size = round(
@@ -410,6 +451,22 @@ def _solve_facing_three_bet(
         tier = "fold"
         boundary = defense_policy.continue_fraction
 
+    if cold_three_bet:
+        scenario = "facing_cold_three_bet"
+        action_assumptions = [
+            "The structured preflop history contains one opponent open and one opponent 3-bet before hero acts.",
+            "Exactly three players remain active and no caller is represented.",
+            f"The conservative cold 3-bet chart uses the {POSITION_LABELS[opener_position]}-"
+            f"{POSITION_LABELS[three_bettor_position]}-{POSITION_LABELS[hero_position]} seat order.",
+        ]
+    else:
+        scenario = "facing_three_bet"
+        action_assumptions = [
+            "The structured preflop history contains one hero open and one later-position 3-bet with no callers.",
+            f"The chart uses matchup-specific {POSITION_LABELS[hero_position]}-versus-"
+            f"{POSITION_LABELS[three_bettor_position]} 3-bet defense boundaries.",
+        ]
+
     return _result(
         action=action,
         sizing=sizing,
@@ -417,21 +474,20 @@ def _solve_facing_three_bet(
         hand_class=hand_class,
         top_fraction=top_fraction,
         position=hero_position,
-        scenario="facing_three_bet",
+        scenario=scenario,
         tier=tier,
         policy_fraction=boundary,
         assumptions=[
-            "The structured preflop history contains one hero open and one later-position 3-bet with no callers.",
+            *action_assumptions,
+            f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
             f"The 3-bet is attributed to {POSITION_LABELS[three_bettor_position]}.",
-            f"The chart uses matchup-specific {POSITION_LABELS[hero_position]}-versus-"
-            f"{POSITION_LABELS[three_bettor_position]} 3-bet defense boundaries.",
             f"The {three_bet_size:g} BB 3-bet is {three_bet_size / opener_size:.2f}x the open "
             f"and uses the {size_policy.name.replace('_', ' ')} size adjustment.",
             stack_assumption(state.effective_stack, stack_policy),
             "The chart models a six-max chip-EV training spot before rake.",
         ],
         effective_stack=state.effective_stack,
-        opener_position=hero_position,
+        opener_position=opener_position,
         opening_raise_size=opener_size,
         three_bettor_position=three_bettor_position,
         three_bet_size=three_bet_size,
@@ -439,6 +495,10 @@ def _solve_facing_three_bet(
         base_three_bet_defense_policy=base_policy,
         three_bet_defense_policy=defense_policy,
         three_bet_size_policy=size_policy,
+        three_bet_policy_source=policy_source,
+        cold_three_bet_policy=(
+            COLD_THREE_BET_POLICY_NAME if cold_three_bet else None
+        ),
         stack_policy=stack_policy,
     )
 
@@ -675,6 +735,8 @@ def _result(
     base_three_bet_defense_policy: ThreeBetDefensePolicy | None = None,
     three_bet_defense_policy: ThreeBetDefensePolicy | None = None,
     three_bet_size_policy: ThreeBetSizePolicy | None = None,
+    three_bet_policy_source: str | None = None,
+    cold_three_bet_policy: str | None = None,
     stack_policy: StackDepthPolicy | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
@@ -749,6 +811,8 @@ def _result(
             )
     if maximum_four_bet_total is not None:
         raw["maximum_four_bet_total"] = maximum_four_bet_total
+    if cold_three_bet_policy is not None:
+        raw["cold_three_bet_policy"] = cold_three_bet_policy
     if effective_stack is not None and stack_policy is not None:
         raw.update(
             {
@@ -802,7 +866,10 @@ def _result(
     ):
         raw.update(
             {
-                "policy_source": "hero_three_bettor_size_stack_matchup",
+                "policy_source": (
+                    three_bet_policy_source
+                    or "hero_three_bettor_size_stack_matchup"
+                ),
                 "base_continue_fraction": (
                     base_three_bet_defense_policy.continue_fraction
                 ),

@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, and supported hero-open/facing-3-bet matchup, sizing, and stack-depth boundaries, solves supported heads-up postflop trees with explicit relative position, maps canonical dealer labels to button/IP, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, supported hero-open/facing-3-bet matchups, and bounded opponent-open/opponent-3-bet seat policies, sizing, and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -264,7 +264,18 @@ hero has enough stack to call. Matchup-specific continue/four-bet boundaries
 must tighten monotonically across supported 3-bet-to-open ratio bands and apply
 the same explicit stack-depth policy. The output must expose both actors,
 totals, ratio band, adjusted boundaries, and maximum legal four-bet total.
-Limps, multiple callers, already-squeezed pots, cold 4-bets, more than two
+
+The same two-raise history may route one opponent open followed by one opponent
+3-bet before hero only when exactly three players remain active and the actors
+follow legal opener-3-bettor-hero seat order. The amount to call must equal the
+3-bet total minus hero's posted blind, while the pot must match blinds plus both
+opponent commitments. The chart must use explicit conservative continue and
+four-bet boundaries for every supported three-seat order, cap raises from
+hero's actual prior blind commitment, and identify the cold 3-bet policy in
+recommendation evidence. Extra active players or contradictory stack state
+must retain fallback behavior.
+
+Limps, multiple callers, unsupported squeeze histories, cold 4-bets, more than two
 actions, unsupported positions or sizes, and contradictory money state decline
 these routes.
 

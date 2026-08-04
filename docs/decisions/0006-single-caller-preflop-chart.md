@@ -38,5 +38,6 @@ fallback.
 - Squeeze sizing and response boundaries visibly account for the caller.
 - Recommendation benchmarks can distinguish supported single-caller routing
   from fallback cases with hidden players or broader histories.
-- Limped pots, multiple callers, cold 3-bets, cold 4-bets, and arbitrary preflop
-  trees still require a licensed solver or future bounded policies.
+- At adoption, cold 3-bets were still unsupported; ADR 0007 adds a separate
+  bounded policy. Limped pots, multiple callers, cold 4-bets, and arbitrary
+  preflop trees still require a licensed solver or future bounded policies.

@@ -279,6 +279,8 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
     commitments = {"oop": 0, "ip": 0}
     next_actor: Literal["oop", "ip"] = "oop"
     last_aggression: FacingAction | None = None
+    last_full_raise_increment = 0
+    short_raise: tuple[int, Literal["oop", "ip"], int] | None = None
     for index, item in enumerate(history, start=1):
         if item.actor != next_actor:
             return f"postflop action {index} must be by {next_actor.upper()}"
@@ -297,6 +299,7 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
             if amount <= 0:
                 return f"postflop action {index} bet amount must round to at least 0.01 BB"
             commitments[item.actor] = amount
+            last_full_raise_increment = amount
             last_aggression = "bet"
         else:
             if commitments[item.actor] >= commitments[opponent]:
@@ -308,6 +311,13 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
                 return f"postflop action {index} raise amount must round to at least 0.01 BB"
             if amount <= commitments[opponent]:
                 return f"postflop action {index} raise-to amount must exceed the previous wager"
+            raise_increment = amount - commitments[opponent]
+            if raise_increment < last_full_raise_increment:
+                if index != len(history):
+                    return f"postflop action {index} raise is below the minimum full-raise amount"
+                short_raise = (index, item.actor, amount)
+            else:
+                last_full_raise_increment = raise_increment
             commitments[item.actor] = amount
             last_aggression = "raise"
         next_actor = opponent
@@ -352,4 +362,13 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
             return "effective stack is outside the postflop solver's supported range"
         if max(commitments.values()) > starting_effective:
             return "postflop action history exceeds the reconstructed effective stack"
+        if short_raise is not None:
+            action_index, actor, amount = short_raise
+            visible_stack = hero_stack if actor == hero_actor else opponent_stack
+            actor_starting_stack = visible_stack + commitments[actor]
+            if amount != actor_starting_stack:
+                return (
+                    f"postflop action {action_index} raise is below the minimum full-raise "
+                    "amount and the actor is not all-in"
+                )
     return None

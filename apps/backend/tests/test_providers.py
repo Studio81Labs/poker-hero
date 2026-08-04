@@ -655,6 +655,82 @@ def test_postflop_solver_rejects_history_beyond_reconstructed_effective_stack(
         provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
 
+def test_postflop_solver_rejects_subminimum_non_all_in_raise(tmp_path: Path) -> None:
+    state = raised_postflop_state()
+    state.pot_size = 15.0
+    state.current_bet = 1.0
+    state.postflop_action_history[1].amount = 3.0
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="below the minimum full-raise amount"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_tracks_minimum_increment_across_reraises(tmp_path: Path) -> None:
+    state = raised_postflop_state()
+    state.pot_size = 27.0
+    state.current_bet = 3.0
+    state.hero_stack = 93.0
+    state.opponent_stack = 91.0
+    state.effective_stack = 91.0
+    state.hero_position = "IP"
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0),
+        PostflopAction(actor="ip", action="raise", amount=6.0),
+        PostflopAction(actor="oop", action="raise", amount=9.0),
+    ]
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="below the minimum full-raise amount"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_accepts_subminimum_all_in_raise(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, sys\n"
+        "json.loads(sys.stdin.read())\n"
+        "print(json.dumps({"
+        "'action': 'call', "
+        "'sizing': None, "
+        "'confidence': 0.8, "
+        "'explanation': 'Short all-in response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    state = raised_postflop_state()
+    state.pot_size = 15.0
+    state.current_bet = 1.0
+    state.opponent_stack = 0.0
+    state.effective_stack = 0.0
+    state.postflop_action_history[1].amount = 3.0
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_local_solver_rejects_unknown_engine(tmp_path: Path) -> None:
     provider = build_provider(
         Settings(

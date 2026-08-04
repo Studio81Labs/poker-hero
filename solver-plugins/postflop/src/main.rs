@@ -200,11 +200,17 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     if game.current_player() != hero_player {
         return Err("modeled action history did not reach the hero decision".to_string());
     }
+    let action_history = game.history().to_vec();
+    game.back_to_root();
 
     let max_iterations = env_integer("POKER_POSTFLOP_SOLVER_MAX_ITERATIONS", 400)?;
     let target_ratio = positive_env_number("POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY", 0.01)?;
     let target_exploitability = starting_pot as f32 * target_ratio as f32;
     let exploitability = solve(&mut game, max_iterations, target_exploitability, false);
+    game.apply_history(&action_history);
+    if game.current_player() != hero_player {
+        return Err("solved action history did not return to the hero decision".to_string());
+    }
 
     game.cache_normalized_weights();
     let actions = game.available_actions();
@@ -1014,8 +1020,16 @@ mod tests {
         game.allocate_memory(false);
 
         let modeled = move_to_hero_decision(&mut game, 0, 500, &history).unwrap();
+        let action_history = game.history().to_vec();
+        game.back_to_root();
+        solve(&mut game, 1, 0.0, false);
+        game.apply_history(&action_history);
+        game.cache_normalized_weights();
+        let expected_values = game.expected_values_detail(0);
 
         assert_eq!(game.current_player(), 0);
+        assert_eq!(game.history(), action_history);
+        assert!(!expected_values.is_empty());
         assert_eq!(modeled, ["OOP bet 2.00 BB", "IP raise to 7.00 BB"]);
     }
 

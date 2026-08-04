@@ -137,13 +137,17 @@ class Settings(BaseSettings):
             raise ValueError("proxy_shared_secret must contain at least 32 characters")
         return value
 
-    @field_validator("sentry_release")
+    @field_validator("sentry_release", mode="before")
     @classmethod
-    def validate_sentry_release(cls, value: str | None) -> str | None:
+    def validate_sentry_release(cls, value: object) -> object:
         if value is None:
             return None
+        if not isinstance(value, str):
+            return value
         normalized = value.strip()
-        if not normalized or not normalized.isascii() or any(
+        if not normalized:
+            return None
+        if not normalized.isascii() or any(
             character.isspace() or ord(character) < 32 or ord(character) == 127
             for character in normalized
         ):

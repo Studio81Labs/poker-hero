@@ -129,8 +129,12 @@ def build_parser_dataset_archive_from_cases(
                 exclude={"user_approved"},
                 exclude_none=True,
             )
-            if not expected_state["postflop_action_history"]:
-                del expected_state["postflop_action_history"]
+            for history_field in (
+                "preflop_action_history",
+                "postflop_action_history",
+            ):
+                if not expected_state[history_field]:
+                    del expected_state[history_field]
             cases.append(
                 {
                     "job_id": case.job_id,

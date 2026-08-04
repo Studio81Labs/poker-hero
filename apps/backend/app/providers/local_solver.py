@@ -17,7 +17,10 @@ from app.models import (
     RecommendationResult,
 )
 from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
-from app.solvers.preflop_context import supports_preflop_chart
+from app.solvers.preflop_context import (
+    requires_hero_stack_for_preflop_chart,
+    supports_preflop_chart,
+)
 
 
 class _LocalSolverResponseError(ProviderError):
@@ -33,6 +36,15 @@ class LocalSolverProvider:
 
     def required_fields_for(self, state: CanonicalState) -> list[str]:
         required_fields = list(self.required_fields)
+        uses_builtin_chart_routing = (
+            not (self.settings.local_solver_command or "").strip()
+            and self.settings.local_solver_engine.strip().lower() == "postflop_solver"
+        )
+        if (
+            uses_builtin_chart_routing
+            and requires_hero_stack_for_preflop_chart(state)
+        ):
+            required_fields.append("hero_stack")
         if not self._requires_postflop_solver_inputs(state):
             return required_fields
 

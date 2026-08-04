@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with opener-to-hero, opening-size, and stack-depth-aware boundaries, solves supported heads-up postflop trees with explicit relative position, maps canonical dealer labels to button/IP, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense and supported hero-open/facing-3-bet matchup, sizing, and stack-depth boundaries, solves supported heads-up postflop trees with explicit relative position, maps canonical dealer labels to button/IP, and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -216,6 +216,8 @@ Canonical state should include, where available:
 - Number of players/seats.
 - Hero position when detectable.
 - Preflop opener position and total opening size when facing a raise.
+- Ordered preflop actions, with canonical seat, action type, and total BB
+  committed for each call or raise.
 - Street: preflop, flop, turn, or river.
 - Whether the current facing action is a bet or raise.
 - Ordered current-street postflop actions, with OOP/IP actor, action type, and
@@ -243,6 +245,18 @@ Contradictory or unsupported amounts, hidden callers, later aggression, or
 implausible pot composition must decline the chart rather than inventing action
 history.
 
+Structured preflop history takes precedence over free text and may additionally
+route exactly one hero open followed by one later-position 3-bet. The chart must
+validate that both actions are raises in legal seat order, the second action is
+at least a full raise, the current call amount equals the difference between
+the two total commitments, the pot matches blinds plus those commitments, and
+hero has enough stack to call. Matchup-specific continue/four-bet boundaries
+must tighten monotonically across supported 3-bet-to-open ratio bands and apply
+the same explicit stack-depth policy. The output must expose both actors,
+totals, ratio band, adjusted boundaries, and maximum legal four-bet total.
+Limps, callers, squeezes, cold 4-bets, more than two actions, unsupported
+positions or sizes, and contradictory money state decline this route.
+
 Effective stack selects an explicit preflop policy band: short at 20 BB or less,
 medium through 50 BB, standard through 150 BB, and deep above 150 BB. Shorter
 bands trim speculative first-in and calling ranges, use smaller first-in sizing,
@@ -259,8 +273,10 @@ frequencies.
    Confidence values must be finite numbers between zero and one; boolean or
    string values are malformed and cannot satisfy automation thresholds.
    Detected pot, bet, and stack values must be finite non-negative JSON numbers,
-   preflop open size must be a finite positive JSON number, and player count
-   must be a positive JSON integer. Boolean and string coercion is invalid.
+   preflop open size and every preflop action total must be finite positive JSON
+   numbers, and player count must be a positive JSON integer. Preflop action
+   seats and action types must use their canonical enums. Boolean and string
+   coercion is invalid.
 5. The UI displays the selected screenshot beside editable detected fields.
 6. The user corrects and approves the state, or automation approves it when all
    configured requirements pass. Corrected numeric fields follow the same
@@ -855,8 +871,8 @@ Poker Hero is successful when:
 - A user can prioritize saved lessons by available EV loss without hiding
   ungraded lessons or changing the active street/text selection.
 - Solver-backed recommendations expose available decision evidence, including
-  preflop chart policy context and postflop tree/range assumptions, and disclose
-  when a configured engine used a fallback.
+  preflop chart policy context, structured open/3-bet evidence, and postflop
+  tree/range assumptions, and disclose when a configured engine used a fallback.
 - Parser/provider failures are visible and retryable.
 - Completed work remains reviewable before being cleared into history.
 - Unarchived processing work survives a browser reload without mixing untouched

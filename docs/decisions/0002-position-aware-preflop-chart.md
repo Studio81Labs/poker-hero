@@ -60,3 +60,6 @@ contract.
 ADR 0003 later adds structured opener position and opening size to the canonical
 state while preserving this chart's conservative text fallback. Those structured
 fields also make matchup-specific defense deterministic after manual review.
+ADR 0005 later adds ordered preflop action history and a conservative
+hero-open/facing-3-bet extension without changing the chart's training-only
+status.

@@ -17,7 +17,7 @@ from app.dataset_export import (
     ParserDatasetArchiveCase,
     build_parser_dataset_archive_from_cases,
 )
-from app.models import CanonicalState, Card, PostflopAction
+from app.models import CanonicalState, Card, PostflopAction, PreflopAction
 
 
 VALID_PNG = base64.b64decode(
@@ -118,6 +118,51 @@ def test_dataset_archive_preserves_structured_postflop_history() -> None:
     ]
 
 
+def test_dataset_archive_preserves_structured_preflop_history() -> None:
+    expected_state = expected_mock_state(
+        board_cards=[],
+        pot_size=12,
+        current_bet=5.5,
+        hero_stack=97.5,
+        effective_stack=92,
+        players_in_hand=6,
+        hero_position="cutoff",
+        preflop_opener_position="cutoff",
+        preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+    )
+
+    archive = build_parser_dataset_archive_from_cases(
+        [
+            ParserDatasetArchiveCase(
+                job_id="a" * 32,
+                original_filename="three-bet.png",
+                image_suffix=".png",
+                image_source=VALID_PNG,
+                expected_state=expected_state,
+            )
+        ],
+        parser_provider="ocr_cv",
+        layout_profile="fortuna_nations",
+        max_archive_bytes=1024 * 1024,
+    )
+    try:
+        with ZipFile(BytesIO(archive.read())) as dataset:
+            manifest = json.loads(dataset.read("manifest.json"))
+    finally:
+        archive.close()
+
+    assert manifest["cases"][0]["expected_state"]["preflop_action_history"] == [
+        {"actor": "cutoff", "action": "raise", "amount": 2.5},
+        {"actor": "button", "action": "raise", "amount": 8.0},
+    ]
+
+
 def test_benchmark_scores_structured_postflop_fields(tmp_path: Path) -> None:
     expected_state = expected_mock_state(
         opponent_stack=93,
@@ -140,6 +185,28 @@ def test_benchmark_scores_structured_postflop_fields(tmp_path: Path) -> None:
     assert metrics["opponent_stack"].correct == 0
     assert metrics["postflop_action_history"].total == 1
     assert metrics["postflop_action_history"].correct == 0
+
+
+def test_benchmark_scores_structured_preflop_history(tmp_path: Path) -> None:
+    expected_state = expected_mock_state(
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ]
+    )
+    dataset_path = write_dataset_archive(
+        tmp_path / "preflop-history-dataset.zip",
+        expected_state,
+    )
+
+    report = benchmark_dataset_archive(
+        dataset_path,
+        Settings(data_dir=tmp_path / "unused", parser_provider="mock"),
+    )
+
+    metrics = {metric.field: metric for metric in report.field_metrics}
+    assert metrics["preflop_action_history"].total == 1
+    assert metrics["preflop_action_history"].correct == 0
 
 
 def test_benchmark_dataset_archive_scores_without_mutating_configured_data(

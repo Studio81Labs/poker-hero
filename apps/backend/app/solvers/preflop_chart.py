@@ -7,11 +7,10 @@ from app.models import Card, RecommendationAction, RecommendationRequest, Recomm
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
     POSTED_BLIND_BB,
+    PreflopChartContext,
     Position,
     normalize_position,
-    opening_raise_position,
-    resolve_opening_raise_size,
-    supports_preflop_chart,
+    resolve_preflop_chart_context,
 )
 
 RANKS = tuple("AKQJT98765432")
@@ -30,11 +29,25 @@ class DefensePolicy:
 
 
 @dataclass(frozen=True)
+class ThreeBetDefensePolicy:
+    continue_fraction: float
+    four_bet_fraction: float
+
+
+@dataclass(frozen=True)
 class OpenSizePolicy:
     name: str
     maximum_size: float
     continue_multiplier: float
     reraise_multiplier: float
+
+
+@dataclass(frozen=True)
+class ThreeBetSizePolicy:
+    name: str
+    maximum_ratio: float
+    continue_multiplier: float
+    four_bet_multiplier: float
 
 
 @dataclass(frozen=True)
@@ -77,6 +90,29 @@ DEFENSE_POLICIES: dict[tuple[Position, Position], DefensePolicy] = {
     ("small_blind", "big_blind"): DefensePolicy(0.48, 0.13),
 }
 
+# Hero-open responses to one later-position 3-bet. Fractions are shares of all
+# starting hands, not shares of the opening range, which keeps them comparable
+# with the chart's existing 169-class ranking.
+THREE_BET_DEFENSE_POLICIES: dict[
+    tuple[Position, Position], ThreeBetDefensePolicy
+] = {
+    ("utg", "hijack"): ThreeBetDefensePolicy(0.075, 0.025),
+    ("utg", "cutoff"): ThreeBetDefensePolicy(0.080, 0.030),
+    ("utg", "button"): ThreeBetDefensePolicy(0.085, 0.030),
+    ("utg", "small_blind"): ThreeBetDefensePolicy(0.090, 0.035),
+    ("utg", "big_blind"): ThreeBetDefensePolicy(0.095, 0.035),
+    ("hijack", "cutoff"): ThreeBetDefensePolicy(0.090, 0.035),
+    ("hijack", "button"): ThreeBetDefensePolicy(0.100, 0.040),
+    ("hijack", "small_blind"): ThreeBetDefensePolicy(0.105, 0.040),
+    ("hijack", "big_blind"): ThreeBetDefensePolicy(0.110, 0.045),
+    ("cutoff", "button"): ThreeBetDefensePolicy(0.120, 0.045),
+    ("cutoff", "small_blind"): ThreeBetDefensePolicy(0.130, 0.050),
+    ("cutoff", "big_blind"): ThreeBetDefensePolicy(0.135, 0.050),
+    ("button", "small_blind"): ThreeBetDefensePolicy(0.160, 0.060),
+    ("button", "big_blind"): ThreeBetDefensePolicy(0.180, 0.065),
+    ("small_blind", "big_blind"): ThreeBetDefensePolicy(0.200, 0.070),
+}
+
 # The standard band preserves the 2.5 BB matchup chart. Adjacent bands make
 # modest, monotonic changes instead of pretending to solve a continuous tree.
 OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
@@ -84,6 +120,13 @@ OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
     OpenSizePolicy("standard", 2.75, 1.00, 1.00),
     OpenSizePolicy("large", 3.25, 0.90, 0.95),
     OpenSizePolicy("very_large", 4.00, 0.78, 0.90),
+)
+
+THREE_BET_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
+    ThreeBetSizePolicy("small", 2.75, 1.05, 1.05),
+    ThreeBetSizePolicy("standard", 3.50, 1.00, 1.00),
+    ThreeBetSizePolicy("large", 4.25, 0.90, 0.95),
+    ThreeBetSizePolicy("very_large", 5.00, 0.80, 0.90),
 )
 
 # Stack bands keep the chart explicit and deterministic. Shorter stacks trim
@@ -107,26 +150,24 @@ POSITION_LABELS: dict[Position, str] = {
 
 def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult | None:
     state = request.state
-    if not supports_preflop_chart(request):
+    context = resolve_preflop_chart_context(request)
+    if context is None:
         return None
 
-    position = normalize_position(state.hero_position)
-    if position is None:
-        return None
+    position = context.hero_position
 
     hand_class = canonical_hand_class(state.hero_cards)
     top_fraction = hand_top_fraction(state.hero_cards)
     policy = POSITION_POLICIES[position]
-    current_bet = state.current_bet or 0
     effective_stack = state.effective_stack or 0
     stack_policy = policy_for_stack_depth(effective_stack)
     if stack_policy is None:
         return None
 
-    if current_bet <= 0:
+    if context.scenario in {"first_in", "big_blind_option"}:
         if (state.pot_size or 0) > 2.5:
             return None
-        if position == "big_blind":
+        if context.scenario == "big_blind_option":
             return _result(
                 action="check",
                 sizing=None,
@@ -169,14 +210,18 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             stack_policy=stack_policy,
         )
 
-    if state.facing_action != "raise":
-        return None
+    if context.scenario == "facing_three_bet":
+        return _solve_facing_three_bet(
+            request=request,
+            context=context,
+            hand_class=hand_class,
+            top_fraction=top_fraction,
+            stack_policy=stack_policy,
+        )
 
-    opener_position = opening_raise_position(
-        state.action_context,
-        state.preflop_opener_position,
-    )
-    if opener_position is None:
+    opener_position = context.opener_position
+    opener_size = context.opening_raise_size
+    if opener_position is None or opener_size is None:
         return None
     base_defense_policy = DEFENSE_POLICIES.get((opener_position, position))
     if base_defense_policy is None:
@@ -185,12 +230,6 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     opener_open_fraction = adjusted_open_fraction(
         POSITION_POLICIES[opener_position],
         stack_policy,
-    )
-    opener_size = resolve_opening_raise_size(
-        action_context=state.action_context,
-        explicit_size=state.preflop_open_size,
-        amount_to_call=current_bet,
-        hero_position=position,
     )
     size_policy = policy_for_open_size(opener_size)
     if size_policy is None:
@@ -243,7 +282,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         tier=tier,
         policy_fraction=boundary,
         assumptions=[
-            "The approved action context is treated as one open raise with no callers or prior hero action.",
+            "The approved state represents one open raise with no callers or prior hero action.",
             f"The opening raise is attributed to {POSITION_LABELS[opener_position]}.",
             f"The defense chart uses matchup-specific {POSITION_LABELS[position]}-versus-"
             f"{POSITION_LABELS[opener_position]} boundaries.",
@@ -264,6 +303,104 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
         size_policy=size_policy,
+        stack_policy=stack_policy,
+    )
+
+
+def _solve_facing_three_bet(
+    *,
+    request: RecommendationRequest,
+    context: PreflopChartContext,
+    hand_class: str,
+    top_fraction: float,
+    stack_policy: StackDepthPolicy,
+) -> RecommendationResult | None:
+    state = request.state
+    hero_position = context.hero_position
+    three_bettor_position = context.latest_aggressor_position
+    opener_size = context.opening_raise_size
+    three_bet_size = context.latest_raise_size
+    if (
+        three_bettor_position is None
+        or opener_size is None
+        or three_bet_size is None
+        or state.hero_stack is None
+        or state.effective_stack is None
+    ):
+        return None
+    base_policy = THREE_BET_DEFENSE_POLICIES.get(
+        (hero_position, three_bettor_position)
+    )
+    if base_policy is None:
+        return None
+    size_policy = policy_for_three_bet_size(three_bet_size / opener_size)
+    if size_policy is None:
+        return None
+    defense_policy = adjusted_three_bet_defense_policy(
+        base_policy,
+        size_policy,
+        stack_policy,
+    )
+    maximum_four_bet_total = min(
+        state.hero_stack + opener_size,
+        state.effective_stack + three_bet_size,
+    )
+    four_bet_size = round(
+        min(
+            max(three_bet_size * 2.2, (state.pot_size or 0) * 0.9),
+            maximum_four_bet_total,
+        ),
+        2,
+    )
+    can_four_bet = (
+        four_bet_size > three_bet_size
+        and top_fraction <= defense_policy.four_bet_fraction
+    )
+    if can_four_bet:
+        action: RecommendationAction = "raise"
+        sizing = four_bet_size
+        tier = "four_bet"
+        boundary = defense_policy.four_bet_fraction
+    elif top_fraction <= defense_policy.continue_fraction:
+        action = "call"
+        sizing = None
+        tier = "continue"
+        boundary = defense_policy.continue_fraction
+    else:
+        action = "fold"
+        sizing = None
+        tier = "fold"
+        boundary = defense_policy.continue_fraction
+
+    return _result(
+        action=action,
+        sizing=sizing,
+        confidence=_boundary_confidence(top_fraction, boundary),
+        hand_class=hand_class,
+        top_fraction=top_fraction,
+        position=hero_position,
+        scenario="facing_three_bet",
+        tier=tier,
+        policy_fraction=boundary,
+        assumptions=[
+            "The structured preflop history contains one hero open and one later-position 3-bet with no callers.",
+            f"The 3-bet is attributed to {POSITION_LABELS[three_bettor_position]}.",
+            f"The chart uses matchup-specific {POSITION_LABELS[hero_position]}-versus-"
+            f"{POSITION_LABELS[three_bettor_position]} 3-bet defense boundaries.",
+            f"The {three_bet_size:g} BB 3-bet is {three_bet_size / opener_size:.2f}x the open "
+            f"and uses the {size_policy.name.replace('_', ' ')} size adjustment.",
+            stack_assumption(state.effective_stack, stack_policy),
+            "The chart models a six-max chip-EV training spot before rake.",
+        ],
+        effective_stack=state.effective_stack,
+        opener_position=hero_position,
+        opening_raise_size=opener_size,
+        three_bettor_position=three_bettor_position,
+        three_bet_size=three_bet_size,
+        maximum_four_bet_total=maximum_four_bet_total,
+        base_three_bet_defense_policy=base_policy,
+        three_bet_defense_policy=defense_policy,
+        three_bet_size_policy=size_policy,
         stack_policy=stack_policy,
     )
 
@@ -362,6 +499,19 @@ def policy_for_stack_depth(effective_stack: float) -> StackDepthPolicy | None:
     )
 
 
+def policy_for_three_bet_size(
+    three_bet_to_open_ratio: float,
+) -> ThreeBetSizePolicy | None:
+    return next(
+        (
+            policy
+            for policy in THREE_BET_SIZE_POLICIES
+            if three_bet_to_open_ratio <= policy.maximum_ratio
+        ),
+        None,
+    )
+
+
 def adjusted_open_fraction(
     position_policy: PositionPolicy,
     stack_policy: StackDepthPolicy,
@@ -399,6 +549,33 @@ def adjusted_defense_policy(
     )
 
 
+def adjusted_three_bet_defense_policy(
+    base_policy: ThreeBetDefensePolicy,
+    size_policy: ThreeBetSizePolicy,
+    stack_policy: StackDepthPolicy,
+) -> ThreeBetDefensePolicy:
+    return ThreeBetDefensePolicy(
+        continue_fraction=round(
+            min(
+                1.0,
+                base_policy.continue_fraction
+                * size_policy.continue_multiplier
+                * stack_policy.continue_multiplier,
+            ),
+            4,
+        ),
+        four_bet_fraction=round(
+            min(
+                1.0,
+                base_policy.four_bet_fraction
+                * size_policy.four_bet_multiplier
+                * stack_policy.reraise_multiplier,
+            ),
+            4,
+        ),
+    )
+
+
 def stack_assumption(
     effective_stack: float,
     stack_policy: StackDepthPolicy,
@@ -428,9 +605,15 @@ def _result(
     opener_open_fraction: float | None = None,
     opening_raise_size: float | None = None,
     maximum_reraise_total: float | None = None,
+    three_bettor_position: Position | None = None,
+    three_bet_size: float | None = None,
+    maximum_four_bet_total: float | None = None,
     base_defense_policy: DefensePolicy | None = None,
     defense_policy: DefensePolicy | None = None,
     size_policy: OpenSizePolicy | None = None,
+    base_three_bet_defense_policy: ThreeBetDefensePolicy | None = None,
+    three_bet_defense_policy: ThreeBetDefensePolicy | None = None,
+    three_bet_size_policy: ThreeBetSizePolicy | None = None,
     stack_policy: StackDepthPolicy | None = None,
 ) -> RecommendationResult:
     position_label = POSITION_LABELS[position]
@@ -472,6 +655,17 @@ def _result(
         raw["opening_raise_size"] = opening_raise_size
     if maximum_reraise_total is not None:
         raw["maximum_reraise_total"] = maximum_reraise_total
+    if three_bettor_position is not None:
+        raw["three_bettor_position"] = three_bettor_position
+    if three_bet_size is not None:
+        raw["three_bet_size"] = three_bet_size
+        if opening_raise_size is not None:
+            raw["three_bet_to_open_ratio"] = round(
+                three_bet_size / opening_raise_size,
+                4,
+            )
+    if maximum_four_bet_total is not None:
+        raw["maximum_four_bet_total"] = maximum_four_bet_total
     if effective_stack is not None and stack_policy is not None:
         raw.update(
             {
@@ -512,6 +706,33 @@ def _result(
                 "open_size_policy": size_policy.name,
                 "continue_size_multiplier": size_policy.continue_multiplier,
                 "reraise_size_multiplier": size_policy.reraise_multiplier,
+            }
+        )
+    if (
+        three_bettor_position is not None
+        and base_three_bet_defense_policy is not None
+        and three_bet_defense_policy is not None
+        and three_bet_size_policy is not None
+        and stack_policy is not None
+    ):
+        raw.update(
+            {
+                "policy_source": "hero_three_bettor_size_stack_matchup",
+                "base_continue_fraction": (
+                    base_three_bet_defense_policy.continue_fraction
+                ),
+                "base_four_bet_fraction": (
+                    base_three_bet_defense_policy.four_bet_fraction
+                ),
+                "continue_fraction": three_bet_defense_policy.continue_fraction,
+                "four_bet_fraction": three_bet_defense_policy.four_bet_fraction,
+                "three_bet_size_policy": three_bet_size_policy.name,
+                "continue_size_multiplier": (
+                    three_bet_size_policy.continue_multiplier
+                ),
+                "four_bet_size_multiplier": (
+                    three_bet_size_policy.four_bet_multiplier
+                ),
             }
         )
 

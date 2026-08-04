@@ -11,6 +11,7 @@ from app.models import (
     CanonicalState,
     DetectedState,
     ParserResult,
+    PreflopAction,
     PostflopAction,
     RecommendationAction,
     RecommendationResult,
@@ -86,6 +87,12 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.external_provider_bearer_token is None
     assert settings.llm_advice_bearer_token is None
     assert settings.external_request_timeout_seconds == 60
+
+
+def test_settings_normalize_blank_optional_sentry_release(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, sentry_release="  ")
+
+    assert settings.sentry_release is None
 
 
 @pytest.mark.parametrize(
@@ -340,6 +347,32 @@ def test_postflop_action_rejects_inconsistent_amount(values: dict[str, object]) 
         PostflopAction.model_validate(values)
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"actor": "dealer", "action": "raise", "amount": 2.5},
+        {"actor": "button", "action": "check", "amount": 2.5},
+        {"actor": "button", "action": "raise", "amount": 0},
+        {"actor": "button", "action": "call", "amount": None},
+    ],
+)
+def test_preflop_action_rejects_invalid_fields(values: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        PreflopAction.model_validate(values)
+
+
+def test_preflop_action_accepts_canonical_raise_and_call_totals() -> None:
+    actions = [
+        PreflopAction(actor="cutoff", action="raise", amount=2.5),
+        PreflopAction(actor="button", action="call", amount=2.5),
+    ]
+
+    assert [action.model_dump(mode="json") for action in actions] == [
+        {"actor": "cutoff", "action": "raise", "amount": 2.5},
+        {"actor": "button", "action": "call", "amount": 2.5},
+    ]
+
+
 @pytest.mark.parametrize("action", ["fold", "check", "call"])
 def test_recommendation_rejects_sizing_for_non_wager_action(
     action: RecommendationAction,
@@ -536,6 +569,9 @@ def test_canonical_state_copies_detected_values() -> None:
         hero_position="button",
         preflop_opener_position="cutoff",
         preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5)
+        ],
         street="flop",
         facing_action="bet",
         postflop_action_history=[
@@ -559,6 +595,7 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.opponent_stack == 96.0
     assert canonical.facing_action == "bet"
     assert canonical.postflop_action_history == detected.postflop_action_history
+    assert canonical.preflop_action_history == detected.preflop_action_history
     assert canonical.preflop_opener_position == "cutoff"
     assert canonical.preflop_open_size == 2.5
     assert canonical.user_approved is False

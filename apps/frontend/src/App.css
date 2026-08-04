@@ -1156,27 +1156,27 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.postflop-history-field {
+.action-history-field {
   background: var(--surface);
   grid-column: 1 / -1;
   min-width: 0;
   padding: 8px 9px;
 }
 
-.postflop-history-header {
+.action-history-header {
   align-items: center;
   display: flex;
   gap: 8px;
   justify-content: space-between;
 }
 
-.postflop-history-header strong {
+.action-history-header strong {
   color: #605d5d;
   font-size: 10.5px;
   font-weight: 600;
 }
 
-.postflop-history-add {
+.action-history-add {
   align-items: center;
   display: inline-flex;
   font-size: 9px;
@@ -1185,19 +1185,19 @@ button:disabled {
   padding: 3px 7px;
 }
 
-.postflop-history-list {
+.action-history-list {
   display: grid;
   gap: 5px;
   margin-top: 7px;
 }
 
-.postflop-history-row {
+.action-history-row {
   display: grid;
   gap: 5px;
   grid-template-columns: 20px minmax(54px, 0.7fr) minmax(74px, 1fr) minmax(55px, 0.75fr) 28px;
 }
 
-.postflop-history-row > span {
+.action-history-row > span {
   align-items: center;
   color: var(--muted);
   display: flex;
@@ -1206,8 +1206,8 @@ button:disabled {
   justify-content: center;
 }
 
-.postflop-history-row input,
-.postflop-history-row select {
+.action-history-row input,
+.action-history-row select {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 0;
@@ -1219,7 +1219,7 @@ button:disabled {
   width: 100%;
 }
 
-.postflop-history-row button {
+.action-history-row button {
   align-items: center;
   display: inline-flex;
   height: 28px;
@@ -1228,7 +1228,7 @@ button:disabled {
   width: 28px;
 }
 
-.postflop-history-field > p {
+.action-history-field > p {
   color: var(--muted);
   font-size: 10px;
   margin: 7px 0 0;

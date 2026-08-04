@@ -10906,7 +10906,10 @@ describe("App", () => {
       correct_fields: 9,
       evaluated_fields: 10,
       accuracy: 0.9,
-      field_metrics: [{ field: "pot_size", correct: 0, total: 1, accuracy: 0 }],
+      field_metrics: [
+        { field: "pot_size", correct: 0, total: 1, accuracy: 0 },
+        { field: "postflop_action_history", correct: 0, total: 1, accuracy: 0 },
+      ],
       cases: [
         {
           job_id: benchmarkJobId,
@@ -10924,6 +10927,19 @@ describe("App", () => {
               detected: 10,
               matched: false,
               confidence: 0.73,
+            },
+            {
+              field: "postflop_action_history",
+              expected: [
+                { actor: "oop", action: "bet", amount: 2 },
+                { actor: "ip", action: "raise", amount: 7 },
+              ],
+              detected: [
+                { actor: "oop", action: "bet", amount: 2 },
+                { actor: "ip", action: "raise", amount: 6 },
+              ],
+              matched: false,
+              confidence: null,
             },
           ],
         },
@@ -10947,10 +10963,18 @@ describe("App", () => {
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     await user.click(within(dialog).getByRole("button", { name: "Toggle mismatch.png benchmark details" }));
 
-    const details = within(dialog).getByText("Expected").closest(".benchmark-case-details");
+    const details = within(dialog).getAllByText("Expected")[0].closest(
+      ".benchmark-case-details",
+    );
     expect(details).not.toBeNull();
     expect(within(details as HTMLElement).getByText("12.5")).toBeInTheDocument();
     expect(within(details as HTMLElement).getByText("10")).toBeInTheDocument();
+    expect(within(details as HTMLElement).getByText(
+      "OOP bet 2 BB; IP raise to 7 BB",
+    )).toBeInTheDocument();
+    expect(within(details as HTMLElement).getByText(
+      "OOP bet 2 BB; IP raise to 6 BB",
+    )).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Review hand" }));
     expect(groundTruthSwitch).toBeDisabled();

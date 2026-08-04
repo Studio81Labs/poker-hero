@@ -499,7 +499,9 @@ user.
   connecting IP only after Worker-secret authentication, then falls back to a
   shared proxy or direct-client identity.
   Limits are configurable independently for uploads, recommendations,
-  benchmarks, and archive transfers.
+  benchmarks, and archive transfers. The API client preserves server
+  `Retry-After` metadata, and interrupted benchmark-import recovery suppresses
+  receipt requests until that backoff expires.
   Buckets are process-local for the single-container testing topology; a future
   multi-replica deployment must enforce the same policy at the edge or in a
   shared limiter.

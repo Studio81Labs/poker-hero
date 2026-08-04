@@ -10659,6 +10659,71 @@ describe("App", () => {
     )).toBeNull();
   });
 
+  it("honors Retry-After while recovering a benchmark import", async () => {
+    vi.useFakeTimers();
+    const importRequestId = "rate-limited-import-recovery";
+    const pendingImportLease = {
+      kind: "projection",
+      ownerId: "previous-page",
+      baselineJobIds: [],
+      expectedRemovalJobIds: [],
+      benchmarkImportRequestId: importRequestId,
+      benchmarkImportReceiptObserved: true,
+      expectedUploads: [],
+      expiresAt: Date.now() + 120_000,
+    };
+    window.sessionStorage.setItem(
+      "poker-training-processing-mutation-v1",
+      JSON.stringify(pendingImportLease),
+    );
+    window.sessionStorage.setItem(
+      "poker-training-history-mutation-v1",
+      JSON.stringify(pendingImportLease),
+    );
+    let recoveryAttempts = 0;
+    fetchMock().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (
+        url
+        === `http://localhost:8000/api/benchmarks/imports/${importRequestId}`
+      ) {
+        recoveryAttempts += 1;
+        return Promise.resolve(new Response(
+          JSON.stringify({ detail: "Rate limit exceeded for data transfers" }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": "60",
+            },
+          },
+        ));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const view = render(<App />);
+
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      expect(recoveryAttempts).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(59_999);
+      });
+      expect(recoveryAttempts).toBe(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2);
+      });
+      expect(recoveryAttempts).toBe(2);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("expires unobserved dataset import leases after recovery request failures", async () => {
     const importRequestId = "expired-unobserved-import";
     const expiredLease = {

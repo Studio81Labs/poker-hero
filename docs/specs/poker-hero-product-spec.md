@@ -542,7 +542,9 @@ a shared proxy identity is the fallback. Direct development requests use the
 direct client identity. Limiter storage must remain bounded, interrupted import
 recovery must consume the archive-transfer budget before scheduling work,
 limits must be configurable without code changes, and a rejected request must
-return HTTP 429 with `Retry-After` metadata.
+return HTTP 429 with `Retry-After` metadata. Benchmark-import recovery must
+retain that metadata at the API boundary and suspend receipt polling until the
+server-provided delay has elapsed.
 
 ## Review And Auto-Approve
 

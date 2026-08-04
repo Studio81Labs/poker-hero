@@ -36,6 +36,8 @@ from app.solvers.preflop_context import (
     MAX_SINGLE_OPEN_SIZE_BB,
     MIN_SINGLE_OPEN_SIZE_BB,
     POSITION_ACTION_ORDER,
+    requires_hero_stack_for_preflop_chart,
+    supports_preflop_chart,
 )
 
 
@@ -1244,11 +1246,20 @@ def test_declines_non_full_three_bet_in_four_bet_history() -> None:
 
 
 def test_declines_four_bet_larger_than_supported_size_band() -> None:
-    result = solve_preflop_chart(
-        structured_four_bet_request(("Ah", "Ad"), four_bet_size=29)
+    request = structured_four_bet_request(("Ah", "Ad"), four_bet_size=29)
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
+
+
+def test_oversized_four_bet_does_not_require_chart_specific_hero_stack() -> None:
+    request = structured_four_bet_request(
+        ("Ah", "Ad"),
+        four_bet_size=29,
+        hero_stack=None,
     )
 
-    assert result is None
+    assert not requires_hero_stack_for_preflop_chart(request.state)
 
 
 def test_four_bet_history_reconstructs_blind_commitments() -> None:

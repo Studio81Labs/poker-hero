@@ -412,6 +412,32 @@ def test_local_solver_does_not_require_hero_stack_for_hidden_four_bet_player(
     assert "hero_stack" not in provider.required_fields_for(state)
 
 
+def test_local_solver_does_not_require_hero_stack_for_oversized_four_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=38.5,
+        current_bet=21,
+        effective_stack=71,
+        players_in_hand=2,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="cutoff", action="raise", amount=29),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" not in provider.required_fields_for(state)
+
+
 def test_local_solver_does_not_require_hero_stack_for_unsupported_history(
     tmp_path: Path,
 ) -> None:

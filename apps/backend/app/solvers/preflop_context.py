@@ -90,6 +90,7 @@ MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MIN_SINGLE_OPEN_SIZE_BB = 2.0
 MAX_SINGLE_OPEN_SIZE_BB = 4.0
+MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO = 3.5
 MONEY_TOLERANCE_BB = 0.05
 
 PreflopChartScenario = Literal[
@@ -336,6 +337,10 @@ def _structured_preflop_context(
             or four_bet.action != "raise"
             or four_bet.actor != opener_position
             or four_bet.amount + MONEY_TOLERANCE_BB < minimum_four_bet
+            or four_bet.amount > (
+                three_bet.amount * MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO
+                + MONEY_TOLERANCE_BB
+            )
             or not _amount_to_call_matches(
                 state.current_bet,
                 four_bet.amount - three_bet.amount,

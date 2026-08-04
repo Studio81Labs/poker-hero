@@ -6,6 +6,7 @@ from functools import lru_cache
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
+    MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
     POSTED_BLIND_BB,
     PreflopChartContext,
     Position,
@@ -214,7 +215,12 @@ FOUR_BET_SIZE_POLICIES: tuple[FourBetSizePolicy, ...] = (
     FourBetSizePolicy("small", 2.10, 1.05, 1.05),
     FourBetSizePolicy("standard", 2.50, 1.00, 1.00),
     FourBetSizePolicy("large", 3.00, 0.90, 0.95),
-    FourBetSizePolicy("very_large", 3.50, 0.80, 0.90),
+    FourBetSizePolicy(
+        "very_large",
+        MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
+        0.80,
+        0.90,
+    ),
 )
 
 # Stack bands keep the chart explicit and deterministic. Shorter stacks trim

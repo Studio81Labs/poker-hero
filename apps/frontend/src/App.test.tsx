@@ -10066,6 +10066,42 @@ describe("App", () => {
     expect(screen.queryByLabelText(/Opener position/)).not.toBeInTheDocument();
   });
 
+  it("preserves hidden preflop history when approving a postflop state", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      preflop_opener_position: "cutoff",
+      preflop_open_size: 2.5,
+      preflop_action_history: [
+        { actor: "cutoff", action: "raise", amount: 2.5 },
+        { actor: "button", action: "raise", amount: 8 },
+      ],
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    expect(screen.queryByRole("button", { name: "Add preflop action" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.preflop_opener_position).toBe("cutoff");
+    expect(payload.preflop_open_size).toBe(2.5);
+    expect(payload.preflop_action_history).toEqual([
+      { actor: "cutoff", action: "raise", amount: 2.5 },
+      { actor: "button", action: "raise", amount: 8 },
+    ]);
+  });
+
   it("submits structured postflop history for a raised decision", async () => {
     const raisedState: DetectedState = {
       ...detectedState,

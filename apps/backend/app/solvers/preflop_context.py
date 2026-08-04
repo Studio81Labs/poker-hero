@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import re
 from typing import Literal
 
-from app.models import PreflopPosition, RecommendationRequest
+from app.models import CanonicalState, PreflopPosition, RecommendationRequest
 
 Position = PreflopPosition
 
@@ -112,6 +112,24 @@ class PreflopChartContext:
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
     return resolve_preflop_chart_context(request) is not None
+
+
+def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
+    """Return whether hero_stack is the only missing chart-specific input."""
+    if state.hero_stack is not None or len(state.preflop_action_history) != 2:
+        return False
+
+    assumed_hero_stack = max(
+        state.effective_stack or 0,
+        state.current_bet or 0,
+        1.0,
+    )
+    candidate = RecommendationRequest(
+        state=state.model_copy(update={"hero_stack": assumed_hero_stack}),
+        provider="local_solver",
+    )
+    context = resolve_preflop_chart_context(candidate)
+    return context is not None and context.scenario == "facing_three_bet"
 
 
 def resolve_preflop_chart_context(
@@ -271,6 +289,8 @@ def _structured_preflop_context(
     if (
         state.hero_stack is None
         or state.hero_stack <= 0
+        or state.effective_stack is None
+        or state.effective_stack > state.hero_stack + MONEY_TOLERANCE_BB
         or (state.current_bet or 0) > state.hero_stack + MONEY_TOLERANCE_BB
     ):
         return None

@@ -791,7 +791,7 @@ def test_four_bet_size_is_capped_by_hero_total_stack() -> None:
         structured_three_bet_request(
             ("Ah", "Ad"),
             hero_stack=9.5,
-            effective_stack=92,
+            effective_stack=9.5,
         )
     )
 
@@ -808,6 +808,7 @@ def test_four_bet_size_is_capped_by_hero_total_stack() -> None:
         lambda state: setattr(state, "pot_size", 11),
         lambda state: setattr(state, "hero_stack", None),
         lambda state: setattr(state, "hero_stack", 5),
+        lambda state: setattr(state, "effective_stack", 98),
         lambda state: setattr(state, "preflop_opener_position", "hijack"),
         lambda state: setattr(state, "preflop_open_size", 3),
     ],

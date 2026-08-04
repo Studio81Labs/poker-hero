@@ -337,6 +337,68 @@ def test_local_solver_requires_hero_stack_for_structured_three_bet(tmp_path: Pat
     assert "hero_stack" in provider.required_fields_for(state)
 
 
+def test_local_solver_does_not_require_hero_stack_for_unsupported_history(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=12,
+        current_bet=5.5,
+        effective_stack=92,
+        players_in_hand=6,
+        hero_position="cutoff",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" not in provider.required_fields_for(state)
+
+
+@pytest.mark.parametrize(
+    "settings_override",
+    [
+        {"local_solver_engine": "local_ev"},
+        {"local_solver_command": "external-solver"},
+    ],
+)
+def test_local_solver_does_not_require_chart_fields_for_other_engines(
+    tmp_path: Path,
+    settings_override: dict[str, str],
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            **settings_override,
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=12,
+        current_bet=5.5,
+        effective_stack=92,
+        players_in_hand=6,
+        hero_position="cutoff",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" not in provider.required_fields_for(state)
+
+
 def test_local_solver_routes_structured_three_bet_to_preflop_chart(tmp_path: Path) -> None:
     provider = build_provider(
         Settings(data_dir=tmp_path, recommendation_provider="local_solver")

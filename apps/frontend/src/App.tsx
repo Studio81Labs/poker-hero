@@ -3211,17 +3211,16 @@ function stateFromJob(job: JobRecord): CanonicalState {
 }
 
 function stateToForm(state: DetectedState | CanonicalState): StateForm {
-  const showPreflopOpen = state.street === "preflop" && state.facing_action === "raise";
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
-  const preflopActionHistory: PreflopActionForm[] = showPreflopOpen
-    ? (state.preflop_action_history ?? []).map((action) => ({
-        actor: action.actor,
-        action: action.action,
-        amount: String(action.amount),
-      }))
-    : [];
+  const preflopActionHistory: PreflopActionForm[] = (state.preflop_action_history ?? []).map(
+    (action) => ({
+      actor: action.actor,
+      action: action.action,
+      amount: String(action.amount),
+    }),
+  );
   const structuredOpener = preflopActionHistory[0]?.action === "raise"
     ? preflopActionHistory[0]
     : null;
@@ -3237,17 +3236,14 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
     hero_position: state.hero_position ?? "",
-    preflop_opener_position: showPreflopOpen
-      ? (
-        structuredOpener?.actor
-        ?? normalizePreflopPosition(state.preflop_opener_position)
-        ?? ""
-      )
-      : "",
+    preflop_opener_position:
+      structuredOpener?.actor
+      ?? normalizePreflopPosition(state.preflop_opener_position)
+      ?? "",
     preflop_open_size:
       structuredOpener !== null
         ? structuredOpener.amount
-        : showPreflopOpen && state.preflop_open_size !== null && state.preflop_open_size !== undefined
+        : state.preflop_open_size !== null && state.preflop_open_size !== undefined
           ? String(state.preflop_open_size)
         : "",
     preflop_action_history: preflopActionHistory,
@@ -3268,25 +3264,22 @@ function formToCanonical(form: StateForm): CanonicalState {
   const heroCards = parseCards(form.hero_cards, "Hero cards");
   const boardCards = parseCards(form.board_cards, "Board cards");
   validateCardState(heroCards, boardCards);
-  const showPreflopOpen = form.street === "preflop" && form.facing_action === "raise";
   const showPostflopHistory = form.street !== ""
     && form.street !== "preflop"
     && form.facing_action === "raise";
-  const legacyPreflopOpenSize = showPreflopOpen && form.preflop_action_history.length === 0
+  const legacyPreflopOpenSize = form.preflop_action_history.length === 0
     ? parseOptionalNumber(form.preflop_open_size, "Opening size")
     : null;
   if (legacyPreflopOpenSize !== null && legacyPreflopOpenSize <= 0) {
     throw new Error("Opening size must be greater than 0");
   }
-  const preflopActionHistory: PreflopAction[] = showPreflopOpen
-    ? form.preflop_action_history.map((item, index) => {
-        const amount = parseOptionalNumber(item.amount, `Preflop action ${index + 1} amount`);
-        if (amount === null || amount <= 0) {
-          throw new Error(`Preflop action ${index + 1} amount must be greater than 0`);
-        }
-        return { actor: item.actor, action: item.action, amount };
-      })
-    : [];
+  const preflopActionHistory: PreflopAction[] = form.preflop_action_history.map((item, index) => {
+    const amount = parseOptionalNumber(item.amount, `Preflop action ${index + 1} amount`);
+    if (amount === null || amount <= 0) {
+      throw new Error(`Preflop action ${index + 1} amount must be greater than 0`);
+    }
+    return { actor: item.actor, action: item.action, amount };
+  });
   const structuredOpener = preflopActionHistory[0]?.action === "raise"
     ? preflopActionHistory[0]
     : null;
@@ -3317,7 +3310,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     preflop_opener_position:
       structuredOpener?.actor
       ?? (
-        showPreflopOpen && form.preflop_opener_position !== ""
+        form.preflop_opener_position !== ""
           ? form.preflop_opener_position
           : null
       ),

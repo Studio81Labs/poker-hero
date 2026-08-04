@@ -82,8 +82,9 @@ context, breadcrumbs, arbitrary extras, local variables, and free-form error
 messages. Browser session replay and performance tracing are disabled. Events
 retain the exception type and stack locations plus release/environment tags;
 backend events also include the route template, HTTP method, and `X-Request-ID`
-for correlation with the JSON container log. Reporting failures never alter
-the application response.
+for correlation with the JSON container log when that ID is a canonical UUIDv4.
+Other caller-supplied request IDs remain local to the response and access log.
+Reporting failures never alter the application response.
 
 After configuration, trigger a test exception only in a non-production test
 deployment and confirm that the event contains no cards, screenshots, player

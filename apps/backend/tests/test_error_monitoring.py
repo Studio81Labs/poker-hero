@@ -186,10 +186,11 @@ def test_capture_tags_the_request_without_attaching_state(monkeypatch) -> None:
         fake_capture,
     )
     error = RuntimeError("application failed")
+    request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"
 
     event_id = error_monitoring.capture_unhandled_exception(
         error,
-        request_id="request-123",
+        request_id=request_id,
         method="POST",
         route="/api/jobs/{job_id}/recommendation",
     )
@@ -198,8 +199,47 @@ def test_capture_tags_the_request_without_attaching_state(monkeypatch) -> None:
     assert captured == {"error": error, "scope": scope}
     assert scope.tags == {
         "component": "backend",
-        "request_id": "request-123",
+        "request_id": request_id,
         "http_method": "POST",
         "http_route": "/api/jobs/{job_id}/recommendation",
     }
     assert scope.transaction_name == "POST /api/jobs/{job_id}/recommendation"
+
+
+def test_capture_drops_caller_controlled_nonopaque_request_id(monkeypatch) -> None:
+    class FakeScope:
+        def __init__(self) -> None:
+            self.tags: dict[str, str] = {}
+
+        def set_tag(self, key: str, value: str) -> None:
+            self.tags[key] = value
+
+        def set_transaction_name(self, _value: str) -> None:
+            pass
+
+    scope = FakeScope()
+
+    @contextmanager
+    def fake_scope() -> Iterator[FakeScope]:
+        yield scope
+
+    monkeypatch.setattr(error_monitoring, "_monitoring_enabled", True)
+    monkeypatch.setattr(error_monitoring.sentry_sdk, "new_scope", fake_scope)
+    monkeypatch.setattr(
+        error_monitoring.sentry_sdk,
+        "capture_exception",
+        lambda _error, *, scope: "event-id",
+    )
+
+    error_monitoring.capture_unhandled_exception(
+        RuntimeError("application failed"),
+        request_id="AhKd-player-name",
+        method="POST",
+        route="/api/jobs",
+    )
+
+    assert scope.tags == {
+        "component": "backend",
+        "http_method": "POST",
+        "http_route": "/api/jobs",
+    }

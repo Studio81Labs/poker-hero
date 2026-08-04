@@ -521,7 +521,8 @@ and backend adapters capture unhandled failures without changing user-facing
 responses or reporting expected validation/provider-input errors. Events may
 retain exception type, stack locations, environment, release, and component;
 backend events may also retain route template, HTTP method, and request ID for
-log correlation. They must remove screenshots, cards, player/user data,
+log correlation when the request ID is an opaque UUIDv4. They must remove
+screenshots, cards, player/user data,
 request bodies, headers, cookies, query strings, breadcrumbs, local variables,
 arbitrary extras, and free-form exception messages before transmission.
 Browser replay and performance tracing remain disabled. A reporting-provider

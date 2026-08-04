@@ -257,6 +257,7 @@ def test_unhandled_error_response_keeps_request_id(
     monkeypatch: pytest.MonkeyPatch,
     access_log_records: list[logging.LogRecord],
 ) -> None:
+    request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"
     captured: list[tuple[Exception, dict[str, str | None]]] = []
     monkeypatch.setattr(
         api_module,
@@ -280,13 +281,13 @@ def test_unhandled_error_response_keeps_request_id(
         "/api/test-crash",
         headers={
             "Origin": "http://localhost:5173",
-            "X-Request-ID": "failed-request-123",
+            "X-Request-ID": request_id,
         },
     )
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal Server Error"}
-    assert response.headers["X-Request-ID"] == "failed-request-123"
+    assert response.headers["X-Request-ID"] == request_id
     assert response.headers["Access-Control-Allow-Origin"] == (
         "http://localhost:5173"
     )
@@ -297,13 +298,13 @@ def test_unhandled_error_response_keeps_request_id(
         if record.name == "poker.access"
     ]
     assert len(access_events) == 1
-    assert access_events[0]["request_id"] == "failed-request-123"
+    assert access_events[0]["request_id"] == request_id
     assert access_events[0]["status_code"] == 500
     assert access_events[0]["outcome"] == "failed"
     assert len(captured) == 1
     assert str(captured[0][0]) == "test crash"
     assert captured[0][1] == {
-        "request_id": "failed-request-123",
+        "request_id": request_id,
         "method": "GET",
         "route": "/api/test-crash",
     }

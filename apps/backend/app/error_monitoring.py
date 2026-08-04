@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 import sentry_sdk
 
@@ -77,8 +78,9 @@ def capture_unhandled_exception(
     try:
         with sentry_sdk.new_scope() as scope:
             scope.set_tag("component", "backend")
-            if request_id:
-                scope.set_tag("request_id", request_id)
+            opaque_request_id = _opaque_request_id(request_id)
+            if opaque_request_id is not None:
+                scope.set_tag("request_id", opaque_request_id)
             if method:
                 scope.set_tag("http_method", method)
             if route:
@@ -95,6 +97,19 @@ def route_template(scope: dict[str, Any]) -> str | None:
     if isinstance(route_path, str) and route_path.startswith("/"):
         return route_path
     return None
+
+
+def _opaque_request_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        parsed = UUID(value)
+    except (AttributeError, ValueError):
+        return None
+    normalized = value.lower()
+    if parsed.version != 4 or normalized not in {parsed.hex, str(parsed)}:
+        return None
+    return normalized
 
 
 def _scrub_event(event: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any]:

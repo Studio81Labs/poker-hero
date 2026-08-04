@@ -44,6 +44,11 @@ from app.application_backup import (
 )
 from app.config import Settings, get_settings
 from app.data_lock import InterprocessDataLock
+from app.error_monitoring import (
+    capture_unhandled_exception,
+    configure_error_monitoring,
+    route_template,
+)
 from app.benchmarking import run_benchmark
 from app.dataset_export import (
     DatasetExportError,
@@ -136,6 +141,7 @@ REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 ACCESS_LOG_HANDLER_NAME = "poker-json-access"
 BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
+ERROR_MONITORING_CAPTURED_STATE_KEY = "poker_error_monitoring_captured"
 ACCESS_LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
@@ -370,9 +376,23 @@ class RequestObservabilityMiddleware:
 
         try:
             await self.app(scope, receive_observed, send_observed)
-        except BaseException:
+        except BaseException as exc:
             await stop_receive_task()
             log_access_event("failed")
+            if (
+                isinstance(exc, Exception)
+                and not scope["state"].get(
+                    ERROR_MONITORING_CAPTURED_STATE_KEY,
+                    False,
+                )
+            ):
+                scope["state"][ERROR_MONITORING_CAPTURED_STATE_KEY] = True
+                capture_unhandled_exception(
+                    exc,
+                    request_id=request_id,
+                    method=method,
+                    route=route_template(scope),
+                )
             raise
 
         await stop_receive_task()
@@ -453,6 +473,7 @@ def recover_interrupted_jobs(store: FileJobStore) -> None:
 
 def create_app(settings: Settings | None = None) -> RequestObservabilityMiddleware:
     active_settings = settings or get_settings()
+    configure_error_monitoring(active_settings)
     data_lock = InterprocessDataLock(active_settings.data_dir)
     with data_lock.hold(exclusive=False):
         store = FileJobStore(active_settings.data_dir)
@@ -655,9 +676,16 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     @app.exception_handler(Exception)
     async def unexpected_exception_handler(
         request: Request,
-        _exc: Exception,
+        exc: Exception,
     ) -> JSONResponse:
         request_id = getattr(request.state, "request_id", None) or _request_id(None)
+        request.scope["state"][ERROR_MONITORING_CAPTURED_STATE_KEY] = True
+        capture_unhandled_exception(
+            exc,
+            request_id=request_id,
+            method=request.method,
+            route=route_template(request.scope),
+        )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "Internal Server Error"},

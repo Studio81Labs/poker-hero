@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     max_backup_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     proxy_shared_secret: SecretStr | None = Field(default=None)
+    sentry_dsn: SecretStr | None = Field(default=None)
+    sentry_environment: str = Field(
+        default="local",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    sentry_release: str | None = Field(default=None, min_length=1, max_length=128)
+    sentry_error_sample_rate: Threshold = 1.0
 
     @field_validator("access_log_level", mode="before")
     @classmethod
@@ -81,6 +90,7 @@ class Settings(BaseSettings):
         "external_provider_bearer_token",
         "llm_advice_bearer_token",
         "proxy_shared_secret",
+        "sentry_dsn",
         mode="before",
     )
     @classmethod
@@ -122,6 +132,21 @@ class Settings(BaseSettings):
             raise ValueError("proxy_shared_secret must contain at least 32 characters")
         return value
 
+    @field_validator("sentry_release")
+    @classmethod
+    def validate_sentry_release(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized or not normalized.isascii() or any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in normalized
+        ):
+            raise ValueError(
+                "sentry_release must contain printable ASCII without whitespace"
+            )
+        return normalized
+
     @model_validator(mode="after")
     def validate_authenticated_external_urls(self) -> Self:
         authenticated_urls = (
@@ -144,6 +169,19 @@ class Settings(BaseSettings):
         for field_name, url, token in authenticated_urls:
             if token is not None and url is not None and urlsplit(url).scheme.lower() != "https":
                 raise ValueError(f"{field_name} must use HTTPS when its bearer token is configured")
+        if self.sentry_dsn is not None:
+            dsn = urlsplit(self.sentry_dsn.get_secret_value())
+            if (
+                dsn.scheme.lower() != "https"
+                or not dsn.hostname
+                or not dsn.username
+                or not dsn.path.strip("/")
+                or dsn.query
+                or dsn.fragment
+            ):
+                raise ValueError(
+                    "POKER_SENTRY_DSN must be a complete HTTPS Sentry DSN"
+                )
         return self
 
 

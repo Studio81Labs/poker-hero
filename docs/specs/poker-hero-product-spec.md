@@ -514,6 +514,22 @@ creating notification noise, and a later successful probe closes the incident
 with recovery evidence. The monitor may optionally assign the incident to a
 configured repository user.
 
+## Runtime Error Reporting
+
+Runtime exception reporting must be optional and disabled by default. Browser
+and backend adapters capture unhandled failures without changing user-facing
+responses or reporting expected validation/provider-input errors. Events may
+retain exception type, stack locations, environment, release, and component;
+backend events may also retain route template, HTTP method, and request ID for
+log correlation when the request ID is an opaque UUIDv4. They must remove
+screenshots, cards, player/user data,
+request bodies, headers, cookies, query strings, breadcrumbs, local variables,
+arbitrary extras, and free-form exception messages before transmission.
+Browser replay and performance tracing remain disabled. A reporting-provider
+failure must never fail an application request or crash recovery surface.
+Automatic release-health sessions and client reports remain disabled in both
+adapters.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.

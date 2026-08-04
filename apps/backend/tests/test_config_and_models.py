@@ -73,10 +73,29 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.max_backup_upload_bytes == 100 * 1024 * 1024
     assert settings.cors_origins == ["http://localhost:5173"]
     assert settings.proxy_shared_secret is None
+    assert settings.sentry_dsn is None
+    assert settings.sentry_environment == "local"
+    assert settings.sentry_release is None
+    assert settings.sentry_error_sample_rate == 1
     assert settings.external_parser_bearer_token is None
     assert settings.external_provider_bearer_token is None
     assert settings.llm_advice_bearer_token is None
     assert settings.external_request_timeout_seconds == 60
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        "http://public@example.ingest.sentry.io/123",
+        "https://example.ingest.sentry.io",
+        "https://example.ingest.sentry.io/123",
+        "https://public@example.ingest.sentry.io/123?player=name",
+        "not-a-url",
+    ],
+)
+def test_settings_rejects_invalid_sentry_dsn(dsn: str) -> None:
+    with pytest.raises(ValidationError, match="complete HTTPS Sentry DSN"):
+        Settings(sentry_dsn=dsn)
 
 
 def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

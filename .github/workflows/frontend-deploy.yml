@@ -23,6 +23,7 @@ name: Frontend Deploy
 # Optional repo or "testing" environment vars:
 #   APP_WORKER_NAME            Defaults to "poker"
 #   VITE_API_BASE_URL          Overrides the browser API base URL; defaults to same-origin in production
+#   VITE_SENTRY_DSN            Enables privacy-scrubbed browser error reporting
 #
 # Optional repo or "testing" environment secrets for smoke testing Cloudflare Access-protected URLs:
 #   CLOUDFLARE_ACCESS_CLIENT_ID
@@ -70,6 +71,9 @@ jobs:
       - name: Build frontend
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: testing
+          VITE_SENTRY_RELEASE: ${{ github.sha }}
         run: pnpm frontend:build
 
       - name: Deploy to Cloudflare Workers

@@ -11,7 +11,13 @@ RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 WORKDIR /workspace
 
 ARG VITE_API_BASE_URL=http://localhost:8000
+ARG VITE_SENTRY_DSN=
+ARG VITE_SENTRY_ENVIRONMENT=local
+ARG VITE_SENTRY_RELEASE=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_SENTRY_DSN=${VITE_SENTRY_DSN}
+ENV VITE_SENTRY_ENVIRONMENT=${VITE_SENTRY_ENVIRONMENT}
+ENV VITE_SENTRY_RELEASE=${VITE_SENTRY_RELEASE}
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/frontend/package.json apps/frontend/package.json

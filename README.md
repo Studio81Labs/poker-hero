@@ -135,7 +135,8 @@ commands add that directory to `PATH`. Re-run bootstrap after pulling changes
 to the Rust plugin.
 
 Preflop hands with a recognized six-max position and an unambiguous unopened,
-single-open, or supported hero-open/facing-3-bet context use the bundled
+single-open, single-open-plus-one-caller, or supported hero-open/facing-3-bet
+context use the bundled
 position-aware training chart. The chart uses position-matchup boundaries plus
 transparent adjustments for 2-4 BB opening sizes, supported 3-bet ratios, and
 short, medium, standard, or deep effective stacks.
@@ -143,11 +144,14 @@ First-in ranges and sizing also adjust by stack depth. The chart reports its
 hand-class ranking, base and adjusted policy, assumptions, and action frequencies
 without presenting the result as a solved preflop tree. Approved states may
 provide the opener position and total opening size as structured fields. An
-ordered preflop history can represent a single open or exactly one hero open
-followed by one later-position 3-bet; the chart validates position order, total
-raise sizes, amount to call, pot composition, and stack availability before
-routing. Action-text parsing remains for older saved single-open hands.
-Positionless, limped, called, squeezed, cold-4-bet, multiway postflop,
+ordered preflop history can represent a single open, one open followed by one
+call before hero, or exactly one hero open followed by one later-position 3-bet.
+The caller route requires exactly three active players, matching open/call
+totals, and legal seat order; it applies explicit conservative range multipliers
+and a 4x-open squeeze target. The chart validates position order, total action
+sizes, amount to call, pot composition, and stack availability before routing.
+Action-text parsing remains for older saved single-open hands.
+Positionless, limped, multi-caller, already-squeezed, cold-4-bet, multiway postflop,
 incomplete, ambiguous-position, oversized, and failed trees use `local_ev` when
 fallback is enabled. Recommendations preserve
 the requested engine and routing or fallback reason in `raw` metadata. Set

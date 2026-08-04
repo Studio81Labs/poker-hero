@@ -5,8 +5,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings, get_settings
-from app.models import Card, RecommendationRequest, RecommendationResult
+from app.models import Card, PreflopAction, RecommendationRequest, RecommendationResult
 from app.providers.base import ProviderConfigurationError
+from app.providers.registry import build_provider
 from app.recommendation_benchmark import (
     MAX_RECOMMENDATION_BENCHMARK_BYTES,
     RECOMMENDATION_BENCHMARK_SCHEMA,
@@ -205,6 +206,47 @@ def test_recommendation_benchmark_scores_policy_ev_fallback_and_failures() -> No
     assert "Average policy distance: 0.100 across 1 case(s)" in formatted
     assert "unsupported-action: mismatched action, line" in formatted
     assert "provider-failure: solver unavailable" in formatted
+
+
+def test_recommendation_benchmark_runs_single_caller_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "preflop-single-caller",
+                [reference_line("call")],
+                tags=["preflop", "single-caller"],
+                hero_cards=[Card.from_code("Ah"), Card.from_code("Jh")],
+                board_cards=[],
+                street="preflop",
+                pot_size=6.5,
+                current_bet=2.5,
+                hero_stack=None,
+                effective_stack=100.0,
+                players_in_hand=3,
+                hero_position="button",
+                facing_action="raise",
+                preflop_opener_position="utg",
+                preflop_open_size=2.5,
+                preflop_action_history=[
+                    PreflopAction(actor="utg", action="raise", amount=2.5),
+                    PreflopAction(actor="hijack", action="call", amount=2.5),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_correct == 1
+    assert report.line_correct == 1
+    assert report.fallback_cases == 0
+    assert report.cases[0].engine == "preflop_chart_v1"
 
 
 def test_report_exposes_provenance_coverage_and_scenario_breakdowns() -> None:

@@ -33,12 +33,34 @@ const HISTORY_ARCHIVE_BATCH_SIZE = 100;
 
 export class ApiResponseError extends Error {
   readonly status: number;
+  readonly retryAfterSeconds: number | null;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(message);
     this.name = "ApiResponseError";
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+function retryAfterSeconds(response: Response): number | null {
+  const value = response.headers.get("Retry-After")?.trim();
+  if (!value) {
+    return null;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds);
+  }
+  const retryAt = Date.parse(value);
+  if (Number.isNaN(retryAt)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -50,7 +72,11 @@ async function readJson<T>(response: Response): Promise<T> {
     } catch {
       detail = response.statusText;
     }
-    throw new ApiResponseError(detail, response.status);
+    throw new ApiResponseError(
+      detail,
+      response.status,
+      retryAfterSeconds(response),
+    );
   }
   return response.json() as Promise<T>;
 }

@@ -11,6 +11,7 @@ export default {
 };
 
 const PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret";
+const ACCESS_USER_HEADER = "CF-Access-Authenticated-User-Email";
 const MAX_BACKEND_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
@@ -43,6 +44,9 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   headers.delete("host");
   headers.delete("content-length");
   headers.delete(PROXY_SHARED_SECRET_HEADER);
+  // Access email is not independently verified by the backend and must not
+  // become a caller-controlled rate-limit identity.
+  headers.delete(ACCESS_USER_HEADER);
   if (proxySharedSecret) {
     headers.set(PROXY_SHARED_SECRET_HEADER, proxySharedSecret);
   }

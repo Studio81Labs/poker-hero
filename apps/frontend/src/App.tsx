@@ -3605,6 +3605,7 @@ export default function App() {
     }
     let retryTimer: number | null = null;
     let retryDelay = PROCESSING_QUEUE_REVALIDATION_INTERVAL_MS;
+    let benchmarkImportRetryNotBefore = 0;
     const revalidateLeases = () => {
       retryTimer = null;
       let leasePending = false;
@@ -3619,9 +3620,11 @@ export default function App() {
       if (
         benchmarkImportRequestId !== null
         && benchmarkImportRecoveryPromiseRef.current === null
+        && Date.now() >= benchmarkImportRetryNotBefore
       ) {
         const recovery = getBenchmarkDatasetImport(benchmarkImportRequestId)
           .then((receipt) => {
+            benchmarkImportRetryNotBefore = 0;
             if (
               !appMountedRef.current
               || benchmarkImportLeaseRequestId(
@@ -3661,6 +3664,17 @@ export default function App() {
             void requestHistoryRestore(null, true);
           })
           .catch((recoveryError) => {
+            if (
+              recoveryError instanceof ApiResponseError
+              && recoveryError.status === 429
+              && recoveryError.retryAfterSeconds !== null
+            ) {
+              benchmarkImportRetryNotBefore = Math.max(
+                benchmarkImportRetryNotBefore,
+                Date.now() + recoveryError.retryAfterSeconds * 1_000,
+              );
+              return;
+            }
             if (
               recoveryError instanceof ApiResponseError
               && recoveryError.status === 404
@@ -3784,7 +3798,13 @@ export default function App() {
 
       if (leasePending) {
         retryDelay = Math.min(retryDelay * 2, 2_000);
-        retryTimer = window.setTimeout(revalidateLeases, retryDelay);
+        retryTimer = window.setTimeout(
+          revalidateLeases,
+          Math.max(
+            retryDelay,
+            benchmarkImportRetryNotBefore - Date.now(),
+          ),
+        );
       }
     };
     retryTimer = window.setTimeout(revalidateLeases, retryDelay);

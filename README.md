@@ -91,6 +91,10 @@ The main provider switches are:
   benchmark selection, export, and import (default 100 MiB)
 - `POKER_MAX_BACKUP_UPLOAD_BYTES`: maximum full application backup ZIP size for
   export and restore (default 100 MiB)
+- `POKER_API_RATE_LIMIT_ENABLED`: enable bounded per-client limits for uploads,
+  recommendations, benchmark runs, and archive transfers (default `true`)
+- `POKER_API_RATE_LIMIT_*_PER_MINUTE`: tune each expensive-operation budget;
+  defaults are `120` for uploads/recommendations and `6` for benchmarks/transfers
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
 - `POKER_PROXY_SHARED_SECRET`: optional Worker-to-backend credential, at least
   32 characters; leave empty for local development

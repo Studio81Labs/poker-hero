@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApiResponseError,
   applicationBackupUrl,
   archiveJobs,
+  getBenchmarkDatasetImport,
   getHistory,
   getProcessingJobs,
   requestRecommendation,
@@ -79,6 +81,30 @@ describe("application backups", () => {
     const request = fetchMock.mock.calls[0][1];
     expect(request.body).toBeInstanceOf(FormData);
     expect((request.body as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("benchmark import recovery", () => {
+  it("preserves Retry-After metadata from rate-limit responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(
+      JSON.stringify({ detail: "Rate limit exceeded for data transfers" }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": "7",
+        },
+      },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const recovery = getBenchmarkDatasetImport("import-request-123");
+
+    await expect(recovery).rejects.toEqual(expect.objectContaining({
+      name: "ApiResponseError",
+      status: 429,
+      retryAfterSeconds: 7,
+    } satisfies Partial<ApiResponseError>));
   });
 });
 

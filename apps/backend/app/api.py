@@ -97,6 +97,11 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.registry import build_provider
+from app.rate_limiting import (
+    ApiRateLimiter,
+    rate_limit_category,
+    request_rate_limit_identity,
+)
 from app.storage import (
     BenchmarkImportNotFoundError,
     BenchmarkNotFoundError,
@@ -485,6 +490,18 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     dataset_import_lock = Lock()
     benchmark_corpus_lock = Lock()
     application_backup_lock = Lock()
+    rate_limiter = ApiRateLimiter(
+        {
+            "uploads": active_settings.api_rate_limit_uploads_per_minute,
+            "recommendations": (
+                active_settings.api_rate_limit_recommendations_per_minute
+            ),
+            "benchmarks": active_settings.api_rate_limit_benchmarks_per_minute,
+            "data_transfers": (
+                active_settings.api_rate_limit_data_transfers_per_minute
+            ),
+        }
+    )
 
     def job_lock_index(job_id: str) -> int:
         return hash(job_id) % len(job_locks)
@@ -720,7 +737,37 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Unauthorized"},
                 )
-        return await call_next(request)
+
+        category = rate_limit_category(request.method, request.url.path)
+        decision = None
+        if active_settings.api_rate_limit_enabled and category is not None:
+            decision = rate_limiter.check(
+                category,
+                request_rate_limit_identity(
+                    request,
+                    trust_proxy_headers=configured_secret is not None,
+                ),
+            )
+            if not decision.allowed:
+                retry_after = str(decision.retry_after_seconds)
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "detail": f"Rate limit exceeded for {category.replace('_', ' ')}",
+                        "retry_after_seconds": decision.retry_after_seconds,
+                    },
+                    headers={
+                        "Retry-After": retry_after,
+                        "X-RateLimit-Limit": str(decision.limit),
+                        "X-RateLimit-Remaining": "0",
+                    },
+                )
+
+        response = await call_next(request)
+        if decision is not None:
+            response.headers["X-RateLimit-Limit"] = str(decision.limit)
+            response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -1508,7 +1555,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
-            expose_headers=[REQUEST_ID_HEADER],
+            expose_headers=[
+                REQUEST_ID_HEADER,
+                "Retry-After",
+                "X-RateLimit-Limit",
+                "X-RateLimit-Remaining",
+            ],
         ),
         access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
     )

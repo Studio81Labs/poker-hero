@@ -530,6 +530,22 @@ failure must never fail an application request or crash recovery surface.
 Automatic release-health sessions and client reports remain disabled in both
 adapters.
 
+## Resource Rate Limiting
+
+The backend must limit parser uploads, solver recommendations, parser benchmark
+runs, and benchmark/application archive transfers before starting expensive
+work. Proxy authentication must run first so unauthorized requests cannot spend
+or exhaust an authenticated user's budget. The Worker must strip unverified
+Access identity headers before proxying. After Worker-secret authentication,
+the backend may use a one-way digest of a validated Cloudflare connecting IP;
+a shared proxy identity is the fallback. Direct development requests use the
+direct client identity. Limiter storage must remain bounded, interrupted import
+recovery must consume the archive-transfer budget before scheduling work,
+limits must be configurable without code changes, and a rejected request must
+return HTTP 429 with `Retry-After` metadata. Benchmark-import recovery must
+retain that metadata at the API boundary and suspend receipt polling until the
+server-provided delay has elapsed.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.

@@ -35,6 +35,38 @@ describe("API Worker proxy", () => {
     expect(forwardedRequest.redirect).toBe("manual");
   });
 
+  it("strips Access email while preserving the edge client IP", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return new Response(null, { status: 200 });
+      }),
+    );
+
+    await worker.fetch(
+      new Request("https://poker.example/api/jobs", {
+        headers: {
+          "CF-Access-Authenticated-User-Email": "player@example.com",
+          "CF-Connecting-IP": "203.0.113.10",
+        },
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+      },
+    );
+
+    expect(
+      forwardedRequest.headers.has("CF-Access-Authenticated-User-Email"),
+    ).toBe(false);
+    expect(forwardedRequest.headers.get("CF-Connecting-IP")).toBe(
+      "203.0.113.10",
+    );
+  });
+
   it("strips browser-supplied proxy credentials when no Worker secret is configured", async () => {
     let forwardedRequest;
     vi.stubGlobal(

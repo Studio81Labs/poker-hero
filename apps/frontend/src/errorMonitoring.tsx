@@ -104,11 +104,11 @@ function isCompleteHttpsDsn(value: string): boolean {
   }
 }
 
-export function configureBrowserErrorMonitoring(
+export async function configureBrowserErrorMonitoring(
   environment: BrowserMonitoringEnvironment = (
     import.meta.env as BrowserMonitoringEnvironment
   ),
-): boolean {
+): Promise<boolean> {
   const options = browserMonitoringOptions(environment);
   if (options === null) {
     sentryModule = null;
@@ -120,7 +120,14 @@ export function configureBrowserErrorMonitoring(
       return sentry;
     })
     .catch(() => null);
-  return true;
+  return (await sentryModule) !== null;
+}
+
+export function captureBrowserException(error: unknown, source: string) {
+  const capture = sentryModule?.then((sentry) => {
+    sentry?.captureException(error, { tags: { source } });
+  });
+  void capture?.catch(() => undefined);
 }
 
 export function scrubBrowserEvent(
@@ -168,7 +175,7 @@ function stackFilename(value: string): string {
   }
 }
 
-function FatalError() {
+export function FatalError() {
   return (
     <main className="fatal-error" role="alert">
       <div className="brand-mark" aria-hidden="true">A</div>
@@ -201,14 +208,7 @@ export class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, _errorInfo: ErrorInfo) {
-    const capture = sentryModule?.then((sentry) => {
-      sentry?.captureException(error, {
-        tags: {
-          source: "react_error_boundary",
-        },
-      });
-    });
-    void capture?.catch(() => undefined);
+    captureBrowserException(error, "react_error_boundary");
   }
 
   render() {

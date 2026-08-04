@@ -28,8 +28,10 @@ failures are swallowed at the adapter boundary, leaving optional monitoring
 disabled without preventing the application from starting.
 
 Use a native React error boundary for the recovery screen and load the browser
-SDK dynamically only when configured. This keeps recovery available without
-adding monitoring startup/download work to the default path.
+SDK dynamically only when configured. Await configured monitoring before
+loading and rendering the application module so startup failures are captured;
+the unconfigured path has no monitoring download. Application-module load
+failures use the same reporting adapter and recovery screen.
 
 ## Consequences
 

@@ -1,14 +1,25 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const sentryMocks = vi.hoisted(() => ({
+  captureException: vi.fn(),
+  init: vi.fn(),
+}));
+
+vi.mock("@sentry/react", () => sentryMocks);
+
 import {
   AppErrorBoundary,
   browserMonitoringOptions,
+  captureBrowserException,
+  configureBrowserErrorMonitoring,
   exceptionOnlyIntegrations,
   scrubBrowserEvent,
 } from "./errorMonitoring";
 
-afterEach(() => {
+afterEach(async () => {
+  await configureBrowserErrorMonitoring({});
+  vi.clearAllMocks();
   vi.restoreAllMocks();
 });
 
@@ -57,6 +68,25 @@ describe("browser error monitoring", () => {
       { name: "GlobalHandlers" },
       { name: "BrowserSession" },
     ])).toEqual([{ name: "GlobalHandlers" }]);
+  });
+
+  it("initializes monitoring before reporting startup failures", async () => {
+    const configured = await configureBrowserErrorMonitoring({
+      VITE_SENTRY_DSN: "https://public@example.ingest.sentry.io/123",
+    });
+    const error = new Error("startup failed");
+
+    captureBrowserException(error, "application_bootstrap");
+    await vi.waitFor(() => expect(sentryMocks.captureException).toHaveBeenCalled());
+
+    expect(configured).toBe(true);
+    expect(sentryMocks.init).toHaveBeenCalledOnce();
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(error, {
+      tags: { source: "application_bootstrap" },
+    });
+    expect(sentryMocks.init.mock.invocationCallOrder[0]).toBeLessThan(
+      sentryMocks.captureException.mock.invocationCallOrder[0],
+    );
   });
 
   it("removes poker and request data while retaining stack locations", () => {

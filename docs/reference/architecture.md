@@ -32,9 +32,11 @@ plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
 route a single open, one open plus one caller before hero, or exactly one hero
 open followed by one later-position 3-bet. It can also route one opponent open
-and one opponent 3-bet before hero when exactly three players remain. The
-sequence stores canonical seat, action, and total committed BB. The caller route requires exactly three active
-players, matching open and call totals, and legal opener-caller-hero order. Its
+and one opponent 3-bet before hero when exactly three players remain, or one
+opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
+The sequence stores canonical seat, action, and total committed BB. The caller
+route requires exactly three active players, matching open and call totals, and
+legal opener-caller-hero order. Its
 explicit conservative multipliers tighten continue and squeeze boundaries, and
 its raise target starts at 4x the open. The cold 3-bet route requires legal
 opener-3-bettor-hero order and uses an explicit policy for every supported seat
@@ -48,7 +50,9 @@ range. Supported 3-bets select an ordered size-ratio band and matchup-specific
 continue/four-bet boundaries. Recommendation evidence records the resolved
 actors and totals, base response boundaries, size multipliers, stack policy,
 adjusted boundaries, represented caller seats, cold 3-bet policy, and maximum
-legal raise total.
+legal raise total. The heads-up 4-bet response uses explicit opener-versus-hero
+continue/five-bet boundaries and ordered 4-bet-size bands; five-bets use the
+reconstructed all-in cap from both represented commitments.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

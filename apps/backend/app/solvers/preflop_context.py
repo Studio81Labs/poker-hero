@@ -90,6 +90,7 @@ MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MIN_SINGLE_OPEN_SIZE_BB = 2.0
 MAX_SINGLE_OPEN_SIZE_BB = 4.0
+MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO = 3.5
 MONEY_TOLERANCE_BB = 0.05
 
 PreflopChartScenario = Literal[
@@ -99,6 +100,7 @@ PreflopChartScenario = Literal[
     "facing_open_with_caller",
     "facing_three_bet",
     "facing_cold_three_bet",
+    "facing_four_bet",
 ]
 
 
@@ -111,6 +113,7 @@ class PreflopChartContext:
     latest_aggressor_position: Position | None = None
     latest_raise_size: float | None = None
     caller_positions: tuple[Position, ...] = ()
+    hero_three_bet_size: float | None = None
 
 
 def supports_preflop_chart(request: RecommendationRequest) -> bool:
@@ -119,7 +122,10 @@ def supports_preflop_chart(request: RecommendationRequest) -> bool:
 
 def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
     """Return whether hero_stack is the only missing chart-specific input."""
-    if state.hero_stack is not None or len(state.preflop_action_history) != 2:
+    if (
+        state.hero_stack is not None
+        or len(state.preflop_action_history) not in {2, 3}
+    ):
         return False
 
     assumed_hero_stack = max(
@@ -135,6 +141,7 @@ def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
     return context is not None and context.scenario in {
         "facing_three_bet",
         "facing_cold_three_bet",
+        "facing_four_bet",
     }
 
 
@@ -227,7 +234,7 @@ def _structured_preflop_context(
 ) -> PreflopChartContext | None:
     state = request.state
     history = state.preflop_action_history
-    if len(history) not in {1, 2} or history[0].action != "raise":
+    if len(history) not in {1, 2, 3} or history[0].action != "raise":
         return None
 
     opener = history[0]
@@ -276,7 +283,8 @@ def _structured_preflop_context(
     if second_action.action == "call":
         caller_position: Position = second_action.actor
         if (
-            state.players_in_hand != 3
+            len(history) != 2
+            or state.players_in_hand != 3
             or opener_position == hero_position
             or caller_position == hero_position
             or POSITION_ACTION_ORDER[opener_position]
@@ -317,6 +325,46 @@ def _structured_preflop_context(
     if three_bet.amount + MONEY_TOLERANCE_BB < minimum_full_raise:
         return None
 
+    if len(history) == 3:
+        four_bet = history[2]
+        minimum_four_bet = three_bet.amount + (three_bet.amount - opener_size)
+        if (
+            state.players_in_hand != 2
+            or opener_position == hero_position
+            or three_bettor_position != hero_position
+            or POSITION_ACTION_ORDER[opener_position]
+            >= POSITION_ACTION_ORDER[hero_position]
+            or four_bet.action != "raise"
+            or four_bet.actor != opener_position
+            or four_bet.amount + MONEY_TOLERANCE_BB < minimum_four_bet
+            or four_bet.amount > (
+                three_bet.amount * MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO
+                + MONEY_TOLERANCE_BB
+            )
+            or not _amount_to_call_matches(
+                state.current_bet,
+                four_bet.amount - three_bet.amount,
+            )
+            or not _stack_state_supports_raise_response(state)
+            or not _pot_matches_actions(
+                state.pot_size,
+                (
+                    (hero_position, three_bet.amount),
+                    (opener_position, four_bet.amount),
+                ),
+            )
+        ):
+            return None
+        return PreflopChartContext(
+            scenario="facing_four_bet",
+            hero_position=hero_position,
+            opener_position=opener_position,
+            opening_raise_size=opener_size,
+            latest_aggressor_position=opener_position,
+            latest_raise_size=four_bet.amount,
+            hero_three_bet_size=three_bet.amount,
+        )
+
     if opener_position == hero_position:
         if (
             three_bettor_position == hero_position
@@ -340,13 +388,7 @@ def _structured_preflop_context(
 
     if not _amount_to_call_matches(state.current_bet, expected_call):
         return None
-    if (
-        state.hero_stack is None
-        or state.hero_stack <= 0
-        or state.effective_stack is None
-        or state.effective_stack > state.hero_stack + MONEY_TOLERANCE_BB
-        or (state.current_bet or 0) > state.hero_stack + MONEY_TOLERANCE_BB
-    ):
+    if not _stack_state_supports_raise_response(state):
         return None
     if not _pot_matches_actions(
         state.pot_size,
@@ -363,6 +405,16 @@ def _structured_preflop_context(
         opening_raise_size=opener_size,
         latest_aggressor_position=three_bettor_position,
         latest_raise_size=three_bet.amount,
+    )
+
+
+def _stack_state_supports_raise_response(state: CanonicalState) -> bool:
+    return (
+        state.hero_stack is not None
+        and state.hero_stack > 0
+        and state.effective_stack is not None
+        and state.effective_stack <= state.hero_stack + MONEY_TOLERANCE_BB
+        and (state.current_bet or 0) <= state.hero_stack + MONEY_TOLERANCE_BB
     )
 
 

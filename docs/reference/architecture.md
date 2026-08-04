@@ -119,6 +119,12 @@ data remain absent. Ground-truth labels are not copied into parser results, so
 an imported job never presents user-approved state as detected OCR evidence.
 The shared import/export corpus contract is capped at 250 selected hands; the
 selection API prevents the app from producing a dataset that import rejects.
+The offline runner can gate the corpus size and each field's labeled-case count
+and accuracy independently. Repeated `FIELD=VALUE` requirements make the same
+archive suitable for CI while exposing missing labels instead of allowing
+well-covered card fields to mask weaker pot, bet, stack, or position parsing.
+Client/layout corpora are benchmarked separately with the parser profile under
+test, keeping coverage and regression ownership explicit.
 
 Full application backups are a separate schema and recovery boundary. A
 versioned ZIP contains every durable `JobRecord`, its original image, and all

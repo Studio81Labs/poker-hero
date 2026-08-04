@@ -214,7 +214,17 @@ def test_benchmark_cli_resolves_relative_dataset_from_invocation_directory(
     monkeypatch.setenv("POKER_BENCHMARK_BASE_DIR", str(invocation_dir))
 
     exit_code = main(
-        ["dataset.zip", "--parser-provider", "mock"],
+        [
+            "dataset.zip",
+            "--parser-provider",
+            "mock",
+            "--minimum-cases",
+            "1",
+            "--minimum-field-cases",
+            "hero_cards=1",
+            "--minimum-field-accuracy",
+            "hero_cards=1",
+        ],
         settings=Settings(data_dir=tmp_path / "unused"),
     )
 
@@ -222,6 +232,67 @@ def test_benchmark_cli_resolves_relative_dataset_from_invocation_directory(
     assert exit_code == 0
     assert "Accuracy: 11/11 (100.0%)" in captured.out
     assert captured.err == ""
+
+
+def test_benchmark_cli_enforces_corpus_and_per_field_thresholds(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset_archive(
+        tmp_path / "dataset.zip",
+        expected_mock_state(pot_size=99),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--parser-provider",
+            "mock",
+            "--minimum-cases",
+            "2",
+            "--minimum-field-cases",
+            "hero_cards=2",
+            "--minimum-field-cases",
+            "opponent_stack=1",
+            "--minimum-field-accuracy",
+            "pot_size=1",
+            "--minimum-field-accuracy",
+            "opponent_stack=1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Benchmark corpus has 1 case(s), below the minimum 2" in captured.err
+    assert "Field hero_cards has 1 labeled case(s), below the minimum 2" in (
+        captured.err
+    )
+    assert "Field opponent_stack has 0 labeled case(s), below the minimum 1" in (
+        captured.err
+    )
+    assert "Field pot_size accuracy 0.0% is below the minimum 100.0%" in captured.err
+    assert "Field opponent_stack accuracy was not evaluated" in captured.err
+
+
+def test_benchmark_cli_rejects_duplicate_field_thresholds(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            str(tmp_path / "unused.zip"),
+            "--minimum-field-accuracy",
+            "hero_cards=0.9",
+            "--minimum-field-accuracy",
+            "hero_cards=1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "--minimum-field-accuracy repeats field hero_cards" in captured.err
 
 
 def test_benchmark_dataset_archive_rejects_invalid_and_oversized_files(

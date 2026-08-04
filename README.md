@@ -257,14 +257,24 @@ directory:
 pnpm backend:benchmark ./poker-hero-parser-dataset.zip \
   --parser-provider ocr_cv \
   --layout-profile fortuna_nations \
-  --minimum-accuracy 0.80
+  --minimum-cases 25 \
+  --minimum-accuracy 0.90 \
+  --minimum-field-cases hero_cards=25 \
+  --minimum-field-accuracy hero_cards=0.98 \
+  --minimum-field-accuracy board_cards=0.98 \
+  --minimum-field-accuracy pot_size=0.90 \
+  --minimum-field-accuracy current_bet=0.90
 ```
 
 The command prints overall and per-field accuracy plus cases needing review. Add
 `--json` for a complete machine-readable report. It exits with status `1` when
-any case fails or accuracy is below the optional threshold, making the same
-dataset suitable for local regression checks and CI. Evaluation uses temporary
-storage and never changes the configured `POKER_DATA_DIR` or the source ZIP.
+any case fails or a configured corpus, label-count, overall-accuracy, or
+field-accuracy threshold is missed. Repeat `--minimum-field-cases` and
+`--minimum-field-accuracy` for cards, street, pot, bets, stacks, player count,
+and position. Keep a separately labeled dataset and threshold command for each
+client/layout so a strong result on one table cannot hide a regression on
+another. Evaluation uses temporary storage and never changes the configured
+`POKER_DATA_DIR` or the source ZIP.
 
 ### Offline Recommendation Benchmarks
 

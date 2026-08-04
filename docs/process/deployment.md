@@ -181,6 +181,48 @@ mismatched proxy credential fails deployment validation. When
 backend queue URL without that credential and requires a `401`, proving the
 Coolify setting is active rather than merely accepting an unused Worker header.
 
+## Uptime Monitoring And Alerts
+
+The `Uptime Monitor` workflow runs hourly at minute 17 and can also be dispatched
+manually. By default it checks
+`https://<APP_WORKER_NAME>.<APP_WORKERS_SUBDOMAIN>.workers.dev`; set the optional
+repository or `testing` environment variable `UPTIME_MONITOR_URL` to monitor a
+custom HTTPS hostname instead. Manual dispatches use the same admin-controlled
+target so Cloudflare Access credentials cannot be redirected to an arbitrary
+host.
+
+The hourly interval keeps the private testing monitor within a practical GitHub
+Actions budget alongside ordinary CI. Use manual dispatch for an immediate
+post-maintenance check.
+
+The probe validates all three deployment boundaries with bounded one-MiB
+responses, a 20-second attempt timeout, and three attempts:
+
+- the SPA returns the Poker Training Analyzer application marker;
+- same-origin `/api/health` returns JSON with `status: "ok"`;
+- same-origin `/api/jobs?limit=1` returns a queue-shaped response, proving the
+  Worker proxy and its backend credential are operational.
+
+If Cloudflare Access protects the hostname, configure both
+`CLOUDFLARE_ACCESS_CLIENT_ID` and `CLOUDFLARE_ACCESS_CLIENT_SECRET` as repository
+or `testing` environment secrets. The probe follows at most five same-origin
+redirects and never forwards those service-token headers to another origin.
+
+After all attempts fail, the workflow opens one issue titled
+`[uptime] Poker Hero testing is unavailable` with the sanitized failure and run
+link. Later failed runs reuse the open incident instead of posting repeated
+comments. The first successful run closes every matching open incident with a
+recovery link. Set optional `UPTIME_ISSUE_ASSIGNEE` to a valid GitHub login for
+direct assignment notifications, and ensure that user has repository issue
+notifications enabled. Workflow failures remain visible in Actions even when
+no assignee is configured.
+
+Validate the probe locally without contacting the deployment:
+
+```bash
+pnpm monitor:test
+```
+
 ## Local Container Validation
 
 ```bash

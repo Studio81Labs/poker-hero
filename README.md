@@ -58,6 +58,7 @@ poker-hero/
 | `pnpm frontend:dev` | Start Vite on port 5173 |
 | `pnpm frontend:test` | Run frontend tests |
 | `pnpm frontend:build` | Build the production frontend |
+| `pnpm monitor:test` | Test the deployment uptime probe |
 | `pnpm test:e2e` | Run browser workflow tests with isolated test providers |
 | `pnpm docker:up` | Build and start both apps with Docker Compose |
 | `pnpm docker:down` | Stop the Compose stack |
@@ -365,6 +366,13 @@ remains available to platform health probes.
 
 Backend responses carry `X-Request-ID`, which is also written to structured
 container access logs for tracing requests through the Worker and Coolify.
+
+The `Uptime Monitor` workflow checks the deployed SPA, proxied health route,
+and protected queue route every hour. It derives the testing URL from
+`APP_WORKER_NAME` and `APP_WORKERS_SUBDOMAIN`, or uses the optional
+`UPTIME_MONITOR_URL` variable. A failed probe opens one GitHub outage issue;
+the next successful probe closes it. Set optional `UPTIME_ISSUE_ASSIGNEE` to a
+GitHub login that should receive the incident assignment.
 
 Leave `VITE_API_BASE_URL` unset for the deployed Worker so browser requests use
 same-origin `/api/*`.

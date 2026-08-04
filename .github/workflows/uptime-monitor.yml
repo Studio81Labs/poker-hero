@@ -1,0 +1,175 @@
+name: Uptime Monitor
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/check-deployment.mjs"
+      - "scripts/check-deployment.test.mjs"
+      - "package.json"
+      - ".github/workflows/uptime-monitor.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/check-deployment.mjs"
+      - "scripts/check-deployment.test.mjs"
+      - "package.json"
+      - ".github/workflows/uptime-monitor.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    name: Monitor tooling test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Test deployment probe
+        run: node --test scripts/check-deployment.test.mjs
+
+  monitor:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: Check testing deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: testing
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: uptime-monitor-testing
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+
+      - name: Resolve monitor target
+        id: target
+        env:
+          CONFIGURED_MONITOR_URL: ${{ vars.UPTIME_MONITOR_URL }}
+          CONFIGURED_WORKER_NAME: ${{ vars.APP_WORKER_NAME }}
+          WORKERS_SUBDOMAIN: ${{ vars.APP_WORKERS_SUBDOMAIN }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CONFIGURED_MONITOR_URL" ]; then
+            TARGET_URL="$CONFIGURED_MONITOR_URL"
+          else
+            WORKER_NAME="${CONFIGURED_WORKER_NAME:-poker}"
+            test -n "$WORKERS_SUBDOMAIN" || {
+              echo "::error::Set UPTIME_MONITOR_URL or APP_WORKERS_SUBDOMAIN"
+              exit 1
+            }
+            TARGET_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
+          fi
+          if [[ "$TARGET_URL" == *$'\n'* || "$TARGET_URL" == *$'\r'* ]]; then
+            echo "::error::Monitor URL must be a single line"
+            exit 1
+          fi
+          echo "target_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Probe deployment
+        id: probe
+        env:
+          TARGET_URL: ${{ steps.target.outputs.target_url }}
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          LOG_FILE="$RUNNER_TEMP/poker-hero-uptime.log"
+          set +e
+          node scripts/check-deployment.mjs "$TARGET_URL" \
+            --attempts 3 \
+            --retry-delay-ms 10000 \
+            >"$LOG_FILE" 2>&1
+          STATUS=$?
+          set -e
+          cat "$LOG_FILE"
+          DETAILS=$(tail -n 1 "$LOG_FILE" | tr '\r\n' ' ' | cut -c1-500)
+          DETAILS="${DETAILS:-Deployment probe exited without a diagnostic}"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "healthy=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "details=${DETAILS}" >> "$GITHUB_OUTPUT"
+
+      - name: Open outage incident
+        if: steps.probe.outputs.healthy == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DETAILS: ${{ steps.probe.outputs.details }}
+          ISSUE_ASSIGNEE: ${{ vars.UPTIME_ISSUE_ASSIGNEE }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TARGET_URL: ${{ steps.target.outputs.target_url }}
+        run: |
+          set -euo pipefail
+          TITLE="[uptime] Poker Hero testing is unavailable"
+          ISSUE_NUMBER=$(gh issue list \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            --jq '[.[] | select(.title == "[uptime] Poker Hero testing is unavailable")] | first | .number // empty')
+          if [ -n "$ISSUE_NUMBER" ]; then
+            echo "::notice::Outage issue #${ISSUE_NUMBER} is already open"
+            exit 0
+          fi
+          BODY_FILE="$RUNNER_TEMP/poker-hero-uptime-issue.md"
+          {
+            echo "The scheduled deployment probe failed."
+            echo
+            echo "- Target: \`${TARGET_URL}\`"
+            echo "- Failure: ${DETAILS}"
+            echo "- Workflow: [open run](${RUN_URL})"
+            echo
+            echo "This issue will be closed automatically after a successful probe."
+          } > "$BODY_FILE"
+          ASSIGNEE_ARGS=()
+          if [ -n "$ISSUE_ASSIGNEE" ]; then
+            [[ "$ISSUE_ASSIGNEE" =~ ^[A-Za-z0-9-]{1,39}$ ]] || {
+              echo "::error::UPTIME_ISSUE_ASSIGNEE is not a valid GitHub login"
+              exit 1
+            }
+            ASSIGNEE_ARGS+=(--assignee "$ISSUE_ASSIGNEE")
+          fi
+          gh issue create \
+            --title "$TITLE" \
+            --body-file "$BODY_FILE" \
+            "${ASSIGNEE_ARGS[@]}"
+
+      - name: Close recovered outage incidents
+        if: steps.probe.outputs.healthy == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBERS=$(gh issue list \
+            --state open \
+            --limit 100 \
+            --json number,title \
+            --jq '.[] | select(.title == "[uptime] Poker Hero testing is unavailable") | .number')
+          for ISSUE_NUMBER in $ISSUE_NUMBERS; do
+            gh issue close "$ISSUE_NUMBER" \
+              --comment "Deployment probe recovered. [Open successful run](${RUN_URL})."
+          done
+
+      - name: Fail unhealthy monitor run
+        if: steps.probe.outputs.healthy == 'false'
+        env:
+          DETAILS: ${{ steps.probe.outputs.details }}
+        run: |
+          echo "::error::$DETAILS"
+          exit 1

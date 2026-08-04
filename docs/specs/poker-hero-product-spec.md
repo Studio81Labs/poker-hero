@@ -503,6 +503,17 @@ their field; hero and board cards must remain jointly unique, text must retain
 its normalized representation, and numeric comparison evidence must be finite
 and representable by the benchmark matcher.
 
+## Deployment Monitoring
+
+The private testing deployment must have a scheduled end-to-end probe that
+checks the frontend application marker, proxied backend health, and one bounded
+protected API read. Checks use bounded responses, timeouts, and retries. When
+Cloudflare Access service credentials are configured, they must never be sent
+across an origin boundary. Repeated failures reuse one open incident rather than
+creating notification noise, and a later successful probe closes the incident
+with recovery evidence. The monitor may optionally assign the incident to a
+configured repository user.
+
 ## Review And Auto-Approve
 
 Manual review is required by default.

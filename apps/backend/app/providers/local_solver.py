@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -242,13 +243,21 @@ def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
     return None
 
 
-def _solver_cents(value: float) -> int:
+_SOLVER_MAX_CENTS = 2_147_483_647
+
+
+def _solver_cents(value: float) -> int | None:
     # Rust's f64::round rounds positive half values away from zero.
-    return int(value * 100 + 0.5)
+    scaled = value * 100
+    if not math.isfinite(scaled) or scaled > _SOLVER_MAX_CENTS:
+        return None
+    return int(scaled + 0.5)
 
 
 def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
     current_bet = _solver_cents(state.current_bet or 0)
+    if current_bet is None:
+        return "current bet is outside the postflop solver's supported range"
     history = state.postflop_action_history
     if current_bet <= 0 and state.facing_action is not None:
         return "facing action requires a positive amount to call"
@@ -282,12 +291,21 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
         elif item.action == "bet":
             if commitments[item.actor] != commitments[opponent]:
                 return f"postflop action {index} must be a raise, not a bet"
-            commitments[item.actor] = _solver_cents(item.amount or 0)
+            amount = _solver_cents(item.amount or 0)
+            if amount is None:
+                return f"postflop action {index} bet amount is outside the supported range"
+            if amount <= 0:
+                return f"postflop action {index} bet amount must round to at least 0.01 BB"
+            commitments[item.actor] = amount
             last_aggression = "bet"
         else:
             if commitments[item.actor] >= commitments[opponent]:
                 return f"postflop action {index} cannot raise without facing a wager"
             amount = _solver_cents(item.amount or 0)
+            if amount is None:
+                return f"postflop action {index} raise amount is outside the supported range"
+            if amount <= 0:
+                return f"postflop action {index} raise amount must round to at least 0.01 BB"
             if amount <= commitments[opponent]:
                 return f"postflop action {index} raise-to amount must exceed the previous wager"
             commitments[item.actor] = amount
@@ -311,13 +329,17 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
     if state.facing_action != expected_facing_action:
         return "facing action does not match structured postflop action history"
 
-    if (
-        state.pot_size is not None
-        and _solver_cents(state.pot_size) <= sum(commitments.values())
-    ):
-        return "pot size must exceed the wagers in structured postflop action history"
+    if state.pot_size is not None:
+        pot_size = _solver_cents(state.pot_size)
+        if pot_size is None:
+            return "pot size is outside the postflop solver's supported range"
+        if pot_size <= sum(commitments.values()):
+            return "pot size must exceed the wagers in structured postflop action history"
     if state.effective_stack is not None:
         visible_effective = _solver_cents(min(state.hero_stack, state.opponent_stack))
-        if _solver_cents(state.effective_stack) != visible_effective:
+        effective_stack = _solver_cents(state.effective_stack)
+        if visible_effective is None or effective_stack is None:
+            return "effective stack is outside the postflop solver's supported range"
+        if effective_stack != visible_effective:
             return "effective stack does not match the visible hero and opponent stacks"
     return None

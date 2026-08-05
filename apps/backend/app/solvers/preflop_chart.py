@@ -8,6 +8,7 @@ from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
     MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
     MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
+    MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO,
     MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO,
     POSTED_BLIND_BB,
     PreflopChartContext,
@@ -127,6 +128,30 @@ ISOLATION_RESPONSE_POLICIES: dict[
     ("button", "small_blind"): DefensePolicy(0.17, 0.055),
     ("button", "big_blind"): DefensePolicy(0.19, 0.060),
     ("small_blind", "big_blind"): DefensePolicy(0.21, 0.070),
+}
+
+# Original-limper reraises represent a substantially stronger range than an
+# ordinary 3-bet. These boundaries are shares of all 169 starting-hand classes
+# and are keyed by (original limper, hero isolator).
+LIMP_RERAISE_RESPONSE_POLICY_NAME = "heads_up_original_limper_reraise"
+LIMP_RERAISE_RESPONSE_POLICIES: dict[
+    tuple[Position, Position], ThreeBetDefensePolicy
+] = {
+    ("utg", "hijack"): ThreeBetDefensePolicy(0.045, 0.020),
+    ("utg", "cutoff"): ThreeBetDefensePolicy(0.048, 0.021),
+    ("utg", "button"): ThreeBetDefensePolicy(0.050, 0.022),
+    ("utg", "small_blind"): ThreeBetDefensePolicy(0.052, 0.023),
+    ("utg", "big_blind"): ThreeBetDefensePolicy(0.055, 0.024),
+    ("hijack", "cutoff"): ThreeBetDefensePolicy(0.052, 0.023),
+    ("hijack", "button"): ThreeBetDefensePolicy(0.055, 0.024),
+    ("hijack", "small_blind"): ThreeBetDefensePolicy(0.057, 0.025),
+    ("hijack", "big_blind"): ThreeBetDefensePolicy(0.060, 0.026),
+    ("cutoff", "button"): ThreeBetDefensePolicy(0.060, 0.026),
+    ("cutoff", "small_blind"): ThreeBetDefensePolicy(0.063, 0.027),
+    ("cutoff", "big_blind"): ThreeBetDefensePolicy(0.066, 0.028),
+    ("button", "small_blind"): ThreeBetDefensePolicy(0.070, 0.030),
+    ("button", "big_blind"): ThreeBetDefensePolicy(0.074, 0.032),
+    ("small_blind", "big_blind"): ThreeBetDefensePolicy(0.080, 0.035),
 }
 
 # Conservative six-max response boundaries keyed by (opener, hero). Later
@@ -303,6 +328,18 @@ ISOLATION_RAISE_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
     ),
 )
 
+LIMP_RERAISE_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
+    ThreeBetSizePolicy("small", 2.25, 1.05, 1.05),
+    ThreeBetSizePolicy("standard", 2.75, 1.00, 1.00),
+    ThreeBetSizePolicy("large", 3.25, 0.90, 0.95),
+    ThreeBetSizePolicy(
+        "very_large",
+        MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO,
+        0.80,
+        0.90,
+    ),
+)
+
 SINGLE_CALLER_POLICY = CallerAdjustmentPolicy(
     name="single_caller_conservative",
     continue_multiplier=0.90,
@@ -408,6 +445,15 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
 
     if context.scenario == "facing_isolation_raise_after_limp":
         return _solve_facing_isolation_raise(
+            request=request,
+            context=context,
+            hand_class=hand_class,
+            top_fraction=top_fraction,
+            stack_policy=stack_policy,
+        )
+
+    if context.scenario == "facing_limp_reraise":
+        return _solve_facing_limp_reraise(
             request=request,
             context=context,
             hand_class=hand_class,
@@ -768,6 +814,115 @@ def _solve_facing_isolation_raise(
         defense_policy=defense_policy,
         isolation_size_policy=size_policy,
         isolation_response_policy=ISOLATION_RESPONSE_POLICY_NAME,
+        stack_policy=stack_policy,
+    )
+
+
+def _solve_facing_limp_reraise(
+    *,
+    request: RecommendationRequest,
+    context: PreflopChartContext,
+    hand_class: str,
+    top_fraction: float,
+    stack_policy: StackDepthPolicy,
+) -> RecommendationResult | None:
+    state = request.state
+    hero_position = context.hero_position
+    limper_position = context.limper_position
+    hero_isolation_raise_size = context.hero_isolation_raise_size
+    limp_reraise_size = context.latest_raise_size
+    if (
+        limper_position is None
+        or hero_isolation_raise_size is None
+        or limp_reraise_size is None
+        or state.hero_stack is None
+        or state.effective_stack is None
+    ):
+        return None
+    base_policy = LIMP_RERAISE_RESPONSE_POLICIES.get(
+        (limper_position, hero_position)
+    )
+    size_policy = policy_for_limp_reraise_size(
+        limp_reraise_size / hero_isolation_raise_size
+    )
+    if base_policy is None or size_policy is None:
+        return None
+    defense_policy = adjusted_three_bet_defense_policy(
+        base_policy,
+        size_policy,
+        stack_policy,
+    )
+    maximum_four_bet_total = min(
+        state.hero_stack + hero_isolation_raise_size,
+        state.effective_stack + limp_reraise_size,
+    )
+    four_bet_size = round(
+        min(
+            max(limp_reraise_size * 2.2, (state.pot_size or 0) * 0.9),
+            maximum_four_bet_total,
+        ),
+        2,
+    )
+    can_four_bet = (
+        four_bet_size > limp_reraise_size
+        and top_fraction <= defense_policy.four_bet_fraction
+    )
+    if can_four_bet:
+        action: RecommendationAction = "raise"
+        sizing = four_bet_size
+        tier = "four_bet"
+        boundary = defense_policy.four_bet_fraction
+    elif top_fraction <= defense_policy.continue_fraction:
+        action = "call"
+        sizing = None
+        tier = "continue"
+        boundary = defense_policy.continue_fraction
+    else:
+        action = "fold"
+        sizing = None
+        tier = "fold"
+        boundary = defense_policy.continue_fraction
+
+    ratio = limp_reraise_size / hero_isolation_raise_size
+    return _result(
+        action=action,
+        sizing=sizing,
+        confidence=_boundary_confidence(top_fraction, boundary),
+        hand_class=hand_class,
+        top_fraction=top_fraction,
+        position=hero_position,
+        scenario="facing_limp_reraise",
+        tier=tier,
+        policy_fraction=boundary,
+        assumptions=[
+            (
+                "The structured preflop history contains one opponent limp, "
+                "one hero isolation raise, and a reraise by the original limper."
+            ),
+            (
+                "Exactly two players remain active, so all other players are "
+                "treated as folded and action has returned to hero."
+            ),
+            f"The original limp and reraise are attributed to {POSITION_LABELS[limper_position]}.",
+            (
+                f"The {limp_reraise_size:g} BB limp-reraise is {ratio:.2f}x "
+                "hero's isolation raise and uses the "
+                f"{size_policy.name.replace('_', ' ')} response adjustment."
+            ),
+            stack_assumption(state.effective_stack, stack_policy),
+            "The chart models a six-max chip-EV training spot before rake.",
+        ],
+        effective_stack=state.effective_stack,
+        limper_position=limper_position,
+        limp_size=context.limp_size,
+        hero_isolation_raise_size=hero_isolation_raise_size,
+        limp_reraiser_position=limper_position,
+        limp_reraise_size=limp_reraise_size,
+        maximum_four_bet_total=round(maximum_four_bet_total, 2),
+        base_limp_reraise_defense_policy=base_policy,
+        limp_reraise_defense_policy=defense_policy,
+        limp_reraise_size_policy=size_policy,
+        limp_reraise_response_policy=LIMP_RERAISE_RESPONSE_POLICY_NAME,
         stack_policy=stack_policy,
     )
 
@@ -1175,6 +1330,19 @@ def policy_for_isolation_raise_size(
     )
 
 
+def policy_for_limp_reraise_size(
+    limp_reraise_to_isolation_ratio: float,
+) -> ThreeBetSizePolicy | None:
+    return next(
+        (
+            policy
+            for policy in LIMP_RERAISE_SIZE_POLICIES
+            if limp_reraise_to_isolation_ratio <= policy.maximum_ratio
+        ),
+        None,
+    )
+
+
 def policy_for_stack_depth(effective_stack: float) -> StackDepthPolicy | None:
     return next(
         (
@@ -1365,6 +1533,13 @@ def _result(
     isolation_raise_size: float | None = None,
     isolation_size_policy: OpenSizePolicy | None = None,
     isolation_response_policy: str | None = None,
+    hero_isolation_raise_size: float | None = None,
+    limp_reraiser_position: Position | None = None,
+    limp_reraise_size: float | None = None,
+    base_limp_reraise_defense_policy: ThreeBetDefensePolicy | None = None,
+    limp_reraise_defense_policy: ThreeBetDefensePolicy | None = None,
+    limp_reraise_size_policy: ThreeBetSizePolicy | None = None,
+    limp_reraise_response_policy: str | None = None,
     opener_position: Position | None = None,
     base_opener_open_fraction: float | None = None,
     opener_open_fraction: float | None = None,
@@ -1460,6 +1635,19 @@ def _result(
             )
     if isolation_response_policy is not None:
         raw["isolation_response_policy"] = isolation_response_policy
+    if hero_isolation_raise_size is not None:
+        raw["hero_isolation_raise_size"] = hero_isolation_raise_size
+    if limp_reraiser_position is not None:
+        raw["limp_reraiser_position"] = limp_reraiser_position
+    if limp_reraise_size is not None:
+        raw["limp_reraise_size"] = limp_reraise_size
+        if hero_isolation_raise_size is not None:
+            raw["limp_reraise_to_isolation_ratio"] = round(
+                limp_reraise_size / hero_isolation_raise_size,
+                4,
+            )
+    if limp_reraise_response_policy is not None:
+        raw["limp_reraise_response_policy"] = limp_reraise_response_policy
     if opener_position is not None:
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
@@ -1554,6 +1742,39 @@ def _result(
                 "isolation_raise_size_policy": isolation_size_policy.name,
                 "continue_size_multiplier": isolation_size_policy.continue_multiplier,
                 "reraise_size_multiplier": isolation_size_policy.reraise_multiplier,
+            }
+        )
+    if (
+        limp_reraiser_position is not None
+        and base_limp_reraise_defense_policy is not None
+        and limp_reraise_defense_policy is not None
+        and limp_reraise_size_policy is not None
+        and stack_policy is not None
+    ):
+        raw.update(
+            {
+                "policy_source": (
+                    "original_limper_hero_isolator_size_stack_matchup"
+                ),
+                "base_continue_fraction": (
+                    base_limp_reraise_defense_policy.continue_fraction
+                ),
+                "base_four_bet_fraction": (
+                    base_limp_reraise_defense_policy.four_bet_fraction
+                ),
+                "continue_fraction": (
+                    limp_reraise_defense_policy.continue_fraction
+                ),
+                "four_bet_fraction": (
+                    limp_reraise_defense_policy.four_bet_fraction
+                ),
+                "limp_reraise_size_policy": limp_reraise_size_policy.name,
+                "continue_size_multiplier": (
+                    limp_reraise_size_policy.continue_multiplier
+                ),
+                "four_bet_size_multiplier": (
+                    limp_reraise_size_policy.four_bet_multiplier
+                ),
             }
         )
     if (

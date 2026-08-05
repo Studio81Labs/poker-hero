@@ -512,10 +512,15 @@ function recommendationEvidenceFromRaw(
   }
 
   const isolationRaiserPosition = metadataLabel(raw.isolation_raiser_position);
+  const limpReraiserPosition = metadataLabel(raw.limp_reraiser_position);
   const limperPosition = metadataLabel(raw.limper_position);
   if (limperPosition) {
     details.push({
-      label: isolationRaiserPosition ? "Hero limper" : "Limper",
+      label: isolationRaiserPosition
+        ? "Hero limper"
+        : limpReraiserPosition
+          ? "Original limper"
+          : "Limper",
       value: limperPosition,
     });
   }
@@ -551,6 +556,37 @@ function recommendationEvidenceFromRaw(
   const isolationResponsePolicy = metadataLabel(raw.isolation_response_policy);
   if (isolationResponsePolicy) {
     details.push({ label: "Isolation policy", value: isolationResponsePolicy });
+  }
+
+  const heroIsolationRaiseSize = metadataNumber(raw.hero_isolation_raise_size);
+  if (heroIsolationRaiseSize !== null && heroIsolationRaiseSize > 0) {
+    details.push({
+      label: "Hero isolation",
+      value: formatEvidenceBb(heroIsolationRaiseSize),
+    });
+  }
+
+  if (limpReraiserPosition) {
+    details.push({ label: "Limp reraiser", value: limpReraiserPosition });
+  }
+
+  const limpReraiseSize = metadataNumber(raw.limp_reraise_size);
+  const limpReraiseRatio = metadataNumber(raw.limp_reraise_to_isolation_ratio);
+  const limpReraiseSizePolicy = metadataLabel(raw.limp_reraise_size_policy);
+  if (limpReraiseSize !== null && limpReraiseSize > 0) {
+    let limpReraiseValue = formatEvidenceBb(limpReraiseSize);
+    if (limpReraiseRatio !== null && limpReraiseRatio > 0) {
+      limpReraiseValue += ` · ${formatEvidenceNumber(limpReraiseRatio, 2)}x isolation`;
+    }
+    if (limpReraiseSizePolicy) {
+      limpReraiseValue += ` · ${limpReraiseSizePolicy}`;
+    }
+    details.push({ label: "Limp-reraise size", value: limpReraiseValue });
+  }
+
+  const limpReraiseResponsePolicy = metadataLabel(raw.limp_reraise_response_policy);
+  if (limpReraiseResponsePolicy) {
+    details.push({ label: "Limp-reraise policy", value: limpReraiseResponsePolicy });
   }
 
   const limpRaiseFraction = metadataRatio(raw.limp_raise_fraction);

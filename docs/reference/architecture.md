@@ -36,6 +36,8 @@ later-position 3-bet. It can also route a hero 1 BB limp followed by one bounded
 later-position isolation raise when action returns heads-up, or one opponent open
 and one opponent 3-bet before hero when exactly three players remain, or one
 opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
+It can additionally route one opponent limp, one hero isolation raise, and a
+reraise by the original limper after action returns heads-up.
 It also supports a later-position cold 4-bet after the opener folds and exactly
 two players remain, plus a later-position squeeze after hero cold-calls and the
 opener folds heads-up.
@@ -75,6 +77,14 @@ adjustments. Evidence uses isolation-specific actor, size, policy, range, and
 cap fields rather than presenting the action as an open/3-bet sequence. Its
 call-first structured history takes precedence over stale legacy opener fields,
 which the approval serializer clears and the route ignores for compatibility.
+The limp-reraise response route also requires exactly two active players. It
+accepts one 1 BB limp before hero, a 2-5 BB hero isolation raise, and a full
+reraise by that same limper up to 4x the isolation total. Pot reconstruction
+uses only each player's final commitment so the initial limp is not counted
+twice. Explicit limper-versus-isolator policies tighten across ordered
+limp-reraise ratio bands and stack depth; evidence uses original-limper,
+hero-isolation, and limp-reraise terminology and includes the adjusted
+continue/four-bet range plus the reconstructed cap.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

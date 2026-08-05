@@ -92,6 +92,7 @@ MAX_BLIND_ONLY_POT_BB = 1.75
 MIN_SINGLE_OPEN_SIZE_BB = 2.0
 MAX_SINGLE_OPEN_SIZE_BB = 4.0
 MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB = 5.0
+MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO = 4.0
 MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO = 5.0
 MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO = 3.5
 MONEY_TOLERANCE_BB = 0.05
@@ -101,6 +102,7 @@ PreflopChartScenario = Literal[
     "big_blind_option",
     "heads_up_limp_big_blind",
     "facing_isolation_raise_after_limp",
+    "facing_limp_reraise",
     "facing_open_raise",
     "facing_open_with_caller",
     "facing_open_with_callers",
@@ -126,6 +128,7 @@ class PreflopChartContext:
     latest_raise_size: float | None = None
     caller_positions: tuple[Position, ...] = ()
     hero_prior_commitment: float | None = None
+    hero_isolation_raise_size: float | None = None
     hero_three_bet_size: float | None = None
 
 
@@ -156,6 +159,7 @@ def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
         "facing_cold_three_bet",
         "facing_squeeze_after_call",
         "facing_isolation_raise_after_limp",
+        "facing_limp_reraise",
         "facing_four_bet",
         "facing_cold_four_bet",
     }
@@ -567,10 +571,9 @@ def _structured_isolation_raise_context(
     hero_position: Position,
 ) -> PreflopChartContext | None:
     history = state.preflop_action_history
-    if (
-        len(history) != 2
-        or state.players_in_hand != 2
-    ):
+    if len(history) == 3:
+        return _structured_limp_reraise_context(state, hero_position)
+    if len(history) != 2 or state.players_in_hand != 2:
         return None
 
     limp, isolation_raise = history
@@ -608,6 +611,65 @@ def _structured_isolation_raise_context(
         latest_aggressor_position=raiser_position,
         latest_raise_size=isolation_raise.amount,
         hero_prior_commitment=limp.amount,
+    )
+
+
+def _structured_limp_reraise_context(
+    state: CanonicalState,
+    hero_position: Position,
+) -> PreflopChartContext | None:
+    limp, isolation_raise, limp_reraise = state.preflop_action_history
+    limper_position: Position = limp.actor
+    isolation_raise_size = isolation_raise.amount
+    limp_reraise_size = limp_reraise.amount
+    minimum_limp_reraise = isolation_raise_size + max(
+        1.0,
+        isolation_raise_size - limp.amount,
+    )
+    if (
+        state.players_in_hand != 2
+        or limp.action != "call"
+        or limper_position == hero_position
+        or POSITION_ACTION_ORDER[limper_position]
+        >= POSITION_ACTION_ORDER[hero_position]
+        or abs(limp.amount - 1.0) > MONEY_TOLERANCE_BB
+        or isolation_raise.actor != hero_position
+        or isolation_raise.action != "raise"
+        or isolation_raise_size + MONEY_TOLERANCE_BB < 2.0
+        or isolation_raise_size
+        > MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB + MONEY_TOLERANCE_BB
+        or limp_reraise.actor != limper_position
+        or limp_reraise.action != "raise"
+        or limp_reraise_size + MONEY_TOLERANCE_BB < minimum_limp_reraise
+        or limp_reraise_size
+        > (
+            isolation_raise_size
+            * MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO
+            + MONEY_TOLERANCE_BB
+        )
+        or not _amount_to_call_matches(
+            state.current_bet,
+            limp_reraise_size - isolation_raise_size,
+        )
+        or not _stack_state_supports_raise_response(state)
+        or not _pot_matches_actions(
+            state.pot_size,
+            (
+                (hero_position, isolation_raise_size),
+                (limper_position, limp_reraise_size),
+            ),
+        )
+    ):
+        return None
+    return PreflopChartContext(
+        scenario="facing_limp_reraise",
+        hero_position=hero_position,
+        limper_position=limper_position,
+        limp_size=limp.amount,
+        latest_aggressor_position=limper_position,
+        latest_raise_size=limp_reraise_size,
+        hero_prior_commitment=isolation_raise_size,
+        hero_isolation_raise_size=isolation_raise_size,
     )
 
 

@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, a heads-up response after hero limps and a later player isolation-raises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -354,6 +354,21 @@ contradictory money state must retain fallback behavior. Stale legacy opener
 metadata must not override call-first structured history: the frontend clears
 it from approval payloads and the backend ignores it for this route so saved
 states and API clients receive the same precedence behavior.
+
+Structured preflop history may also route one opponent 1 BB limp, one hero
+isolation raise to 2-5 BB, and one reraise by the original limper after action
+returns heads-up to hero. Exactly two players must remain active, the limper
+must act before hero, and the final action must be a full raise no larger than
+4x the hero isolation total. The current call, final pot commitments, hero
+stack, and effective stack must agree; pot reconstruction must not count the
+limper's initial 1 BB twice. Explicit original-limper-versus-hero-isolator
+policies must adjust monotonically across limp-reraise ratio and stack-depth
+bands. Evidence must identify the original limper, hero isolation total,
+limp-reraiser, reraise total and ratio, size policy, adjusted continue/four-bet
+boundaries, named response policy, and maximum legal four-bet total. Stale
+legacy opener fields must remain subordinate to the call-first structured
+history. Another active player, a different final actor, an incomplete raise,
+or contradictory money state must retain fallback behavior.
 
 Multiple limpers, a hidden active player, a limp with action pending behind hero,
 other non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold

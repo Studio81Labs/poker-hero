@@ -1214,3 +1214,43 @@ def test_recommendation_benchmark_runs_isolation_response_preflop_chart(
     assert report.line_correct == 1
     assert report.fallback_cases == 0
     assert report.cases[0].engine == "preflop_chart_v1"
+
+
+def test_recommendation_benchmark_runs_limp_reraise_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "preflop-facing-limp-reraise",
+                [reference_line("call")],
+                tags=["preflop", "limp-reraise", "hero-isolation"],
+                hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+                board_cards=[],
+                street="preflop",
+                pot_size=17.5,
+                current_bet=8,
+                hero_stack=96,
+                effective_stack=88,
+                players_in_hand=2,
+                hero_position="button",
+                facing_action="raise",
+                preflop_action_history=[
+                    PreflopAction(actor="utg", action="call", amount=1),
+                    PreflopAction(actor="button", action="raise", amount=4),
+                    PreflopAction(actor="utg", action="raise", amount=12),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_correct == 1
+    assert report.line_correct == 1
+    assert report.fallback_cases == 0
+    assert report.cases[0].engine == "preflop_chart_v1"

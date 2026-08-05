@@ -139,6 +139,8 @@ context use the bundled position-aware training chart. Supported contexts
 include an unopened pot, one heads-up 1 BB limp to the big blind, a single open,
 one open followed by one to four callers, a hero 1 BB limp facing one
 later-position isolation raise after action returns heads-up,
+a single opponent limp followed by hero's isolation raise and a reraise by the
+original limper after action returns heads-up,
 a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
 a hero 3-bet facing either an opener 4-bet or a later cold 4-bet after the
 opener folds. It also supports hero cold-calling an open, facing a later
@@ -163,6 +165,13 @@ heads-up isolation response after every other player folds. This route requires
 known hero and effective stacks, validates the call amount and reconstructed
 pot, and exposes its position, size-band, stack, response-range, and raise-cap
 adjustments as evidence.
+One opponent 1 BB call, a 2-5 BB hero isolation raise, and a bounded reraise by
+that same limper can represent the corresponding heads-up limp-reraise response.
+This route requires the limper to act before hero, validates a full reraise up
+to 4x the isolation total, and applies dedicated limper-versus-isolator,
+size-band, and stack-depth continue/four-bet boundaries. Its evidence retains
+the original limper, hero isolation total, limp-reraise total and ratio, named
+policy, adjusted range, and reconstructed all-in cap.
 The called-open routes require exactly three through six active players,
 matching open/call totals, and legal seat order. They apply explicit conservative
 range multipliers and 4x-open through 7x-open squeeze targets for one through
@@ -184,7 +193,7 @@ Positionless and unsupported limped spots, including multiple limpers, action
 pending behind hero, or an isolation raise with another active player, caller
 histories beyond the terminal six-max ordering, unsupported
 squeezes with an active opener, another caller, or action behind, cold 4-bets
-with action behind or another active player, longer
+with action behind or another active player, unsupported limp-reraises, longer
 preflop trees, multiway postflop states, and
 incomplete, ambiguous-position, oversized, or failed trees use `local_ev` when
 fallback is enabled. Recommendations preserve

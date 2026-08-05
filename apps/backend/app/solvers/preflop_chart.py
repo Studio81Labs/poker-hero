@@ -284,9 +284,17 @@ DOUBLE_CALLER_POLICY = CallerAdjustmentPolicy(
     squeeze_open_multiple=5.0,
 )
 
+TRIPLE_CALLER_POLICY = CallerAdjustmentPolicy(
+    name="triple_caller_conservative",
+    continue_multiplier=0.70,
+    reraise_multiplier=0.80,
+    squeeze_open_multiple=6.0,
+)
+
 CALLER_ADJUSTMENT_POLICIES: dict[int, CallerAdjustmentPolicy] = {
     1: SINGLE_CALLER_POLICY,
     2: DOUBLE_CALLER_POLICY,
+    3: TRIPLE_CALLER_POLICY,
 }
 
 THREE_BET_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
@@ -495,12 +503,19 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
                 f"The caller is attributed to {caller_labels[0]}.",
                 "The conservative single-caller adjustment tightens both continuing and squeezing ranges.",
             ]
-        else:
+        elif len(caller_labels) == 2:
             scenario = "facing_open_with_callers"
             action_assumptions = [
                 "The structured preflop history contains one open and exactly two calls with no other active player.",
                 f"The callers are attributed to {caller_labels[0]} and {caller_labels[1]}.",
                 "The conservative double-caller adjustment further tightens continuing and squeezing ranges.",
+            ]
+        else:
+            scenario = "facing_open_with_three_callers"
+            action_assumptions = [
+                "The structured preflop history contains one open and exactly three calls with no other active player.",
+                f"The callers are attributed to {', '.join(caller_labels[:-1])}, and {caller_labels[-1]}.",
+                "The conservative triple-caller adjustment further tightens continuing and squeezing ranges.",
             ]
     else:
         scenario = "facing_open_raise"

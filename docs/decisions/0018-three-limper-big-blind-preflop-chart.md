@@ -34,5 +34,8 @@ contradictory pot state. These states retain the configured range/EV fallback.
   training guidance.
 - The triple-specific policies remain visibly distinct from heads-up and
   two-limper ranges.
-- Four or more limpers, action after hero, and arbitrary limp trees remain
-  outside the bundled chart.
+- This decision originally left four or more limpers, action after hero, and
+  arbitrary limp trees outside the bundled chart.
+
+ADR 0019 extends the same strict boundary to exactly four limpers. Five or more
+limpers and arbitrary limp trees remain outside the bundled chart.

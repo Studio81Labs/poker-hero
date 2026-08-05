@@ -938,6 +938,44 @@ def test_local_solver_routes_three_limpers_to_preflop_chart(tmp_path: Path) -> N
     assert "hero_stack" not in provider.required_fields_for(state)
 
 
+def test_local_solver_routes_four_limpers_to_preflop_chart(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=5.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=5,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="call", amount=1),
+            PreflopAction(actor="hijack", action="call", amount=1),
+            PreflopAction(actor="cutoff", action="call", amount=1),
+            PreflopAction(actor="button", action="call", amount=1),
+        ],
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "raise"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "four_limpers_big_blind"
+    assert result.raw["limper_positions"] == [
+        "utg",
+        "hijack",
+        "cutoff",
+        "button",
+    ]
+    assert result.raw["routing_reason"] == "the hand is preflop"
+    assert "hero_stack" not in provider.required_fields_for(state)
+
+
 def test_local_solver_keeps_fallback_for_limp_with_hidden_player(
     tmp_path: Path,
 ) -> None:

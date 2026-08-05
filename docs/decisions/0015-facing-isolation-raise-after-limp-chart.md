@@ -15,8 +15,11 @@ in recommendation evidence.
 
 Route exactly one 1 BB hero call followed by one later-position raise to 2-5 BB
 only when exactly two players remain active. Require legal seat order, no opener
-metadata, known hero and effective stacks, a current call equal to the raise
-minus hero's limp, and a pot reconstructed from blinds plus both commitments.
+action in the structured history, known hero and effective stacks, a current
+call equal to the raise minus hero's limp, and a pot reconstructed from blinds
+plus both commitments. Treat the call-first structured history as authoritative:
+clear stale legacy opener fields in frontend approval payloads and ignore them
+at this backend route for compatibility with saved states and API clients.
 
 Apply an explicit continue/reraise policy for every legal hero-limper and
 isolation-raiser seat pair. Adjust those boundaries with ordered small,

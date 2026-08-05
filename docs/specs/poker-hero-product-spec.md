@@ -349,8 +349,11 @@ hero-limper-versus-isolation-raiser policies adjust across raise-size and stack
 bands, with reraises capped by both players' reconstructed totals. Evidence must
 identify the limper, isolation raiser, total and ratio, size policy, adjusted
 continue/reraise boundaries, named response policy, and cap. Another active
-player, action pending behind hero, opener metadata, or contradictory money
-state must retain fallback behavior.
+player, action pending behind hero, contradictory structured actions, or
+contradictory money state must retain fallback behavior. Stale legacy opener
+metadata must not override call-first structured history: the frontend clears
+it from approval payloads and the backend ignores it for this route so saved
+states and API clients receive the same precedence behavior.
 
 Multiple limpers, a hidden active player, a limp with action pending behind hero,
 other non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold

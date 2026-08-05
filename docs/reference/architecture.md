@@ -72,7 +72,9 @@ hero is the represented limper and a later seat raises to 2-5 BB. It validates
 the amount to call, both commitments, blind replacement, and available stacks,
 then applies explicit hero-versus-raiser boundaries plus raise-size and stack
 adjustments. Evidence uses isolation-specific actor, size, policy, range, and
-cap fields rather than presenting the action as an open/3-bet sequence.
+cap fields rather than presenting the action as an open/3-bet sequence. Its
+call-first structured history takes precedence over stale legacy opener fields,
+which the approval serializer clears and the route ignores for compatibility.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

@@ -24,16 +24,19 @@ or 1.5x the pot, capped by the effective total represented by hero's posted big
 blind and effective stack. Reuse the multi-limper evidence contract to record
 all four seats, count, named policy, base and adjusted range, target, and cap.
 
-Decline routing for a hidden active player, a fifth limp, duplicate or
-out-of-order seats, non-call actions, non-1 BB totals, a non-big-blind hero, or
-contradictory pot state. These states retain the configured range/EV fallback.
+This decision originally declined routing for a hidden active player, a fifth
+limp, duplicate or out-of-order seats, non-call actions, non-1 BB totals, a
+non-big-blind hero, or contradictory pot state.
 
 ## Consequences
 
 - A common four-limper big-blind option receives deterministic, inspectable
   training guidance.
 - The four-seat policies remain visibly distinct from wider-field policies.
-- Five limpers, action after hero, and arbitrary limp trees remain outside the
-  bundled chart.
+- This decision originally left five limpers, action after hero, and arbitrary
+  limp trees outside the bundled chart.
 - The response is a conservative training chart, not a solved mixed-frequency
   preflop game tree.
+
+ADR 0020 extends the same strict boundary to the canonical five-limper
+full-table sequence. Arbitrary limp trees remain outside the bundled chart.

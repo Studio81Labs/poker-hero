@@ -211,7 +211,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to four-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to five-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -386,8 +386,20 @@ legal four-seat combinations, remain tighter than every corresponding
 three-limper policy, and apply the selected stack-depth adjustment. The target
 is at least 7 BB or 1.5x the pot and remains capped by the available effective
 total. Evidence uses the shared multi-limper fields with all four seats and a
-count of four. A hidden active player, fifth limp, duplicate or reordered seat,
-non-1 BB call, or contradictory money state must retain fallback.
+count of four. A mismatched active-player count, duplicate or reordered seat,
+non-1 BB call, or contradictory money state must retain fallback unless a
+longer history matches a separately supported route.
+
+The terminal six-max big-blind option may route exactly five ordered 1 BB limps
+when all six players remain active. The calls must come from UTG, Hijack,
+Cutoff, Button, and Small Blind in canonical action order, with no aggression or
+opener metadata and a pot reconstructed as 6 BB. The single full-table policy
+must remain tighter than every four-limper subset and apply the selected
+stack-depth adjustment. The target is at least 8 BB or 1.5x the pot and remains
+capped by the available effective total. Evidence uses the shared multi-limper
+fields with all five seats and a count of five. A mismatched player count,
+duplicate or reordered seat, non-1 BB call, overlong history, or contradictory
+money state must retain fallback.
 
 Structured preflop history may also route one 1 BB hero limp followed by one
 later-position isolation raise to 2-5 BB after action returns to hero. Exactly
@@ -419,10 +431,11 @@ legacy opener fields must remain subordinate to the call-first structured
 history. Another active player, a different final actor, an incomplete raise,
 or contradictory money state must retain fallback behavior.
 
-Five or more limpers, a hidden active player, a limp with action pending behind
-hero, other non-big-blind limp decisions, unsupported broader squeeze histories,
-unsupported cold 4-bet trees, more than five actions, unsupported positions or
-sizes, and contradictory money state decline these routes.
+A limped history outside the canonical one- through five-limper big-blind
+routes, a hidden active player, action pending behind hero, other non-big-blind
+limp decisions, unsupported broader squeeze histories, unsupported cold 4-bet
+trees, more than five actions, unsupported positions or sizes, and
+contradictory money state decline these routes.
 
 Effective stack selects an explicit preflop policy band: short at 20 BB or less,
 medium through 50 BB, standard through 150 BB, and deep above 150 BB. Shorter

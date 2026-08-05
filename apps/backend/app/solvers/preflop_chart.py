@@ -152,6 +152,19 @@ FOUR_LIMPER_RESPONSE_POLICIES: dict[
     ("hijack", "cutoff", "button", "small_blind"): LimpResponsePolicy(0.115),
 }
 
+FIVE_LIMPER_RESPONSE_POLICY_NAME = "big_blind_five_limpers"
+FIVE_LIMPER_RESPONSE_POLICIES: dict[
+    tuple[Position, Position, Position, Position, Position], LimpResponsePolicy
+] = {
+    (
+        "utg",
+        "hijack",
+        "cutoff",
+        "button",
+        "small_blind",
+    ): LimpResponsePolicy(0.06),
+}
+
 ISOLATION_RESPONSE_POLICY_NAME = "heads_up_after_hero_limp"
 ISOLATION_RESPONSE_POLICIES: dict[
     tuple[Position, Position], DefensePolicy
@@ -490,6 +503,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         "two_limpers_big_blind",
         "three_limpers_big_blind",
         "four_limpers_big_blind",
+        "five_limpers_big_blind",
     }:
         return _solve_multiple_limpers_big_blind(
             request=request,
@@ -826,6 +840,21 @@ def _solve_multiple_limpers_big_blind(
         )
         response_policy_name = FOUR_LIMPER_RESPONSE_POLICY_NAME
         minimum_target = 7.0
+    elif (
+        context.scenario == "five_limpers_big_blind"
+        and len(limper_positions) == 5
+    ):
+        policy = FIVE_LIMPER_RESPONSE_POLICIES.get(
+            (
+                limper_positions[0],
+                limper_positions[1],
+                limper_positions[2],
+                limper_positions[3],
+                limper_positions[4],
+            )
+        )
+        response_policy_name = FIVE_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 8.0
     else:
         return None
     if policy is None:
@@ -1743,6 +1772,7 @@ def _result(
         "two_limpers_big_blind",
         "three_limpers_big_blind",
         "four_limpers_big_blind",
+        "five_limpers_big_blind",
     }:
         actions = ("check", "raise")
     else:

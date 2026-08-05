@@ -40,6 +40,6 @@ fallback.
   from fallback cases with hidden players or broader histories.
 - At adoption, cold 3-bets and multiple callers were still unsupported. ADR
   0007 adds a bounded cold 3-bet policy, and ADR 0009 adds a separate exactly
-  two-caller policy. Limped pots, three or more callers, cold 4-bets, and
-  arbitrary preflop trees still require a licensed solver or future bounded
-  policies.
+  two-caller policy. Limped pots, three or more callers, cold 4-bets outside
+  ADR 0010's bounded heads-up response, and arbitrary preflop trees still
+  require a licensed solver or future bounded policies.

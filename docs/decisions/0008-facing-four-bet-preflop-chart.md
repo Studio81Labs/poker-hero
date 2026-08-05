@@ -38,3 +38,5 @@ the configured range/EV fallback.
   stack and never appears outside the continue range.
 - The route remains explicitly heads-up and does not imply support for cold
   4-bets, multiple opponents, or arbitrary preflop trees.
+- ADR 0010 separately adds a bounded later-player cold 4-bet response only
+  after the opener folds and action returns heads-up to hero.

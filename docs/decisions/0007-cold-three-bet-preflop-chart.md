@@ -40,5 +40,5 @@ retain the configured range/EV fallback.
   commitment instead of the opponent's opening size.
 - Every supported seat order is explicit and testable; unrepresented multiway
   state cannot silently use a heads-up chart.
-- Limped pots, multiple callers, cold 4-bets, and longer preflop trees remain
-  outside the bundled chart.
+- Limped pots, multiple callers, cold 4-bets outside ADR 0010's bounded
+  heads-up response, and longer preflop trees remain outside the bundled chart.

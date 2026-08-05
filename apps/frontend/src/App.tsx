@@ -588,6 +588,11 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "4-bettor", value: fourBettorPosition });
   }
 
+  const coldFourBetPolicy = metadataLabel(raw.cold_four_bet_policy);
+  if (coldFourBetPolicy) {
+    details.push({ label: "Cold 4-bet policy", value: coldFourBetPolicy });
+  }
+
   const fourBetSize = metadataNumber(raw.four_bet_size);
   const fourBetRatio = metadataNumber(raw.four_bet_to_three_bet_ratio);
   const fourBetSizePolicy = metadataLabel(raw.four_bet_size_policy);

@@ -103,6 +103,7 @@ PreflopChartScenario = Literal[
     "facing_three_bet",
     "facing_cold_three_bet",
     "facing_four_bet",
+    "facing_cold_four_bet",
 ]
 
 
@@ -144,6 +145,7 @@ def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
         "facing_three_bet",
         "facing_cold_three_bet",
         "facing_four_bet",
+        "facing_cold_four_bet",
     }
 
 
@@ -349,7 +351,25 @@ def _structured_preflop_context(
 
     if len(history) == 3:
         four_bet = history[2]
+        four_bettor_position: Position = four_bet.actor
         minimum_four_bet = three_bet.amount + (three_bet.amount - opener_size)
+        cold_four_bet = four_bettor_position != opener_position
+        if cold_four_bet:
+            valid_four_bettor = (
+                POSITION_ACTION_ORDER[hero_position]
+                < POSITION_ACTION_ORDER[four_bettor_position]
+            )
+            pot_commitments = (
+                (opener_position, opener_size),
+                (hero_position, three_bet.amount),
+                (four_bettor_position, four_bet.amount),
+            )
+        else:
+            valid_four_bettor = True
+            pot_commitments = (
+                (hero_position, three_bet.amount),
+                (opener_position, four_bet.amount),
+            )
         if (
             state.players_in_hand != 2
             or opener_position == hero_position
@@ -357,7 +377,8 @@ def _structured_preflop_context(
             or POSITION_ACTION_ORDER[opener_position]
             >= POSITION_ACTION_ORDER[hero_position]
             or four_bet.action != "raise"
-            or four_bet.actor != opener_position
+            or four_bettor_position == hero_position
+            or not valid_four_bettor
             or four_bet.amount + MONEY_TOLERANCE_BB < minimum_four_bet
             or four_bet.amount > (
                 three_bet.amount * MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO
@@ -368,21 +389,19 @@ def _structured_preflop_context(
                 four_bet.amount - three_bet.amount,
             )
             or not _stack_state_supports_raise_response(state)
-            or not _pot_matches_actions(
-                state.pot_size,
-                (
-                    (hero_position, three_bet.amount),
-                    (opener_position, four_bet.amount),
-                ),
-            )
+            or not _pot_matches_actions(state.pot_size, pot_commitments)
         ):
             return None
         return PreflopChartContext(
-            scenario="facing_four_bet",
+            scenario=(
+                "facing_cold_four_bet"
+                if cold_four_bet
+                else "facing_four_bet"
+            ),
             hero_position=hero_position,
             opener_position=opener_position,
             opening_raise_size=opener_size,
-            latest_aggressor_position=opener_position,
+            latest_aggressor_position=four_bettor_position,
             latest_raise_size=four_bet.amount,
             hero_three_bet_size=three_bet.amount,
         )

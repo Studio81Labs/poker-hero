@@ -10074,6 +10074,68 @@ describe("App", () => {
     expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
   });
 
+  it("identifies conservative cold four-bet response evidence", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "cold-four-bet-chart-job",
+      original_filename: "cold-four-bet.png",
+      image_filename: "cold-four-bet.png",
+      recommendation: {
+        action: "call",
+        sizing: null,
+        confidence: 0.76,
+        explanation: "The preflop chart recommends a conservative call.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0178,
+          policy_fraction: 0.027,
+          stack_depth_policy: "standard",
+          effective_stack: 80,
+          opener_position: "utg",
+          opening_raise_size: 2.5,
+          three_bettor_position: "cutoff",
+          three_bet_size: 8,
+          three_bet_to_open_ratio: 3.2,
+          four_bettor_position: "button",
+          four_bet_size: 20,
+          four_bet_to_three_bet_ratio: 2.5,
+          four_bet_size_policy: "standard",
+          cold_four_bet_policy: "conservative_heads_up_after_opener_folds",
+          continue_fraction: 0.027,
+          five_bet_fraction: 0.016,
+          maximum_five_bet_total: 100,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 1 },
+            { action: "raise", sizing: null, frequency: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("UTG")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Cutoff")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Button")).toBeInTheDocument();
+    expect(
+      within(chartContext).getByText("Conservative heads up after opener folds"),
+    ).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 2.7% · Five-bet 1.6%"))
+      .toBeInTheDocument();
+    expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
+  });
+
   it("displays backend upload errors as queue attention items", async () => {
     const validJob = jobRecord({ original_filename: "valid.png" });
     fetchMock()

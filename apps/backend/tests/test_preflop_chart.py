@@ -11,6 +11,8 @@ from app.models import (
     RecommendationRequest,
 )
 from app.solvers.preflop_chart import (
+    COLD_FOUR_BET_DEFENSE_POLICIES,
+    COLD_FOUR_BET_POLICY_NAME,
     COLD_THREE_BET_DEFENSE_POLICIES,
     COLD_THREE_BET_POLICY_NAME,
     DEFENSE_POLICIES,
@@ -351,6 +353,70 @@ def structured_four_bet_request(
             ),
         ],
     )
+
+
+def structured_cold_four_bet_request(
+    cards: tuple[str, str],
+    *,
+    opener_position: PreflopPosition = "utg",
+    hero_position: PreflopPosition = "cutoff",
+    four_bettor_position: PreflopPosition = "button",
+    opening_size: float = 2.5,
+    three_bet_size: float = 8.0,
+    four_bet_size: float = 20.0,
+    hero_stack: float | None = 92.0,
+    effective_stack: float = 80.0,
+    players_in_hand: int = 2,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    commitments = (
+        (opener_position, opening_size),
+        (hero_position, three_bet_size),
+        (four_bettor_position, four_bet_size),
+    )
+    pot_size = 1.5 + sum(
+        amount - posted_blinds[position]
+        for position, amount in commitments
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=four_bet_size - three_bet_size,
+        pot_size=pot_size,
+        hero_stack=hero_stack,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        facing_action="raise",
+        action_context="Structured history is authoritative",
+        preflop_opener_position=opener_position,
+        preflop_open_size=opening_size,
+        preflop_action_history=[
+            PreflopAction(
+                actor=opener_position,
+                action="raise",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=hero_position,
+                action="raise",
+                amount=three_bet_size,
+            ),
+            PreflopAction(
+                actor=four_bettor_position,
+                action="raise",
+                amount=four_bet_size,
+            ),
+        ],
+    )
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
@@ -485,6 +551,50 @@ def test_four_bet_policies_remain_valid_after_all_adjustments() -> None:
                     <= adjusted.continue_fraction
                     <= 1
                 )
+
+
+def test_cold_four_bet_policies_cover_every_legal_three_seat_order() -> None:
+    expected_matchups = {
+        (opener, hero, four_bettor)
+        for opener in POSITION_POLICIES
+        for hero in POSITION_POLICIES
+        for four_bettor in POSITION_POLICIES
+        if POSITION_ACTION_ORDER[opener]
+        < POSITION_ACTION_ORDER[hero]
+        < POSITION_ACTION_ORDER[four_bettor]
+    }
+
+    assert set(COLD_FOUR_BET_DEFENSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.five_bet_fraction <= policy.continue_fraction <= 1
+        for policy in COLD_FOUR_BET_DEFENSE_POLICIES.values()
+    )
+
+
+def test_cold_four_bet_policies_remain_valid_after_all_adjustments() -> None:
+    for policy in COLD_FOUR_BET_DEFENSE_POLICIES.values():
+        for size_policy in FOUR_BET_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_four_bet_defense_policy(
+                    policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert (
+                    0
+                    < adjusted.five_bet_fraction
+                    <= adjusted.continue_fraction
+                    <= 1
+                )
+
+
+def test_cold_four_bet_policies_are_tighter_than_opener_four_bets() -> None:
+    for (opener, hero, _), cold_policy in (
+        COLD_FOUR_BET_DEFENSE_POLICIES.items()
+    ):
+        opener_policy = FOUR_BET_DEFENSE_POLICIES[(opener, hero)]
+        assert cold_policy.continue_fraction < opener_policy.continue_fraction
+        assert cold_policy.five_bet_fraction <= opener_policy.five_bet_fraction
 
 
 def test_open_size_policies_tighten_as_the_raise_grows() -> None:
@@ -1223,6 +1333,171 @@ def test_four_bet_history_routes_every_legal_position_matchup(
     assert result.action == "raise"
     assert result.raw["opener_position"] == opener_position
     assert result.raw["three_bettor_position"] == hero_position
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "five_bet_all_in"),
+        (("Qh", "Qd"), "call", "continue"),
+        (("7h", "2d"), "fold", "fold"),
+    ],
+)
+def test_cold_four_bet_history_routes_conservative_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    result = solve_preflop_chart(structured_cold_four_bet_request(cards))
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_cold_four_bet"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["opener_position"] == "utg"
+    assert result.raw["three_bettor_position"] == "cutoff"
+    assert result.raw["four_bettor_position"] == "button"
+    assert result.raw["opening_raise_size"] == 2.5
+    assert result.raw["three_bet_size"] == 8
+    assert result.raw["four_bet_size"] == 20
+    assert result.raw["four_bet_to_three_bet_ratio"] == 2.5
+    assert result.raw["cold_four_bet_policy"] == COLD_FOUR_BET_POLICY_NAME
+    assert result.raw["policy_source"] == (
+        "hero_opener_cold_four_bettor_size_stack_matchup"
+    )
+
+
+@pytest.mark.parametrize(
+    ("opener_position", "hero_position", "four_bettor_position"),
+    tuple(COLD_FOUR_BET_DEFENSE_POLICIES),
+)
+def test_cold_four_bet_history_routes_every_legal_position_order(
+    opener_position: PreflopPosition,
+    hero_position: PreflopPosition,
+    four_bettor_position: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_cold_four_bet_request(
+            ("Ah", "Ad"),
+            opener_position=opener_position,
+            hero_position=hero_position,
+            four_bettor_position=four_bettor_position,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["opener_position"] == opener_position
+    assert result.raw["three_bettor_position"] == hero_position
+    assert result.raw["four_bettor_position"] == four_bettor_position
+
+
+def test_cold_four_bet_reconstructs_folded_opener_and_blinds() -> None:
+    result = solve_preflop_chart(
+        structured_cold_four_bet_request(
+            ("Ah", "Ad"),
+            opener_position="cutoff",
+            hero_position="small_blind",
+            four_bettor_position="big_blind",
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 100
+    assert result.raw["maximum_five_bet_total"] == 100
+
+
+def test_cold_four_bet_five_bet_uses_reconstructed_all_in_cap() -> None:
+    result = solve_preflop_chart(
+        structured_cold_four_bet_request(
+            ("Ah", "Ad"),
+            hero_stack=17,
+            effective_stack=5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 25
+    assert result.raw["maximum_five_bet_total"] == 25
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "current_bet", 11),
+        lambda state: setattr(state, "pot_size", 29.5),
+        lambda state: setattr(state, "hero_stack", None),
+        lambda state: setattr(state, "hero_stack", 11),
+        lambda state: setattr(state, "effective_stack", 93),
+        lambda state: setattr(state, "preflop_opener_position", "hijack"),
+        lambda state: setattr(state, "preflop_open_size", 3),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="cutoff", action="raise", amount=8),
+                PreflopAction(actor="hijack", action="raise", amount=20),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="cutoff", action="raise", amount=8),
+                PreflopAction(actor="button", action="call", amount=20),
+            ],
+        ),
+    ],
+)
+def test_declines_inconsistent_cold_four_bet_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_cold_four_bet_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"three_bet_size": 3.5},
+        {"four_bet_size": 13},
+        {"four_bet_size": 29},
+    ],
+)
+def test_declines_unsupported_cold_four_bet_sizing(
+    overrides: dict[str, float],
+) -> None:
+    request = structured_cold_four_bet_request(("Ah", "Ad"), **overrides)
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
+
+
+def test_declines_hero_open_with_two_later_raises() -> None:
+    request = request_for(
+        ("Ah", "Ad"),
+        position="utg",
+        current_bet=17.5,
+        pot_size=31.5,
+        hero_stack=97.5,
+        effective_stack=80,
+        players_in_hand=2,
+        facing_action="raise",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="raise", amount=8),
+            PreflopAction(actor="small_blind", action="raise", amount=20),
+        ],
+    )
+
+    assert solve_preflop_chart(request) is None
 
 
 def test_five_bet_uses_reconstructed_all_in_cap() -> None:

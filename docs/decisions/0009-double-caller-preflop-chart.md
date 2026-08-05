@@ -40,5 +40,6 @@ callers and all broader multiway histories retain the configured fallback.
   single-caller route.
 - Recommendation benchmarks can distinguish one-caller, two-caller, and
   unsupported broader histories.
-- Limped pots, three or more callers, cold 4-bets, and arbitrary preflop trees
-  remain outside the bundled chart.
+- Limped pots, three or more callers, cold 4-bets outside ADR 0010's bounded
+  heads-up response, and arbitrary preflop trees remain outside the bundled
+  chart.

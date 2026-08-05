@@ -9961,6 +9961,59 @@ describe("App", () => {
     expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
   });
 
+  it("shows all three callers in a triple-caller chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "triple-caller-chart-job",
+      original_filename: "triple-called-open.png",
+      image_filename: "triple-called-open.png",
+      recommendation: {
+        action: "raise",
+        sizing: 15,
+        confidence: 0.8,
+        explanation: "The preflop chart recommends a conservative squeeze.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0059,
+          policy_fraction: 0.04,
+          stack_depth_policy: "standard",
+          effective_stack: 100,
+          opener_position: "utg",
+          opening_raise_size: 2.5,
+          caller_positions: ["hijack", "cutoff", "button"],
+          caller_count: 3,
+          caller_adjustment_policy: "triple_caller_conservative",
+          squeeze_open_multiple: 6,
+          continue_fraction: 0.084,
+          reraise_fraction: 0.04,
+          maximum_reraise_total: 100.5,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 15, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Hijack · Cutoff · Button")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Triple caller conservative · 6x squeeze")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 8.4% · Reraise 4%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("100.5 BB")).toBeInTheDocument();
+  });
+
   it("shows structured three-bet chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

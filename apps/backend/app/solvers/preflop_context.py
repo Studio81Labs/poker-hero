@@ -102,6 +102,7 @@ PreflopChartScenario = Literal[
     "facing_open_raise",
     "facing_open_with_caller",
     "facing_open_with_callers",
+    "facing_open_with_three_callers",
     "facing_three_bet",
     "facing_cold_three_bet",
     "facing_squeeze_after_call",
@@ -283,7 +284,7 @@ def _structured_preflop_context(
 ) -> PreflopChartContext | None:
     state = request.state
     history = state.preflop_action_history
-    if len(history) not in {1, 2, 3} or history[0].action != "raise":
+    if len(history) not in {1, 2, 3, 4} or history[0].action != "raise":
         return None
 
     opener = history[0]
@@ -389,7 +390,7 @@ def _structured_preflop_context(
             hero_position,
         )
         if (
-            len(caller_actions) not in {1, 2}
+            len(caller_actions) not in {1, 2, 3}
             or any(action.action != "call" for action in caller_actions)
             or state.players_in_hand != len(caller_actions) + 2
             or opener_position == hero_position
@@ -421,12 +422,13 @@ def _structured_preflop_context(
             ),
         ):
             return None
+        caller_scenarios: dict[int, PreflopChartScenario] = {
+            1: "facing_open_with_caller",
+            2: "facing_open_with_callers",
+            3: "facing_open_with_three_callers",
+        }
         return PreflopChartContext(
-            scenario=(
-                "facing_open_with_caller"
-                if len(caller_positions) == 1
-                else "facing_open_with_callers"
-            ),
+            scenario=caller_scenarios[len(caller_positions)],
             hero_position=hero_position,
             opener_position=opener_position,
             opening_raise_size=opener_size,
@@ -434,6 +436,8 @@ def _structured_preflop_context(
             latest_raise_size=opener_size,
             caller_positions=caller_positions,
         )
+    if len(history) == 4:
+        return None
     if second_action.action != "raise":
         return None
 

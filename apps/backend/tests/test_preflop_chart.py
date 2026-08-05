@@ -25,6 +25,9 @@ from app.solvers.preflop_chart import (
     ISOLATION_RESPONSE_POLICY_NAME,
     LIMP_RESPONSE_POLICIES,
     LIMP_RESPONSE_POLICY_NAME,
+    LIMP_RERAISE_RESPONSE_POLICIES,
+    LIMP_RERAISE_RESPONSE_POLICY_NAME,
+    LIMP_RERAISE_SIZE_POLICIES,
     OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
     SINGLE_CALLER_POLICY,
@@ -43,11 +46,13 @@ from app.solvers.preflop_chart import (
     hand_top_fraction,
     normalize_position,
     policy_for_isolation_raise_size,
+    policy_for_limp_reraise_size,
     policy_for_stack_depth,
     solve_preflop_chart,
 )
 from app.solvers.preflop_context import (
     MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
+    MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO,
     MAX_SINGLE_OPEN_SIZE_BB,
     MIN_SINGLE_OPEN_SIZE_BB,
     POSITION_ACTION_ORDER,
@@ -167,6 +172,58 @@ def structured_isolation_raise_request(
                 actor=raiser_position,
                 action="raise",
                 amount=isolation_raise_size,
+            ),
+        ],
+    )
+
+
+def structured_limp_reraise_request(
+    cards: tuple[str, str],
+    *,
+    limper_position: PreflopPosition = "utg",
+    hero_position: PreflopPosition = "button",
+    isolation_raise_size: float = 4.0,
+    limp_reraise_size: float = 12.0,
+    hero_stack: float | None = 96.0,
+    effective_stack: float = 88.0,
+    players_in_hand: int = 2,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    pot_size = (
+        1.5
+        - posted_blinds[limper_position]
+        - posted_blinds[hero_position]
+        + limp_reraise_size
+        + isolation_raise_size
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=limp_reraise_size - isolation_raise_size,
+        pot_size=pot_size,
+        hero_stack=hero_stack,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        facing_action="raise",
+        action_context="Approved structured action history",
+        preflop_action_history=[
+            PreflopAction(actor=limper_position, action="call", amount=1.0),
+            PreflopAction(
+                actor=hero_position,
+                action="raise",
+                amount=isolation_raise_size,
+            ),
+            PreflopAction(
+                actor=limper_position,
+                action="raise",
+                amount=limp_reraise_size,
             ),
         ],
     )
@@ -3434,5 +3491,287 @@ def test_isolation_response_ignores_stale_legacy_opener_fields() -> None:
     assert result is not None
     assert result.action == "call"
     assert result.raw["scenario"] == "facing_isolation_raise_after_limp"
+    assert "opener_position" not in result.raw
+    assert "opening_raise_size" not in result.raw
+
+
+def test_limp_reraise_policies_cover_every_legal_position_order() -> None:
+    expected_matchups = {
+        (limper, hero)
+        for limper in POSITION_ACTION_ORDER
+        for hero in POSITION_ACTION_ORDER
+        if POSITION_ACTION_ORDER[limper] < POSITION_ACTION_ORDER[hero]
+    }
+
+    assert set(LIMP_RERAISE_RESPONSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.four_bet_fraction <= policy.continue_fraction <= 1
+        for policy in LIMP_RERAISE_RESPONSE_POLICIES.values()
+    )
+
+
+def test_limp_reraise_policies_remain_valid_after_adjustments() -> None:
+    for base_policy in LIMP_RERAISE_RESPONSE_POLICIES.values():
+        for size_policy in LIMP_RERAISE_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_three_bet_defense_policy(
+                    base_policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert (
+                    0
+                    < adjusted.four_bet_fraction
+                    <= adjusted.continue_fraction
+                    <= 1
+                )
+    assert [
+        policy.maximum_ratio for policy in LIMP_RERAISE_SIZE_POLICIES
+    ] == sorted(policy.maximum_ratio for policy in LIMP_RERAISE_SIZE_POLICIES)
+    assert all(
+        current.continue_multiplier >= following.continue_multiplier
+        and current.four_bet_multiplier >= following.four_bet_multiplier
+        for current, following in zip(
+            LIMP_RERAISE_SIZE_POLICIES,
+            LIMP_RERAISE_SIZE_POLICIES[1:],
+        )
+    )
+    assert LIMP_RERAISE_SIZE_POLICIES[-1].maximum_ratio == (
+        MAX_SUPPORTED_LIMP_RERAISE_TO_ISOLATION_RATIO
+    )
+
+
+@pytest.mark.parametrize(
+    ("ratio", "expected_policy"),
+    [
+        (1.75, "small"),
+        (2.25, "small"),
+        (2.26, "standard"),
+        (2.75, "standard"),
+        (2.76, "large"),
+        (3.25, "large"),
+        (3.26, "very_large"),
+        (4.0, "very_large"),
+    ],
+)
+def test_limp_reraise_size_policy_boundaries(
+    ratio: float,
+    expected_policy: str,
+) -> None:
+    policy = policy_for_limp_reraise_size(ratio)
+
+    assert policy is not None
+    assert policy.name == expected_policy
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "four_bet"),
+        (("Th", "Ts"), "call", "continue"),
+        (("7h", "2d"), "fold", "fold"),
+    ],
+)
+def test_limp_reraise_history_routes_position_aware_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    request = structured_limp_reraise_request(cards)
+
+    assert supports_preflop_chart(request)
+    result = solve_preflop_chart(request)
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_limp_reraise"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["limper_position"] == "utg"
+    assert result.raw["limp_size"] == 1
+    assert result.raw["hero_isolation_raise_size"] == 4
+    assert result.raw["limp_reraiser_position"] == "utg"
+    assert result.raw["limp_reraise_size"] == 12
+    assert result.raw["limp_reraise_to_isolation_ratio"] == 3
+    assert result.raw["limp_reraise_size_policy"] == "large"
+    assert result.raw["limp_reraise_response_policy"] == (
+        LIMP_RERAISE_RESPONSE_POLICY_NAME
+    )
+    assert result.raw["policy_source"] == (
+        "original_limper_hero_isolator_size_stack_matchup"
+    )
+    assert "opener_position" not in result.raw
+    assert "three_bettor_position" not in result.raw
+
+
+@pytest.mark.parametrize(
+    ("limper_position", "hero_position"),
+    tuple(LIMP_RERAISE_RESPONSE_POLICIES),
+)
+def test_limp_reraise_routes_every_legal_position_order(
+    limper_position: PreflopPosition,
+    hero_position: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ad"),
+            limper_position=limper_position,
+            hero_position=hero_position,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["position"] == hero_position
+    assert result.raw["limp_reraiser_position"] == limper_position
+
+
+def test_limp_reraise_response_accounts_for_positions() -> None:
+    early = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ks"),
+            limper_position="utg",
+            hero_position="hijack",
+        )
+    )
+    blind_war = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ks"),
+            limper_position="small_blind",
+            hero_position="big_blind",
+        )
+    )
+
+    assert early is not None
+    assert blind_war is not None
+    assert early.action == "fold"
+    assert blind_war.action == "call"
+
+
+def test_limp_reraise_response_tightens_as_raise_grows() -> None:
+    small = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("9h", "9s"),
+            limp_reraise_size=8,
+        )
+    )
+    very_large = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("9h", "9s"),
+            limp_reraise_size=16,
+        )
+    )
+
+    assert small is not None
+    assert very_large is not None
+    assert small.action == "call"
+    assert very_large.action == "fold"
+    assert small.raw["continue_fraction"] > very_large.raw["continue_fraction"]
+
+
+def test_limp_reraise_response_accounts_for_stack_depth() -> None:
+    short = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ks"),
+            limper_position="small_blind",
+            hero_position="big_blind",
+            effective_stack=20,
+        )
+    )
+    standard = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ks"),
+            limper_position="small_blind",
+            hero_position="big_blind",
+        )
+    )
+
+    assert short is not None
+    assert standard is not None
+    assert short.action == "fold"
+    assert standard.action == "call"
+
+
+def test_limp_reraise_four_bet_is_capped_by_available_total() -> None:
+    result = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ad"),
+            limp_reraise_size=7,
+            hero_stack=10,
+            effective_stack=8,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 14
+    assert result.raw["maximum_four_bet_total"] == 14
+
+
+def test_limp_reraise_response_calls_when_no_raise_total_remains() -> None:
+    result = solve_preflop_chart(
+        structured_limp_reraise_request(
+            ("Ah", "Ad"),
+            limp_reraise_size=12,
+            hero_stack=8,
+            effective_stack=8,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "call"
+    assert result.sizing is None
+    assert result.raw["maximum_four_bet_total"] == 12
+
+
+def test_limp_reraise_response_identifies_missing_hero_stack() -> None:
+    request = structured_limp_reraise_request(("Ah", "Ad"), hero_stack=None)
+
+    assert requires_hero_stack_for_preflop_chart(request.state)
+    assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "current_bet", 7),
+        lambda state: setattr(state, "pot_size", 30),
+        lambda state: setattr(state, "hero_stack", None),
+        lambda state: setattr(state, "hero_stack", 7),
+        lambda state: setattr(state, "effective_stack", 100),
+        lambda state: setattr(state.preflop_action_history[0], "amount", 1.5),
+        lambda state: setattr(state.preflop_action_history[0], "actor", "button"),
+        lambda state: setattr(state.preflop_action_history[1], "actor", "cutoff"),
+        lambda state: setattr(state.preflop_action_history[1], "action", "call"),
+        lambda state: setattr(state.preflop_action_history[1], "amount", 1.5),
+        lambda state: setattr(state.preflop_action_history[1], "amount", 5.5),
+        lambda state: setattr(state.preflop_action_history[2], "actor", "hijack"),
+        lambda state: setattr(state.preflop_action_history[2], "action", "call"),
+        lambda state: setattr(state.preflop_action_history[2], "amount", 6),
+        lambda state: setattr(state.preflop_action_history[2], "amount", 17),
+        lambda state: state.preflop_action_history.append(
+            PreflopAction(actor="big_blind", action="call", amount=12)
+        ),
+    ],
+)
+def test_declines_inconsistent_limp_reraise_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_limp_reraise_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None
+
+
+def test_limp_reraise_response_ignores_stale_legacy_opener_fields() -> None:
+    request = structured_limp_reraise_request(("Th", "Ts"))
+    request.state.preflop_opener_position = "cutoff"
+    request.state.preflop_open_size = 2.5
+
+    result = solve_preflop_chart(request)
+
+    assert result is not None
+    assert result.action == "call"
+    assert result.raw["scenario"] == "facing_limp_reraise"
     assert "opener_position" not in result.raw
     assert "opening_raise_size" not in result.raw

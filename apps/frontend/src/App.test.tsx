@@ -9913,6 +9913,68 @@ describe("App", () => {
     expect(within(chartContext).queryByText("3-bettor")).not.toBeInTheDocument();
   });
 
+  it("shows original-limper reraise chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "limp-reraise-chart-job",
+      original_filename: "limp-reraise.png",
+      image_filename: "limp-reraise.png",
+      recommendation: {
+        action: "call",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The preflop chart recommends continuing against the limp-reraise.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0355,
+          policy_fraction: 0.045,
+          stack_depth_policy: "standard",
+          effective_stack: 88,
+          limper_position: "utg",
+          limp_size: 1,
+          hero_isolation_raise_size: 4,
+          limp_reraiser_position: "utg",
+          limp_reraise_size: 12,
+          limp_reraise_to_isolation_ratio: 3,
+          limp_reraise_size_policy: "large",
+          limp_reraise_response_policy: "heads_up_original_limper_reraise",
+          continue_fraction: 0.045,
+          four_bet_fraction: 0.0209,
+          maximum_four_bet_total: 100,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 1 },
+            { action: "raise", sizing: null, frequency: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Original limper")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Hero isolation")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Limp reraiser")).toBeInTheDocument();
+    expect(within(chartContext).getAllByText("UTG")).toHaveLength(2);
+    expect(within(chartContext).getByText("4 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("12 BB · 3x isolation · Large")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Heads up original limper reraise")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 4.5% · Four-bet 2.1%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
+    expect(within(chartContext).queryByText("Opener")).not.toBeInTheDocument();
+    expect(within(chartContext).queryByText("3-bettor")).not.toBeInTheDocument();
+  });
+
   it("shows stack-aware facing-open chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

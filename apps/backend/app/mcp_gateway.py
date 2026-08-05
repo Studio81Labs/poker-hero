@@ -258,17 +258,22 @@ class PokerApiClient:
             proxied_path = proxied_path[len("/api") :]
         return f"{base_url}{proxied_path}"
 
-    def request_headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+    def request_headers(
+        self,
+        extra: dict[str, str] | None = None,
+        *,
+        include_api_credentials: bool = True,
+    ) -> dict[str, str]:
         headers = {
             "Accept": "application/json",
             REQUEST_ID_HEADER: str(uuid4()),
             "User-Agent": "poker-hero-mcp/0.1.0",
         }
-        if self.settings.api_bearer_token is not None:
+        if include_api_credentials and self.settings.api_bearer_token is not None:
             headers["Authorization"] = (
                 f"Bearer {self.settings.api_bearer_token.get_secret_value()}"
             )
-        if self.settings.api_proxy_secret is not None:
+        if include_api_credentials and self.settings.api_proxy_secret is not None:
             headers[PROXY_SHARED_SECRET_HEADER] = (
                 self.settings.api_proxy_secret.get_secret_value()
             )
@@ -289,6 +294,7 @@ class PokerApiClient:
             "GET",
             "/api/health",
             verify_environment=False,
+            include_api_credentials=False,
         )
         health = self._validate_response(ApiHealth, payload, response)
         if health.environment != self.settings.environment:
@@ -374,6 +380,7 @@ class PokerApiClient:
         api_path: str,
         *,
         verify_environment: bool = True,
+        include_api_credentials: bool = True,
         **kwargs: Any,
     ) -> tuple[Any, httpx.Response]:
         if verify_environment:
@@ -383,7 +390,10 @@ class PokerApiClient:
             response = await self._client.request(
                 method,
                 self.url_for(api_path),
-                headers=self.request_headers(supplied_headers),
+                headers=self.request_headers(
+                    supplied_headers,
+                    include_api_credentials=include_api_credentials,
+                ),
                 **kwargs,
             )
         except httpx.RequestError as exc:

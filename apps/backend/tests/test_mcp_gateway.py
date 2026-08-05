@@ -200,22 +200,27 @@ def test_api_client_rechecks_environment_before_every_operation() -> None:
     run(http_client.aclose())
 
 
-def test_api_client_sends_configured_auth_headers() -> None:
-    captured_headers: httpx.Headers | None = None
+def test_api_client_withholds_api_credentials_until_identity_matches() -> None:
+    captured_headers: dict[str, httpx.Headers] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal captured_headers
-        captured_headers = request.headers
+        captured_headers[request.url.path] = request.headers
+        if request.url.path == "/api/health":
+            return httpx.Response(
+                200,
+                headers={"X-Request-ID": "request-123"},
+                json={
+                    "status": "ok",
+                    "environment": "staging",
+                    "parser_provider": "ocr_cv",
+                    "recommendation_provider": "local_solver",
+                    "recommendation_engine": "postflop_solver",
+                },
+            )
+        assert request.url.path == "/api/jobs"
         return httpx.Response(
             200,
-            headers={"X-Request-ID": "request-123"},
-            json={
-                "status": "ok",
-                "environment": "staging",
-                "parser_provider": "ocr_cv",
-                "recommendation_provider": "local_solver",
-                "recommendation_engine": "postflop_solver",
-            },
+            json={"total": 0, "jobs": [], "snapshot_version": "test-snapshot"},
         )
 
     settings = McpGatewaySettings(
@@ -228,16 +233,24 @@ def test_api_client_sends_configured_auth_headers() -> None:
     )
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     api_client = PokerApiClient(settings, client=http_client)
+    gateway = PokerMcpGateway(settings, api_client=api_client)
 
-    health = run(api_client.health())
+    result = run(gateway.list_processing_jobs())
 
-    assert health.environment == "staging"
-    assert captured_headers is not None
-    assert captured_headers["Authorization"] == "Bearer bearer-token"
-    assert captured_headers["X-Poker-Proxy-Secret"] == "p" * 32
-    assert captured_headers["CF-Access-Client-Id"] == "access-id"
-    assert captured_headers["CF-Access-Client-Secret"] == "access-secret"
-    assert captured_headers["X-Request-ID"]
+    assert result.queue.total == 0
+    health_headers = captured_headers["/api/health"]
+    assert "Authorization" not in health_headers
+    assert "X-Poker-Proxy-Secret" not in health_headers
+    assert health_headers["CF-Access-Client-Id"] == "access-id"
+    assert health_headers["CF-Access-Client-Secret"] == "access-secret"
+    assert health_headers["X-Request-ID"]
+
+    api_headers = captured_headers["/api/jobs"]
+    assert api_headers["Authorization"] == "Bearer bearer-token"
+    assert api_headers["X-Poker-Proxy-Secret"] == "p" * 32
+    assert api_headers["CF-Access-Client-Id"] == "access-id"
+    assert api_headers["CF-Access-Client-Secret"] == "access-secret"
+    assert api_headers["X-Request-ID"]
     run(http_client.aclose())
 
 

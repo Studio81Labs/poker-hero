@@ -161,8 +161,11 @@ The gateway may authenticate through Cloudflare Access service headers, a
 future API bearer token, or—in a trusted server deployment only—the private
 Worker-to-backend shared secret. Inbound agent identity is never treated as the
 Worker credential. Secrets are masked settings, require HTTPS, and never enter
-tool results. API failures retain bounded status, request-ID, and retry metadata
-for agent recovery without logging request bodies or poker evidence.
+tool results. Backend API credentials are withheld from the unauthenticated
+environment identity probe; Cloudflare Access service headers remain available
+to cross the protected edge. API failures retain bounded status, request-ID,
+and retry metadata for agent recovery without logging request bodies or poker
+evidence.
 
 ### Frontend
 

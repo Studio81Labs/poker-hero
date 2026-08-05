@@ -158,6 +158,7 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
+        "environment": "local",
         "parser_provider": "mock",
         "recommendation_provider": "local_solver",
         "recommendation_engine": "postflop_solver",

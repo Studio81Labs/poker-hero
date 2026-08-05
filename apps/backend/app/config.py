@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Field(default=Path("data"))
+    deployment_environment: Literal["local", "staging", "production"] = "local"
     data_volume_id: str | None = Field(
         default=None,
         min_length=16,

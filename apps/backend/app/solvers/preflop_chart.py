@@ -109,6 +109,38 @@ LIMP_RESPONSE_POLICIES: dict[Position, LimpResponsePolicy] = {
     "small_blind": LimpResponsePolicy(0.44),
 }
 
+TWO_LIMPER_RESPONSE_POLICY_NAME = "big_blind_two_limpers"
+TWO_LIMPER_RESPONSE_POLICIES: dict[
+    tuple[Position, Position], LimpResponsePolicy
+] = {
+    ("utg", "hijack"): LimpResponsePolicy(0.14),
+    ("utg", "cutoff"): LimpResponsePolicy(0.15),
+    ("utg", "button"): LimpResponsePolicy(0.16),
+    ("utg", "small_blind"): LimpResponsePolicy(0.17),
+    ("hijack", "cutoff"): LimpResponsePolicy(0.16),
+    ("hijack", "button"): LimpResponsePolicy(0.17),
+    ("hijack", "small_blind"): LimpResponsePolicy(0.18),
+    ("cutoff", "button"): LimpResponsePolicy(0.19),
+    ("cutoff", "small_blind"): LimpResponsePolicy(0.20),
+    ("button", "small_blind"): LimpResponsePolicy(0.22),
+}
+
+THREE_LIMPER_RESPONSE_POLICY_NAME = "big_blind_three_limpers"
+THREE_LIMPER_RESPONSE_POLICIES: dict[
+    tuple[Position, Position, Position], LimpResponsePolicy
+] = {
+    ("utg", "hijack", "cutoff"): LimpResponsePolicy(0.10),
+    ("utg", "hijack", "button"): LimpResponsePolicy(0.11),
+    ("utg", "hijack", "small_blind"): LimpResponsePolicy(0.12),
+    ("utg", "cutoff", "button"): LimpResponsePolicy(0.12),
+    ("utg", "cutoff", "small_blind"): LimpResponsePolicy(0.13),
+    ("utg", "button", "small_blind"): LimpResponsePolicy(0.14),
+    ("hijack", "cutoff", "button"): LimpResponsePolicy(0.13),
+    ("hijack", "cutoff", "small_blind"): LimpResponsePolicy(0.14),
+    ("hijack", "button", "small_blind"): LimpResponsePolicy(0.15),
+    ("cutoff", "button", "small_blind"): LimpResponsePolicy(0.16),
+}
+
 ISOLATION_RESPONSE_POLICY_NAME = "heads_up_after_hero_limp"
 ISOLATION_RESPONSE_POLICIES: dict[
     tuple[Position, Position], DefensePolicy
@@ -443,6 +475,18 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             stack_policy=stack_policy,
         )
 
+    if context.scenario in {
+        "two_limpers_big_blind",
+        "three_limpers_big_blind",
+    }:
+        return _solve_multiple_limpers_big_blind(
+            request=request,
+            context=context,
+            hand_class=hand_class,
+            top_fraction=top_fraction,
+            stack_policy=stack_policy,
+        )
+
     if context.scenario == "facing_isolation_raise_after_limp":
         return _solve_facing_isolation_raise(
             request=request,
@@ -721,6 +765,91 @@ def _solve_heads_up_limp_big_blind(
         target_limp_raise_size=target_raise_size,
         maximum_limp_raise_total=maximum_raise_total,
         limp_response_policy=LIMP_RESPONSE_POLICY_NAME,
+        stack_policy=stack_policy,
+    )
+
+
+def _solve_multiple_limpers_big_blind(
+    *,
+    request: RecommendationRequest,
+    context: PreflopChartContext,
+    hand_class: str,
+    top_fraction: float,
+    stack_policy: StackDepthPolicy,
+) -> RecommendationResult | None:
+    state = request.state
+    limper_positions = context.limper_positions
+    if state.effective_stack is None:
+        return None
+    if context.scenario == "two_limpers_big_blind" and len(limper_positions) == 2:
+        policy = TWO_LIMPER_RESPONSE_POLICIES.get(
+            (limper_positions[0], limper_positions[1])
+        )
+        response_policy_name = TWO_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 5.0
+    elif (
+        context.scenario == "three_limpers_big_blind"
+        and len(limper_positions) == 3
+    ):
+        policy = THREE_LIMPER_RESPONSE_POLICIES.get(
+            (
+                limper_positions[0],
+                limper_positions[1],
+                limper_positions[2],
+            )
+        )
+        response_policy_name = THREE_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 6.0
+    else:
+        return None
+    if policy is None:
+        return None
+
+    raise_fraction = adjusted_limp_raise_fraction(policy, stack_policy)
+    maximum_raise_total = round(state.effective_stack + 1.0, 2)
+    target_raise_size = round(
+        max(minimum_target, (state.pot_size or 0) * 1.5),
+        2,
+    )
+    raise_size = round(min(target_raise_size, maximum_raise_total), 2)
+    should_raise = raise_size > 1.0 and top_fraction <= raise_fraction
+    action: RecommendationAction = "raise" if should_raise else "check"
+    sizing = raise_size if should_raise else None
+
+    limper_labels = " and ".join(
+        POSITION_LABELS[position] for position in limper_positions
+    )
+    return _result(
+        action=action,
+        sizing=sizing,
+        confidence=_boundary_confidence(top_fraction, raise_fraction),
+        hand_class=hand_class,
+        top_fraction=top_fraction,
+        position="big_blind",
+        scenario=context.scenario,
+        tier="isolation_raise" if should_raise else "check_option",
+        policy_fraction=raise_fraction,
+        assumptions=[
+            (
+                "The structured preflop history contains exactly "
+                f"{len(limper_positions)} ordered 1 BB limps and no raise."
+            ),
+            (
+                f"Exactly {len(limper_positions) + 1} players remain active "
+                "and hero has the big-blind option."
+            ),
+            f"The limps are attributed to {limper_labels}.",
+            stack_assumption(state.effective_stack, stack_policy),
+            "The chart models a six-max chip-EV training spot before rake.",
+        ],
+        effective_stack=state.effective_stack,
+        limper_positions=limper_positions,
+        limp_size=context.limp_size,
+        base_multi_limp_raise_fraction=policy.raise_fraction,
+        multi_limp_raise_fraction=raise_fraction,
+        target_multi_limp_raise_size=target_raise_size,
+        maximum_multi_limp_raise_total=maximum_raise_total,
+        multi_limp_response_policy=response_policy_name,
         stack_policy=stack_policy,
     )
 
@@ -1523,12 +1652,18 @@ def _result(
     effective_stack: float | None = None,
     base_open_fraction: float | None = None,
     limper_position: Position | None = None,
+    limper_positions: tuple[Position, ...] = (),
     limp_size: float | None = None,
     base_limp_raise_fraction: float | None = None,
     limp_raise_fraction: float | None = None,
     target_limp_raise_size: float | None = None,
     maximum_limp_raise_total: float | None = None,
     limp_response_policy: str | None = None,
+    base_multi_limp_raise_fraction: float | None = None,
+    multi_limp_raise_fraction: float | None = None,
+    target_multi_limp_raise_size: float | None = None,
+    maximum_multi_limp_raise_total: float | None = None,
+    multi_limp_response_policy: str | None = None,
     isolation_raiser_position: Position | None = None,
     isolation_raise_size: float | None = None,
     isolation_size_policy: OpenSizePolicy | None = None,
@@ -1576,7 +1711,12 @@ def _result(
         f" against a {policy_fraction:.0%} chart boundary" if policy_fraction is not None else ""
     )
     assumption_text = " ".join(assumptions)
-    if scenario in {"big_blind_option", "heads_up_limp_big_blind"}:
+    if scenario in {
+        "big_blind_option",
+        "heads_up_limp_big_blind",
+        "two_limpers_big_blind",
+        "three_limpers_big_blind",
+    }:
         actions = ("check", "raise")
     else:
         actions = ("fold", "call", "raise")
@@ -1605,6 +1745,13 @@ def _result(
     }
     if limper_position is not None:
         raw["limper_position"] = limper_position
+    if limper_positions:
+        raw.update(
+            {
+                "limper_positions": list(limper_positions),
+                "limper_count": len(limper_positions),
+            }
+        )
     if limp_size is not None:
         raw["limp_size"] = limp_size
     if (
@@ -1624,6 +1771,25 @@ def _result(
         raw["maximum_limp_raise_total"] = maximum_limp_raise_total
     if limp_response_policy is not None:
         raw["limp_response_policy"] = limp_response_policy
+    if (
+        base_multi_limp_raise_fraction is not None
+        and multi_limp_raise_fraction is not None
+    ):
+        raw.update(
+            {
+                "policy_source": "limper_positions_stack_matchup",
+                "base_multi_limp_raise_fraction": (
+                    base_multi_limp_raise_fraction
+                ),
+                "multi_limp_raise_fraction": multi_limp_raise_fraction,
+            }
+        )
+    if target_multi_limp_raise_size is not None:
+        raw["target_multi_limp_raise_size"] = target_multi_limp_raise_size
+    if maximum_multi_limp_raise_total is not None:
+        raw["maximum_multi_limp_raise_total"] = maximum_multi_limp_raise_total
+    if multi_limp_response_policy is not None:
+        raw["multi_limp_response_policy"] = multi_limp_response_policy
     if isolation_raiser_position is not None:
         raw["isolation_raiser_position"] = isolation_raiser_position
     if isolation_raise_size is not None:

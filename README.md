@@ -173,7 +173,7 @@ to the Rust plugin.
 
 Preflop hands with a recognized six-max position and an unambiguous supported
 context use the bundled position-aware training chart. Supported contexts
-include an unopened pot, one heads-up 1 BB limp to the big blind, a single open,
+include an unopened pot, one to three 1 BB limps to the big blind, a single open,
 one open followed by one to four callers, a hero 1 BB limp facing one
 later-position isolation raise after action returns heads-up,
 a single opponent limp followed by hero's isolation raise and a reraise by the
@@ -190,7 +190,8 @@ hand-class ranking, base and adjusted policy, assumptions, and action frequencie
 without presenting the result as a solved preflop tree. Approved states may
 provide the opener position and total opening size as structured fields. An
 ordered preflop history can represent a single open, one open followed by one
-to four calls before hero, one 1 BB limp before hero's big-blind option, exactly
+to four calls before hero, one to three ordered 1 BB limps before hero's
+big-blind option, exactly
 one hero open followed by one later-position 3-bet, or one opponent open followed
 by one opponent 3-bet before hero. A complete
 three-raise history can also represent an opponent open, hero 3-bet, and opener
@@ -224,9 +225,14 @@ uses explicit three-seat policies, retains hero's prior call, and validates the
 folded opener's dead money.
 The heads-up limp route requires exactly one active limper and hero in the big
 blind, validates the pot against blinds and the limp, then uses explicit
-limper-position and stack-depth isolation ranges with a capped target size.
+limper-position and stack-depth isolation ranges with a capped target size. The
+multi-limper routes similarly require exactly one more active player than the
+two or three distinct ordered 1 BB calls, plus hero's big-blind option. They use
+explicit policies for every legal limper pair or triple, progressively tighter
+stack-adjusted isolation ranges, 1.5x-pot targets of at least 5 BB or 6 BB, and
+the same effective-total cap.
 Action-text parsing remains for older saved single-open hands.
-Positionless and unsupported limped spots, including multiple limpers, action
+Positionless and unsupported limped spots, including four or more limpers, action
 pending behind hero, or an isolation raise with another active player, caller
 histories beyond the terminal six-max ordering, unsupported
 squeezes with an active opener, another caller, or action behind, cold 4-bets

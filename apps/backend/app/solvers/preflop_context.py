@@ -101,6 +101,8 @@ PreflopChartScenario = Literal[
     "first_in",
     "big_blind_option",
     "heads_up_limp_big_blind",
+    "two_limpers_big_blind",
+    "three_limpers_big_blind",
     "facing_isolation_raise_after_limp",
     "facing_limp_reraise",
     "facing_open_raise",
@@ -121,6 +123,7 @@ class PreflopChartContext:
     scenario: PreflopChartScenario
     hero_position: Position
     limper_position: Position | None = None
+    limper_positions: tuple[Position, ...] = ()
     limp_size: float | None = None
     opener_position: Position | None = None
     opening_raise_size: float | None = None
@@ -256,33 +259,51 @@ def _structured_big_blind_limp_context(
     history = state.preflop_action_history
     if (
         hero_position != "big_blind"
-        or state.players_in_hand != 2
         or state.facing_action is not None
         or state.preflop_opener_position is not None
         or state.preflop_open_size is not None
-        or len(history) != 1
+        or len(history) not in {1, 2, 3}
+        or state.players_in_hand != len(history) + 1
     ):
         return None
 
-    limp = history[0]
-    limper_position: Position = limp.actor
+    limper_positions: tuple[Position, ...] = tuple(
+        action.actor for action in history
+    )
     if (
-        limp.action != "call"
-        or limper_position == hero_position
-        or POSITION_ACTION_ORDER[limper_position]
-        >= POSITION_ACTION_ORDER[hero_position]
-        or abs(limp.amount - 1.0) > MONEY_TOLERANCE_BB
+        len(set(limper_positions)) != len(limper_positions)
+        or any(action.action != "call" for action in history)
+        or any(
+            POSITION_ACTION_ORDER[position]
+            >= POSITION_ACTION_ORDER[hero_position]
+            for position in limper_positions
+        )
+        or any(
+            POSITION_ACTION_ORDER[before]
+            >= POSITION_ACTION_ORDER[after]
+            for before, after in pairwise(limper_positions)
+        )
+        or any(
+            abs(action.amount - 1.0) > MONEY_TOLERANCE_BB
+            for action in history
+        )
         or not _pot_matches_actions(
             state.pot_size,
-            ((limper_position, limp.amount),),
+            tuple((action.actor, action.amount) for action in history),
         )
     ):
         return None
+    limp_scenarios: dict[int, PreflopChartScenario] = {
+        1: "heads_up_limp_big_blind",
+        2: "two_limpers_big_blind",
+        3: "three_limpers_big_blind",
+    }
     return PreflopChartContext(
-        scenario="heads_up_limp_big_blind",
+        scenario=limp_scenarios[len(history)],
         hero_position=hero_position,
-        limper_position=limper_position,
-        limp_size=limp.amount,
+        limper_position=(limper_positions[0] if len(history) == 1 else None),
+        limper_positions=limper_positions,
+        limp_size=history[0].amount,
     )
 
 

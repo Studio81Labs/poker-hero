@@ -513,6 +513,12 @@ function recommendationEvidenceFromRaw(
 
   const isolationRaiserPosition = metadataLabel(raw.isolation_raiser_position);
   const limpReraiserPosition = metadataLabel(raw.limp_reraiser_position);
+  const limperPositions = metadataStringList(raw.limper_positions, 4)
+    .map((position) => metadataLabel(position))
+    .filter((position): position is string => position !== null);
+  if (limperPositions.length > 0) {
+    details.push({ label: "Limpers", value: limperPositions.join(" · ") });
+  }
   const limperPosition = metadataLabel(raw.limper_position);
   if (limperPosition) {
     details.push({
@@ -605,6 +611,32 @@ function recommendationEvidenceFromRaw(
   const targetLimpRaiseSize = metadataNumber(raw.target_limp_raise_size);
   if (targetLimpRaiseSize !== null && targetLimpRaiseSize > 0) {
     details.push({ label: "Isolation target", value: formatEvidenceBb(targetLimpRaiseSize) });
+  }
+
+  const multiLimpResponsePolicy = metadataLabel(raw.multi_limp_response_policy);
+  if (multiLimpResponsePolicy) {
+    details.push({ label: "Multi-limp policy", value: multiLimpResponsePolicy });
+  }
+
+  const multiLimpRaiseFraction = metadataRatio(raw.multi_limp_raise_fraction);
+  const baseMultiLimpRaiseFraction = metadataRatio(raw.base_multi_limp_raise_fraction);
+  if (multiLimpRaiseFraction !== null) {
+    let rangeValue = formatEvidenceRatio(multiLimpRaiseFraction);
+    if (
+      baseMultiLimpRaiseFraction !== null
+      && Math.abs(baseMultiLimpRaiseFraction - multiLimpRaiseFraction) >= 0.0005
+    ) {
+      rangeValue += ` (base ${formatEvidenceRatio(baseMultiLimpRaiseFraction)})`;
+    }
+    details.push({ label: "Multi-limp isolation range", value: rangeValue });
+  }
+
+  const targetMultiLimpRaiseSize = metadataNumber(raw.target_multi_limp_raise_size);
+  if (targetMultiLimpRaiseSize !== null && targetMultiLimpRaiseSize > 0) {
+    details.push({
+      label: "Isolation target",
+      value: formatEvidenceBb(targetMultiLimpRaiseSize),
+    });
   }
 
   const openerPosition = metadataLabel(raw.opener_position);
@@ -763,6 +795,7 @@ function recommendationEvidenceFromRaw(
     raw.maximum_five_bet_total
       ?? raw.maximum_four_bet_total
       ?? raw.maximum_reraise_total
+      ?? raw.maximum_multi_limp_raise_total
       ?? raw.maximum_limp_raise_total,
   );
   if (maximumRaiseTotal !== null && maximumRaiseTotal >= 0) {

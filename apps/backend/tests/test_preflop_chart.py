@@ -36,6 +36,8 @@ from app.solvers.preflop_chart import (
     STACK_DEPTH_POLICIES,
     THREE_BET_DEFENSE_POLICIES,
     THREE_BET_SIZE_POLICIES,
+    THREE_LIMPER_RESPONSE_POLICIES,
+    THREE_LIMPER_RESPONSE_POLICY_NAME,
     TWO_LIMPER_RESPONSE_POLICIES,
     TWO_LIMPER_RESPONSE_POLICY_NAME,
     TRIPLE_CALLER_POLICY,
@@ -142,6 +144,43 @@ def structured_two_limper_request(
     ),
     effective_stack: float = 100.0,
     players_in_hand: int = 3,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    pot_size = 1.5 + sum(
+        1.0 - posted_blinds[position]
+        for position in limper_positions
+    )
+    return request_for(
+        cards,
+        position="big_blind",
+        current_bet=0,
+        pot_size=pot_size,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        preflop_action_history=[
+            PreflopAction(actor=position, action="call", amount=1.0)
+            for position in limper_positions
+        ],
+    )
+
+
+def structured_three_limper_request(
+    cards: tuple[str, str],
+    *,
+    limper_positions: tuple[
+        PreflopPosition,
+        PreflopPosition,
+        PreflopPosition,
+    ] = ("utg", "cutoff", "button"),
+    effective_stack: float = 100.0,
+    players_in_hand: int = 4,
 ) -> RecommendationRequest:
     posted_blinds = {
         "utg": 0.0,
@@ -1511,6 +1550,201 @@ def test_declines_inconsistent_two_limper_state(
     mutation: Callable[[CanonicalState], None],
 ) -> None:
     request = structured_two_limper_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
+
+
+def test_three_limper_policies_cover_every_legal_ordered_triple() -> None:
+    possible_limpers = tuple(
+        position
+        for position in POSITION_ACTION_ORDER
+        if position != "big_blind"
+    )
+    expected_triples = {
+        (first, second, third)
+        for first in possible_limpers
+        for second in possible_limpers
+        for third in possible_limpers
+        if (
+            POSITION_ACTION_ORDER[first]
+            < POSITION_ACTION_ORDER[second]
+            < POSITION_ACTION_ORDER[third]
+        )
+    }
+
+    assert set(THREE_LIMPER_RESPONSE_POLICIES) == expected_triples
+    for positions, policy in THREE_LIMPER_RESPONSE_POLICIES.items():
+        pair_policies = (
+            TWO_LIMPER_RESPONSE_POLICIES[(positions[0], positions[1])],
+            TWO_LIMPER_RESPONSE_POLICIES[(positions[0], positions[2])],
+            TWO_LIMPER_RESPONSE_POLICIES[(positions[1], positions[2])],
+        )
+        assert 0 < policy.raise_fraction < min(
+            pair.raise_fraction for pair in pair_policies
+        )
+
+
+def test_three_limper_ranges_remain_valid_after_stack_adjustments() -> None:
+    for policy in THREE_LIMPER_RESPONSE_POLICIES.values():
+        for stack_policy in STACK_DEPTH_POLICIES:
+            adjusted = adjusted_limp_raise_fraction(policy, stack_policy)
+            assert 0 < adjusted <= 1
+
+
+def test_raises_premium_hand_over_three_limpers() -> None:
+    result = solve_preflop_chart(
+        structured_three_limper_request(("Ah", "Ad"))
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 6.75
+    assert result.raw["scenario"] == "three_limpers_big_blind"
+    assert result.raw["chart_tier"] == "isolation_raise"
+    assert result.raw["limper_positions"] == ["utg", "cutoff", "button"]
+    assert result.raw["limper_count"] == 3
+    assert result.raw["limp_size"] == 1
+    assert result.raw["multi_limp_response_policy"] == (
+        THREE_LIMPER_RESPONSE_POLICY_NAME
+    )
+    assert result.raw["policy_source"] == "limper_positions_stack_matchup"
+    assert result.raw["base_multi_limp_raise_fraction"] == 0.12
+    assert result.raw["multi_limp_raise_fraction"] == 0.12
+    assert result.raw["target_multi_limp_raise_size"] == 6.75
+    assert result.raw["maximum_multi_limp_raise_total"] == 101
+    assert "limper_position" not in result.raw
+
+
+def test_checks_weak_hand_over_three_limpers() -> None:
+    result = solve_preflop_chart(
+        structured_three_limper_request(("7h", "2d"))
+    )
+
+    assert result is not None
+    assert result.action == "check"
+    assert result.sizing is None
+
+
+def test_three_limper_response_accounts_for_limper_positions() -> None:
+    early = solve_preflop_chart(
+        structured_three_limper_request(
+            ("Kh", "Js"),
+            limper_positions=("utg", "hijack", "cutoff"),
+        )
+    )
+    late = solve_preflop_chart(
+        structured_three_limper_request(
+            ("Kh", "Js"),
+            limper_positions=("cutoff", "button", "small_blind"),
+        )
+    )
+
+    assert early is not None
+    assert late is not None
+    assert early.action == "check"
+    assert late.action == "raise"
+
+
+def test_three_limper_response_accounts_for_stack_depth() -> None:
+    standard = solve_preflop_chart(
+        structured_three_limper_request(
+            ("Jh", "Th"),
+            limper_positions=("cutoff", "button", "small_blind"),
+        )
+    )
+    short = solve_preflop_chart(
+        structured_three_limper_request(
+            ("Jh", "Th"),
+            limper_positions=("cutoff", "button", "small_blind"),
+            effective_stack=20,
+        )
+    )
+
+    assert standard is not None
+    assert short is not None
+    assert standard.action == "check"
+    assert short.action == "raise"
+
+
+@pytest.mark.parametrize(
+    ("first_limper", "second_limper", "third_limper"),
+    tuple(THREE_LIMPER_RESPONSE_POLICIES),
+)
+def test_routes_every_legal_three_limper_order(
+    first_limper: PreflopPosition,
+    second_limper: PreflopPosition,
+    third_limper: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_three_limper_request(
+            ("Ah", "Ad"),
+            limper_positions=(
+                first_limper,
+                second_limper,
+                third_limper,
+            ),
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["limper_positions"] == [
+        first_limper,
+        second_limper,
+        third_limper,
+    ]
+
+
+def test_short_stack_caps_three_limper_raise_at_available_total() -> None:
+    result = solve_preflop_chart(
+        structured_three_limper_request(("Ah", "Ad"), effective_stack=2)
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 3
+    assert result.raw["target_multi_limp_raise_size"] == 6.75
+    assert result.raw["maximum_multi_limp_raise_total"] == 3
+    assert result.raw["stack_depth_policy"] == "short"
+    assert result.raw["multi_limp_raise_fraction"] == 0.156
+
+
+def test_three_limpers_including_small_blind_reconstruct_pot() -> None:
+    request = structured_three_limper_request(
+        ("Ah", "Ad"),
+        limper_positions=("utg", "button", "small_blind"),
+    )
+
+    assert request.state.pot_size == 4
+    assert supports_preflop_chart(request)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "hero_position", "button"),
+        lambda state: setattr(state, "current_bet", 0.5),
+        lambda state: setattr(state, "facing_action", "raise"),
+        lambda state: setattr(state, "pot_size", 9),
+        lambda state: setattr(state, "preflop_opener_position", "button"),
+        lambda state: setattr(state, "preflop_open_size", 2.5),
+        lambda state: setattr(state.preflop_action_history[2], "actor", "utg"),
+        lambda state: setattr(state.preflop_action_history[0], "actor", "button"),
+        lambda state: setattr(state.preflop_action_history[2], "actor", "big_blind"),
+        lambda state: setattr(state.preflop_action_history[0], "amount", 1.5),
+        lambda state: setattr(state.preflop_action_history[2], "action", "raise"),
+        lambda state: state.preflop_action_history.append(
+            PreflopAction(actor="small_blind", action="call", amount=1)
+        ),
+    ],
+)
+def test_declines_inconsistent_three_limper_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_three_limper_request(("Ah", "Ad"))
     mutation(request.state)
 
     assert not supports_preflop_chart(request)

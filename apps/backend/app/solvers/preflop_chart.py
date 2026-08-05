@@ -125,6 +125,22 @@ TWO_LIMPER_RESPONSE_POLICIES: dict[
     ("button", "small_blind"): LimpResponsePolicy(0.22),
 }
 
+THREE_LIMPER_RESPONSE_POLICY_NAME = "big_blind_three_limpers"
+THREE_LIMPER_RESPONSE_POLICIES: dict[
+    tuple[Position, Position, Position], LimpResponsePolicy
+] = {
+    ("utg", "hijack", "cutoff"): LimpResponsePolicy(0.10),
+    ("utg", "hijack", "button"): LimpResponsePolicy(0.11),
+    ("utg", "hijack", "small_blind"): LimpResponsePolicy(0.12),
+    ("utg", "cutoff", "button"): LimpResponsePolicy(0.12),
+    ("utg", "cutoff", "small_blind"): LimpResponsePolicy(0.13),
+    ("utg", "button", "small_blind"): LimpResponsePolicy(0.14),
+    ("hijack", "cutoff", "button"): LimpResponsePolicy(0.13),
+    ("hijack", "cutoff", "small_blind"): LimpResponsePolicy(0.14),
+    ("hijack", "button", "small_blind"): LimpResponsePolicy(0.15),
+    ("cutoff", "button", "small_blind"): LimpResponsePolicy(0.16),
+}
+
 ISOLATION_RESPONSE_POLICY_NAME = "heads_up_after_hero_limp"
 ISOLATION_RESPONSE_POLICIES: dict[
     tuple[Position, Position], DefensePolicy
@@ -459,8 +475,11 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             stack_policy=stack_policy,
         )
 
-    if context.scenario == "two_limpers_big_blind":
-        return _solve_two_limpers_big_blind(
+    if context.scenario in {
+        "two_limpers_big_blind",
+        "three_limpers_big_blind",
+    }:
+        return _solve_multiple_limpers_big_blind(
             request=request,
             context=context,
             hand_class=hand_class,
@@ -750,7 +769,7 @@ def _solve_heads_up_limp_big_blind(
     )
 
 
-def _solve_two_limpers_big_blind(
+def _solve_multiple_limpers_big_blind(
     *,
     request: RecommendationRequest,
     context: PreflopChartContext,
@@ -760,15 +779,38 @@ def _solve_two_limpers_big_blind(
 ) -> RecommendationResult | None:
     state = request.state
     limper_positions = context.limper_positions
-    if len(limper_positions) != 2 or state.effective_stack is None:
+    if state.effective_stack is None:
         return None
-    policy = TWO_LIMPER_RESPONSE_POLICIES.get(limper_positions)
+    if context.scenario == "two_limpers_big_blind" and len(limper_positions) == 2:
+        policy = TWO_LIMPER_RESPONSE_POLICIES.get(
+            (limper_positions[0], limper_positions[1])
+        )
+        response_policy_name = TWO_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 5.0
+    elif (
+        context.scenario == "three_limpers_big_blind"
+        and len(limper_positions) == 3
+    ):
+        policy = THREE_LIMPER_RESPONSE_POLICIES.get(
+            (
+                limper_positions[0],
+                limper_positions[1],
+                limper_positions[2],
+            )
+        )
+        response_policy_name = THREE_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 6.0
+    else:
+        return None
     if policy is None:
         return None
 
     raise_fraction = adjusted_limp_raise_fraction(policy, stack_policy)
     maximum_raise_total = round(state.effective_stack + 1.0, 2)
-    target_raise_size = round(max(5.0, (state.pot_size or 0) * 1.5), 2)
+    target_raise_size = round(
+        max(minimum_target, (state.pot_size or 0) * 1.5),
+        2,
+    )
     raise_size = round(min(target_raise_size, maximum_raise_total), 2)
     should_raise = raise_size > 1.0 and top_fraction <= raise_fraction
     action: RecommendationAction = "raise" if should_raise else "check"
@@ -784,12 +826,18 @@ def _solve_two_limpers_big_blind(
         hand_class=hand_class,
         top_fraction=top_fraction,
         position="big_blind",
-        scenario="two_limpers_big_blind",
+        scenario=context.scenario,
         tier="isolation_raise" if should_raise else "check_option",
         policy_fraction=raise_fraction,
         assumptions=[
-            "The structured preflop history contains exactly two ordered 1 BB limps and no raise.",
-            "Exactly three players remain active and hero has the big-blind option.",
+            (
+                "The structured preflop history contains exactly "
+                f"{len(limper_positions)} ordered 1 BB limps and no raise."
+            ),
+            (
+                f"Exactly {len(limper_positions) + 1} players remain active "
+                "and hero has the big-blind option."
+            ),
             f"The limps are attributed to {limper_labels}.",
             stack_assumption(state.effective_stack, stack_policy),
             "The chart models a six-max chip-EV training spot before rake.",
@@ -801,7 +849,7 @@ def _solve_two_limpers_big_blind(
         multi_limp_raise_fraction=raise_fraction,
         target_multi_limp_raise_size=target_raise_size,
         maximum_multi_limp_raise_total=maximum_raise_total,
-        multi_limp_response_policy=TWO_LIMPER_RESPONSE_POLICY_NAME,
+        multi_limp_response_policy=response_policy_name,
         stack_policy=stack_policy,
     )
 
@@ -1667,6 +1715,7 @@ def _result(
         "big_blind_option",
         "heads_up_limp_big_blind",
         "two_limpers_big_blind",
+        "three_limpers_big_blind",
     }:
         actions = ("check", "raise")
     else:

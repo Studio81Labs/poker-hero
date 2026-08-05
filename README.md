@@ -138,7 +138,8 @@ Preflop hands with a recognized six-max position and an unambiguous supported
 context use the bundled position-aware training chart. Supported contexts
 include an unopened pot, a single open, one open followed by one or two callers,
 a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
-a hero 3-bet facing a 4-bet. The chart uses position-matchup boundaries plus
+a hero 3-bet facing either an opener 4-bet or a later cold 4-bet after the
+opener folds. The chart uses position-matchup boundaries plus
 transparent adjustments for 2-4 BB opening sizes, supported 3-bet ratios, and
 short, medium, standard, or deep effective stacks.
 First-in ranges and sizing also adjust by stack depth. The chart reports its
@@ -149,7 +150,8 @@ ordered preflop history can represent a single open, one open followed by one
 or two calls before hero, exactly one hero open followed by one later-position
 3-bet, or one opponent open followed by one opponent 3-bet before hero. A complete
 three-raise history can also represent an opponent open, hero 3-bet, and opener
-4-bet with action returning to hero.
+4-bet with action returning to hero, or a later-position cold 4-bet after the
+opener folds and action returns heads-up to hero.
 The called-open routes require exactly three or four active players, matching
 open/call totals, and legal seat order. They apply explicit conservative range
 multipliers and 4x-open or 5x-open squeeze targets for one or two callers,
@@ -158,10 +160,13 @@ and legal opener-3-bettor-hero order, then applies explicit
 three-seat continue/four-bet boundaries. The chart validates position order,
 total action sizes, amount to call, pot composition, and stack availability
 before routing. The heads-up 4-bet route applies explicit matchup and size-band
-continue/five-bet boundaries, with five-bets modeled as capped all-ins.
+continue/five-bet boundaries, with five-bets modeled as capped all-ins. The
+cold 4-bet route uses narrower three-seat policies and keeps the folded
+opener's commitment in pot validation.
 Action-text parsing remains for older saved single-open hands.
 Positionless and limped spots, spots with three or more callers, unsupported
-squeezes, cold 4-bets, longer preflop trees, multiway postflop states, and
+squeezes, cold 4-bets with action behind or another active player, longer
+preflop trees, multiway postflop states, and
 incomplete, ambiguous-position, oversized, or failed trees use `local_ev` when
 fallback is enabled. Recommendations preserve
 the requested engine and routing or fallback reason in `raw` metadata. Set

@@ -46,7 +46,9 @@ money state decline chart routing and retain the configured fallback behavior.
 - Eligibility and policy evidence are directly testable and benchmarkable.
 - The policy is still a hand-ranked heuristic chart. It does not model antes,
   ranges conditioned on prior folds, mixed-action equilibrium, callers,
-  squeezes, cold 4-bets, tournaments, or arbitrary preflop trees.
+  squeezes, cold 4-bets, tournaments, or arbitrary preflop trees. ADR 0010
+  later adds one bounded heads-up cold 4-bet response without widening this
+  route.
 - A licensed solver can replace this route behind the provider boundary without
   changing canonical review data.
 

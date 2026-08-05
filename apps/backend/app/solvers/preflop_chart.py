@@ -6,6 +6,7 @@ from functools import lru_cache
 from app.models import Card, RecommendationAction, RecommendationRequest, RecommendationResult
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
+    MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
     MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
     MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO,
     POSTED_BLIND_BB,
@@ -105,6 +106,27 @@ LIMP_RESPONSE_POLICIES: dict[Position, LimpResponsePolicy] = {
     "cutoff": LimpResponsePolicy(0.28),
     "button": LimpResponsePolicy(0.36),
     "small_blind": LimpResponsePolicy(0.44),
+}
+
+ISOLATION_RESPONSE_POLICY_NAME = "heads_up_after_hero_limp"
+ISOLATION_RESPONSE_POLICIES: dict[
+    tuple[Position, Position], DefensePolicy
+] = {
+    ("utg", "hijack"): DefensePolicy(0.12, 0.035),
+    ("utg", "cutoff"): DefensePolicy(0.13, 0.040),
+    ("utg", "button"): DefensePolicy(0.14, 0.045),
+    ("utg", "small_blind"): DefensePolicy(0.13, 0.040),
+    ("utg", "big_blind"): DefensePolicy(0.15, 0.045),
+    ("hijack", "cutoff"): DefensePolicy(0.14, 0.040),
+    ("hijack", "button"): DefensePolicy(0.15, 0.045),
+    ("hijack", "small_blind"): DefensePolicy(0.14, 0.040),
+    ("hijack", "big_blind"): DefensePolicy(0.16, 0.050),
+    ("cutoff", "button"): DefensePolicy(0.16, 0.050),
+    ("cutoff", "small_blind"): DefensePolicy(0.15, 0.045),
+    ("cutoff", "big_blind"): DefensePolicy(0.17, 0.055),
+    ("button", "small_blind"): DefensePolicy(0.17, 0.055),
+    ("button", "big_blind"): DefensePolicy(0.19, 0.060),
+    ("small_blind", "big_blind"): DefensePolicy(0.21, 0.070),
 }
 
 # Conservative six-max response boundaries keyed by (opener, hero). Later
@@ -270,6 +292,17 @@ OPEN_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
     OpenSizePolicy("very_large", 4.00, 0.78, 0.90),
 )
 
+ISOLATION_RAISE_SIZE_POLICIES: tuple[OpenSizePolicy, ...] = (
+    OpenSizePolicy("small", 3.0, 1.08, 1.05),
+    OpenSizePolicy("standard", 4.0, 1.00, 1.00),
+    OpenSizePolicy(
+        "large",
+        MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
+        0.88,
+        0.92,
+    ),
+)
+
 SINGLE_CALLER_POLICY = CallerAdjustmentPolicy(
     name="single_caller_conservative",
     continue_multiplier=0.90,
@@ -366,6 +399,15 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
 
     if context.scenario == "heads_up_limp_big_blind":
         return _solve_heads_up_limp_big_blind(
+            request=request,
+            context=context,
+            hand_class=hand_class,
+            top_fraction=top_fraction,
+            stack_policy=stack_policy,
+        )
+
+    if context.scenario == "facing_isolation_raise_after_limp":
+        return _solve_facing_isolation_raise(
             request=request,
             context=context,
             hand_class=hand_class,
@@ -633,6 +675,99 @@ def _solve_heads_up_limp_big_blind(
         target_limp_raise_size=target_raise_size,
         maximum_limp_raise_total=maximum_raise_total,
         limp_response_policy=LIMP_RESPONSE_POLICY_NAME,
+        stack_policy=stack_policy,
+    )
+
+
+def _solve_facing_isolation_raise(
+    *,
+    request: RecommendationRequest,
+    context: PreflopChartContext,
+    hand_class: str,
+    top_fraction: float,
+    stack_policy: StackDepthPolicy,
+) -> RecommendationResult | None:
+    state = request.state
+    hero_position = context.hero_position
+    isolation_raiser_position = context.latest_aggressor_position
+    isolation_raise_size = context.latest_raise_size
+    hero_commitment = context.hero_prior_commitment
+    if (
+        isolation_raiser_position is None
+        or isolation_raise_size is None
+        or hero_commitment is None
+        or state.hero_stack is None
+        or state.effective_stack is None
+    ):
+        return None
+    base_policy = ISOLATION_RESPONSE_POLICIES.get(
+        (hero_position, isolation_raiser_position)
+    )
+    size_policy = policy_for_isolation_raise_size(isolation_raise_size)
+    if base_policy is None or size_policy is None:
+        return None
+    defense_policy = adjusted_defense_policy(
+        base_policy,
+        size_policy,
+        stack_policy,
+    )
+    maximum_reraise_total = min(
+        state.hero_stack + hero_commitment,
+        state.effective_stack + isolation_raise_size,
+    )
+    reraise_size = _reraise_size(
+        isolation_raise_size,
+        state.pot_size or 0,
+        maximum_reraise_total,
+    )
+    can_reraise = (
+        reraise_size > isolation_raise_size
+        and top_fraction <= defense_policy.reraise_fraction
+    )
+    if can_reraise:
+        action: RecommendationAction = "raise"
+        sizing = reraise_size
+        tier = "limp_reraise"
+        boundary = defense_policy.reraise_fraction
+    elif top_fraction <= defense_policy.continue_fraction:
+        action = "call"
+        sizing = None
+        tier = "continue"
+        boundary = defense_policy.continue_fraction
+    else:
+        action = "fold"
+        sizing = None
+        tier = "fold"
+        boundary = defense_policy.continue_fraction
+
+    return _result(
+        action=action,
+        sizing=sizing,
+        confidence=_boundary_confidence(top_fraction, boundary),
+        hand_class=hand_class,
+        top_fraction=top_fraction,
+        position=hero_position,
+        scenario="facing_isolation_raise_after_limp",
+        tier=tier,
+        policy_fraction=boundary,
+        assumptions=[
+            "The structured preflop history contains one 1 BB hero limp and one later-position isolation raise.",
+            "Exactly two players remain active, so all other players are treated as folded and action has returned to hero.",
+            f"The isolation raise is attributed to {POSITION_LABELS[isolation_raiser_position]}.",
+            f"The {isolation_raise_size:g} BB isolation size uses the {size_policy.name.replace('_', ' ')} response adjustment.",
+            stack_assumption(state.effective_stack, stack_policy),
+            "The chart models a six-max chip-EV training spot before rake.",
+        ],
+        effective_stack=state.effective_stack,
+        limper_position=hero_position,
+        limp_size=hero_commitment,
+        isolation_raiser_position=isolation_raiser_position,
+        isolation_raise_size=isolation_raise_size,
+        maximum_reraise_total=round(maximum_reraise_total, 2),
+        base_defense_policy=base_policy,
+        defense_policy=defense_policy,
+        isolation_size_policy=size_policy,
+        isolation_response_policy=ISOLATION_RESPONSE_POLICY_NAME,
         stack_policy=stack_policy,
     )
 
@@ -1027,6 +1162,19 @@ def policy_for_open_size(opening_size: float) -> OpenSizePolicy | None:
     )
 
 
+def policy_for_isolation_raise_size(
+    isolation_raise_size: float,
+) -> OpenSizePolicy | None:
+    return next(
+        (
+            policy
+            for policy in ISOLATION_RAISE_SIZE_POLICIES
+            if isolation_raise_size <= policy.maximum_size
+        ),
+        None,
+    )
+
+
 def policy_for_stack_depth(effective_stack: float) -> StackDepthPolicy | None:
     return next(
         (
@@ -1213,6 +1361,10 @@ def _result(
     target_limp_raise_size: float | None = None,
     maximum_limp_raise_total: float | None = None,
     limp_response_policy: str | None = None,
+    isolation_raiser_position: Position | None = None,
+    isolation_raise_size: float | None = None,
+    isolation_size_policy: OpenSizePolicy | None = None,
+    isolation_response_policy: str | None = None,
     opener_position: Position | None = None,
     base_opener_open_fraction: float | None = None,
     opener_open_fraction: float | None = None,
@@ -1297,6 +1449,17 @@ def _result(
         raw["maximum_limp_raise_total"] = maximum_limp_raise_total
     if limp_response_policy is not None:
         raw["limp_response_policy"] = limp_response_policy
+    if isolation_raiser_position is not None:
+        raw["isolation_raiser_position"] = isolation_raiser_position
+    if isolation_raise_size is not None:
+        raw["isolation_raise_size"] = isolation_raise_size
+        if limp_size is not None:
+            raw["isolation_raise_to_limp_ratio"] = round(
+                isolation_raise_size / limp_size,
+                4,
+            )
+    if isolation_response_policy is not None:
+        raw["isolation_response_policy"] = isolation_response_policy
     if opener_position is not None:
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:
@@ -1372,6 +1535,25 @@ def _result(
                 "base_open_fraction": base_open_fraction,
                 "open_fraction": policy_fraction,
                 "target_open_size": stack_policy.opening_size,
+            }
+        )
+    if (
+        isolation_raiser_position is not None
+        and base_defense_policy is not None
+        and defense_policy is not None
+        and isolation_size_policy is not None
+        and stack_policy is not None
+    ):
+        raw.update(
+            {
+                "policy_source": "hero_limper_isolation_raiser_size_stack_matchup",
+                "base_continue_fraction": base_defense_policy.continue_fraction,
+                "base_reraise_fraction": base_defense_policy.reraise_fraction,
+                "continue_fraction": defense_policy.continue_fraction,
+                "reraise_fraction": defense_policy.reraise_fraction,
+                "isolation_raise_size_policy": isolation_size_policy.name,
+                "continue_size_multiplier": isolation_size_policy.continue_multiplier,
+                "reraise_size_multiplier": isolation_size_policy.reraise_multiplier,
             }
         )
     if (

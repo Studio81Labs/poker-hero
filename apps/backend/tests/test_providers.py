@@ -1978,6 +1978,95 @@ def test_external_solver_posts_structured_preflop_history(
     ]
 
 
+def test_local_solver_requires_hero_stack_for_isolation_response(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=6.5,
+        current_bet=3,
+        effective_stack=90,
+        players_in_hand=2,
+        hero_position="utg",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="call", amount=1),
+            PreflopAction(actor="button", action="raise", amount=4),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" in provider.required_fields_for(state)
+
+
+def test_local_solver_routes_isolation_response_to_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("9h"), Card.from_code("9s")],
+        pot_size=6.5,
+        current_bet=3,
+        hero_stack=99,
+        effective_stack=90,
+        players_in_hand=2,
+        hero_position="utg",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="call", amount=1),
+            PreflopAction(actor="button", action="raise", amount=4),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "facing_isolation_raise_after_limp"
+    assert result.raw["routing_reason"] == "the hand is preflop"
+
+
+def test_local_solver_keeps_fallback_when_limper_is_not_hero(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("9h"), Card.from_code("9s")],
+        pot_size=6.5,
+        current_bet=3,
+        hero_stack=99,
+        effective_stack=90,
+        players_in_hand=3,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="call", amount=1),
+            PreflopAction(actor="button", action="raise", amount=4),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["fallback_reason"] == "the hand is preflop"
+
+
 def test_llm_advice_uses_its_own_bearer_token(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

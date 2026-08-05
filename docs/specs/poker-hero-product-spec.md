@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, a heads-up response after hero limps and a later player isolation-raises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -340,8 +340,23 @@ limper-position isolation ranges, adjust them by the selected stack-depth band,
 cap the target isolation raise by the available effective total, and expose the
 limper, policy, adjusted range, target, and cap as recommendation evidence.
 
+Structured preflop history may also route one 1 BB hero limp followed by one
+later-position isolation raise to 2-5 BB after action returns to hero. Exactly
+two players must remain active, hero and the raiser must occupy distinct seats
+in legal order, and known hero/effective stacks, current call amount, and pot
+composition must agree with the represented commitments. Explicit
+hero-limper-versus-isolation-raiser policies adjust across raise-size and stack
+bands, with reraises capped by both players' reconstructed totals. Evidence must
+identify the limper, isolation raiser, total and ratio, size policy, adjusted
+continue/reraise boundaries, named response policy, and cap. Another active
+player, action pending behind hero, contradictory structured actions, or
+contradictory money state must retain fallback behavior. Stale legacy opener
+metadata must not override call-first structured history: the frontend clears
+it from approval payloads and the backend ignores it for this route so saved
+states and API clients receive the same precedence behavior.
+
 Multiple limpers, a hidden active player, a limp with action pending behind hero,
-non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold
+other non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold
 4-bet trees, more than five actions, unsupported positions or sizes, and
 contradictory money state decline these routes.
 

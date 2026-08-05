@@ -148,8 +148,7 @@ jobs:
             --max-time 30 --get \
             -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             -H "Accept: application/json" \
-            --data-urlencode "uuid=${APPLICATION_UUID}" \
-            "${COOLIFY_URL%/}/api/v1/deploy")
+            "${COOLIFY_URL%/}/api/v1/applications/${APPLICATION_UUID}/start")
           CURL_EXIT=$?
           set -e
           if [ "$CURL_EXIT" -ne 0 ]; then
@@ -161,7 +160,7 @@ jobs:
             head -c 400 "$BODY"
             exit 1
           fi
-          DEPLOYMENT_ID=$(jq -r '.deployments[0].deployment_uuid // .deployments[0].uuid // .deployments[0].id // empty' < "$BODY")
+          DEPLOYMENT_ID=$(jq -r '.deployment_uuid // empty' < "$BODY")
           test -n "$DEPLOYMENT_ID" || { echo "::error::Coolify response did not include a deployment UUID"; exit 1; }
           echo "deployment_id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
 

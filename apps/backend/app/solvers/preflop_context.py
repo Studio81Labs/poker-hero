@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 import re
 from typing import Literal
 
@@ -98,6 +99,7 @@ PreflopChartScenario = Literal[
     "big_blind_option",
     "facing_open_raise",
     "facing_open_with_caller",
+    "facing_open_with_callers",
     "facing_three_bet",
     "facing_cold_three_bet",
     "facing_four_bet",
@@ -281,17 +283,30 @@ def _structured_preflop_context(
 
     second_action = history[1]
     if second_action.action == "call":
-        caller_position: Position = second_action.actor
+        caller_actions = history[1:]
+        caller_positions: tuple[Position, ...] = tuple(
+            action.actor for action in caller_actions
+        )
+        represented_positions = (
+            opener_position,
+            *caller_positions,
+            hero_position,
+        )
         if (
-            len(history) != 2
-            or state.players_in_hand != 3
+            len(caller_actions) not in {1, 2}
+            or any(action.action != "call" for action in caller_actions)
+            or state.players_in_hand != len(caller_actions) + 2
             or opener_position == hero_position
-            or caller_position == hero_position
-            or POSITION_ACTION_ORDER[opener_position]
-            >= POSITION_ACTION_ORDER[caller_position]
-            or POSITION_ACTION_ORDER[caller_position]
-            >= POSITION_ACTION_ORDER[hero_position]
-            or abs(second_action.amount - opener_size) > MONEY_TOLERANCE_BB
+            or len(set(represented_positions)) != len(represented_positions)
+            or any(
+                POSITION_ACTION_ORDER[before]
+                >= POSITION_ACTION_ORDER[after]
+                for before, after in pairwise(represented_positions)
+            )
+            or any(
+                abs(action.amount - opener_size) > MONEY_TOLERANCE_BB
+                for action in caller_actions
+            )
         ):
             return None
         if not _amount_to_call_matches(
@@ -303,18 +318,25 @@ def _structured_preflop_context(
             state.pot_size,
             (
                 (opener_position, opener_size),
-                (caller_position, second_action.amount),
+                *(
+                    (action.actor, action.amount)
+                    for action in caller_actions
+                ),
             ),
         ):
             return None
         return PreflopChartContext(
-            scenario="facing_open_with_caller",
+            scenario=(
+                "facing_open_with_caller"
+                if len(caller_positions) == 1
+                else "facing_open_with_callers"
+            ),
             hero_position=hero_position,
             opener_position=opener_position,
             opening_raise_size=opener_size,
             latest_aggressor_position=opener_position,
             latest_raise_size=opener_size,
-            caller_positions=(caller_position,),
+            caller_positions=caller_positions,
         )
     if second_action.action != "raise":
         return None

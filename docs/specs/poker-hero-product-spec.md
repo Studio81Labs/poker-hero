@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one represented caller, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, and heads-up hero-3-bet/facing-4-bet responses with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one or two represented callers, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, and heads-up hero-3-bet/facing-4-bet responses with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -254,6 +254,15 @@ squeeze boundaries, use a larger 4x-open squeeze target subject to the existing
 stack cap, and expose caller seat, policy, multipliers, and target in evidence.
 Any additional active player, caller, action, or contradictory amount must retain
 fallback behavior.
+
+Structured preflop history may also route one open followed by exactly two
+calls before hero when exactly four players remain active. The opener, both
+callers, and hero must occupy distinct seats in legal action order; both call
+totals must match the open; and current call amount and pot composition must
+agree with all represented commitments and replaced blinds. This route applies
+a stricter named double-caller policy and a 5x-open squeeze target. Any hidden
+active player, third caller, repeated or out-of-order seat, later aggression, or
+contradictory amount must retain fallback behavior.
 
 Structured preflop history takes precedence over free text and may additionally
 route exactly one hero open followed by one later-position 3-bet. The chart must

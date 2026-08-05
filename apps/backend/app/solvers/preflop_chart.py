@@ -204,6 +204,18 @@ SINGLE_CALLER_POLICY = CallerAdjustmentPolicy(
     squeeze_open_multiple=4.0,
 )
 
+DOUBLE_CALLER_POLICY = CallerAdjustmentPolicy(
+    name="double_caller_conservative",
+    continue_multiplier=0.80,
+    reraise_multiplier=0.85,
+    squeeze_open_multiple=5.0,
+)
+
+CALLER_ADJUSTMENT_POLICIES: dict[int, CallerAdjustmentPolicy] = {
+    1: SINGLE_CALLER_POLICY,
+    2: DOUBLE_CALLER_POLICY,
+}
+
 THREE_BET_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
     ThreeBetSizePolicy("small", 2.75, 1.05, 1.05),
     ThreeBetSizePolicy("standard", 3.50, 1.00, 1.00),
@@ -341,7 +353,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         size_policy,
         stack_policy,
     )
-    caller_policy = SINGLE_CALLER_POLICY if context.caller_positions else None
+    caller_policy = CALLER_ADJUSTMENT_POLICIES.get(len(context.caller_positions))
     if caller_policy is not None:
         defense_policy = adjusted_caller_defense_policy(
             defense_policy,
@@ -381,13 +393,24 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         boundary = defense_policy.continue_fraction
 
     if caller_policy is not None:
-        caller_position = context.caller_positions[0]
-        scenario = "facing_open_with_caller"
-        action_assumptions = [
-            "The structured preflop history contains one open and one call with no other active player.",
-            f"The caller is attributed to {POSITION_LABELS[caller_position]}.",
-            "The conservative single-caller adjustment tightens both continuing and squeezing ranges.",
+        caller_labels = [
+            POSITION_LABELS[caller_position]
+            for caller_position in context.caller_positions
         ]
+        if len(caller_labels) == 1:
+            scenario = "facing_open_with_caller"
+            action_assumptions = [
+                "The structured preflop history contains one open and one call with no other active player.",
+                f"The caller is attributed to {caller_labels[0]}.",
+                "The conservative single-caller adjustment tightens both continuing and squeezing ranges.",
+            ]
+        else:
+            scenario = "facing_open_with_callers"
+            action_assumptions = [
+                "The structured preflop history contains one open and exactly two calls with no other active player.",
+                f"The callers are attributed to {caller_labels[0]} and {caller_labels[1]}.",
+                "The conservative double-caller adjustment further tightens continuing and squeezing ranges.",
+            ]
     else:
         scenario = "facing_open_raise"
         action_assumptions = [
@@ -1070,7 +1093,11 @@ def _result(
             }
         )
         if caller_adjustment_policy is not None:
-            raw["policy_source"] = "hero_opener_caller_size_stack_matchup"
+            raw["policy_source"] = (
+                "hero_opener_caller_size_stack_matchup"
+                if len(caller_positions) == 1
+                else "hero_opener_callers_size_stack_matchup"
+            )
     if (
         three_bettor_position is not None
         and base_three_bet_defense_policy is not None

@@ -134,11 +134,11 @@ before replaying the line. Incomplete or contradictory histories use fallback.
 commands add that directory to `PATH`. Re-run bootstrap after pulling changes
 to the Rust plugin.
 
-Preflop hands with a recognized six-max position and an unambiguous unopened,
-single-open, single-open-plus-one-caller, supported hero-open/facing-3-bet, or
-bounded opponent-open/opponent-3-bet and hero-3-bet/facing-4-bet contexts use
-the bundled
-position-aware training chart. The chart uses position-matchup boundaries plus
+Preflop hands with a recognized six-max position and an unambiguous supported
+context use the bundled position-aware training chart. Supported contexts
+include an unopened pot, a single open, one open followed by one or two callers,
+a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
+a hero 3-bet facing a 4-bet. The chart uses position-matchup boundaries plus
 transparent adjustments for 2-4 BB opening sizes, supported 3-bet ratios, and
 short, medium, standard, or deep effective stacks.
 First-in ranges and sizing also adjust by stack depth. The chart reports its
@@ -146,22 +146,23 @@ hand-class ranking, base and adjusted policy, assumptions, and action frequencie
 without presenting the result as a solved preflop tree. Approved states may
 provide the opener position and total opening size as structured fields. An
 ordered preflop history can represent a single open, one open followed by one
-call before hero, exactly one hero open followed by one later-position 3-bet, or
-one opponent open followed by one opponent 3-bet before hero. A complete
+or two calls before hero, exactly one hero open followed by one later-position
+3-bet, or one opponent open followed by one opponent 3-bet before hero. A complete
 three-raise history can also represent an opponent open, hero 3-bet, and opener
 4-bet with action returning to hero.
-The caller route requires exactly three active players, matching open/call
-totals, and legal seat order; it applies explicit conservative range multipliers
-and a 4x-open squeeze target. The cold 3-bet route also requires exactly three
-active players and legal opener-3-bettor-hero order, then applies explicit
+The called-open routes require exactly three or four active players, matching
+open/call totals, and legal seat order. They apply explicit conservative range
+multipliers and 4x-open or 5x-open squeeze targets for one or two callers,
+respectively. The cold 3-bet route also requires exactly three active players
+and legal opener-3-bettor-hero order, then applies explicit
 three-seat continue/four-bet boundaries. The chart validates position order,
 total action sizes, amount to call, pot composition, and stack availability
 before routing. The heads-up 4-bet route applies explicit matchup and size-band
 continue/five-bet boundaries, with five-bets modeled as capped all-ins.
 Action-text parsing remains for older saved single-open hands.
-Positionless, limped, multi-caller, unsupported squeeze, cold-4-bet, longer preflop,
-multiway postflop,
-incomplete, ambiguous-position, oversized, and failed trees use `local_ev` when
+Positionless and limped spots, spots with three or more callers, unsupported
+squeezes, cold 4-bets, longer preflop trees, multiway postflop states, and
+incomplete, ambiguous-position, oversized, or failed trees use `local_ev` when
 fallback is enabled. Recommendations preserve
 the requested engine and routing or fallback reason in `raw` metadata. Set
 `POKER_LOCAL_SOLVER_ENGINE=local_ev` to bypass both CFR and the preflop chart

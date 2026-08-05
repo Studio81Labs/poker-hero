@@ -14,6 +14,7 @@ from app.solvers.preflop_chart import (
     COLD_THREE_BET_DEFENSE_POLICIES,
     COLD_THREE_BET_POLICY_NAME,
     DEFENSE_POLICIES,
+    DOUBLE_CALLER_POLICY,
     FOUR_BET_DEFENSE_POLICIES,
     FOUR_BET_SIZE_POLICIES,
     OPEN_SIZE_POLICIES,
@@ -174,6 +175,66 @@ def structured_called_open_request(
                 actor=caller_position,
                 action="call",
                 amount=resolved_caller_amount,
+            ),
+        ],
+    )
+
+
+def structured_double_called_open_request(
+    cards: tuple[str, str],
+    *,
+    opener_position: PreflopPosition = "utg",
+    caller_positions: tuple[PreflopPosition, PreflopPosition] = (
+        "hijack",
+        "cutoff",
+    ),
+    hero_position: PreflopPosition = "button",
+    opening_size: float = 2.5,
+    caller_amounts: tuple[float, float] | None = None,
+    effective_stack: float = 100.0,
+    players_in_hand: int = 4,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    resolved_caller_amounts = caller_amounts or (opening_size, opening_size)
+    commitments = (
+        (opener_position, opening_size),
+        *zip(caller_positions, resolved_caller_amounts, strict=True),
+    )
+    pot_size = 1.5 + sum(
+        amount - posted_blinds[position]
+        for position, amount in commitments
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=opening_size - posted_blinds[hero_position],
+        pot_size=pot_size,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        facing_action="raise",
+        action_context="Structured history is authoritative",
+        preflop_opener_position=opener_position,
+        preflop_open_size=opening_size,
+        preflop_action_history=[
+            PreflopAction(
+                actor=opener_position,
+                action="raise",
+                amount=opening_size,
+            ),
+            *(
+                PreflopAction(actor=position, action="call", amount=amount)
+                for position, amount in zip(
+                    caller_positions,
+                    resolved_caller_amounts,
+                    strict=True,
+                )
             ),
         ],
     )
@@ -451,6 +512,23 @@ def test_single_caller_policy_tightens_existing_defense_boundaries() -> None:
     assert adjusted.continue_fraction < base.continue_fraction
     assert adjusted.reraise_fraction < base.reraise_fraction
     assert 0 < adjusted.reraise_fraction <= adjusted.continue_fraction
+
+
+def test_double_caller_policy_is_tighter_than_single_caller_policy() -> None:
+    base = adjusted_defense_policy(
+        DEFENSE_POLICIES[("utg", "button")],
+        OPEN_SIZE_POLICIES[1],
+        STACK_DEPTH_POLICIES[2],
+    )
+
+    single_caller = adjusted_caller_defense_policy(base, SINGLE_CALLER_POLICY)
+    double_caller = adjusted_caller_defense_policy(base, DOUBLE_CALLER_POLICY)
+
+    assert 0 < double_caller.reraise_fraction < single_caller.reraise_fraction
+    assert double_caller.continue_fraction < single_caller.continue_fraction
+    assert DOUBLE_CALLER_POLICY.squeeze_open_multiple > (
+        SINGLE_CALLER_POLICY.squeeze_open_multiple
+    )
 
 
 def test_three_bet_size_policies_tighten_as_the_raise_grows() -> None:
@@ -1350,6 +1428,133 @@ def test_single_caller_tightens_boundary_hand_to_fold() -> None:
     assert called.action == "fold"
     assert heads_up.action == "call"
     assert called.raw["continue_fraction"] < heads_up.raw["continue_fraction"]
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "squeeze"),
+        (("Ah", "Jh"), "call", "overcall"),
+        (("Kh", "Qd"), "fold", "fold"),
+    ],
+)
+def test_double_caller_history_routes_conservative_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    result = solve_preflop_chart(structured_double_called_open_request(cards))
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_open_with_callers"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["opener_position"] == "utg"
+    assert result.raw["caller_positions"] == ["hijack", "cutoff"]
+    assert result.raw["caller_count"] == 2
+    assert result.raw["caller_adjustment_policy"] == "double_caller_conservative"
+    assert result.raw["policy_source"] == "hero_opener_callers_size_stack_matchup"
+
+
+def test_double_caller_squeeze_uses_five_times_open_target() -> None:
+    result = solve_preflop_chart(
+        structured_double_called_open_request(("Ah", "Ad"))
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 12.5
+    assert result.raw["squeeze_open_multiple"] == 5
+
+
+def test_double_caller_history_reconstructs_blind_commitments() -> None:
+    result = solve_preflop_chart(
+        structured_double_called_open_request(
+            ("Ah", "Ad"),
+            caller_positions=("button", "small_blind"),
+            hero_position="big_blind",
+        )
+    )
+
+    assert result is not None
+    assert result.raw["caller_positions"] == ["button", "small_blind"]
+    assert result.raw["maximum_reraise_total"] == 101
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "players_in_hand", 5),
+        lambda state: setattr(state, "current_bet", 2),
+        lambda state: setattr(state, "pot_size", 8),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="hijack", action="call", amount=2.5),
+                PreflopAction(actor="cutoff", action="call", amount=2),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="cutoff", action="call", amount=2.5),
+                PreflopAction(actor="hijack", action="call", amount=2.5),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="hijack", action="call", amount=2.5),
+                PreflopAction(actor="hijack", action="call", amount=2.5),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="hijack", action="call", amount=2.5),
+                PreflopAction(actor="cutoff", action="raise", amount=8),
+            ],
+        ),
+    ],
+)
+def test_declines_inconsistent_double_caller_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_double_called_open_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None
+
+
+def test_declines_three_callers_even_with_complete_money_state() -> None:
+    request = request_for(
+        ("Ah", "Ad"),
+        position="small_blind",
+        current_bet=2,
+        pot_size=11.5,
+        effective_stack=100,
+        players_in_hand=5,
+        facing_action="raise",
+        preflop_opener_position="utg",
+        preflop_open_size=2.5,
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="hijack", action="call", amount=2.5),
+            PreflopAction(actor="cutoff", action="call", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=2.5),
+        ],
+    )
+
+    assert solve_preflop_chart(request) is None
 
 
 @pytest.mark.parametrize(

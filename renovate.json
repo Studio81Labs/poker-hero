@@ -1,0 +1,45 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "timezone": "Europe/Prague",
+  "schedule": ["before 4am on monday"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 0,
+  "labels": ["dependencies"],
+  "semanticCommitType": "chore",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Group all minor and patch updates into one weekly PR",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all minor and patch"
+    },
+    {
+      "description": "Scope backend dependency updates",
+      "matchFileNames": ["apps/backend/**"],
+      "semanticCommitScope": "backend",
+      "addLabels": ["backend"]
+    },
+    {
+      "description": "Scope frontend dependency updates",
+      "matchFileNames": ["apps/frontend/**"],
+      "semanticCommitScope": "frontend",
+      "addLabels": ["frontend"]
+    },
+    {
+      "description": "Scope solver dependency updates",
+      "matchFileNames": ["solver-plugins/**"],
+      "semanticCommitScope": "solver",
+      "addLabels": ["solver"]
+    },
+    {
+      "description": "Scope GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "semanticCommitScope": "ci",
+      "addLabels": ["ci"]
+    }
+  ]
+}

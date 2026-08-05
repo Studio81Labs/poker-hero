@@ -1,0 +1,28 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file: "apps/backend/**"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: "apps/frontend/**"
+
+solver:
+  - changed-files:
+      - any-glob-to-any-file: "solver-plugins/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/workflows/**"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "infra/**"
+          - "**/Dockerfile"
+          - "**/Dockerfile.dockerignore"
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"

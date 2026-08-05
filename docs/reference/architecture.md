@@ -9,7 +9,7 @@ and normalizes all results into stable API models.
 ```text
 Browser
   -> React/Vite frontend
-  -> same-origin /api proxy (Cloudflare Worker in testing)
+  -> same-origin /api proxy (environment-specific Cloudflare Worker)
   -> FastAPI backend
      -> parser registry -> OCR/CV or external vision service
      -> file-backed job store in POKER_DATA_DIR
@@ -526,10 +526,13 @@ user.
 
 ## Deployment Topology
 
-- Frontend: Cloudflare Worker Static Assets plus the `/api/*` proxy.
-- Backend: Coolify Docker application built from repository root with
-  `apps/backend/Dockerfile`.
-- Access control: Cloudflare Access can allowlist testing users at the public
+- Environments: pushes to `main` promote to `staging`; `v*` tags promote to
+  `production`; manual deployment workflows select either target explicitly.
+- Frontend: one Cloudflare Worker Static Assets deployment plus `/api/*` proxy
+  per environment.
+- Backend: one Coolify Docker application per environment, built from the
+  repository root with `apps/backend/Dockerfile`.
+- Access control: Cloudflare Access can allowlist users at the public
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.
 - Resource protection: authenticated expensive operations use bounded in-memory
@@ -543,7 +546,7 @@ user.
   benchmarks, and archive transfers. The API client preserves server
   `Retry-After` metadata, and interrupted benchmark-import recovery suppresses
   receipt requests until that backoff expires.
-  Buckets are process-local for the single-container testing topology; a future
+  Buckets are process-local for each single-container environment; a future
   multi-replica deployment must enforce the same policy at the edge or in a
   shared limiter.
 - Monitoring: a scheduled GitHub Actions probe checks the SPA, proxied health,

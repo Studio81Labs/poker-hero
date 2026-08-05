@@ -561,7 +561,7 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Opener", value: openerValue });
   }
 
-  const callerPositions = metadataStringList(raw.caller_positions)
+  const callerPositions = metadataStringList(raw.caller_positions, 4)
     .map((position) => metadataLabel(position))
     .filter((position): position is string => position !== null);
   if (callerPositions.length > 0) {

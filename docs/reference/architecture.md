@@ -31,7 +31,7 @@ The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
 route one heads-up 1 BB limp to hero's big-blind option, a single open, one open
-plus one to three callers before hero, or exactly one hero open followed by one
+plus one to four callers before hero, or exactly one hero open followed by one
 later-position 3-bet. It can also route one opponent open
 and one opponent 3-bet before hero when exactly three players remain, or one
 opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
@@ -39,11 +39,11 @@ It also supports a later-position cold 4-bet after the opener folds and exactly
 two players remain, plus a later-position squeeze after hero cold-calls and the
 opener folds heads-up.
 The sequence stores canonical seat, action, and total committed BB. The
-called-open routes require exactly three, four, or five active players, matching
+called-open routes require exactly three through six active players, matching
 open and call totals, distinct represented seats, and legal ordered
 opener-callers-hero action. Their explicit conservative multipliers
 tighten continue and squeeze boundaries, and their raise targets start at 4x
-through 6x the open. The cold 3-bet route requires legal
+through 7x the open. The cold 3-bet route requires legal
 opener-3-bettor-hero order and uses an explicit policy for every supported seat
 triple. The chart validates position order,
 full-raise minimums, amount to call, pot composition, and stack availability. A

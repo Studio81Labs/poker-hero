@@ -91,6 +91,7 @@ MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MIN_SINGLE_OPEN_SIZE_BB = 2.0
 MAX_SINGLE_OPEN_SIZE_BB = 4.0
+MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO = 5.0
 MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO = 3.5
 MONEY_TOLERANCE_BB = 0.05
 
@@ -102,6 +103,7 @@ PreflopChartScenario = Literal[
     "facing_open_with_callers",
     "facing_three_bet",
     "facing_cold_three_bet",
+    "facing_squeeze_after_call",
     "facing_four_bet",
     "facing_cold_four_bet",
 ]
@@ -116,6 +118,7 @@ class PreflopChartContext:
     latest_aggressor_position: Position | None = None
     latest_raise_size: float | None = None
     caller_positions: tuple[Position, ...] = ()
+    hero_prior_commitment: float | None = None
     hero_three_bet_size: float | None = None
 
 
@@ -144,6 +147,7 @@ def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
     return context is not None and context.scenario in {
         "facing_three_bet",
         "facing_cold_three_bet",
+        "facing_squeeze_after_call",
         "facing_four_bet",
         "facing_cold_four_bet",
     }
@@ -285,6 +289,55 @@ def _structured_preflop_context(
 
     second_action = history[1]
     if second_action.action == "call":
+        if len(history) == 3 and history[2].action == "raise":
+            hero_call = second_action
+            squeeze = history[2]
+            squeezer_position: Position = squeeze.actor
+            minimum_squeeze = opener_size + max(1.0, opener_size - 1.0)
+            represented_positions = (
+                opener_position,
+                hero_position,
+                squeezer_position,
+            )
+            if (
+                state.players_in_hand != 2
+                or hero_call.actor != hero_position
+                or len(set(represented_positions)) != len(represented_positions)
+                or any(
+                    POSITION_ACTION_ORDER[before]
+                    >= POSITION_ACTION_ORDER[after]
+                    for before, after in pairwise(represented_positions)
+                )
+                or abs(hero_call.amount - opener_size) > MONEY_TOLERANCE_BB
+                or squeeze.amount + MONEY_TOLERANCE_BB < minimum_squeeze
+                or squeeze.amount > (
+                    opener_size * MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO
+                    + MONEY_TOLERANCE_BB
+                )
+                or not _amount_to_call_matches(
+                    state.current_bet,
+                    squeeze.amount - hero_call.amount,
+                )
+                or not _stack_state_supports_raise_response(state)
+                or not _pot_matches_actions(
+                    state.pot_size,
+                    (
+                        (opener_position, opener_size),
+                        (hero_position, hero_call.amount),
+                        (squeezer_position, squeeze.amount),
+                    ),
+                )
+            ):
+                return None
+            return PreflopChartContext(
+                scenario="facing_squeeze_after_call",
+                hero_position=hero_position,
+                opener_position=opener_position,
+                opening_raise_size=opener_size,
+                latest_aggressor_position=squeezer_position,
+                latest_raise_size=squeeze.amount,
+                hero_prior_commitment=hero_call.amount,
+            )
         caller_actions = history[1:]
         caller_positions: tuple[Position, ...] = tuple(
             action.actor for action in caller_actions
@@ -346,7 +399,13 @@ def _structured_preflop_context(
     three_bet = second_action
     three_bettor_position: Position = three_bet.actor
     minimum_full_raise = opener_size + max(1.0, opener_size - 1.0)
-    if three_bet.amount + MONEY_TOLERANCE_BB < minimum_full_raise:
+    if (
+        three_bet.amount + MONEY_TOLERANCE_BB < minimum_full_raise
+        or three_bet.amount > (
+            opener_size * MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO
+            + MONEY_TOLERANCE_BB
+        )
+    ):
         return None
 
     if len(history) == 3:

@@ -360,6 +360,32 @@ def test_local_solver_requires_hero_stack_for_cold_three_bet(tmp_path: Path) -> 
     assert "hero_stack" in provider.required_fields_for(state)
 
 
+def test_local_solver_requires_hero_stack_for_squeeze_response(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+        pot_size=16,
+        current_bet=7.5,
+        effective_stack=90,
+        players_in_hand=2,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=2.5),
+            PreflopAction(actor="small_blind", action="raise", amount=10),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "hero_stack" in provider.required_fields_for(state)
+
+
 def test_local_solver_requires_hero_stack_when_facing_four_bet(
     tmp_path: Path,
 ) -> None:
@@ -607,6 +633,72 @@ def test_local_solver_keeps_fallback_for_cold_three_bet_with_hidden_player(
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
             PreflopAction(actor="button", action="raise", amount=8),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["fallback_reason"] == "the hand is preflop"
+
+
+def test_local_solver_routes_squeeze_response_to_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+        pot_size=16,
+        current_bet=7.5,
+        hero_stack=97.5,
+        effective_stack=90,
+        players_in_hand=2,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=2.5),
+            PreflopAction(actor="small_blind", action="raise", amount=10),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "facing_squeeze_after_call"
+    assert result.raw["routing_reason"] == "the hand is preflop"
+
+
+def test_local_solver_keeps_fallback_for_squeeze_with_active_opener(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+        pot_size=16,
+        current_bet=7.5,
+        hero_stack=97.5,
+        effective_stack=90,
+        players_in_hand=3,
+        hero_position="button",
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=2.5),
+            PreflopAction(actor="small_blind", action="raise", amount=10),
         ],
         street="preflop",
         facing_action="raise",

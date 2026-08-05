@@ -47,8 +47,9 @@ money state decline chart routing and retain the configured fallback behavior.
 - The policy is still a hand-ranked heuristic chart. It does not model antes,
   ranges conditioned on prior folds, mixed-action equilibrium, callers,
   squeezes, cold 4-bets, tournaments, or arbitrary preflop trees. ADR 0010
-  later adds one bounded heads-up cold 4-bet response without widening this
-  route.
+  later adds one bounded heads-up cold 4-bet response, and ADR 0011 adds one
+  bounded heads-up response after hero cold-calls and faces a squeeze, without
+  widening this route.
 - A licensed solver can replace this route behind the provider boundary without
   changing canonical review data.
 

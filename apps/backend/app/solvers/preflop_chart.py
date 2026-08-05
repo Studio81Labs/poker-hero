@@ -7,6 +7,7 @@ from app.models import Card, RecommendationAction, RecommendationRequest, Recomm
 from app.providers.rule_based import _starting_hand_score
 from app.solvers.preflop_context import (
     MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
+    MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO,
     POSTED_BLIND_BB,
     PreflopChartContext,
     Position,
@@ -165,6 +166,35 @@ COLD_THREE_BET_DEFENSE_POLICIES: dict[
     ("button", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.090, 0.040),
 }
 
+# Responses after hero cold-calls an open, a later player squeezes, and the
+# opener folds. Explicit seat triples keep the capped calling range and dead
+# opener money visible instead of treating this as an ordinary heads-up 3-bet.
+SQUEEZE_RESPONSE_POLICY_NAME = "conservative_heads_up_squeeze"
+SQUEEZE_DEFENSE_POLICIES: dict[
+    tuple[Position, Position, Position], ThreeBetDefensePolicy
+] = {
+    ("utg", "hijack", "cutoff"): ThreeBetDefensePolicy(0.035, 0.016),
+    ("utg", "hijack", "button"): ThreeBetDefensePolicy(0.036, 0.016),
+    ("utg", "hijack", "small_blind"): ThreeBetDefensePolicy(0.037, 0.017),
+    ("utg", "hijack", "big_blind"): ThreeBetDefensePolicy(0.038, 0.017),
+    ("utg", "cutoff", "button"): ThreeBetDefensePolicy(0.040, 0.018),
+    ("utg", "cutoff", "small_blind"): ThreeBetDefensePolicy(0.041, 0.018),
+    ("utg", "cutoff", "big_blind"): ThreeBetDefensePolicy(0.043, 0.019),
+    ("utg", "button", "small_blind"): ThreeBetDefensePolicy(0.045, 0.020),
+    ("utg", "button", "big_blind"): ThreeBetDefensePolicy(0.047, 0.021),
+    ("utg", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.050, 0.022),
+    ("hijack", "cutoff", "button"): ThreeBetDefensePolicy(0.043, 0.019),
+    ("hijack", "cutoff", "small_blind"): ThreeBetDefensePolicy(0.044, 0.020),
+    ("hijack", "cutoff", "big_blind"): ThreeBetDefensePolicy(0.046, 0.021),
+    ("hijack", "button", "small_blind"): ThreeBetDefensePolicy(0.050, 0.022),
+    ("hijack", "button", "big_blind"): ThreeBetDefensePolicy(0.052, 0.023),
+    ("hijack", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.055, 0.024),
+    ("cutoff", "button", "small_blind"): ThreeBetDefensePolicy(0.055, 0.024),
+    ("cutoff", "button", "big_blind"): ThreeBetDefensePolicy(0.058, 0.025),
+    ("cutoff", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.062, 0.027),
+    ("button", "small_blind", "big_blind"): ThreeBetDefensePolicy(0.070, 0.030),
+}
+
 # Hero 3-bet responses to a 4-bet from the original opener. These are shares of
 # all 169 starting-hand classes and remain intentionally tighter than the
 # corresponding 3-bet ranges.
@@ -249,7 +279,12 @@ THREE_BET_SIZE_POLICIES: tuple[ThreeBetSizePolicy, ...] = (
     ThreeBetSizePolicy("small", 2.75, 1.05, 1.05),
     ThreeBetSizePolicy("standard", 3.50, 1.00, 1.00),
     ThreeBetSizePolicy("large", 4.25, 0.90, 0.95),
-    ThreeBetSizePolicy("very_large", 5.00, 0.80, 0.90),
+    ThreeBetSizePolicy(
+        "very_large",
+        MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO,
+        0.80,
+        0.90,
+    ),
 )
 
 FOUR_BET_SIZE_POLICIES: tuple[FourBetSizePolicy, ...] = (
@@ -345,7 +380,11 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
             stack_policy=stack_policy,
         )
 
-    if context.scenario in {"facing_three_bet", "facing_cold_three_bet"}:
+    if context.scenario in {
+        "facing_three_bet",
+        "facing_cold_three_bet",
+        "facing_squeeze_after_call",
+    }:
         return _solve_facing_three_bet(
             request=request,
             context=context,
@@ -507,8 +546,17 @@ def _solve_facing_three_bet(
         or state.effective_stack is None
     ):
         return None
+    squeeze_after_call = context.scenario == "facing_squeeze_after_call"
     cold_three_bet = context.scenario == "facing_cold_three_bet"
-    if cold_three_bet:
+    if squeeze_after_call:
+        if context.hero_prior_commitment is None:
+            return None
+        base_policy = SQUEEZE_DEFENSE_POLICIES.get(
+            (opener_position, hero_position, three_bettor_position)
+        )
+        hero_committed = context.hero_prior_commitment
+        policy_source = "hero_opener_squeezer_size_stack_matchup"
+    elif cold_three_bet:
         base_policy = COLD_THREE_BET_DEFENSE_POLICIES.get(
             (opener_position, three_bettor_position, hero_position)
         )
@@ -561,7 +609,25 @@ def _solve_facing_three_bet(
         tier = "fold"
         boundary = defense_policy.continue_fraction
 
-    if cold_three_bet:
+    if squeeze_after_call:
+        scenario = "facing_squeeze_after_call"
+        action_assumptions = [
+            (
+                "The structured preflop history contains one opponent open, "
+                "one hero cold-call, and one later-position squeeze."
+            ),
+            (
+                "Exactly two players remain active, so the original opener "
+                "is treated as folded."
+            ),
+            (
+                "The conservative squeeze-response chart uses the "
+                f"{POSITION_LABELS[opener_position]}-"
+                f"{POSITION_LABELS[hero_position]}-"
+                f"{POSITION_LABELS[three_bettor_position]} seat order."
+            ),
+        ]
+    elif cold_three_bet:
         scenario = "facing_cold_three_bet"
         action_assumptions = [
             "The structured preflop history contains one opponent open and one opponent 3-bet before hero acts.",
@@ -608,6 +674,12 @@ def _solve_facing_three_bet(
         three_bet_policy_source=policy_source,
         cold_three_bet_policy=(
             COLD_THREE_BET_POLICY_NAME if cold_three_bet else None
+        ),
+        hero_prior_commitment=(
+            context.hero_prior_commitment if squeeze_after_call else None
+        ),
+        squeeze_response_policy=(
+            SQUEEZE_RESPONSE_POLICY_NAME if squeeze_after_call else None
         ),
         stack_policy=stack_policy,
     )
@@ -1028,6 +1100,8 @@ def _result(
     three_bet_size_policy: ThreeBetSizePolicy | None = None,
     three_bet_policy_source: str | None = None,
     cold_three_bet_policy: str | None = None,
+    hero_prior_commitment: float | None = None,
+    squeeze_response_policy: str | None = None,
     four_bettor_position: Position | None = None,
     four_bet_size: float | None = None,
     maximum_five_bet_total: float | None = None,
@@ -1112,6 +1186,10 @@ def _result(
         raw["maximum_four_bet_total"] = maximum_four_bet_total
     if cold_three_bet_policy is not None:
         raw["cold_three_bet_policy"] = cold_three_bet_policy
+    if hero_prior_commitment is not None:
+        raw["hero_prior_commitment"] = hero_prior_commitment
+    if squeeze_response_policy is not None:
+        raw["squeeze_response_policy"] = squeeze_response_policy
     if four_bettor_position is not None:
         raw["four_bettor_position"] = four_bettor_position
     if four_bet_size is not None:

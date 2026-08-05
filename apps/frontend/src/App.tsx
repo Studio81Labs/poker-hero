@@ -560,9 +560,25 @@ function recommendationEvidenceFromRaw(
     });
   }
 
+  const heroPriorCommitment = metadataNumber(raw.hero_prior_commitment);
+  if (heroPriorCommitment !== null && heroPriorCommitment >= 0) {
+    details.push({
+      label: "Hero prior call",
+      value: formatEvidenceBb(heroPriorCommitment),
+    });
+  }
+
+  const squeezeResponsePolicy = metadataLabel(raw.squeeze_response_policy);
   const threeBettorPosition = metadataLabel(raw.three_bettor_position);
   if (threeBettorPosition) {
-    details.push({ label: "3-bettor", value: threeBettorPosition });
+    details.push({
+      label: squeezeResponsePolicy ? "Squeezer" : "3-bettor",
+      value: threeBettorPosition,
+    });
+  }
+
+  if (squeezeResponsePolicy) {
+    details.push({ label: "Squeeze policy", value: squeezeResponsePolicy });
   }
 
   const coldThreeBetPolicy = metadataLabel(raw.cold_three_bet_policy);

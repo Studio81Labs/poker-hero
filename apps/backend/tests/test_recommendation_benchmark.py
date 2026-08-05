@@ -290,6 +290,52 @@ def test_recommendation_benchmark_runs_cold_three_bet_preflop_chart(
     assert report.cases[0].engine == "preflop_chart_v1"
 
 
+def test_recommendation_benchmark_runs_squeeze_response_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "preflop-facing-squeeze-after-call",
+                [reference_line("call")],
+                tags=["preflop", "facing-squeeze-after-call"],
+                hero_cards=[Card.from_code("Th"), Card.from_code("Ts")],
+                board_cards=[],
+                street="preflop",
+                pot_size=16,
+                current_bet=7.5,
+                hero_stack=97.5,
+                effective_stack=90,
+                players_in_hand=2,
+                hero_position="button",
+                facing_action="raise",
+                preflop_opener_position="utg",
+                preflop_open_size=2.5,
+                preflop_action_history=[
+                    PreflopAction(actor="utg", action="raise", amount=2.5),
+                    PreflopAction(actor="button", action="call", amount=2.5),
+                    PreflopAction(
+                        actor="small_blind",
+                        action="raise",
+                        amount=10,
+                    ),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_correct == 1
+    assert report.line_correct == 1
+    assert report.fallback_cases == 0
+    assert report.cases[0].engine == "preflop_chart_v1"
+
+
 def test_recommendation_benchmark_runs_four_bet_response_preflop_chart(
     tmp_path: Path,
 ) -> None:

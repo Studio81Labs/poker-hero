@@ -35,7 +35,8 @@ one hero open followed by one later-position 3-bet. It can also route one oppone
 and one opponent 3-bet before hero when exactly three players remain, or one
 opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
 It also supports a later-position cold 4-bet after the opener folds and exactly
-two players remain.
+two players remain, plus a later-position squeeze after hero cold-calls and the
+opener folds heads-up.
 The sequence stores canonical seat, action, and total committed BB. The
 called-open routes require exactly three or four active players, matching open
 and call totals, distinct represented seats, and legal opener-caller-hero or
@@ -58,6 +59,8 @@ continue/five-bet boundaries and ordered 4-bet-size bands; five-bets use the
 reconstructed all-in cap from both represented commitments. The cold 4-bet
 response uses narrower opener-hero-four-bettor policies and validates the pot
 against all three commitments, including the folded opener's dead money.
+The squeeze response uses explicit opener-hero-squeezer policies and includes
+hero's prior call in both pot validation and the reconstructed raise cap.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

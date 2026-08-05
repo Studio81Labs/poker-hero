@@ -10016,6 +10016,67 @@ describe("App", () => {
     expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
   });
 
+  it("identifies a heads-up squeeze response after hero calls", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "squeeze-response-chart-job",
+      original_filename: "squeeze-response.png",
+      image_filename: "squeeze-response.png",
+      recommendation: {
+        action: "call",
+        sizing: null,
+        confidence: 0.75,
+        explanation: "The preflop chart recommends a conservative call.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0355,
+          policy_fraction: 0.0405,
+          stack_depth_policy: "standard",
+          effective_stack: 90,
+          opener_position: "utg",
+          opening_raise_size: 2.5,
+          hero_prior_commitment: 2.5,
+          three_bettor_position: "small_blind",
+          three_bet_size: 10,
+          three_bet_to_open_ratio: 4,
+          three_bet_size_policy: "large",
+          squeeze_response_policy: "conservative_heads_up_squeeze",
+          continue_fraction: 0.0405,
+          four_bet_fraction: 0.019,
+          maximum_four_bet_total: 100,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 1 },
+            { action: "raise", sizing: null, frequency: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("UTG")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Small blind")).toBeInTheDocument();
+    expect(within(chartContext).getAllByText("2.5 BB")).toHaveLength(2);
+    expect(
+      within(chartContext).getByText("Conservative heads up squeeze"),
+    ).toBeInTheDocument();
+    expect(within(chartContext).getByText("10 BB · 4x · Large")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 4% · Four-bet 1.9%"))
+      .toBeInTheDocument();
+    expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
+  });
+
   it("shows structured four-bet response evidence", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

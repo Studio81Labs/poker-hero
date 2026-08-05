@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one or two represented callers, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one or two represented callers, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -284,6 +284,16 @@ hero's actual prior blind commitment, and identify the cold 3-bet policy in
 recommendation evidence. Extra active players or contradictory stack state
 must retain fallback behavior.
 
+Structured preflop history may additionally route one opponent open, one
+matching hero cold-call, and one later-position squeeze after the opener folds.
+This route requires exactly two active players, legal opener-hero-squeezer seat
+order, a full squeeze within the supported ratio bands, matching pot and call
+amounts, and known hero/effective stacks. It uses explicit conservative
+continue/four-bet policies for every supported three-seat order, includes
+hero's prior call in the raise cap, and identifies the squeeze-response policy
+in recommendation evidence. An active opener, another caller, or action behind
+hero must retain fallback behavior.
+
 Structured preflop history may additionally route one opponent open, one hero
 3-bet, and one 4-bet by the original opener with action returning to hero. This
 route requires exactly two active players, legal opener-before-hero initial
@@ -304,7 +314,7 @@ three-seat order and identifies the cold 4-bet policy in recommendation
 evidence. Any remaining opener, hidden active player, or action behind hero
 must retain fallback behavior.
 
-Limps, multiple callers, unsupported squeeze histories, unsupported cold
+Limps, multiple callers, unsupported broader squeeze histories, unsupported cold
 4-bet trees, more than three actions, unsupported positions or sizes, and
 contradictory money state decline these routes.
 

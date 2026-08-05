@@ -22,6 +22,8 @@ from app.solvers.preflop_chart import (
     OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
     SINGLE_CALLER_POLICY,
+    SQUEEZE_DEFENSE_POLICIES,
+    SQUEEZE_RESPONSE_POLICY_NAME,
     STACK_DEPTH_POLICIES,
     THREE_BET_DEFENSE_POLICIES,
     THREE_BET_SIZE_POLICIES,
@@ -296,6 +298,67 @@ def structured_cold_three_bet_request(
     )
 
 
+def structured_squeeze_response_request(
+    cards: tuple[str, str],
+    *,
+    opener_position: PreflopPosition = "utg",
+    hero_position: PreflopPosition = "button",
+    squeezer_position: PreflopPosition = "small_blind",
+    opening_size: float = 2.5,
+    squeeze_size: float = 10.0,
+    hero_stack: float | None = 97.5,
+    effective_stack: float = 90.0,
+    players_in_hand: int = 2,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    commitments = (
+        (opener_position, opening_size),
+        (hero_position, opening_size),
+        (squeezer_position, squeeze_size),
+    )
+    pot_size = 1.5 + sum(
+        amount - posted_blinds[position]
+        for position, amount in commitments
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=squeeze_size - opening_size,
+        pot_size=pot_size,
+        hero_stack=hero_stack,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        facing_action="raise",
+        action_context="Structured history is authoritative",
+        preflop_opener_position=opener_position,
+        preflop_open_size=opening_size,
+        preflop_action_history=[
+            PreflopAction(
+                actor=opener_position,
+                action="raise",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=hero_position,
+                action="call",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=squeezer_position,
+                action="raise",
+                amount=squeeze_size,
+            ),
+        ],
+    )
+
+
 def structured_four_bet_request(
     cards: tuple[str, str],
     *,
@@ -519,6 +582,50 @@ def test_cold_three_bet_policies_are_tighter_than_opener_defense() -> None:
         opener_policy = THREE_BET_DEFENSE_POLICIES[(opener, three_bettor)]
         assert cold_policy.continue_fraction < opener_policy.continue_fraction
         assert cold_policy.four_bet_fraction <= opener_policy.four_bet_fraction
+
+
+def test_squeeze_policies_cover_every_legal_three_seat_order() -> None:
+    expected_matchups = {
+        (opener, hero, squeezer)
+        for opener in POSITION_POLICIES
+        for hero in POSITION_POLICIES
+        for squeezer in POSITION_POLICIES
+        if POSITION_ACTION_ORDER[opener]
+        < POSITION_ACTION_ORDER[hero]
+        < POSITION_ACTION_ORDER[squeezer]
+    }
+
+    assert set(SQUEEZE_DEFENSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.four_bet_fraction <= policy.continue_fraction <= 1
+        for policy in SQUEEZE_DEFENSE_POLICIES.values()
+    )
+
+
+def test_squeeze_policies_remain_valid_after_all_adjustments() -> None:
+    for policy in SQUEEZE_DEFENSE_POLICIES.values():
+        for size_policy in THREE_BET_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_three_bet_defense_policy(
+                    policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert (
+                    0
+                    < adjusted.four_bet_fraction
+                    <= adjusted.continue_fraction
+                    <= 1
+                )
+
+
+def test_squeeze_policies_are_tighter_than_opener_three_bet_defense() -> None:
+    for (opener, _, squeezer), squeeze_policy in (
+        SQUEEZE_DEFENSE_POLICIES.items()
+    ):
+        opener_policy = THREE_BET_DEFENSE_POLICIES[(opener, squeezer)]
+        assert squeeze_policy.continue_fraction < opener_policy.continue_fraction
+        assert squeeze_policy.four_bet_fraction <= opener_policy.four_bet_fraction
 
 
 def test_four_bet_defense_policies_cover_every_legal_position_matchup() -> None:
@@ -1281,6 +1388,174 @@ def test_declines_inconsistent_cold_three_bet_state(
     mutation(request.state)
 
     assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "four_bet"),
+        (("Th", "Ts"), "call", "continue"),
+        (("7h", "2d"), "fold", "fold"),
+    ],
+)
+def test_squeeze_response_history_routes_conservative_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    result = solve_preflop_chart(structured_squeeze_response_request(cards))
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_squeeze_after_call"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["opener_position"] == "utg"
+    assert result.raw["three_bettor_position"] == "small_blind"
+    assert result.raw["opening_raise_size"] == 2.5
+    assert result.raw["hero_prior_commitment"] == 2.5
+    assert result.raw["three_bet_size"] == 10
+    assert result.raw["three_bet_to_open_ratio"] == 4
+    assert result.raw["squeeze_response_policy"] == (
+        SQUEEZE_RESPONSE_POLICY_NAME
+    )
+    assert result.raw["policy_source"] == (
+        "hero_opener_squeezer_size_stack_matchup"
+    )
+
+
+@pytest.mark.parametrize(
+    ("opener_position", "hero_position", "squeezer_position"),
+    tuple(SQUEEZE_DEFENSE_POLICIES),
+)
+def test_squeeze_response_routes_every_legal_position_order(
+    opener_position: PreflopPosition,
+    hero_position: PreflopPosition,
+    squeezer_position: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_squeeze_response_request(
+            ("Ah", "Ad"),
+            opener_position=opener_position,
+            hero_position=hero_position,
+            squeezer_position=squeezer_position,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["opener_position"] == opener_position
+    assert result.raw["position"] == hero_position
+    assert result.raw["three_bettor_position"] == squeezer_position
+
+
+def test_squeeze_response_reconstructs_blind_commitments() -> None:
+    result = solve_preflop_chart(
+        structured_squeeze_response_request(
+            ("Ah", "Ad"),
+            opener_position="cutoff",
+            hero_position="small_blind",
+            squeezer_position="big_blind",
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["maximum_four_bet_total"] == 100
+
+
+def test_squeeze_response_raise_cap_includes_hero_prior_call() -> None:
+    result = solve_preflop_chart(
+        structured_squeeze_response_request(
+            ("Ah", "Ad"),
+            hero_stack=10,
+            effective_stack=10,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 12.5
+    assert result.raw["maximum_four_bet_total"] == 12.5
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "current_bet", 7),
+        lambda state: setattr(state, "pot_size", 13.5),
+        lambda state: setattr(state, "hero_stack", None),
+        lambda state: setattr(state, "hero_stack", 7),
+        lambda state: setattr(state, "effective_stack", 98),
+        lambda state: setattr(state, "preflop_opener_position", "hijack"),
+        lambda state: setattr(state, "preflop_open_size", 3),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="cutoff", action="call", amount=2.5),
+                PreflopAction(actor="small_blind", action="raise", amount=10),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="button", action="call", amount=2),
+                PreflopAction(actor="small_blind", action="raise", amount=10),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="raise", amount=2.5),
+                PreflopAction(actor="button", action="call", amount=2.5),
+                PreflopAction(actor="cutoff", action="raise", amount=10),
+            ],
+        ),
+    ],
+)
+def test_declines_inconsistent_squeeze_response_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_squeeze_response_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize("squeeze_size", [3.5, 13])
+def test_declines_unsupported_squeeze_size(squeeze_size: float) -> None:
+    request = structured_squeeze_response_request(
+        ("Ah", "Ad"),
+        squeeze_size=squeeze_size,
+    )
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
+
+
+def test_declines_three_bet_larger_than_supported_size_band() -> None:
+    request = structured_three_bet_request(
+        ("Ah", "Ad"),
+        three_bet_size=13,
+    )
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
+
+
+def test_oversized_three_bet_does_not_require_chart_specific_hero_stack() -> None:
+    request = structured_three_bet_request(
+        ("Ah", "Ad"),
+        three_bet_size=13,
+        hero_stack=None,
+    )
+
+    assert not requires_hero_stack_for_preflop_chart(request.state)
 
 
 @pytest.mark.parametrize(

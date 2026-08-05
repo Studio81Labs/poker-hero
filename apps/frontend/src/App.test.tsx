@@ -9854,6 +9854,65 @@ describe("App", () => {
     expect(within(chartContext).getByText("21 BB")).toBeInTheDocument();
   });
 
+  it("shows isolation-raise response chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "isolation-response-chart-job",
+      original_filename: "isolation-response.png",
+      image_filename: "isolation-response.png",
+      recommendation: {
+        action: "call",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The preflop chart recommends continuing after the isolation raise.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0473,
+          policy_fraction: 0.14,
+          stack_depth_policy: "standard",
+          effective_stack: 90,
+          limper_position: "utg",
+          limp_size: 1,
+          isolation_raiser_position: "button",
+          isolation_raise_size: 4,
+          isolation_raise_to_limp_ratio: 4,
+          isolation_raise_size_policy: "standard",
+          isolation_response_policy: "heads_up_after_hero_limp",
+          continue_fraction: 0.14,
+          reraise_fraction: 0.045,
+          maximum_reraise_total: 94,
+          candidates: [
+            { action: "fold", sizing: null, frequency: 0 },
+            { action: "call", sizing: null, frequency: 1 },
+            { action: "raise", sizing: null, frequency: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Hero limper")).toBeInTheDocument();
+    expect(within(chartContext).getByText("UTG")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Button")).toBeInTheDocument();
+    expect(within(chartContext).getByText("4 BB · 4x limp · Standard")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Heads up after hero limp")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 14% · Reraise 4.5%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("94 BB")).toBeInTheDocument();
+    expect(within(chartContext).queryByText("Opener")).not.toBeInTheDocument();
+    expect(within(chartContext).queryByText("3-bettor")).not.toBeInTheDocument();
+  });
+
   it("shows stack-aware facing-open chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

@@ -91,6 +91,7 @@ MIN_BLIND_ONLY_POT_BB = 1.25
 MAX_BLIND_ONLY_POT_BB = 1.75
 MIN_SINGLE_OPEN_SIZE_BB = 2.0
 MAX_SINGLE_OPEN_SIZE_BB = 4.0
+MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB = 5.0
 MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO = 5.0
 MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO = 3.5
 MONEY_TOLERANCE_BB = 0.05
@@ -99,6 +100,7 @@ PreflopChartScenario = Literal[
     "first_in",
     "big_blind_option",
     "heads_up_limp_big_blind",
+    "facing_isolation_raise_after_limp",
     "facing_open_raise",
     "facing_open_with_caller",
     "facing_open_with_callers",
@@ -153,6 +155,7 @@ def requires_hero_stack_for_preflop_chart(state: CanonicalState) -> bool:
         "facing_three_bet",
         "facing_cold_three_bet",
         "facing_squeeze_after_call",
+        "facing_isolation_raise_after_limp",
         "facing_four_bet",
         "facing_cold_four_bet",
     }
@@ -285,7 +288,11 @@ def _structured_preflop_context(
 ) -> PreflopChartContext | None:
     state = request.state
     history = state.preflop_action_history
-    if len(history) not in {1, 2, 3, 4, 5} or history[0].action != "raise":
+    if len(history) not in {1, 2, 3, 4, 5}:
+        return None
+    if history[0].action == "call":
+        return _structured_isolation_raise_context(state, hero_position)
+    if history[0].action != "raise":
         return None
 
     opener = history[0]
@@ -552,6 +559,57 @@ def _structured_preflop_context(
         opening_raise_size=opener_size,
         latest_aggressor_position=three_bettor_position,
         latest_raise_size=three_bet.amount,
+    )
+
+
+def _structured_isolation_raise_context(
+    state: CanonicalState,
+    hero_position: Position,
+) -> PreflopChartContext | None:
+    history = state.preflop_action_history
+    if (
+        len(history) != 2
+        or state.players_in_hand != 2
+        or state.preflop_opener_position is not None
+        or state.preflop_open_size is not None
+    ):
+        return None
+
+    limp, isolation_raise = history
+    raiser_position: Position = isolation_raise.actor
+    if (
+        limp.actor != hero_position
+        or limp.action != "call"
+        or abs(limp.amount - 1.0) > MONEY_TOLERANCE_BB
+        or isolation_raise.action != "raise"
+        or raiser_position == hero_position
+        or POSITION_ACTION_ORDER[raiser_position]
+        <= POSITION_ACTION_ORDER[hero_position]
+        or isolation_raise.amount + MONEY_TOLERANCE_BB < 2.0
+        or isolation_raise.amount
+        > MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB + MONEY_TOLERANCE_BB
+        or not _amount_to_call_matches(
+            state.current_bet,
+            isolation_raise.amount - limp.amount,
+        )
+        or not _stack_state_supports_raise_response(state)
+        or not _pot_matches_actions(
+            state.pot_size,
+            (
+                (hero_position, limp.amount),
+                (raiser_position, isolation_raise.amount),
+            ),
+        )
+    ):
+        return None
+    return PreflopChartContext(
+        scenario="facing_isolation_raise_after_limp",
+        hero_position=hero_position,
+        limper_position=hero_position,
+        limp_size=limp.amount,
+        latest_aggressor_position=raiser_position,
+        latest_raise_size=isolation_raise.amount,
+        hero_prior_commitment=limp.amount,
     )
 
 

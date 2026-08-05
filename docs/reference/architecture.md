@@ -32,7 +32,8 @@ plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
 route one heads-up 1 BB limp to hero's big-blind option, a single open, one open
 plus one to four callers before hero, or exactly one hero open followed by one
-later-position 3-bet. It can also route one opponent open
+later-position 3-bet. It can also route a hero 1 BB limp followed by one bounded
+later-position isolation raise when action returns heads-up, or one opponent open
 and one opponent 3-bet before hero when exactly three players remain, or one
 opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
 It also supports a later-position cold 4-bet after the opener folds and exactly
@@ -66,6 +67,12 @@ The heads-up limp route requires exactly two active players, one canonical
 limper before hero in the big blind, a matching 1 BB call, and a pot reconstructed
 from blinds plus that limp. Explicit limper-position isolation ranges adjust by
 stack depth, while the target isolation size is capped by the effective total.
+The isolation-response route likewise requires exactly two active players, but
+hero is the represented limper and a later seat raises to 2-5 BB. It validates
+the amount to call, both commitments, blind replacement, and available stacks,
+then applies explicit hero-versus-raiser boundaries plus raise-size and stack
+adjustments. Evidence uses isolation-specific actor, size, policy, range, and
+cap fields rather than presenting the action as an open/3-bet sequence.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

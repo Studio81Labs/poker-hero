@@ -20,6 +20,9 @@ from app.solvers.preflop_chart import (
     FOUR_BET_DEFENSE_POLICIES,
     FOUR_BET_SIZE_POLICIES,
     FOUR_CALLER_POLICY,
+    ISOLATION_RAISE_SIZE_POLICIES,
+    ISOLATION_RESPONSE_POLICIES,
+    ISOLATION_RESPONSE_POLICY_NAME,
     LIMP_RESPONSE_POLICIES,
     LIMP_RESPONSE_POLICY_NAME,
     OPEN_SIZE_POLICIES,
@@ -39,10 +42,12 @@ from app.solvers.preflop_chart import (
     canonical_hand_class,
     hand_top_fraction,
     normalize_position,
+    policy_for_isolation_raise_size,
     policy_for_stack_depth,
     solve_preflop_chart,
 )
 from app.solvers.preflop_context import (
+    MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
     MAX_SINGLE_OPEN_SIZE_BB,
     MIN_SINGLE_OPEN_SIZE_BB,
     POSITION_ACTION_ORDER,
@@ -117,6 +122,52 @@ def structured_heads_up_limp_request(
                 action="call",
                 amount=limp_size,
             )
+        ],
+    )
+
+
+def structured_isolation_raise_request(
+    cards: tuple[str, str],
+    *,
+    hero_position: PreflopPosition = "utg",
+    raiser_position: PreflopPosition = "button",
+    isolation_raise_size: float = 4.0,
+    hero_stack: float | None = 99.0,
+    effective_stack: float = 90.0,
+    players_in_hand: int = 2,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    pot_size = (
+        1.5
+        - posted_blinds[hero_position]
+        - posted_blinds[raiser_position]
+        + 1.0
+        + isolation_raise_size
+    )
+    return request_for(
+        cards,
+        position=hero_position,
+        current_bet=isolation_raise_size - 1.0,
+        pot_size=pot_size,
+        hero_stack=hero_stack,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        facing_action="raise",
+        action_context="Approved structured action history",
+        preflop_action_history=[
+            PreflopAction(actor=hero_position, action="call", amount=1.0),
+            PreflopAction(
+                actor=raiser_position,
+                action="raise",
+                amount=isolation_raise_size,
+            ),
         ],
     )
 
@@ -3080,3 +3131,296 @@ def test_declines_ambiguous_preflop_states(
     recommendation_request: RecommendationRequest,
 ) -> None:
     assert solve_preflop_chart(recommendation_request) is None
+
+
+def test_isolation_response_policies_cover_every_limper_raiser_order() -> None:
+    expected_matchups = {
+        (hero, raiser)
+        for hero in POSITION_ACTION_ORDER
+        for raiser in POSITION_ACTION_ORDER
+        if POSITION_ACTION_ORDER[hero] < POSITION_ACTION_ORDER[raiser]
+    }
+
+    assert set(ISOLATION_RESPONSE_POLICIES) == expected_matchups
+    assert all(
+        0 < policy.reraise_fraction <= policy.continue_fraction <= 1
+        for policy in ISOLATION_RESPONSE_POLICIES.values()
+    )
+
+
+def test_isolation_size_policies_tighten_as_raise_grows() -> None:
+    assert ISOLATION_RAISE_SIZE_POLICIES[-1].maximum_size == (
+        MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB
+    )
+
+
+@pytest.mark.parametrize(
+    ("raise_size", "expected_policy"),
+    [
+        (2.0, "small"),
+        (3.0, "small"),
+        (3.01, "standard"),
+        (4.0, "standard"),
+        (4.01, "large"),
+        (5.0, "large"),
+    ],
+)
+def test_isolation_size_policy_boundaries(
+    raise_size: float,
+    expected_policy: str,
+) -> None:
+    policy = policy_for_isolation_raise_size(raise_size)
+
+    assert policy is not None
+    assert policy.name == expected_policy
+
+
+def test_isolation_response_policies_remain_valid_after_adjustments() -> None:
+    for base_policy in ISOLATION_RESPONSE_POLICIES.values():
+        for size_policy in ISOLATION_RAISE_SIZE_POLICIES:
+            for stack_policy in STACK_DEPTH_POLICIES:
+                adjusted = adjusted_defense_policy(
+                    base_policy,
+                    size_policy,
+                    stack_policy,
+                )
+                assert (
+                    0
+                    < adjusted.reraise_fraction
+                    <= adjusted.continue_fraction
+                    <= 1
+                )
+    assert [
+        policy.maximum_size for policy in ISOLATION_RAISE_SIZE_POLICIES
+    ] == sorted(policy.maximum_size for policy in ISOLATION_RAISE_SIZE_POLICIES)
+    assert all(
+        current.continue_multiplier >= following.continue_multiplier
+        and current.reraise_multiplier >= following.reraise_multiplier
+        for current, following in zip(
+            ISOLATION_RAISE_SIZE_POLICIES,
+            ISOLATION_RAISE_SIZE_POLICIES[1:],
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("cards", "expected_action", "expected_tier"),
+    [
+        (("Ah", "Ad"), "raise", "limp_reraise"),
+        (("9h", "9s"), "call", "continue"),
+        (("7h", "2d"), "fold", "fold"),
+    ],
+)
+def test_isolation_raise_history_routes_position_aware_response(
+    cards: tuple[str, str],
+    expected_action: str,
+    expected_tier: str,
+) -> None:
+    result = solve_preflop_chart(structured_isolation_raise_request(cards))
+
+    assert result is not None
+    assert result.action == expected_action
+    assert result.raw["scenario"] == "facing_isolation_raise_after_limp"
+    assert result.raw["chart_tier"] == expected_tier
+    assert result.raw["limper_position"] == "utg"
+    assert result.raw["isolation_raiser_position"] == "button"
+    assert result.raw["limp_size"] == 1
+    assert result.raw["isolation_raise_size"] == 4
+    assert result.raw["isolation_raise_to_limp_ratio"] == 4
+    assert result.raw["isolation_raise_size_policy"] == "standard"
+    assert result.raw["isolation_response_policy"] == (
+        ISOLATION_RESPONSE_POLICY_NAME
+    )
+    assert result.raw["policy_source"] == (
+        "hero_limper_isolation_raiser_size_stack_matchup"
+    )
+    assert "opener_position" not in result.raw
+    assert "three_bettor_position" not in result.raw
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "raiser_position"),
+    tuple(ISOLATION_RESPONSE_POLICIES),
+)
+def test_isolation_response_routes_every_legal_position_order(
+    hero_position: PreflopPosition,
+    raiser_position: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Ad"),
+            hero_position=hero_position,
+            raiser_position=raiser_position,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["position"] == hero_position
+    assert result.raw["isolation_raiser_position"] == raiser_position
+
+
+def test_isolation_response_accounts_for_raiser_position() -> None:
+    hijack = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Js"),
+            raiser_position="hijack",
+        )
+    )
+    button = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Js"),
+            raiser_position="button",
+        )
+    )
+
+    assert hijack is not None
+    assert button is not None
+    assert hijack.action == "fold"
+    assert button.action == "call"
+
+
+def test_isolation_response_tightens_against_larger_raise() -> None:
+    standard = solve_preflop_chart(
+        structured_isolation_raise_request(("Ah", "Js"))
+    )
+    large = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Js"),
+            isolation_raise_size=5,
+        )
+    )
+
+    assert standard is not None
+    assert large is not None
+    assert standard.action == "call"
+    assert large.action == "fold"
+    assert standard.raw["continue_fraction"] > large.raw["continue_fraction"]
+
+
+def test_isolation_response_accounts_for_stack_depth() -> None:
+    short = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Ts"),
+            hero_stack=19,
+            effective_stack=19,
+        )
+    )
+    standard = solve_preflop_chart(
+        structured_isolation_raise_request(("Ah", "Ts"))
+    )
+
+    assert short is not None
+    assert standard is not None
+    assert short.action == "fold"
+    assert standard.action == "call"
+
+
+def test_isolation_limp_reraise_is_capped_by_available_total() -> None:
+    result = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Ad"),
+            hero_stack=5,
+            effective_stack=5,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 6
+    assert result.raw["maximum_reraise_total"] == 6
+
+
+def test_isolation_response_calls_when_no_legal_reraise_total_remains() -> None:
+    result = solve_preflop_chart(
+        structured_isolation_raise_request(
+            ("Ah", "Ad"),
+            hero_stack=3,
+            effective_stack=3,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "call"
+    assert result.sizing is None
+    assert result.raw["maximum_reraise_total"] == 4
+
+
+def test_isolation_response_identifies_missing_hero_stack() -> None:
+    request = structured_isolation_raise_request(("Ah", "Ad"), hero_stack=None)
+
+    assert requires_hero_stack_for_preflop_chart(request.state)
+    assert solve_preflop_chart(request) is None
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "current_bet", 2),
+        lambda state: setattr(state, "pot_size", 20),
+        lambda state: setattr(state, "hero_stack", None),
+        lambda state: setattr(state, "hero_stack", 2),
+        lambda state: setattr(state, "effective_stack", 100),
+        lambda state: setattr(state, "preflop_opener_position", "utg"),
+        lambda state: setattr(state, "preflop_open_size", 2.5),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="hijack", action="call", amount=1),
+                PreflopAction(actor="button", action="raise", amount=4),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="call", amount=1.5),
+                PreflopAction(actor="button", action="raise", amount=4),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="call", amount=1),
+                PreflopAction(actor="button", action="call", amount=4),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="button", action="call", amount=1),
+                PreflopAction(actor="utg", action="raise", amount=4),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="call", amount=1),
+                PreflopAction(actor="button", action="raise", amount=1.5),
+            ],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="utg", action="call", amount=1),
+                PreflopAction(actor="button", action="raise", amount=5.5),
+            ],
+        ),
+        lambda state: state.preflop_action_history.append(
+            PreflopAction(actor="big_blind", action="call", amount=4)
+        ),
+    ],
+)
+def test_declines_inconsistent_isolation_raise_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_isolation_raise_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert solve_preflop_chart(request) is None

@@ -1175,3 +1175,42 @@ def test_benchmark_file_uses_configured_provider(tmp_path: Path) -> None:
 
     assert report.provider == "mock"
     assert report.total_cases == 1
+
+
+def test_recommendation_benchmark_runs_isolation_response_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "preflop-facing-isolation-raise-after-limp",
+                [reference_line("call")],
+                tags=["preflop", "isolation-raise", "hero-limp"],
+                hero_cards=[Card.from_code("9h"), Card.from_code("9s")],
+                board_cards=[],
+                street="preflop",
+                pot_size=6.5,
+                current_bet=3,
+                hero_stack=99,
+                effective_stack=90,
+                players_in_hand=2,
+                hero_position="utg",
+                facing_action="raise",
+                preflop_action_history=[
+                    PreflopAction(actor="utg", action="call", amount=1),
+                    PreflopAction(actor="button", action="raise", amount=4),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_correct == 1
+    assert report.line_correct == 1
+    assert report.fallback_cases == 0
+    assert report.cases[0].engine == "preflop_chart_v1"

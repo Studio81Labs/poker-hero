@@ -511,9 +511,13 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Stack depth", value: `${stackPolicy} · ${formatEvidenceBb(effectiveStack)}` });
   }
 
+  const isolationRaiserPosition = metadataLabel(raw.isolation_raiser_position);
   const limperPosition = metadataLabel(raw.limper_position);
   if (limperPosition) {
-    details.push({ label: "Limper", value: limperPosition });
+    details.push({
+      label: isolationRaiserPosition ? "Hero limper" : "Limper",
+      value: limperPosition,
+    });
   }
 
   const limpSize = metadataNumber(raw.limp_size);
@@ -524,6 +528,29 @@ function recommendationEvidenceFromRaw(
   const limpResponsePolicy = metadataLabel(raw.limp_response_policy);
   if (limpResponsePolicy) {
     details.push({ label: "Limp policy", value: limpResponsePolicy });
+  }
+
+  if (isolationRaiserPosition) {
+    details.push({ label: "Isolation raiser", value: isolationRaiserPosition });
+  }
+
+  const isolationRaiseSize = metadataNumber(raw.isolation_raise_size);
+  const isolationRaiseRatio = metadataNumber(raw.isolation_raise_to_limp_ratio);
+  const isolationSizePolicy = metadataLabel(raw.isolation_raise_size_policy);
+  if (isolationRaiseSize !== null && isolationRaiseSize > 0) {
+    let isolationValue = formatEvidenceBb(isolationRaiseSize);
+    if (isolationRaiseRatio !== null && isolationRaiseRatio > 0) {
+      isolationValue += ` · ${formatEvidenceNumber(isolationRaiseRatio)}x limp`;
+    }
+    if (isolationSizePolicy) {
+      isolationValue += ` · ${isolationSizePolicy}`;
+    }
+    details.push({ label: "Isolation size", value: isolationValue });
+  }
+
+  const isolationResponsePolicy = metadataLabel(raw.isolation_response_policy);
+  if (isolationResponsePolicy) {
+    details.push({ label: "Isolation policy", value: isolationResponsePolicy });
   }
 
   const limpRaiseFraction = metadataRatio(raw.limp_raise_fraction);

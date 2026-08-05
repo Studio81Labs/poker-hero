@@ -137,7 +137,8 @@ to the Rust plugin.
 Preflop hands with a recognized six-max position and an unambiguous supported
 context use the bundled position-aware training chart. Supported contexts
 include an unopened pot, one heads-up 1 BB limp to the big blind, a single open,
-one open followed by one to four callers,
+one open followed by one to four callers, a hero 1 BB limp facing one
+later-position isolation raise after action returns heads-up,
 a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
 a hero 3-bet facing either an opener 4-bet or a later cold 4-bet after the
 opener folds. It also supports hero cold-calling an open, facing a later
@@ -157,6 +158,11 @@ three-raise history can also represent an opponent open, hero 3-bet, and opener
 4-bet with action returning to hero, or a later-position cold 4-bet after the
 opener folds and action returns heads-up to hero. An open, matching hero call,
 and later squeeze can represent the same heads-up return after the opener folds.
+A hero 1 BB call followed by one later-position 2-5 BB raise can represent a
+heads-up isolation response after every other player folds. This route requires
+known hero and effective stacks, validates the call amount and reconstructed
+pot, and exposes its position, size-band, stack, response-range, and raise-cap
+adjustments as evidence.
 The called-open routes require exactly three through six active players,
 matching open/call totals, and legal seat order. They apply explicit conservative
 range multipliers and 4x-open through 7x-open squeeze targets for one through
@@ -174,8 +180,9 @@ The heads-up limp route requires exactly one active limper and hero in the big
 blind, validates the pot against blinds and the limp, then uses explicit
 limper-position and stack-depth isolation ranges with a capped target size.
 Action-text parsing remains for older saved single-open hands.
-Positionless and unsupported limped spots, including multiple limpers or action
-pending behind hero, caller histories beyond the terminal six-max ordering, unsupported
+Positionless and unsupported limped spots, including multiple limpers, action
+pending behind hero, or an isolation raise with another active player, caller
+histories beyond the terminal six-max ordering, unsupported
 squeezes with an active opener, another caller, or action behind, cold 4-bets
 with action behind or another active player, longer
 preflop trees, multiway postflop states, and

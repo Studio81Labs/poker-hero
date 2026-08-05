@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- and two-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -340,6 +340,17 @@ limper-position isolation ranges, adjust them by the selected stack-depth band,
 cap the target isolation raise by the available effective total, and expose the
 limper, policy, adjusted range, target, and cap as recommendation evidence.
 
+The big-blind option may also route exactly two ordered 1 BB limps when exactly
+three players remain active. The limpers must occupy distinct seats before the
+big blind, the history must contain calls only, no facing aggression or opener
+metadata may be present, and the pot must match blinds plus both commitments.
+The chart must use an explicit isolation policy for every legal limper pair,
+apply the selected stack-depth adjustment, target at least 5 BB or 1.5x the pot,
+and cap the raise by the available effective total. Evidence must expose both
+limper positions, count, named policy, base and adjusted isolation range,
+target, and cap. A hidden active player, a third limp, a duplicate or reordered
+seat, a non-1 BB call, or contradictory money state must retain fallback.
+
 Structured preflop history may also route one 1 BB hero limp followed by one
 later-position isolation raise to 2-5 BB after action returns to hero. Exactly
 two players must remain active, hero and the raiser must occupy distinct seats
@@ -370,7 +381,7 @@ legacy opener fields must remain subordinate to the call-first structured
 history. Another active player, a different final actor, an incomplete raise,
 or contradictory money state must retain fallback behavior.
 
-Multiple limpers, a hidden active player, a limp with action pending behind hero,
+Three or more limpers, a hidden active player, a limp with action pending behind hero,
 other non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold
 4-bet trees, more than five actions, unsupported positions or sizes, and
 contradictory money state decline these routes.

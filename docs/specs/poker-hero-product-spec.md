@@ -176,6 +176,23 @@ The backend API:
 - Exposes endpoints for job status, detected state, manual corrections, approval, and recommendation results.
 - Routes recommendation requests to the configured provider.
 
+### Agent MCP Gateway
+
+The local MCP gateway exposes a curated subset of the backend API for agents
+performing post-hand training and review. Each process is permanently bound to
+staging or production and verifies the backend's declared deployment identity
+before data access. It must use the same API job transitions as the browser,
+preserve parser and recommendation evidence, and never call providers or stores
+directly.
+
+Production MCP access is read-only. Staging mutations require explicit operator
+enablement and cover only screenshot submission, reviewed canonical approval,
+pre-reveal decision recording, recommendation requests, and lesson review.
+Administrative backup, dataset import, benchmark execution, and bulk archival
+remain unavailable. Local image tools may read only files resolved below a
+configured screenshot root. MCP credentials stay in process configuration and
+never enter tool results.
+
 ### Parser Registry
 
 The parser registry loads the active parser from configuration. Parser implementations share one interface and return normalized structured output plus confidence data.
@@ -671,7 +688,7 @@ and representable by the benchmark matcher.
 
 ## Deployment Monitoring
 
-The private testing deployment must have a scheduled end-to-end probe that
+The private staging deployment must have a scheduled end-to-end probe that
 checks the frontend application marker, proxied backend health, and one bounded
 protected API read. Checks use bounded responses, timeouts, and retries. When
 Cloudflare Access service credentials are configured, they must never be sent
@@ -768,6 +785,10 @@ Example configuration concepts:
   provider URLs must use HTTPS, and credentials must never enter frontend state.
 - An optional deployment-only Worker-to-backend shared secret. The browser must
   never receive or forward this credential itself.
+- A required deployment environment identity (`local`, `staging`, or
+  `production`) that environment-fixed MCP gateways verify before data access.
+- MCP target URL, fixed environment, write opt-in, screenshot root, timeout,
+  and optional Cloudflare Access or trusted downstream service credentials.
 
 Configuration must allow local/private testing with local services and later public testing with external services without changing the frontend flow.
 
@@ -831,6 +852,15 @@ End-to-end tests:
 - Surface parser/provider errors in a recoverable way.
 - Continue processing unaffected queue items after one item fails.
 - Clear completed processing items into history.
+
+MCP gateway tests:
+
+- Reject a configured environment that differs from backend health.
+- Omit mutation tools from production and read-only staging discovery.
+- Complete the staged upload, approval, pre-reveal decision, recommendation,
+  and lesson-review lifecycle through the HTTP API.
+- Reject screenshot paths outside the configured root.
+- Preserve bounded API status, request-ID, and retry metadata in tool failures.
 
 The Playwright browser suite runs the real Vite app against an isolated
 FastAPI process with deterministic local HTTP parser and recommendation
@@ -1042,3 +1072,6 @@ Poker Hero is successful when:
 - A deployed backend can reject application API traffic that does not pass
   through the configured frontend Worker while retaining a platform health
   endpoint.
+- An agent can inspect either environment through a fixed-target MCP process,
+  while production remains read-only and staging writes preserve the explicit
+  post-hand approval workflow.

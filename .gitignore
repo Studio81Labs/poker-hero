@@ -18,6 +18,7 @@ test-results/
 .env.local
 .env.*.local
 apps/backend/.env
+apps/backend/.mcp.env
 apps/backend/data/
 /data/
 .dev.vars*

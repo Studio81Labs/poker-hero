@@ -141,6 +141,17 @@ THREE_LIMPER_RESPONSE_POLICIES: dict[
     ("cutoff", "button", "small_blind"): LimpResponsePolicy(0.16),
 }
 
+FOUR_LIMPER_RESPONSE_POLICY_NAME = "big_blind_four_limpers"
+FOUR_LIMPER_RESPONSE_POLICIES: dict[
+    tuple[Position, Position, Position, Position], LimpResponsePolicy
+] = {
+    ("utg", "hijack", "cutoff", "button"): LimpResponsePolicy(0.075),
+    ("utg", "hijack", "cutoff", "small_blind"): LimpResponsePolicy(0.085),
+    ("utg", "hijack", "button", "small_blind"): LimpResponsePolicy(0.095),
+    ("utg", "cutoff", "button", "small_blind"): LimpResponsePolicy(0.105),
+    ("hijack", "cutoff", "button", "small_blind"): LimpResponsePolicy(0.115),
+}
+
 ISOLATION_RESPONSE_POLICY_NAME = "heads_up_after_hero_limp"
 ISOLATION_RESPONSE_POLICIES: dict[
     tuple[Position, Position], DefensePolicy
@@ -478,6 +489,7 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     if context.scenario in {
         "two_limpers_big_blind",
         "three_limpers_big_blind",
+        "four_limpers_big_blind",
     }:
         return _solve_multiple_limpers_big_blind(
             request=request,
@@ -800,6 +812,20 @@ def _solve_multiple_limpers_big_blind(
         )
         response_policy_name = THREE_LIMPER_RESPONSE_POLICY_NAME
         minimum_target = 6.0
+    elif (
+        context.scenario == "four_limpers_big_blind"
+        and len(limper_positions) == 4
+    ):
+        policy = FOUR_LIMPER_RESPONSE_POLICIES.get(
+            (
+                limper_positions[0],
+                limper_positions[1],
+                limper_positions[2],
+                limper_positions[3],
+            )
+        )
+        response_policy_name = FOUR_LIMPER_RESPONSE_POLICY_NAME
+        minimum_target = 7.0
     else:
         return None
     if policy is None:
@@ -1716,6 +1742,7 @@ def _result(
         "heads_up_limp_big_blind",
         "two_limpers_big_blind",
         "three_limpers_big_blind",
+        "four_limpers_big_blind",
     }:
         actions = ("check", "raise")
     else:

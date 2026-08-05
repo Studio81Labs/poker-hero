@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to three-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to four-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -358,9 +358,19 @@ apply. Explicit policies must cover every legal limper triple, remain tighter
 than every corresponding two-limper policy, and apply the selected stack-depth
 adjustment. The target is at least 6 BB or 1.5x the pot and remains capped by
 the available effective total. Evidence uses the same multi-limper fields with
-all three seats and a count of three. A hidden active player, fourth limp,
+all three seats and a count of three. A mismatched active-player count,
 duplicate or reordered seat, non-1 BB call, or contradictory money state must
-retain fallback.
+retain fallback unless a longer history matches a separately supported route.
+
+The same big-blind option may also route exactly four ordered 1 BB limps when
+exactly five players remain active. The same strict action, seat, metadata, and
+pot-reconstruction requirements apply. Explicit policies must cover all five
+legal four-seat combinations, remain tighter than every corresponding
+three-limper policy, and apply the selected stack-depth adjustment. The target
+is at least 7 BB or 1.5x the pot and remains capped by the available effective
+total. Evidence uses the shared multi-limper fields with all four seats and a
+count of four. A hidden active player, fifth limp, duplicate or reordered seat,
+non-1 BB call, or contradictory money state must retain fallback.
 
 Structured preflop history may also route one 1 BB hero limp followed by one
 later-position isolation raise to 2-5 BB after action returns to hero. Exactly

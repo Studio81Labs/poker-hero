@@ -24,9 +24,11 @@ capped by the effective total represented by hero's posted big blind and the
 effective stack. Record both limper positions, count, named policy, base and
 adjusted range, target, and cap in recommendation evidence.
 
-Decline routing for a hidden active player, a third limp, duplicate or
-out-of-order seats, non-call actions, non-1 BB totals, a non-big-blind hero, or
-contradictory pot state. These states retain the configured range/EV fallback.
+Decline this two-limper route for a hidden active player, a third limp,
+duplicate or out-of-order seats, non-call actions, non-1 BB totals, a
+non-big-blind hero, or contradictory pot state. ADR 0018 later routes the exact
+bounded three-limper case; the other states retain the configured range/EV
+fallback.
 
 ## Consequences
 
@@ -34,5 +36,5 @@ contradictory pot state. These states retain the configured range/EV fallback.
   training guidance.
 - The explicit pair policies avoid presenting a heads-up range as multiway
   strategy.
-- Three or more limpers, action after hero, and arbitrary limp trees remain
-  outside the bundled chart.
+- At adoption, three or more limpers remained outside the bundled chart. ADR
+  0018 later adds the corresponding bounded three-limper route.

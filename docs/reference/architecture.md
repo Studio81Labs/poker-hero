@@ -30,7 +30,7 @@ registries so the frontend flow does not depend on a concrete engine.
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
-route one or exactly two ordered 1 BB limps to hero's big-blind option, a single open, one open
+route one to three ordered 1 BB limps to hero's big-blind option, a single open, one open
 plus one to four callers before hero, or exactly one hero open followed by one
 later-position 3-bet. It can also route a hero 1 BB limp followed by one bounded
 later-position isolation raise when action returns heads-up, or one opponent open
@@ -69,11 +69,12 @@ The heads-up limp route requires exactly two active players, one canonical
 limper before hero in the big blind, a matching 1 BB call, and a pot reconstructed
 from blinds plus that limp. Explicit limper-position isolation ranges adjust by
 stack depth, while the target isolation size is capped by the effective total.
-The two-limper variant requires exactly three active players and two distinct,
-legally ordered 1 BB calls. Explicit policies cover every possible limper pair;
-their tighter isolation boundaries adjust by stack depth, target at least 5 BB
-or 1.5x the pot, and use the same effective-total cap. Evidence retains both
-limper seats, the named policy, adjusted range, target, and cap.
+The multi-limper variants require exactly one more active player than the two or
+three distinct, legally ordered 1 BB calls. Explicit policies cover every
+possible limper pair and triple; their progressively tighter isolation
+boundaries adjust by stack depth, target at least 5 BB or 6 BB respectively or
+1.5x the pot, and use the same effective-total cap. Evidence retains all limper
+seats, their count, the named policy, adjusted range, target, and cap.
 The isolation-response route likewise requires exactly two active players, but
 hero is the represented limper and a later seat raises to 2-5 BB. It validates
 the amount to call, both commitments, blind replacement, and available stacks,

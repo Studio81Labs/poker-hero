@@ -773,6 +773,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     def health() -> dict[str, str]:
         return {
             "status": "ok",
+            "environment": active_settings.deployment_environment,
             "parser_provider": active_settings.parser_provider,
             "recommendation_provider": active_settings.recommendation_provider,
             "recommendation_engine": (

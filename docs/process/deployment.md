@@ -26,7 +26,10 @@ finishes, and then verifies `/api/health`.
 
 Start from `infra/docker/backend.env.example`. At minimum, set the parser,
 layout, recommendation provider, data directory, upload limit, and allowed
-origins. The backend image already contains `poker-postflop-solver`; keep
+origins. Set `POKER_DEPLOYMENT_ENVIRONMENT` to the exact Coolify application
+environment (`staging` or `production`); environment-fixed MCP gateways reject
+a missing or mismatched identity. The backend image already contains
+`poker-postflop-solver`; keep
 `POKER_LOCAL_SOLVER_ENGINE=postflop_solver` to use it. The default 768 MB solver
 tree limit is separate from container overhead, so allocate at least 1.5 GB RAM
 or lower `POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB`. Keep provider URLs and
@@ -48,7 +51,7 @@ Set that value as `POKER_PROXY_SHARED_SECRET` in Coolify and as the
 must contain at least 32 characters, and `BACKEND_URL` must use HTTPS. When
 enabled, the backend accepts application API requests only through a Worker
 carrying that secret. The unauthenticated `/api/health` route remains available
-for Coolify health checks.
+for Coolify health checks and reports the configured deployment environment.
 
 After deployment, verify:
 
@@ -71,6 +74,27 @@ standalone JSON object with its severity in the `level` field, ready for a JSON
 log collector without stripping a Uvicorn prefix.
 Set `POKER_ACCESS_LOG_LEVEL=DEBUG` when health-probe events are needed during
 deployment diagnosis; the default `INFO` threshold suppresses them.
+
+## Local Agent MCP Access
+
+Use one local stdio MCP process per target environment. Start from
+`apps/backend/mcp.env.example`, supply the variables through the MCP client's
+secret/environment configuration, and run `pnpm backend:mcp`. Production
+rejects `POKER_MCP_ALLOW_WRITES=true`; staging requires that explicit opt-in
+before mutation tools are registered.
+
+Prefer Cloudflare Access service credentials when the gateway calls the public
+Worker. Store `POKER_MCP_CF_ACCESS_CLIENT_ID` and
+`POKER_MCP_CF_ACCESS_CLIENT_SECRET` outside the repository. Direct backend
+access can use `POKER_MCP_API_PROXY_SECRET` only from a trusted gateway process;
+the value matches `POKER_PROXY_SHARED_SECRET` but remains an internal service
+credential, not agent identity. All credential-bearing targets require HTTPS.
+
+Screenshot submission accepts only resolved files below
+`POKER_MCP_IMAGE_ROOT`. Use a directory dedicated to completed-hand screenshots
+rather than the workspace or a home-directory root. The gateway deliberately
+does not expose backup restore, dataset import, benchmark execution, or bulk
+archive operations.
 
 ## Runtime Error Monitoring
 

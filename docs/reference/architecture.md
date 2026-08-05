@@ -16,6 +16,11 @@ Browser
      -> parser benchmark -> explicit approved-state corpus and persisted reports
      -> provider registry -> local solver router, rule engine, or external service
         -> preflop chart, postflop-solver plugin, or bundled range/EV fallback
+
+Post-hand agent
+  -> environment-fixed local MCP gateway (stdio)
+  -> environment Worker or trusted backend API
+  -> the same FastAPI state flow
 ```
 
 ## Applications
@@ -123,6 +128,35 @@ require provenance for trusted regression runs. Reference frequencies must sum
 to one, sizing identities must be
 unambiguous at the configured tolerance, and EV labels cover either every line
 in a case or none.
+
+### MCP Gateway
+
+`apps/backend/app/mcp_gateway.py` is a curated adapter over the public FastAPI
+contract. It does not open the file-backed stores or call parser/provider
+registries directly. This preserves the same validation, locking, rate limits,
+request correlation, and persisted review evidence used by the browser.
+
+Each stdio process is configured for exactly one `staging` or `production`
+target. The backend advertises `POKER_DEPLOYMENT_ENVIRONMENT` on its public
+health response, and the gateway verifies that identity before data access.
+Production configuration rejects write enablement and omits every mutation
+from tool discovery. Staging remains read-only unless an operator explicitly
+sets `POKER_MCP_ALLOW_WRITES=true`.
+
+The read surface exposes environment health, processing jobs, individual jobs,
+history search, training progress, and parser benchmark summaries. The staging
+write surface follows the ordinary post-hand lifecycle: upload a screenshot
+from a configured filesystem root, approve a user-reviewed canonical state,
+record a pre-reveal decision, request educational guidance, and save a review
+lesson. Administrative backup, dataset, benchmark-run, and bulk-archive APIs
+remain outside the gateway.
+
+The gateway may authenticate through Cloudflare Access service headers, a
+future API bearer token, or—in a trusted server deployment only—the private
+Worker-to-backend shared secret. Inbound agent identity is never treated as the
+Worker credential. Secrets are masked settings, require HTTPS, and never enter
+tool results. API failures retain bounded status, request-ID, and retry metadata
+for agent recovery without logging request bodies or poker evidence.
 
 ### Frontend
 
@@ -542,6 +576,9 @@ user.
   per environment.
 - Backend: one Coolify Docker application per environment, built from the
   repository root with `apps/backend/Dockerfile`.
+- MCP: local stdio gateway processes use separate environment-specific client
+  configurations. A future shared Streamable HTTP deployment requires its own
+  MCP-compatible authorization boundary and is not implied by this adapter.
 - Access control: Cloudflare Access can allowlist users at the public
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.

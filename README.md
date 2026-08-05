@@ -51,6 +51,7 @@ poker-hero/
 | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `pnpm bootstrap`                                       | Install dependencies and build the local postflop solver         |
 | `pnpm backend:dev`                                     | Start FastAPI with reload on port 8000                           |
+| `pnpm backend:mcp`                                     | Start the environment-fixed local MCP gateway over stdio         |
 | `pnpm backend:benchmark <dataset.zip>`                 | Benchmark a parser against an exported labeled dataset           |
 | `pnpm backend:recommendation-benchmark <dataset.json>` | Benchmark a recommendation provider against trusted references   |
 | `pnpm backend:backup <command>`                        | Initialize, export, verify, or restore-drill application backups |
@@ -84,6 +85,8 @@ The main provider switches are:
 - `POKER_LLM_ADVICE_BEARER_TOKEN`: optional bearer token for `llm_advice`
 - `POKER_EXTERNAL_REQUEST_TIMEOUT_SECONDS`: timeout shared by external parser
   and recommendation requests (default 60 seconds)
+- `POKER_DEPLOYMENT_ENVIRONMENT`: `local`, `staging`, or `production`; MCP
+  gateways verify this identity before accessing jobs
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
 - `POKER_DATA_VOLUME_ID`: stable deployment identity required only by the
   operational backup CLI
@@ -111,6 +114,40 @@ for container-oriented values.
 Bearer tokens are masked by the settings model and sent only in the standard
 `Authorization: Bearer ...` header. Any external URL paired with a token must
 use HTTPS. Keep deployed token values in Coolify secrets.
+
+### Agent MCP Gateway
+
+Poker Hero includes a curated local MCP gateway for post-hand training agents.
+It calls the same FastAPI contract as the browser, so parser evidence, explicit
+approval, provider routing, rate limits, request IDs, and persisted job state
+remain authoritative. The gateway runs over `stdio`; it never reads providers
+or the data directory directly.
+
+Create a separate client configuration for each environment using
+[apps/backend/mcp.env.example](./apps/backend/mcp.env.example). Every process
+requires `POKER_MCP_ENVIRONMENT` and `POKER_MCP_API_BASE_URL`. Before any data
+operation, it checks `/api/health` and refuses a backend whose
+`POKER_DEPLOYMENT_ENVIRONMENT` does not match. Production is always read-only.
+Staging write tools appear only with `POKER_MCP_ALLOW_WRITES=true`, and local
+screenshot paths must resolve under `POKER_MCP_IMAGE_ROOT`.
+
+After exporting the selected configuration into the MCP process environment,
+use this command in an MCP client that supports local stdio servers:
+
+```bash
+pnpm backend:mcp
+```
+
+The read surface covers environment status, processing jobs, individual jobs,
+history, training progress, and parser benchmarks. The staging write profile
+adds screenshot submission, reviewed-state approval, pre-reveal decisions,
+recommendations, and lesson reviews. Backup restore, dataset import, benchmark
+execution, and bulk archival are intentionally not exposed.
+
+Cloudflare Access service credentials are the preferred authentication path
+through a protected Worker. `POKER_MCP_API_PROXY_SECRET` exists only for a
+trusted gateway deployment that calls the backend directly; do not give the
+Worker-to-backend shared secret to an untrusted agent.
 
 ### Local Solver Engines
 

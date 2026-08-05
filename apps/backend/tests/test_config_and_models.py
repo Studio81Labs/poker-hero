@@ -56,6 +56,7 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)
 
     assert settings.data_dir == tmp_path
+    assert settings.deployment_environment == "local"
     assert settings.data_volume_id is None
     assert settings.parser_provider == "mock"
     assert settings.parser_layout_profile == "generic"
@@ -111,6 +112,7 @@ def test_settings_rejects_invalid_sentry_dsn(dsn: str) -> None:
 
 
 def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POKER_DEPLOYMENT_ENVIRONMENT", "staging")
     monkeypatch.setenv("POKER_PARSER_PROVIDER", "external")
     monkeypatch.setenv("POKER_RECOMMENDATION_PROVIDER", "solver")
     monkeypatch.setenv("POKER_LOCAL_SOLVER_ENGINE", "local_ev")
@@ -119,6 +121,7 @@ def test_settings_reads_poker_prefixed_provider_overrides(monkeypatch: pytest.Mo
 
     settings = Settings()
 
+    assert settings.deployment_environment == "staging"
     assert settings.parser_provider == "external"
     assert settings.recommendation_provider == "solver"
     assert settings.local_solver_engine == "local_ev"

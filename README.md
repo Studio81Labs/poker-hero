@@ -137,7 +137,7 @@ to the Rust plugin.
 Preflop hands with a recognized six-max position and an unambiguous supported
 context use the bundled position-aware training chart. Supported contexts
 include an unopened pot, one heads-up 1 BB limp to the big blind, a single open,
-one open followed by one to three callers,
+one open followed by one to four callers,
 a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
 a hero 3-bet facing either an opener 4-bet or a later cold 4-bet after the
 opener folds. It also supports hero cold-calling an open, facing a later
@@ -150,17 +150,17 @@ hand-class ranking, base and adjusted policy, assumptions, and action frequencie
 without presenting the result as a solved preflop tree. Approved states may
 provide the opener position and total opening size as structured fields. An
 ordered preflop history can represent a single open, one open followed by one
-to three calls before hero, one 1 BB limp before hero's big-blind option, exactly
+to four calls before hero, one 1 BB limp before hero's big-blind option, exactly
 one hero open followed by one later-position 3-bet, or one opponent open followed
 by one opponent 3-bet before hero. A complete
 three-raise history can also represent an opponent open, hero 3-bet, and opener
 4-bet with action returning to hero, or a later-position cold 4-bet after the
 opener folds and action returns heads-up to hero. An open, matching hero call,
 and later squeeze can represent the same heads-up return after the opener folds.
-The called-open routes require exactly three, four, or five active players,
+The called-open routes require exactly three through six active players,
 matching open/call totals, and legal seat order. They apply explicit conservative
-range multipliers and 4x-open, 5x-open, or 6x-open squeeze targets for one, two,
-or three callers, respectively. The cold 3-bet route also requires exactly three
+range multipliers and 4x-open through 7x-open squeeze targets for one through
+four callers, respectively. The cold 3-bet route also requires exactly three
 active players and legal opener-3-bettor-hero order, then applies explicit
 three-seat continue/four-bet boundaries. The chart validates position order,
 total action sizes, amount to call, pot composition, and stack availability
@@ -175,7 +175,7 @@ blind, validates the pot against blinds and the limp, then uses explicit
 limper-position and stack-depth isolation ranges with a capped target size.
 Action-text parsing remains for older saved single-open hands.
 Positionless and unsupported limped spots, including multiple limpers or action
-pending behind hero, spots with four or more callers, unsupported
+pending behind hero, caller histories beyond the terminal six-max ordering, unsupported
 squeezes with an active opener, another caller, or action behind, cold 4-bets
 with action behind or another active player, longer
 preflop trees, multiway postflop states, and

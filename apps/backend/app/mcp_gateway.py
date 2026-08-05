@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import mimetypes
 from pathlib import Path
@@ -52,7 +51,7 @@ class McpGatewaySettings(BaseSettings):
     environment: McpEnvironment
     api_base_url: str = Field(min_length=1)
     allow_writes: bool = False
-    image_root: Path = Field(default_factory=Path.cwd)
+    image_root: Path | None = None
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     request_timeout_seconds: float = Field(default=130.0, gt=0)
     api_bearer_token: SecretStr | None = None
@@ -139,10 +138,15 @@ class McpGatewaySettings(BaseSettings):
         if self.environment == "production" and self.allow_writes:
             raise ValueError("production MCP gateways are read-only")
 
-        image_root = self.image_root.expanduser().resolve(strict=False)
-        if self.allow_writes and (not image_root.is_dir()):
-            raise ValueError("image_root must be an existing directory when writes are enabled")
-        self.image_root = image_root
+        if self.allow_writes and self.image_root is None:
+            raise ValueError("image_root must be explicitly configured when writes are enabled")
+        if self.image_root is not None:
+            image_root = self.image_root.expanduser().resolve(strict=False)
+            if self.allow_writes and (not image_root.is_dir()):
+                raise ValueError(
+                    "image_root must be an existing directory when writes are enabled"
+                )
+            self.image_root = image_root
         self.api_base_url = self.api_base_url.rstrip("/")
         return self
 
@@ -241,8 +245,6 @@ class PokerApiClient:
             timeout=settings.request_timeout_seconds,
             follow_redirects=False,
         )
-        self._verified_environment = False
-        self._environment_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -300,15 +302,10 @@ class PokerApiClient:
                 },
                 request_id=response.headers.get(REQUEST_ID_HEADER),
             )
-        self._verified_environment = True
         return health
 
     async def ensure_environment(self) -> None:
-        if self._verified_environment:
-            return
-        async with self._environment_lock:
-            if not self._verified_environment:
-                await self.health()
+        await self.health()
 
     async def get_model(
         self,
@@ -584,6 +581,7 @@ class PokerMcpGateway:
             )
 
     def _resolve_image_path(self, image_path: str) -> Path:
+        assert self.settings.image_root is not None
         try:
             resolved_path = Path(image_path).expanduser().resolve(strict=True)
             resolved_path.relative_to(self.settings.image_root)

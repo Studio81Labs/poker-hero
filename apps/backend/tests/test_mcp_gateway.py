@@ -81,6 +81,13 @@ def test_mcp_settings_require_safe_fixed_targets(tmp_path: Path) -> None:
             cf_access_client_id="client-id",
         )
 
+    with pytest.raises(ValidationError, match="explicitly configured"):
+        McpGatewaySettings(
+            environment="staging",
+            api_base_url="https://poker.example.com",
+            allow_writes=True,
+        )
+
 
 def test_mcp_settings_read_prefixed_environment(
     tmp_path: Path,
@@ -158,6 +165,38 @@ def test_gateway_refuses_backend_environment_mismatch(tmp_path: Path) -> None:
         "configured_environment": "staging",
         "backend_environment": "production",
     }
+    run(http_client.aclose())
+
+
+def test_api_client_rechecks_environment_before_every_operation() -> None:
+    backend_environment = "staging"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/health"
+        return httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "environment": backend_environment,
+                "parser_provider": "ocr_cv",
+                "recommendation_provider": "local_solver",
+                "recommendation_engine": "postflop_solver",
+            },
+        )
+
+    settings = McpGatewaySettings(
+        environment="staging",
+        api_base_url="https://poker.example.com",
+    )
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    api_client = PokerApiClient(settings, client=http_client)
+
+    run(api_client.ensure_environment())
+    backend_environment = "production"
+
+    with pytest.raises(PokerApiError, match="does not match"):
+        run(api_client.ensure_environment())
+
     run(http_client.aclose())
 
 

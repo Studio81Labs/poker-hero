@@ -91,10 +91,11 @@ the value matches `POKER_PROXY_SHARED_SECRET` but remains an internal service
 credential, not agent identity. All credential-bearing targets require HTTPS.
 
 Screenshot submission accepts only resolved files below
-`POKER_MCP_IMAGE_ROOT`. Use a directory dedicated to completed-hand screenshots
-rather than the workspace or a home-directory root. The gateway deliberately
-does not expose backup restore, dataset import, benchmark execution, or bulk
-archive operations.
+`POKER_MCP_IMAGE_ROOT`; enabling writes without explicitly setting that variable
+fails closed. Use a directory dedicated to completed-hand screenshots rather
+than the workspace or a home-directory root. The gateway deliberately does not
+expose backup restore, dataset import, benchmark execution, or bulk archive
+operations.
 
 ## Runtime Error Monitoring
 

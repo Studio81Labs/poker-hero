@@ -129,7 +129,8 @@ requires `POKER_MCP_ENVIRONMENT` and `POKER_MCP_API_BASE_URL`. Before any data
 operation, it checks `/api/health` and refuses a backend whose
 `POKER_DEPLOYMENT_ENVIRONMENT` does not match. Production is always read-only.
 Staging write tools appear only with `POKER_MCP_ALLOW_WRITES=true`, and local
-screenshot paths must resolve under `POKER_MCP_IMAGE_ROOT`.
+screenshot paths must resolve under an explicitly configured
+`POKER_MCP_IMAGE_ROOT`.
 
 After exporting the selected configuration into the MCP process environment,
 use this command in an MCP client that supports local stdio servers:

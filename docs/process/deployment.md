@@ -11,6 +11,19 @@ Configure the application with:
 - Persistent volume mount: `/app/data`
 - Health endpoint: `/api/health`
 
+Create separate Coolify applications for `staging` and `production`. GitHub
+Actions owns deployment promotion:
+
+- a push to `main` deploys `staging`;
+- a `v*` tag deploys `production`;
+- a manual dispatch explicitly selects either environment.
+
+Configure `COOLIFY_API_BASE_URL` as a repository variable and
+`COOLIFY_API_TOKEN` as a repository secret. In each GitHub environment, set
+`BACKEND_URL` and that environment's `COOLIFY_BACKEND_UUID`. The workflow
+triggers the exact Coolify application, follows its deployment ID until it
+finishes, and then verifies `/api/health`.
+
 Start from `infra/docker/backend.env.example`. At minimum, set the parser,
 layout, recommendation provider, data directory, upload limit, and allowed
 origins. The backend image already contains `poker-postflop-solver`; keep
@@ -31,7 +44,7 @@ openssl rand -hex 32
 ```
 
 Set that value as `POKER_PROXY_SHARED_SECRET` in Coolify and as the
-`API_PROXY_SECRET` secret in the repository or `testing` environment. The value
+`API_PROXY_SECRET` secret in the matching GitHub environment. The value
 must contain at least 32 characters, and `BACKEND_URL` must use HTTPS. When
 enabled, the backend accepts application API requests only through a Worker
 carrying that secret. The unauthenticated `/api/health` route remains available
@@ -65,15 +78,14 @@ Error reporting is optional and disabled when its DSN is blank. To enable
 backend reporting, configure these Coolify values:
 
 - secret `POKER_SENTRY_DSN`, using a complete HTTPS Sentry DSN;
-- `POKER_SENTRY_ENVIRONMENT=testing`;
-- optional `POKER_SENTRY_RELEASE`, normally the deployed commit or image tag;
+- `POKER_SENTRY_ENVIRONMENT=staging` or `production`, matching the application;
+- `POKER_SENTRY_RELEASE`, managed by the backend deployment workflow;
 - optional `POKER_SENTRY_ERROR_SAMPLE_RATE`, from zero through one (default one).
 
-Set the public `VITE_SENTRY_DSN` repository or `testing` environment variable
-to enable browser reporting. The frontend workflow supplies `testing` as the
-environment and the deployed commit SHA as the release. A browser DSN is a
-public client key by design; do not place a Sentry API/auth token in any
-`VITE_*` value.
+Set the public `VITE_SENTRY_DSN` variable in each GitHub environment to enable
+browser reporting. The frontend workflow supplies the selected environment and
+the deployed commit SHA as the release. A browser DSN is a public client key by
+design; do not place a Sentry API/auth token in any `VITE_*` value.
 
 Both adapters report unhandled exceptions only. Expected validation, provider
 input, and other handled API errors are not incidents. Before transmission,
@@ -181,52 +193,57 @@ data directory.
 
 ## Frontend On Cloudflare Workers
 
-The `Frontend Deploy` workflow builds `apps/frontend` and deploys the Worker on
-push to `main` or manual dispatch.
+The `Frontend Deploy` workflow builds `apps/frontend` and deploys the Worker.
+It uses the same promotion model as the backend: `main` deploys `staging`, a
+`v*` tag deploys `production`, and manual dispatch selects either environment.
 
 Required secret:
 
 - `CLOUDFLARE_API_TOKEN`
 
-Required variables:
+Required repository variables:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `APP_WORKERS_SUBDOMAIN`
+
+Required variables in both `staging` and `production`:
+
+- `APP_WORKER_NAME` (use distinct names such as `poker-staging` and `poker`)
 - `BACKEND_URL`
 
-Optional variables:
+Optional per-environment variables:
 
-- `APP_WORKER_NAME` (default `poker`)
 - `VITE_API_BASE_URL` (leave unset for same-origin production API calls)
+- `VITE_SENTRY_DSN`
 
-Optional Cloudflare Access smoke-test secrets:
+Optional per-environment Cloudflare Access smoke-test secrets:
 
 - `CLOUDFLARE_ACCESS_CLIENT_ID`
 - `CLOUDFLARE_ACCESS_CLIENT_SECRET`
 
-Recommended Worker-to-backend secret:
+Required per-environment Worker-to-backend secret:
 
 - `API_PROXY_SECRET`, matching Coolify `POKER_PROXY_SHARED_SECRET`
 
 The workflow smoke-tests both the SPA and `/api/health`. A frontend success with
 an API `502` means the Worker deployed but its configured backend origin is not
 healthy or reachable. It also reads one bounded processing-queue page so a
-mismatched proxy credential fails deployment validation. When
-`API_PROXY_SECRET` is configured, the workflow additionally calls the matching
-backend queue URL without that credential and requires a `401`, proving the
-Coolify setting is active rather than merely accepting an unused Worker header.
+mismatched proxy credential fails deployment validation. The workflow also
+calls the matching backend queue URL without that credential and requires a
+`401`, proving the Coolify setting is active rather than merely accepting an
+unused Worker header.
 
 ## Uptime Monitoring And Alerts
 
 The `Uptime Monitor` workflow runs hourly at minute 17 and can also be dispatched
 manually. By default it checks
 `https://<APP_WORKER_NAME>.<APP_WORKERS_SUBDOMAIN>.workers.dev`; set the optional
-repository or `testing` environment variable `UPTIME_MONITOR_URL` to monitor a
-custom HTTPS hostname instead. Manual dispatches use the same admin-controlled
-target so Cloudflare Access credentials cannot be redirected to an arbitrary
-host.
+per-environment variable `UPTIME_MONITOR_URL` to monitor a custom HTTPS hostname
+instead. Scheduled runs monitor `staging`; manual dispatch can select `staging`
+or `production`. Dispatches use the same admin-controlled target so Cloudflare
+Access credentials cannot be redirected to an arbitrary host.
 
-The hourly interval keeps the private testing monitor within a practical GitHub
+The hourly interval keeps the private staging monitor within a practical GitHub
 Actions budget alongside ordinary CI. Use manual dispatch for an immediate
 post-maintenance check.
 
@@ -239,18 +256,18 @@ responses, a 20-second attempt timeout, and three attempts:
   Worker proxy and its backend credential are operational.
 
 If Cloudflare Access protects the hostname, configure both
-`CLOUDFLARE_ACCESS_CLIENT_ID` and `CLOUDFLARE_ACCESS_CLIENT_SECRET` as repository
-or `testing` environment secrets. The probe follows at most five same-origin
+`CLOUDFLARE_ACCESS_CLIENT_ID` and `CLOUDFLARE_ACCESS_CLIENT_SECRET` as
+per-environment secrets. The probe follows at most five same-origin
 redirects and never forwards those service-token headers to another origin.
 
 After all attempts fail, the workflow opens one issue titled
-`[uptime] Poker Hero testing is unavailable` with the sanitized failure and run
-link. Later failed runs reuse the open incident instead of posting repeated
-comments. The first successful run closes every matching open incident with a
-recovery link. Set optional `UPTIME_ISSUE_ASSIGNEE` to a valid GitHub login for
-direct assignment notifications, and ensure that user has repository issue
-notifications enabled. Workflow failures remain visible in Actions even when
-no assignee is configured.
+`[uptime] Poker Hero <environment> is unavailable` with the sanitized failure
+and run link. Later failed runs reuse the environment-specific incident instead
+of posting repeated comments. The first successful run closes every matching
+open incident with a recovery link. Set optional `UPTIME_ISSUE_ASSIGNEE` in an
+environment to a valid GitHub login for direct assignment notifications, and
+ensure that user has repository issue notifications enabled. Workflow failures
+remain visible in Actions even when no assignee is configured.
 
 Validate the probe locally without contacting the deployment:
 

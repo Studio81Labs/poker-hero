@@ -511,6 +511,39 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Stack depth", value: `${stackPolicy} · ${formatEvidenceBb(effectiveStack)}` });
   }
 
+  const limperPosition = metadataLabel(raw.limper_position);
+  if (limperPosition) {
+    details.push({ label: "Limper", value: limperPosition });
+  }
+
+  const limpSize = metadataNumber(raw.limp_size);
+  if (limpSize !== null && limpSize > 0) {
+    details.push({ label: "Limp size", value: formatEvidenceBb(limpSize) });
+  }
+
+  const limpResponsePolicy = metadataLabel(raw.limp_response_policy);
+  if (limpResponsePolicy) {
+    details.push({ label: "Limp policy", value: limpResponsePolicy });
+  }
+
+  const limpRaiseFraction = metadataRatio(raw.limp_raise_fraction);
+  const baseLimpRaiseFraction = metadataRatio(raw.base_limp_raise_fraction);
+  if (limpRaiseFraction !== null) {
+    let rangeValue = formatEvidenceRatio(limpRaiseFraction);
+    if (
+      baseLimpRaiseFraction !== null
+      && Math.abs(baseLimpRaiseFraction - limpRaiseFraction) >= 0.0005
+    ) {
+      rangeValue += ` (base ${formatEvidenceRatio(baseLimpRaiseFraction)})`;
+    }
+    details.push({ label: "Isolation range", value: rangeValue });
+  }
+
+  const targetLimpRaiseSize = metadataNumber(raw.target_limp_raise_size);
+  if (targetLimpRaiseSize !== null && targetLimpRaiseSize > 0) {
+    details.push({ label: "Isolation target", value: formatEvidenceBb(targetLimpRaiseSize) });
+  }
+
   const openerPosition = metadataLabel(raw.opener_position);
   const openerOpenFraction = metadataRatio(raw.opener_open_fraction);
   const baseOpenerOpenFraction = metadataRatio(raw.base_opener_open_fraction);
@@ -666,7 +699,8 @@ function recommendationEvidenceFromRaw(
   const maximumRaiseTotal = metadataNumber(
     raw.maximum_five_bet_total
       ?? raw.maximum_four_bet_total
-      ?? raw.maximum_reraise_total,
+      ?? raw.maximum_reraise_total
+      ?? raw.maximum_limp_raise_total,
   );
   if (maximumRaiseTotal !== null && maximumRaiseTotal >= 0) {
     details.push({ label: "All-in cap", value: formatEvidenceBb(maximumRaiseTotal) });

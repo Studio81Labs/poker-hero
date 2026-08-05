@@ -9801,6 +9801,59 @@ describe("App", () => {
     expect(within(chartContext).getByText("2.5 BB")).toBeInTheDocument();
   });
 
+  it("shows heads-up limp response chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "heads-up-limp-chart-job",
+      original_filename: "heads-up-limp.png",
+      image_filename: "heads-up-limp.png",
+      recommendation: {
+        action: "raise",
+        sizing: 4,
+        confidence: 0.82,
+        explanation: "The preflop chart recommends an isolation raise to 4 BB.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0059,
+          policy_fraction: 0.468,
+          stack_depth_policy: "short",
+          effective_stack: 20,
+          limper_position: "button",
+          limp_size: 1,
+          limp_response_policy: "heads_up_single_limper",
+          base_limp_raise_fraction: 0.36,
+          limp_raise_fraction: 0.468,
+          target_limp_raise_size: 4,
+          maximum_limp_raise_total: 21,
+          candidates: [
+            { action: "check", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 4, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Short · 20 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Button")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Heads up single limper")).toBeInTheDocument();
+    expect(within(chartContext).getByText("46.8% (base 36%)")).toBeInTheDocument();
+    expect(within(chartContext).getByText("1 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("4 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("21 BB")).toBeInTheDocument();
+  });
+
   it("shows stack-aware facing-open chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

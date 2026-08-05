@@ -19,6 +19,8 @@ from app.solvers.preflop_chart import (
     DOUBLE_CALLER_POLICY,
     FOUR_BET_DEFENSE_POLICIES,
     FOUR_BET_SIZE_POLICIES,
+    LIMP_RESPONSE_POLICIES,
+    LIMP_RESPONSE_POLICY_NAME,
     OPEN_SIZE_POLICIES,
     POSITION_POLICIES,
     SINGLE_CALLER_POLICY,
@@ -30,6 +32,7 @@ from app.solvers.preflop_chart import (
     adjusted_caller_defense_policy,
     adjusted_defense_policy,
     adjusted_four_bet_defense_policy,
+    adjusted_limp_raise_fraction,
     adjusted_three_bet_defense_policy,
     canonical_hand_class,
     hand_top_fraction,
@@ -79,6 +82,40 @@ def request_for(
             action_context=action_context,
             user_approved=True,
         ),
+    )
+
+
+def structured_heads_up_limp_request(
+    cards: tuple[str, str],
+    *,
+    limper_position: PreflopPosition = "button",
+    limp_size: float = 1.0,
+    effective_stack: float = 100.0,
+    players_in_hand: int = 2,
+) -> RecommendationRequest:
+    posted_blinds = {
+        "utg": 0.0,
+        "hijack": 0.0,
+        "cutoff": 0.0,
+        "button": 0.0,
+        "small_blind": 0.5,
+        "big_blind": 1.0,
+    }
+    pot_size = 1.5 - posted_blinds[limper_position] + limp_size
+    return request_for(
+        cards,
+        position="big_blind",
+        current_bet=0,
+        pot_size=pot_size,
+        effective_stack=effective_stack,
+        players_in_hand=players_in_hand,
+        preflop_action_history=[
+            PreflopAction(
+                actor=limper_position,
+                action="call",
+                amount=limp_size,
+            )
+        ],
     )
 
 
@@ -704,6 +741,39 @@ def test_cold_four_bet_policies_are_tighter_than_opener_four_bets() -> None:
         assert cold_policy.five_bet_fraction <= opener_policy.five_bet_fraction
 
 
+def test_limp_response_policies_cover_every_possible_limper_position() -> None:
+    assert set(LIMP_RESPONSE_POLICIES) == set(POSITION_POLICIES) - {"big_blind"}
+    assert all(
+        0 < policy.raise_fraction <= 1
+        for policy in LIMP_RESPONSE_POLICIES.values()
+    )
+
+
+def test_limp_response_range_widens_for_later_limpers() -> None:
+    ordered_positions: tuple[PreflopPosition, ...] = (
+        "utg",
+        "hijack",
+        "cutoff",
+        "button",
+        "small_blind",
+    )
+
+    assert [
+        LIMP_RESPONSE_POLICIES[position].raise_fraction
+        for position in ordered_positions
+    ] == sorted(
+        LIMP_RESPONSE_POLICIES[position].raise_fraction
+        for position in ordered_positions
+    )
+
+
+def test_limp_response_ranges_remain_valid_after_stack_adjustments() -> None:
+    for policy in LIMP_RESPONSE_POLICIES.values():
+        for stack_policy in STACK_DEPTH_POLICIES:
+            adjusted = adjusted_limp_raise_fraction(policy, stack_policy)
+            assert 0 < adjusted <= 1
+
+
 def test_open_size_policies_tighten_as_the_raise_grows() -> None:
     assert MIN_SINGLE_OPEN_SIZE_BB <= OPEN_SIZE_POLICIES[0].maximum_size
     assert OPEN_SIZE_POLICIES[-1].maximum_size == MAX_SINGLE_OPEN_SIZE_BB
@@ -831,6 +901,142 @@ def test_stack_depth_policy_boundaries(
 
     assert policy is not None
     assert policy.name == expected_policy
+
+
+def test_raises_premium_hand_over_heads_up_button_limp() -> None:
+    result = solve_preflop_chart(structured_heads_up_limp_request(("Ah", "Ad")))
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 4
+    assert result.raw["engine"] == "preflop_chart_v1"
+    assert result.raw["scenario"] == "heads_up_limp_big_blind"
+    assert result.raw["chart_tier"] == "isolation_raise"
+    assert result.raw["limper_position"] == "button"
+    assert result.raw["limp_size"] == 1
+    assert result.raw["limp_response_policy"] == LIMP_RESPONSE_POLICY_NAME
+    assert result.raw["policy_source"] == "limper_position_stack_matchup"
+    assert result.raw["base_limp_raise_fraction"] == 0.36
+    assert result.raw["limp_raise_fraction"] == 0.36
+    assert result.raw["target_limp_raise_size"] == 4
+    assert result.raw["maximum_limp_raise_total"] == 101
+    assert [candidate["action"] for candidate in result.raw["candidates"]] == [
+        "check",
+        "raise",
+    ]
+
+
+def test_checks_weak_hand_over_heads_up_button_limp() -> None:
+    result = solve_preflop_chart(structured_heads_up_limp_request(("7h", "2d")))
+
+    assert result is not None
+    assert result.action == "check"
+    assert result.sizing is None
+    assert result.raw["chart_tier"] == "check_option"
+
+
+def test_limp_response_accounts_for_limper_position() -> None:
+    button = solve_preflop_chart(
+        structured_heads_up_limp_request(("Jh", "8d"), limper_position="button")
+    )
+    small_blind = solve_preflop_chart(
+        structured_heads_up_limp_request(
+            ("Jh", "8d"),
+            limper_position="small_blind",
+        )
+    )
+
+    assert button is not None
+    assert small_blind is not None
+    assert button.action == "check"
+    assert small_blind.action == "raise"
+    assert button.raw["limp_raise_fraction"] == 0.36
+    assert small_blind.raw["limp_raise_fraction"] == 0.44
+
+
+@pytest.mark.parametrize("limper_position", tuple(LIMP_RESPONSE_POLICIES))
+def test_routes_every_legal_heads_up_limper_position(
+    limper_position: PreflopPosition,
+) -> None:
+    result = solve_preflop_chart(
+        structured_heads_up_limp_request(
+            ("Ah", "Ad"),
+            limper_position=limper_position,
+        )
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.raw["limper_position"] == limper_position
+
+
+def test_short_stack_caps_heads_up_limp_raise_at_available_total() -> None:
+    result = solve_preflop_chart(
+        structured_heads_up_limp_request(("Ah", "Ad"), effective_stack=2)
+    )
+
+    assert result is not None
+    assert result.action == "raise"
+    assert result.sizing == 3
+    assert result.raw["target_limp_raise_size"] == 4
+    assert result.raw["maximum_limp_raise_total"] == 3
+    assert result.raw["stack_depth_policy"] == "short"
+    assert result.raw["limp_raise_fraction"] == 0.468
+
+
+def test_heads_up_small_blind_limp_reconstructs_blind_only_pot() -> None:
+    request = structured_heads_up_limp_request(
+        ("Ah", "Ad"),
+        limper_position="small_blind",
+    )
+
+    assert request.state.pot_size == 2
+    assert supports_preflop_chart(request)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda state: setattr(state, "players_in_hand", 3),
+        lambda state: setattr(state, "hero_position", "button"),
+        lambda state: setattr(state, "current_bet", 0.5),
+        lambda state: setattr(state, "facing_action", "raise"),
+        lambda state: setattr(state, "pot_size", 9),
+        lambda state: setattr(state, "preflop_opener_position", "button"),
+        lambda state: setattr(state, "preflop_open_size", 2.5),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [PreflopAction(actor="big_blind", action="call", amount=1)],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [PreflopAction(actor="button", action="call", amount=1.5)],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [PreflopAction(actor="button", action="raise", amount=2.5)],
+        ),
+        lambda state: setattr(
+            state,
+            "preflop_action_history",
+            [
+                PreflopAction(actor="cutoff", action="call", amount=1),
+                PreflopAction(actor="button", action="call", amount=1),
+            ],
+        ),
+    ],
+)
+def test_declines_inconsistent_heads_up_limp_state(
+    mutation: Callable[[CanonicalState], None],
+) -> None:
+    request = structured_heads_up_limp_request(("Ah", "Ad"))
+    mutation(request.state)
+
+    assert not supports_preflop_chart(request)
+    assert solve_preflop_chart(request) is None
 
 
 def test_opens_premium_hand_from_early_position() -> None:

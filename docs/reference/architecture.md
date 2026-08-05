@@ -30,8 +30,9 @@ registries so the frontend flow does not depend on a concrete engine.
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can
-route a single open, one open plus one or two callers before hero, or exactly
-one hero open followed by one later-position 3-bet. It can also route one opponent open
+route one heads-up 1 BB limp to hero's big-blind option, a single open, one open
+plus one or two callers before hero, or exactly one hero open followed by one
+later-position 3-bet. It can also route one opponent open
 and one opponent 3-bet before hero when exactly three players remain, or one
 opponent open, hero 3-bet, and opener 4-bet when exactly two players remain.
 It also supports a later-position cold 4-bet after the opener folds and exactly
@@ -61,6 +62,10 @@ response uses narrower opener-hero-four-bettor policies and validates the pot
 against all three commitments, including the folded opener's dead money.
 The squeeze response uses explicit opener-hero-squeezer policies and includes
 hero's prior call in both pot validation and the reconstructed raise cap.
+The heads-up limp route requires exactly two active players, one canonical
+limper before hero in the big blind, a matching 1 BB call, and a pot reconstructed
+from blinds plus that limp. Explicit limper-position isolation ranges adjust by
+stack depth, while the target isolation size is capped by the effective total.
 Effective stack selects a
 short (up to 20 BB), medium (up to 50 BB),
 standard (up to 150 BB), or deep policy. That policy adjusts first-in ranges and

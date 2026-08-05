@@ -136,7 +136,8 @@ to the Rust plugin.
 
 Preflop hands with a recognized six-max position and an unambiguous supported
 context use the bundled position-aware training chart. Supported contexts
-include an unopened pot, a single open, one open followed by one or two callers,
+include an unopened pot, one heads-up 1 BB limp to the big blind, a single open,
+one open followed by one or two callers,
 a hero open facing a 3-bet, a bounded opponent-open/opponent-3-bet sequence, and
 a hero 3-bet facing either an opener 4-bet or a later cold 4-bet after the
 opener folds. It also supports hero cold-calling an open, facing a later
@@ -149,8 +150,9 @@ hand-class ranking, base and adjusted policy, assumptions, and action frequencie
 without presenting the result as a solved preflop tree. Approved states may
 provide the opener position and total opening size as structured fields. An
 ordered preflop history can represent a single open, one open followed by one
-or two calls before hero, exactly one hero open followed by one later-position
-3-bet, or one opponent open followed by one opponent 3-bet before hero. A complete
+or two calls before hero, one 1 BB limp before hero's big-blind option, exactly
+one hero open followed by one later-position 3-bet, or one opponent open followed
+by one opponent 3-bet before hero. A complete
 three-raise history can also represent an opponent open, hero 3-bet, and opener
 4-bet with action returning to hero, or a later-position cold 4-bet after the
 opener folds and action returns heads-up to hero. An open, matching hero call,
@@ -168,8 +170,12 @@ cold 4-bet route uses narrower three-seat policies and keeps the folded
 opener's commitment in pot validation. The squeeze-response route likewise
 uses explicit three-seat policies, retains hero's prior call, and validates the
 folded opener's dead money.
+The heads-up limp route requires exactly one active limper and hero in the big
+blind, validates the pot against blinds and the limp, then uses explicit
+limper-position and stack-depth isolation ranges with a capped target size.
 Action-text parsing remains for older saved single-open hands.
-Positionless and limped spots, spots with three or more callers, unsupported
+Positionless and unsupported limped spots, including multiple limpers or action
+pending behind hero, spots with three or more callers, unsupported
 squeezes with an active opener, another caller, or action behind, cold 4-bets
 with action behind or another active player, longer
 preflop trees, multiway postflop states, and

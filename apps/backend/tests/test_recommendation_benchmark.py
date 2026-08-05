@@ -208,6 +208,44 @@ def test_recommendation_benchmark_scores_policy_ev_fallback_and_failures() -> No
     assert "provider-failure: solver unavailable" in formatted
 
 
+def test_recommendation_benchmark_runs_heads_up_limp_preflop_chart(
+    tmp_path: Path,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "preflop-heads-up-limp-big-blind",
+                [reference_line("raise", sizing=4)],
+                tags=["preflop", "heads-up-limp", "big-blind-option"],
+                hero_cards=[Card.from_code("Ah"), Card.from_code("Ad")],
+                board_cards=[],
+                street="preflop",
+                pot_size=2.5,
+                current_bet=0,
+                hero_stack=None,
+                effective_stack=100.0,
+                players_in_hand=2,
+                hero_position="big_blind",
+                facing_action=None,
+                preflop_action_history=[
+                    PreflopAction(actor="button", action="call", amount=1),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.action_correct == 1
+    assert report.line_correct == 1
+    assert report.fallback_cases == 0
+    assert report.cases[0].engine == "preflop_chart_v1"
+
+
 def test_recommendation_benchmark_runs_single_caller_preflop_chart(
     tmp_path: Path,
 ) -> None:

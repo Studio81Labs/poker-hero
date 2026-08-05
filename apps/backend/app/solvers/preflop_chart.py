@@ -25,6 +25,11 @@ class PositionPolicy:
 
 
 @dataclass(frozen=True)
+class LimpResponsePolicy:
+    raise_fraction: float
+
+
+@dataclass(frozen=True)
 class DefensePolicy:
     continue_fraction: float
     reraise_fraction: float
@@ -91,6 +96,15 @@ POSITION_POLICIES: dict[Position, PositionPolicy] = {
     "button": PositionPolicy(0.45),
     "small_blind": PositionPolicy(0.40),
     "big_blind": PositionPolicy(0.0),
+}
+
+LIMP_RESPONSE_POLICY_NAME = "heads_up_single_limper"
+LIMP_RESPONSE_POLICIES: dict[Position, LimpResponsePolicy] = {
+    "utg": LimpResponsePolicy(0.20),
+    "hijack": LimpResponsePolicy(0.24),
+    "cutoff": LimpResponsePolicy(0.28),
+    "button": LimpResponsePolicy(0.36),
+    "small_blind": LimpResponsePolicy(0.44),
 }
 
 # Conservative six-max response boundaries keyed by (opener, hero). Later
@@ -334,6 +348,15 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
     if stack_policy is None:
         return None
 
+    if context.scenario == "heads_up_limp_big_blind":
+        return _solve_heads_up_limp_big_blind(
+            request=request,
+            context=context,
+            hand_class=hand_class,
+            top_fraction=top_fraction,
+            stack_policy=stack_policy,
+        )
+
     if context.scenario in {"first_in", "big_blind_option"}:
         if (state.pot_size or 0) > 2.5:
             return None
@@ -519,6 +542,67 @@ def solve_preflop_chart(request: RecommendationRequest) -> RecommendationResult 
         base_defense_policy=base_defense_policy,
         defense_policy=defense_policy,
         size_policy=size_policy,
+        stack_policy=stack_policy,
+    )
+
+
+def _solve_heads_up_limp_big_blind(
+    *,
+    request: RecommendationRequest,
+    context: PreflopChartContext,
+    hand_class: str,
+    top_fraction: float,
+    stack_policy: StackDepthPolicy,
+) -> RecommendationResult | None:
+    state = request.state
+    limper_position = context.limper_position
+    limp_size = context.limp_size
+    if (
+        limper_position is None
+        or limp_size is None
+        or state.effective_stack is None
+    ):
+        return None
+    policy = LIMP_RESPONSE_POLICIES.get(limper_position)
+    if policy is None:
+        return None
+
+    raise_fraction = adjusted_limp_raise_fraction(policy, stack_policy)
+    maximum_raise_total = round(state.effective_stack + 1.0, 2)
+    target_raise_size = round(max(4.0, (state.pot_size or 0) * 1.5), 2)
+    raise_size = round(min(target_raise_size, maximum_raise_total), 2)
+    should_raise = raise_size > 1.0 and top_fraction <= raise_fraction
+    action: RecommendationAction = "raise" if should_raise else "check"
+    sizing = raise_size if should_raise else None
+
+    return _result(
+        action=action,
+        sizing=sizing,
+        confidence=_boundary_confidence(top_fraction, raise_fraction),
+        hand_class=hand_class,
+        top_fraction=top_fraction,
+        position="big_blind",
+        scenario="heads_up_limp_big_blind",
+        tier="isolation_raise" if should_raise else "check_option",
+        policy_fraction=raise_fraction,
+        assumptions=[
+            (
+                "The structured preflop history contains one 1 BB limp and "
+                "no raise."
+            ),
+            "Exactly two players remain active and hero has the big-blind option.",
+            f"The limp is attributed to {POSITION_LABELS[limper_position]}.",
+            stack_assumption(state.effective_stack, stack_policy),
+            "The chart models a six-max chip-EV training spot before rake.",
+        ],
+        effective_stack=state.effective_stack,
+        limper_position=limper_position,
+        limp_size=limp_size,
+        base_limp_raise_fraction=policy.raise_fraction,
+        limp_raise_fraction=raise_fraction,
+        target_limp_raise_size=target_raise_size,
+        maximum_limp_raise_total=maximum_raise_total,
+        limp_response_policy=LIMP_RESPONSE_POLICY_NAME,
         stack_policy=stack_policy,
     )
 
@@ -960,6 +1044,16 @@ def adjusted_open_fraction(
     )
 
 
+def adjusted_limp_raise_fraction(
+    policy: LimpResponsePolicy,
+    stack_policy: StackDepthPolicy,
+) -> float:
+    return round(
+        min(1.0, policy.raise_fraction * stack_policy.reraise_multiplier),
+        4,
+    )
+
+
 def adjusted_defense_policy(
     base_policy: DefensePolicy,
     size_policy: OpenSizePolicy,
@@ -1082,6 +1176,13 @@ def _result(
     assumptions: list[str],
     effective_stack: float | None = None,
     base_open_fraction: float | None = None,
+    limper_position: Position | None = None,
+    limp_size: float | None = None,
+    base_limp_raise_fraction: float | None = None,
+    limp_raise_fraction: float | None = None,
+    target_limp_raise_size: float | None = None,
+    maximum_limp_raise_total: float | None = None,
+    limp_response_policy: str | None = None,
     opener_position: Position | None = None,
     base_opener_open_fraction: float | None = None,
     opener_open_fraction: float | None = None,
@@ -1118,7 +1219,7 @@ def _result(
         f" against a {policy_fraction:.0%} chart boundary" if policy_fraction is not None else ""
     )
     assumption_text = " ".join(assumptions)
-    if scenario == "big_blind_option":
+    if scenario in {"big_blind_option", "heads_up_limp_big_blind"}:
         actions = ("check", "raise")
     else:
         actions = ("fold", "call", "raise")
@@ -1145,6 +1246,27 @@ def _result(
         "candidates": candidates,
         "process_boundary": "stdin_stdout_json",
     }
+    if limper_position is not None:
+        raw["limper_position"] = limper_position
+    if limp_size is not None:
+        raw["limp_size"] = limp_size
+    if (
+        base_limp_raise_fraction is not None
+        and limp_raise_fraction is not None
+    ):
+        raw.update(
+            {
+                "policy_source": "limper_position_stack_matchup",
+                "base_limp_raise_fraction": base_limp_raise_fraction,
+                "limp_raise_fraction": limp_raise_fraction,
+            }
+        )
+    if target_limp_raise_size is not None:
+        raw["target_limp_raise_size"] = target_limp_raise_size
+    if maximum_limp_raise_total is not None:
+        raw["maximum_limp_raise_total"] = maximum_limp_raise_total
+    if limp_response_policy is not None:
+        raw["limp_response_policy"] = limp_response_policy
     if opener_position is not None:
         raw["opener_position"] = opener_position
     if opening_raise_size is not None:

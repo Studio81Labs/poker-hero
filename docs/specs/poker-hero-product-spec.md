@@ -194,7 +194,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with open-defense, one or two represented callers, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with a bounded heads-up single-limper big-blind response, open-defense, one or two represented callers, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -314,7 +314,16 @@ three-seat order and identifies the cold 4-bet policy in recommendation
 evidence. Any remaining opener, hidden active player, or action behind hero
 must retain fallback behavior.
 
-Limps, multiple callers, unsupported broader squeeze histories, unsupported cold
+Structured preflop history may also route exactly one 1 BB limp followed by
+hero's big-blind option. Exactly two players must remain active, the limper must
+act before the big blind, no raise or facing action may be present, and the pot
+must match blinds plus the represented limp. The chart must use explicit
+limper-position isolation ranges, adjust them by the selected stack-depth band,
+cap the target isolation raise by the available effective total, and expose the
+limper, policy, adjusted range, target, and cap as recommendation evidence.
+
+Multiple limpers, a hidden active player, a limp with action pending behind hero,
+non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold
 4-bet trees, more than three actions, unsupported positions or sizes, and
 contradictory money state decline these routes.
 

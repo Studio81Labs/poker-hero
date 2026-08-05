@@ -98,6 +98,7 @@ MONEY_TOLERANCE_BB = 0.05
 PreflopChartScenario = Literal[
     "first_in",
     "big_blind_option",
+    "heads_up_limp_big_blind",
     "facing_open_raise",
     "facing_open_with_caller",
     "facing_open_with_callers",
@@ -113,6 +114,8 @@ PreflopChartScenario = Literal[
 class PreflopChartContext:
     scenario: PreflopChartScenario
     hero_position: Position
+    limper_position: Position | None = None
+    limp_size: float | None = None
     opener_position: Position | None = None
     opening_raise_size: float | None = None
     latest_aggressor_position: Position | None = None
@@ -169,11 +172,12 @@ def resolve_preflop_chart_context(
 
     current_bet = state.current_bet or 0
     if current_bet <= 0:
+        if state.preflop_action_history:
+            return _structured_big_blind_limp_context(state, position)
         if (
             state.facing_action is not None
             or state.preflop_opener_position is not None
             or state.preflop_open_size is not None
-            or state.preflop_action_history
             or _has_raise_action(state.action_context)
             or _has_unsupported_action_history(state.action_context)
         ):
@@ -233,6 +237,43 @@ def resolve_preflop_chart_context(
         opening_raise_size=opener_size,
         latest_aggressor_position=opener_position,
         latest_raise_size=opener_size,
+    )
+
+
+def _structured_big_blind_limp_context(
+    state: CanonicalState,
+    hero_position: Position,
+) -> PreflopChartContext | None:
+    history = state.preflop_action_history
+    if (
+        hero_position != "big_blind"
+        or state.players_in_hand != 2
+        or state.facing_action is not None
+        or state.preflop_opener_position is not None
+        or state.preflop_open_size is not None
+        or len(history) != 1
+    ):
+        return None
+
+    limp = history[0]
+    limper_position: Position = limp.actor
+    if (
+        limp.action != "call"
+        or limper_position == hero_position
+        or POSITION_ACTION_ORDER[limper_position]
+        >= POSITION_ACTION_ORDER[hero_position]
+        or abs(limp.amount - 1.0) > MONEY_TOLERANCE_BB
+        or not _pot_matches_actions(
+            state.pot_size,
+            ((limper_position, limp.amount),),
+        )
+    ):
+        return None
+    return PreflopChartContext(
+        scenario="heads_up_limp_big_blind",
+        hero_position=hero_position,
+        limper_position=limper_position,
+        limp_size=limp.amount,
     )
 
 

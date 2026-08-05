@@ -5,7 +5,7 @@ requirements live in [docs/specs/poker-hero-product-spec.md](./docs/specs/poker-
 
 ## Getting Started
 
-1. Install Node 24, pnpm 10+, Python 3.11+, Rust 1.85+, and Docker.
+1. Install Node 24, pnpm 11+, Python 3.11+, Rust 1.85+, and Docker.
 2. Run `pnpm bootstrap`.
 3. Start the API with `pnpm backend:dev` and the UI with `pnpm frontend:dev`.
 

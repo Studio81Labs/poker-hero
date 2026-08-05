@@ -10,7 +10,7 @@ covert real-time assistance, or a tool for taking actions in a poker client.
 
 ## Quick Start
 
-Prerequisites: Node 24, pnpm 10+, Python 3.11+, Rust 1.85+, and Docker.
+Prerequisites: Node 24, pnpm 11+, Python 3.11+, Rust 1.85+, and Docker.
 
 ```bash
 git clone <repo-url> && cd poker-hero
@@ -47,21 +47,21 @@ poker-hero/
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `pnpm bootstrap` | Install dependencies and build the local postflop solver |
-| `pnpm backend:dev` | Start FastAPI with reload on port 8000 |
-| `pnpm backend:benchmark <dataset.zip>` | Benchmark a parser against an exported labeled dataset |
-| `pnpm backend:recommendation-benchmark <dataset.json>` | Benchmark a recommendation provider against trusted references |
-| `pnpm backend:backup <command>` | Initialize, export, verify, or restore-drill application backups |
-| `pnpm backend:test` | Run the backend pytest suite |
-| `pnpm frontend:dev` | Start Vite on port 5173 |
-| `pnpm frontend:test` | Run frontend tests |
-| `pnpm frontend:build` | Build the production frontend |
-| `pnpm monitor:test` | Test the deployment uptime probe |
-| `pnpm test:e2e` | Run browser workflow tests with isolated test providers |
-| `pnpm docker:up` | Build and start both apps with Docker Compose |
-| `pnpm docker:down` | Stop the Compose stack |
+| Command                                                | Description                                                      |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| `pnpm bootstrap`                                       | Install dependencies and build the local postflop solver         |
+| `pnpm backend:dev`                                     | Start FastAPI with reload on port 8000                           |
+| `pnpm backend:benchmark <dataset.zip>`                 | Benchmark a parser against an exported labeled dataset           |
+| `pnpm backend:recommendation-benchmark <dataset.json>` | Benchmark a recommendation provider against trusted references   |
+| `pnpm backend:backup <command>`                        | Initialize, export, verify, or restore-drill application backups |
+| `pnpm backend:test`                                    | Run the backend pytest suite                                     |
+| `pnpm frontend:dev`                                    | Start Vite on port 5173                                          |
+| `pnpm frontend:test`                                   | Run frontend tests                                               |
+| `pnpm frontend:build`                                  | Build the production frontend                                    |
+| `pnpm monitor:test`                                    | Test the deployment uptime probe                                 |
+| `pnpm test:e2e`                                        | Run browser workflow tests with isolated test providers          |
+| `pnpm docker:up`                                       | Build and start both apps with Docker Compose                    |
+| `pnpm docker:down`                                     | Stop the Compose stack                                           |
 
 The browser workflow command starts temporary FastAPI, HTTP provider stub, and
 Vite servers on ports 8010, 8011, and 4174. Install Chromium once with
@@ -382,24 +382,31 @@ docker build -f apps/frontend/Dockerfile -t poker-hero-frontend .
 
 ## Deployment
 
-The testing deployment uses two services:
+Each `staging` and `production` deployment uses two services:
 
 - `apps/frontend` deploys to Cloudflare Workers Static Assets. Its Worker
   proxies same-origin `/api/*` requests to the configured backend.
 - `apps/backend` deploys as a Docker service in Coolify with persistent storage
   mounted at `/app/data`.
 
-For Coolify, use repository-root build context and Dockerfile path
-`apps/backend/Dockerfile`. Expose port `8000` and mount the persistent volume at
-`/app/data`.
+For each Coolify application, use repository-root build context and Dockerfile
+path `apps/backend/Dockerfile`. Expose port `8000` and mount a separate
+persistent volume at `/app/data`. Pushes to `main` deploy staging, `v*` tags
+deploy production, and manual workflows can select either environment.
 
-The frontend workflow requires the `CLOUDFLARE_API_TOKEN` secret and these
-repository or `testing` environment variables:
+The deployment workflows require repository secrets `CLOUDFLARE_API_TOKEN` and
+`COOLIFY_API_TOKEN`, plus these repository variables:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `APP_WORKERS_SUBDOMAIN`, for example `studio81`
-- `BACKEND_URL`, the backend origin used by the Worker proxy
-- `APP_WORKER_NAME`, optional and defaults to `poker`
+- `COOLIFY_API_BASE_URL`
+
+Each `staging` and `production` GitHub environment requires:
+
+- `BACKEND_URL`, the environment's backend origin used by the Worker proxy
+- `COOLIFY_BACKEND_UUID`, the environment's Coolify application
+- `APP_WORKER_NAME`, distinct between environments
+- `API_PROXY_SECRET`, matching that backend's `POKER_PROXY_SHARED_SECRET`
 
 For a deployed backend, set the same random value in the Cloudflare
 `API_PROXY_SECRET` secret and Coolify `POKER_PROXY_SHARED_SECRET` environment
@@ -412,8 +419,8 @@ Backend responses carry `X-Request-ID`, which is also written to structured
 container access logs for tracing requests through the Worker and Coolify.
 
 Runtime error monitoring is disabled by default. Set `POKER_SENTRY_DSN` in
-Coolify for backend failures and the public `VITE_SENTRY_DSN` repository or
-`testing` environment variable for browser failures. The frontend deployment
+Coolify for backend failures and the public `VITE_SENTRY_DSN` environment
+variable for browser failures. The frontend deployment
 uses its commit SHA as the release. Both adapters remove poker state, request
 bodies and metadata, user context, breadcrumbs, local variables, and free-form
 exception text before sending an event. Browser tracing and replay are off.
@@ -421,11 +428,12 @@ Errors retain stack locations, exception type, environment/release, component,
 and backend request correlation tags.
 
 The `Uptime Monitor` workflow checks the deployed SPA, proxied health route,
-and protected queue route every hour. It derives the testing URL from
-`APP_WORKER_NAME` and `APP_WORKERS_SUBDOMAIN`, or uses the optional
-`UPTIME_MONITOR_URL` variable. A failed probe opens one GitHub outage issue;
-the next successful probe closes it. Set optional `UPTIME_ISSUE_ASSIGNEE` to a
-GitHub login that should receive the incident assignment.
+and protected queue route every hour. Scheduled runs derive the staging URL from
+`APP_WORKER_NAME` and `APP_WORKERS_SUBDOMAIN`, or use the optional
+`UPTIME_MONITOR_URL` environment variable. Manual runs can select staging or
+production. A failed probe opens one environment-specific GitHub outage issue;
+the next successful probe closes it. Set optional `UPTIME_ISSUE_ASSIGNEE` in
+each environment to a GitHub login that should receive the incident assignment.
 
 Leave `VITE_API_BASE_URL` unset for the deployed Worker so browser requests use
 same-origin `/api/*`.

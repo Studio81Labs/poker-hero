@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
   push:
     branches: [main]
     paths:
@@ -39,15 +46,15 @@ jobs:
 
   monitor:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    name: Check testing deployment
+    name: Check ${{ inputs.environment || 'staging' }} deployment
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: testing
+    environment: ${{ inputs.environment || 'staging' }}
     permissions:
       contents: read
       issues: write
     concurrency:
-      group: uptime-monitor-testing
+      group: uptime-monitor-${{ inputs.environment || 'staging' }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -60,16 +67,19 @@ jobs:
         id: target
         env:
           CONFIGURED_MONITOR_URL: ${{ vars.UPTIME_MONITOR_URL }}
-          CONFIGURED_WORKER_NAME: ${{ vars.APP_WORKER_NAME }}
+          WORKER_NAME: ${{ vars.APP_WORKER_NAME }}
           WORKERS_SUBDOMAIN: ${{ vars.APP_WORKERS_SUBDOMAIN }}
         run: |
           set -euo pipefail
           if [ -n "$CONFIGURED_MONITOR_URL" ]; then
             TARGET_URL="$CONFIGURED_MONITOR_URL"
           else
-            WORKER_NAME="${CONFIGURED_WORKER_NAME:-poker}"
+            test -n "$WORKER_NAME" || {
+              echo "::error::Set UPTIME_MONITOR_URL or APP_WORKER_NAME in the selected environment"
+              exit 1
+            }
             test -n "$WORKERS_SUBDOMAIN" || {
-              echo "::error::Set UPTIME_MONITOR_URL or APP_WORKERS_SUBDOMAIN"
+              echo "::error::APP_WORKERS_SUBDOMAIN repo variable is not set"
               exit 1
             }
             TARGET_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
@@ -111,18 +121,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DETAILS: ${{ steps.probe.outputs.details }}
+          ENV_NAME: ${{ inputs.environment || 'staging' }}
           ISSUE_ASSIGNEE: ${{ vars.UPTIME_ISSUE_ASSIGNEE }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TARGET_URL: ${{ steps.target.outputs.target_url }}
         run: |
           set -euo pipefail
-          TITLE="[uptime] Poker Hero testing is unavailable"
+          TITLE="[uptime] Poker Hero ${ENV_NAME} is unavailable"
           ISSUE_NUMBER=$(gh issue list \
             --state open \
-            --search '"[uptime] Poker Hero testing is unavailable" in:title' \
+            --search "\"${TITLE}\" in:title" \
             --limit 100 \
             --json number,title \
-            --jq '[.[] | select(.title == "[uptime] Poker Hero testing is unavailable")] | first | .number // empty')
+            | jq -r --arg title "$TITLE" '[.[] | select(.title == $title)] | first | .number // empty')
           if [ -n "$ISSUE_NUMBER" ]; then
             echo "::notice::Outage issue #${ISSUE_NUMBER} is already open"
             exit 0
@@ -153,16 +164,18 @@ jobs:
       - name: Close recovered outage incidents
         if: steps.probe.outputs.healthy == 'true'
         env:
+          ENV_NAME: ${{ inputs.environment || 'staging' }}
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          TITLE="[uptime] Poker Hero ${ENV_NAME} is unavailable"
           ISSUE_NUMBERS=$(gh issue list \
             --state open \
-            --search '"[uptime] Poker Hero testing is unavailable" in:title' \
+            --search "\"${TITLE}\" in:title" \
             --limit 100 \
             --json number,title \
-            --jq '.[] | select(.title == "[uptime] Poker Hero testing is unavailable") | .number')
+            | jq -r --arg title "$TITLE" '.[] | select(.title == $title) | .number')
           for ISSUE_NUMBER in $ISSUE_NUMBERS; do
             gh issue close "$ISSUE_NUMBER" \
               --comment "Deployment probe recovered. [Open successful run](${RUN_URL})."

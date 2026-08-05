@@ -1,37 +1,39 @@
 name: Frontend Deploy
 
 # Builds the Vite SPA in apps/frontend and deploys it to Cloudflare Workers
-# Static Assets. This workflow is intentionally single-environment for testing.
+# Static Assets.
 #
 # Deploy model:
-#   push to main       -> testing
-#   workflow_dispatch  -> testing
+#   push to main       -> staging
+#   push tag v*        -> production
+#   workflow_dispatch  -> choose staging or production
 #
 # Required repo secret:
 #   CLOUDFLARE_API_TOKEN
 #
-# Optional repo or "testing" environment secret:
+# Required per-environment secret:
 #   API_PROXY_SECRET          Shared with backend POKER_PROXY_SHARED_SECRET
 #
 # Required repo vars:
 #   CLOUDFLARE_ACCOUNT_ID
 #   APP_WORKERS_SUBDOMAIN      e.g. studio81 for *.studio81.workers.dev
 #
-# Required repo or "testing" environment vars:
+# Required per-environment vars:
+#   APP_WORKER_NAME           e.g. poker-staging or poker
 #   BACKEND_URL                Backend origin proxied by the Worker, e.g. https://coolify-app.example.com
 #
-# Optional repo or "testing" environment vars:
-#   APP_WORKER_NAME            Defaults to "poker"
+# Optional per-environment vars:
 #   VITE_API_BASE_URL          Overrides the browser API base URL; defaults to same-origin in production
 #   VITE_SENTRY_DSN            Enables privacy-scrubbed browser error reporting
 #
-# Optional repo or "testing" environment secrets for smoke testing Cloudflare Access-protected URLs:
+# Optional per-environment secrets for smoke testing Cloudflare Access-protected URLs:
 #   CLOUDFLARE_ACCESS_CLIENT_ID
 #   CLOUDFLARE_ACCESS_CLIENT_SECRET
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "apps/frontend/**"
       - "package.json"
@@ -40,12 +42,19 @@ on:
       - "scripts/check-deployment.mjs"
       - ".github/workflows/frontend-deploy.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
 
 permissions:
   contents: read
 
 concurrency:
-  group: frontend-workers-testing
+  group: frontend-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
   cancel-in-progress: false
 
 jobs:
@@ -53,7 +62,7 @@ jobs:
     name: Build & deploy frontend (Cloudflare Workers)
     runs-on: ubuntu-latest
     environment:
-      name: testing
+      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
       url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -68,11 +77,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Resolve environment
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Build frontend
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_SENTRY_ENVIRONMENT: testing
+          VITE_SENTRY_ENVIRONMENT: ${{ steps.env.outputs.name }}
           VITE_SENTRY_RELEASE: ${{ github.sha }}
         run: pnpm frontend:build
 
@@ -80,7 +104,8 @@ jobs:
         id: deploy
         working-directory: apps/frontend
         env:
-          CONFIGURED_WORKER_NAME: ${{ vars.APP_WORKER_NAME }}
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          WORKER_NAME: ${{ vars.APP_WORKER_NAME }}
           WORKERS_SUBDOMAIN: ${{ vars.APP_WORKERS_SUBDOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -88,12 +113,12 @@ jobs:
           API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
         run: |
           set -euo pipefail
-          WORKER_NAME="${CONFIGURED_WORKER_NAME:-poker}"
-
+          test -n "$WORKER_NAME" || { echo "::error::APP_WORKER_NAME var is not set in env ${ENV_NAME}"; exit 1; }
           test -n "$WORKERS_SUBDOMAIN" || { echo "::error::APP_WORKERS_SUBDOMAIN repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID repo var is required"; exit 1; }
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN repo secret is required"; exit 1; }
-          test -n "$BACKEND_URL" || { echo "::error::BACKEND_URL repo or testing environment var is required"; exit 1; }
+          test -n "$BACKEND_URL" || { echo "::error::BACKEND_URL var is not set in env ${ENV_NAME}"; exit 1; }
+          test -n "$API_PROXY_SECRET" || { echo "::error::API_PROXY_SECRET secret is not set in env ${ENV_NAME}"; exit 1; }
           node -e '
             const backend = new URL(process.env.BACKEND_URL);
             if (process.env.API_PROXY_SECRET && backend.protocol !== "https:") {
@@ -102,21 +127,17 @@ jobs:
             }
           '
 
-          SECRETS_ARGS=()
-          if [ -n "$API_PROXY_SECRET" ]; then
-            SECRETS_FILE="${RUNNER_TEMP}/poker-worker-secrets.json"
-            trap 'rm -f "$SECRETS_FILE"' EXIT
-            node -e \
-              'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({API_PROXY_SECRET: process.env.API_PROXY_SECRET}))' \
-              "$SECRETS_FILE"
-            SECRETS_ARGS+=(--secrets-file "$SECRETS_FILE")
-          fi
+          SECRETS_FILE="${RUNNER_TEMP}/poker-worker-secrets.json"
+          trap 'rm -f "$SECRETS_FILE"' EXIT
+          node -e \
+            'require("node:fs").writeFileSync(process.argv[1], JSON.stringify({API_PROXY_SECRET: process.env.API_PROXY_SECRET}))' \
+            "$SECRETS_FILE"
 
           pnpm dlx wrangler@latest deploy \
             --config wrangler.jsonc \
             --name "$WORKER_NAME" \
             --var "BACKEND_URL:$BACKEND_URL" \
-            "${SECRETS_ARGS[@]}"
+            --secrets-file "$SECRETS_FILE"
 
           DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
@@ -135,26 +156,26 @@ jobs:
             --attempts 5 \
             --retry-delay-ms 5000
 
-          if [ -n "$API_PROXY_SECRET" ]; then
-            DIRECT_API_URL=$(node -e '
-              const backend = new URL(process.env.BACKEND_URL);
-              const basePath = backend.pathname.replace(/\/+$/, "");
-              backend.pathname = basePath.endsWith("/api")
-                ? `${basePath}/jobs`
-                : `${basePath}/api/jobs`;
-              backend.search = "?limit=1";
-              backend.hash = "";
-              process.stdout.write(backend.href);
-            ')
-            for attempt in 1 2 3; do
-              HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$DIRECT_API_URL" || echo '000')
-              if [ "$HTTP_CODE" = "401" ]; then
-                echo "::notice::Direct backend API correctly rejected an unauthenticated request"
-                exit 0
-              fi
-              echo "Direct backend rejection attempt ${attempt}: HTTP=${HTTP_CODE}"
-              sleep 5
-            done
-            echo "::error::Direct backend API did not return 401 without the Worker credential"
-            exit 1
-          fi
+          # The template expression belongs to Node.js, not the shell.
+          # shellcheck disable=SC2016
+          DIRECT_API_URL=$(node -e '
+            const backend = new URL(process.env.BACKEND_URL);
+            const basePath = backend.pathname.replace(/\/+$/, "");
+            backend.pathname = basePath.endsWith("/api")
+              ? `${basePath}/jobs`
+              : `${basePath}/api/jobs`;
+            backend.search = "?limit=1";
+            backend.hash = "";
+            process.stdout.write(backend.href);
+          ')
+          for attempt in 1 2 3; do
+            HTTP_CODE=$(curl -sS -o /dev/null -w '%{http_code}' "$DIRECT_API_URL" || echo '000')
+            if [ "$HTTP_CODE" = "401" ]; then
+              echo "::notice::Direct backend API correctly rejected an unauthenticated request"
+              exit 0
+            fi
+            echo "Direct backend rejection attempt ${attempt}: HTTP=${HTTP_CODE}"
+            sleep 5
+          done
+          echo "::error::Direct backend API did not return 401 without the Worker credential"
+          exit 1

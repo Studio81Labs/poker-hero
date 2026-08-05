@@ -1,0 +1,256 @@
+name: Backend Deploy
+
+# Deploy model (aligned with the other Studio81Labs projects):
+#   push to main       -> staging
+#   push tag v*        -> production
+#   workflow_dispatch  -> choose staging or production
+#
+# Required repo secret: COOLIFY_API_TOKEN
+# Required repo variable: COOLIFY_API_BASE_URL
+# Required per-environment variables: BACKEND_URL, COOLIFY_BACKEND_UUID
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "apps/backend/**"
+      - "solver-plugins/postflop/**"
+      - "scripts/ci/resolve-app-version.sh"
+      - ".github/workflows/backend-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy & verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Resolve environment
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve deployment target
+        id: target
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          BASE_URL: ${{ vars.BACKEND_URL }}
+          APP_UUID: ${{ vars.COOLIFY_BACKEND_UUID }}
+        run: |
+          set -euo pipefail
+          test -n "$BASE_URL" || { echo "::error::BACKEND_URL var is not set in env ${ENV_NAME}"; exit 1; }
+          test -n "$APP_UUID" || { echo "::error::COOLIFY_BACKEND_UUID var is not set in env ${ENV_NAME}"; exit 1; }
+          echo "base_url=${BASE_URL%/}" >> "$GITHUB_OUTPUT"
+          echo "app_uuid=${APP_UUID}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release
+        id: release
+        run: |
+          set -euo pipefail
+          APP_VERSION="$(bash scripts/ci/resolve-app-version.sh)"
+          test -n "$APP_VERSION" || { echo "::error::Unable to resolve app version"; exit 1; }
+          echo "name=poker-hero-backend@${APP_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Set Coolify backend release
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          RELEASE: ${{ steps.release.outputs.name }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.target.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_API_TOKEN" || { echo "::error::COOLIFY_API_TOKEN secret is not set"; exit 1; }
+          test -n "$COOLIFY_URL" || { echo "::error::COOLIFY_API_BASE_URL repo variable is not set"; exit 1; }
+
+          REQUEST="$(mktemp)"
+          RESPONSE="$(mktemp)"
+          trap 'rm -f "$REQUEST" "$RESPONSE"' EXIT
+          jq -n --arg value "$RELEASE" \
+            '{data: [{key: "POKER_SENTRY_RELEASE", value: $value, is_literal: true, is_multiline: false, is_preview: false, is_buildtime: true, is_runtime: true}]}' \
+            > "$REQUEST"
+
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$RESPONSE" --write-out '%{http_code}' \
+            --max-time 30 --request PATCH \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data @"$REQUEST" \
+            "${COOLIFY_URL%/}/api/v1/applications/${APPLICATION_UUID}/envs/bulk")
+          CURL_EXIT=$?
+          set -e
+
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify env update failed before receiving an HTTP response"
+            exit 1
+          fi
+          if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting POKER_SENTRY_RELEASE. Refresh COOLIFY_API_TOKEN."
+            exit 1
+          fi
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "::error::Coolify API returned HTTP 404. Check COOLIFY_BACKEND_UUID (env: ${ENV_NAME})."
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Coolify API returned HTTP ${HTTP_CODE} while setting POKER_SENTRY_RELEASE"
+            head -c 400 "$RESPONSE"
+            exit 1
+          fi
+
+      - name: Trigger Coolify deploy
+        id: trigger
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+          APPLICATION_UUID: ${{ steps.target.outputs.app_uuid }}
+        run: |
+          set -euo pipefail
+          test -n "$COOLIFY_API_TOKEN" || { echo "::error::COOLIFY_API_TOKEN secret is not set"; exit 1; }
+          test -n "$COOLIFY_URL" || { echo "::error::COOLIFY_API_BASE_URL repo variable is not set"; exit 1; }
+
+          BODY="$(mktemp)"
+          trap 'rm -f "$BODY"' EXIT
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output "$BODY" --write-out '%{http_code}' \
+            --max-time 30 --get \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H "Accept: application/json" \
+            --data-urlencode "uuid=${APPLICATION_UUID}" \
+            "${COOLIFY_URL%/}/api/v1/deploy")
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" -ne 0 ]; then
+            echo "::error::Coolify deploy request failed before receiving an HTTP response"
+            exit 1
+          fi
+          if [[ ! "$HTTP_CODE" =~ ^2[0-9][0-9]$ ]]; then
+            echo "::error::Coolify deploy API returned HTTP ${HTTP_CODE}"
+            head -c 400 "$BODY"
+            exit 1
+          fi
+          DEPLOYMENT_ID=$(jq -r '.deployments[0].deployment_uuid // .deployments[0].uuid // .deployments[0].id // empty' < "$BODY")
+          test -n "$DEPLOYMENT_ID" || { echo "::error::Coolify response did not include a deployment UUID"; exit 1; }
+          echo "deployment_id=${DEPLOYMENT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Coolify deploy
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          DEPLOYMENT_ID: ${{ steps.trigger.outputs.deployment_id }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APPLICATION_UUID: ${{ steps.target.outputs.app_uuid }}
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
+        run: |
+          set +e
+          set -uo pipefail
+          DEPLOYMENTS_JQ='if type == "array" then . elif type == "object" and (.deployments | type == "array") then .deployments else empty end'
+          POLL_BODY="$(mktemp)"
+          trap 'rm -f "$POLL_BODY"' EXIT
+          DEADLINE=$(( $(date +%s) + 900 ))
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            CODE=$(curl --silent --show-error --output "$POLL_BODY" --write-out '%{http_code}' \
+              --max-time 30 --retry 3 --retry-connrefused \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              -H "Accept: application/json" \
+              "${COOLIFY_URL%/}/api/v1/deployments/applications/${APPLICATION_UUID}" || echo '000')
+            if [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then
+              echo "::error::Coolify API returned HTTP ${CODE} while listing deployments"
+              exit 1
+            fi
+            if [ "$CODE" = "404" ]; then
+              echo "::error::Coolify API returned HTTP 404. Check COOLIFY_BACKEND_UUID (env: ${ENV_NAME})."
+              exit 1
+            fi
+            if [ "$CODE" != "200" ] || ! jq -e "${DEPLOYMENTS_JQ} | type == \"array\"" < "$POLL_BODY" >/dev/null 2>&1; then
+              echo "Coolify API transient response (HTTP ${CODE}); retrying"
+              sleep 15
+              continue
+            fi
+            STATUS=$(jq -r --arg id "$DEPLOYMENT_ID" "${DEPLOYMENTS_JQ} |
+              [ .[]? | select(((.deployment_uuid // .uuid // .id) | tostring) == \$id) ][0].status // \"unknown\"" < "$POLL_BODY")
+            case "$STATUS" in
+              finished|success) echo "Coolify deployment ${DEPLOYMENT_ID} reached status=${STATUS}"; exit 0 ;;
+              failed|cancelled|error) echo "::error::Coolify deployment ${DEPLOYMENT_ID} ended with status=${STATUS}"; exit 1 ;;
+              *) echo "Coolify deployment ${DEPLOYMENT_ID}: status=${STATUS}; waiting..."; sleep 15 ;;
+            esac
+          done
+          echo "::error::Timed out waiting for Coolify deployment ${DEPLOYMENT_ID}"
+          exit 1
+
+      - name: Healthcheck
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/api/health" || echo '000')
+            if [ "$CODE" = "200" ]; then
+              echo "::notice::Backend healthcheck passed"
+              exit 0
+            fi
+            echo "Healthcheck attempt ${attempt}: HTTP ${CODE}"
+            sleep 5
+          done
+          echo "::error::Healthcheck failed after Coolify reported deploy finished"
+          exit 1
+
+      - name: Notify Sentry of release
+        if: success()
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: studio81-labs
+          SENTRY_PROJECT: poker-hero-backend
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          SENTRY_RELEASE: ${{ steps.release.outputs.name }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::warning::SENTRY_AUTH_TOKEN not set; skipping Sentry release notification"
+            exit 0
+          fi
+          npx --yes @sentry/cli releases new "$SENTRY_RELEASE"
+          npx --yes @sentry/cli releases set-commits "$SENTRY_RELEASE" --auto \
+            || echo "::warning::No commits associated with ${SENTRY_RELEASE}"
+          npx --yes @sentry/cli releases finalize "$SENTRY_RELEASE"
+          npx --yes @sentry/cli releases deploys "$SENTRY_RELEASE" new -e "$ENV_NAME"
+
+      - name: Surface rollback instructions
+        if: failure()
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+        run: |
+          echo "::error::${ENV_NAME} backend deploy verification failed."
+          echo "::error::Rollback in Coolify by redeploying the last successful build for this environment."

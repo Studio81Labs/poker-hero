@@ -402,10 +402,10 @@ legacy opener fields must remain subordinate to the call-first structured
 history. Another active player, a different final actor, an incomplete raise,
 or contradictory money state must retain fallback behavior.
 
-Four or more limpers, a hidden active player, a limp with action pending behind hero,
-other non-big-blind limp decisions, unsupported broader squeeze histories, unsupported cold
-4-bet trees, more than five actions, unsupported positions or sizes, and
-contradictory money state decline these routes.
+Five or more limpers, a hidden active player, a limp with action pending behind
+hero, other non-big-blind limp decisions, unsupported broader squeeze histories,
+unsupported cold 4-bet trees, more than five actions, unsupported positions or
+sizes, and contradictory money state decline these routes.
 
 Effective stack selects an explicit preflop policy band: short at 20 BB or less,
 medium through 50 BB, standard through 150 BB, and deep above 150 BB. Shorter

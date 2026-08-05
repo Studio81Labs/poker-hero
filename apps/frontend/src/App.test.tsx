@@ -9854,15 +9854,15 @@ describe("App", () => {
     expect(within(chartContext).getByText("3.6 BB")).toBeInTheDocument();
   });
 
-  it("shows structured single-caller chart context", async () => {
+  it("shows structured multi-caller chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),
-      id: "single-caller-chart-job",
-      original_filename: "called-open.png",
-      image_filename: "called-open.png",
+      id: "multi-caller-chart-job",
+      original_filename: "multi-called-open.png",
+      image_filename: "multi-called-open.png",
       recommendation: {
         action: "raise",
-        sizing: 10,
+        sizing: 12.5,
         confidence: 0.78,
         explanation: "The preflop chart recommends a conservative squeeze.",
         raw: {
@@ -9874,17 +9874,17 @@ describe("App", () => {
           effective_stack: 100,
           opener_position: "utg",
           opening_raise_size: 2.5,
-          caller_positions: ["hijack"],
-          caller_count: 1,
-          caller_adjustment_policy: "single_caller_conservative",
-          squeeze_open_multiple: 4,
-          continue_fraction: 0.126,
-          reraise_fraction: 0.045,
+          caller_positions: ["hijack", "cutoff"],
+          caller_count: 2,
+          caller_adjustment_policy: "double_caller_conservative",
+          squeeze_open_multiple: 5,
+          continue_fraction: 0.112,
+          reraise_fraction: 0.0425,
           maximum_reraise_total: 100,
           candidates: [
             { action: "fold", sizing: null, frequency: 0 },
             { action: "call", sizing: null, frequency: 0 },
-            { action: "raise", sizing: 10, frequency: 1 },
+            { action: "raise", sizing: 12.5, frequency: 1 },
           ],
         },
       },
@@ -9902,9 +9902,9 @@ describe("App", () => {
     const evidence = await screen.findByLabelText("Decision evidence");
     const chartContext = within(evidence).getByLabelText("Decision context");
     expect(within(chartContext).getByText("UTG")).toBeInTheDocument();
-    expect(within(chartContext).getByText("Hijack")).toBeInTheDocument();
-    expect(within(chartContext).getByText("Single caller conservative · 4x squeeze")).toBeInTheDocument();
-    expect(within(chartContext).getByText("Continue 12.6% · Reraise 4.5%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Hijack · Cutoff")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Double caller conservative · 5x squeeze")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Continue 11.2% · Reraise 4.3%")).toBeInTheDocument();
     expect(within(chartContext).getByText("100 BB")).toBeInTheDocument();
   });
 

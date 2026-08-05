@@ -570,8 +570,6 @@ def _structured_isolation_raise_context(
     if (
         len(history) != 2
         or state.players_in_hand != 2
-        or state.preflop_opener_position is not None
-        or state.preflop_open_size is not None
     ):
         return None
 

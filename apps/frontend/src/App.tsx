@@ -3418,6 +3418,7 @@ function formToCanonical(form: StateForm): CanonicalState {
   const structuredOpener = preflopActionHistory[0]?.action === "raise"
     ? preflopActionHistory[0]
     : null;
+  const preserveLegacyOpener = preflopActionHistory.length === 0;
   const postflopActionHistory: PostflopAction[] = showPostflopHistory
     ? form.postflop_action_history.map((item, index) => {
         const amount = item.action === "check"
@@ -3445,11 +3446,12 @@ function formToCanonical(form: StateForm): CanonicalState {
     preflop_opener_position:
       structuredOpener?.actor
       ?? (
-        form.preflop_opener_position !== ""
+        preserveLegacyOpener && form.preflop_opener_position !== ""
           ? form.preflop_opener_position
           : null
       ),
-    preflop_open_size: structuredOpener?.amount ?? legacyPreflopOpenSize,
+    preflop_open_size: structuredOpener?.amount
+      ?? (preserveLegacyOpener ? legacyPreflopOpenSize : null),
     preflop_action_history: preflopActionHistory,
     street: form.street === "" ? null : form.street,
     facing_action: form.facing_action === "" ? null : form.facing_action,

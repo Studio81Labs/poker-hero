@@ -10544,6 +10544,51 @@ describe("App", () => {
     ]);
   });
 
+  it("clears stale opener context for call-first structured history", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 6.5,
+      current_bet: 3,
+      hero_stack: 99,
+      effective_stack: 90,
+      players_in_hand: 2,
+      hero_position: "utg",
+      preflop_opener_position: "cutoff",
+      preflop_open_size: 2.5,
+      preflop_action_history: [
+        { actor: "utg", action: "call", amount: 1 },
+        { actor: "button", action: "raise", amount: 4 },
+      ],
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Hero limped and faces an isolation raise",
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.preflop_opener_position).toBeNull();
+    expect(payload.preflop_open_size).toBeNull();
+    expect(payload.preflop_action_history).toEqual([
+      { actor: "utg", action: "call", amount: 1 },
+      { actor: "button", action: "raise", amount: 4 },
+    ]);
+  });
+
   it("loads structured preflop history into editable controls", async () => {
     const preflopState: DetectedState = {
       ...detectedState,

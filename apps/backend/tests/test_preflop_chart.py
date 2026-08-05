@@ -3362,8 +3362,6 @@ def test_isolation_response_identifies_missing_hero_stack() -> None:
         lambda state: setattr(state, "hero_stack", None),
         lambda state: setattr(state, "hero_stack", 2),
         lambda state: setattr(state, "effective_stack", 100),
-        lambda state: setattr(state, "preflop_opener_position", "utg"),
-        lambda state: setattr(state, "preflop_open_size", 2.5),
         lambda state: setattr(
             state,
             "preflop_action_history",
@@ -3424,3 +3422,17 @@ def test_declines_inconsistent_isolation_raise_state(
     mutation(request.state)
 
     assert solve_preflop_chart(request) is None
+
+
+def test_isolation_response_ignores_stale_legacy_opener_fields() -> None:
+    request = structured_isolation_raise_request(("9h", "9s"))
+    request.state.preflop_opener_position = "cutoff"
+    request.state.preflop_open_size = 2.5
+
+    result = solve_preflop_chart(request)
+
+    assert result is not None
+    assert result.action == "call"
+    assert result.raw["scenario"] == "facing_isolation_raise_after_limp"
+    assert "opener_position" not in result.raw
+    assert "opening_raise_size" not in result.raw

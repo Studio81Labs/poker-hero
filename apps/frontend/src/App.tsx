@@ -363,6 +363,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
   preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
   preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
+  preflop_chart_four_bet_pot: "Preflop chart · 4-bet pot",
 };
 
 const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
@@ -922,6 +923,7 @@ function recommendationEvidenceFromRaw(
     const contextualRangeSource = (
       rawRangeSource === "preflop_chart_single_raised_pot"
       || rawRangeSource === "preflop_chart_three_bet_pot"
+      || rawRangeSource === "preflop_chart_four_bet_pot"
     );
     const rangeContext = contextualRangeSource
       ? metadataRecord(raw.range_context)
@@ -989,6 +991,50 @@ function recommendationEvidenceFromRaw(
           value: `3-bet ${formatEvidenceRatio(rangeThreeBettorFraction)} · flat ${
             formatEvidenceRatio(rangeOpenerFourBet)
           }-${formatEvidenceRatio(rangeOpenerContinue)}`,
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_four_bet_pot") {
+      const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
+      const rangeThreeBettorPosition = metadataLabel(rangeContext?.three_bettor_position);
+      const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
+      const rangeThreeBetSize = metadataNumber(rangeContext?.three_bet_size_bb);
+      const rangeFourBetSize = metadataNumber(rangeContext?.four_bet_size_bb);
+      if (rangeOpenerPosition && rangeThreeBettorPosition) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeOpenerPosition} opens${
+            rangeOpeningSize !== null && rangeOpeningSize > 0
+              ? ` ${formatEvidenceBb(rangeOpeningSize)}`
+              : ""
+          } · ${rangeThreeBettorPosition} 3-bets${
+            rangeThreeBetSize !== null && rangeThreeBetSize > 0
+              ? ` ${formatEvidenceBb(rangeThreeBetSize)}`
+              : ""
+          } · ${rangeOpenerPosition} 4-bets${
+            rangeFourBetSize !== null && rangeFourBetSize > 0
+              ? ` ${formatEvidenceBb(rangeFourBetSize)}`
+              : ""
+          } · ${rangeThreeBettorPosition} calls`,
+        });
+      }
+      const rangeOpenerFourBet = metadataRatio(rangeContext?.opener_four_bet_fraction);
+      const rangeThreeBettorContinue = metadataRatio(
+        rangeContext?.three_bettor_continue_fraction,
+      );
+      const rangeThreeBettorFiveBet = metadataRatio(
+        rangeContext?.three_bettor_five_bet_fraction,
+      );
+      if (
+        rangeOpenerFourBet !== null
+        && rangeThreeBettorContinue !== null
+        && rangeThreeBettorFiveBet !== null
+        && rangeThreeBettorFiveBet < rangeThreeBettorContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `4-bet ${formatEvidenceRatio(rangeOpenerFourBet)} · flat ${
+            formatEvidenceRatio(rangeThreeBettorFiveBet)
+          }-${formatEvidenceRatio(rangeThreeBettorContinue)}`,
         });
       }
     }

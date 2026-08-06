@@ -907,9 +907,10 @@ fn env_string(name: &str, default: &str) -> String {
 
 fn validated_range_source(value: &str) -> Result<&str, String> {
     match value {
-        "configured" | "preflop_chart_single_raised_pot" | "preflop_chart_three_bet_pot" => {
-            Ok(value)
-        }
+        "configured"
+        | "preflop_chart_single_raised_pot"
+        | "preflop_chart_three_bet_pot"
+        | "preflop_chart_four_bet_pot" => Ok(value),
         _ => Err("POKER_POSTFLOP_SOLVER_RANGE_SOURCE is unsupported".to_string()),
     }
 }
@@ -1177,6 +1178,10 @@ mod tests {
         assert_eq!(
             validated_range_source("preflop_chart_three_bet_pot"),
             Ok("preflop_chart_three_bet_pot")
+        );
+        assert_eq!(
+            validated_range_source("preflop_chart_four_bet_pot"),
+            Ok("preflop_chart_four_bet_pot")
         );
         assert!(validated_range_source("automatic").is_err());
         assert_eq!(

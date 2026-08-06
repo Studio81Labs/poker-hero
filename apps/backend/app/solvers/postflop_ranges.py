@@ -10,6 +10,7 @@ from app.solvers.preflop_context import (
     MONEY_TOLERANCE_BB,
     Position,
     normalize_position,
+    pot_matches_preflop_actions,
 )
 
 
@@ -39,7 +40,7 @@ def select_postflop_ranges(
     if (
         not contextual_enabled
         or hero_relative_position is None
-        or state.street not in {"flop", "turn", "river"}
+        or state.street != "flop"
     ):
         return configured
 
@@ -159,7 +160,36 @@ def _single_raised_pot_context(
         > MONEY_TOLERANCE_BB
     ):
         return None
+    flop_root_pot = _flop_root_pot(state)
+    if not pot_matches_preflop_actions(
+        flop_root_pot,
+        (
+            (opener, opening_action.amount),
+            (caller, calling_action.amount),
+        ),
+    ):
+        return None
     return opener, caller, opening_action.amount
+
+
+def _flop_root_pot(state: CanonicalState) -> float | None:
+    if state.street != "flop" or state.pot_size is None:
+        return None
+    if state.postflop_action_history:
+        contributions = {"oop": 0.0, "ip": 0.0}
+        for action in state.postflop_action_history:
+            if action.amount is not None:
+                contributions[action.actor] = action.amount
+        root_pot = state.pot_size - sum(contributions.values())
+    elif (state.current_bet or 0) > 0:
+        if state.facing_action != "bet":
+            return None
+        root_pot = state.pot_size - (state.current_bet or 0)
+    else:
+        if state.facing_action is not None:
+            return None
+        root_pot = state.pot_size
+    return root_pot if root_pot > 0 else None
 
 
 def _range_for_policy_band(

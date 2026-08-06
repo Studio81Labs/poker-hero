@@ -1963,6 +1963,7 @@ def test_local_solver_derives_ranges_from_complete_single_raised_pot(
     )
     state = heads_up_postflop_state()
     state.current_bet = 0
+    state.pot_size = 5.5
     state.opponents_at_current_bet = None
     state.opponent_wager = None
     state.opponent_commitment_total = None

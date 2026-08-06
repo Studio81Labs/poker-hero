@@ -17,12 +17,14 @@ states to its position-aware training chart, and routes ambiguous positions,
 ambiguous preflop, multiway postflop, incomplete, and resource-limited spots to
 the bundled range/EV engine when fallback is enabled.
 
-The backend defaults to contextual range selection. An exact heads-up
-single-raised-pot history with matching reviewed seats uses the preflop chart's
+The backend defaults to contextual range selection. An exact heads-up flop
+state with a single-raised-pot history, matching reviewed seats, and a verified
+root pot uses the preflop chart's
 position-specific opener boundary and flat-caller band. The caller band excludes
 hands assigned to the chart's reraise segment and follows the chart's existing
 open-size adjustment. Other histories retain the
-configured OOP/IP ranges, and `POKER_POSTFLOP_SOLVER_RANGE_MODE=configured`
+configured OOP/IP ranges. Turn and river states also use configured ranges, and
+`POKER_POSTFLOP_SOLVER_RANGE_MODE=configured`
 disables contextual selection entirely. The adapter returns the selected range
 source and policy context in recommendation evidence.
 

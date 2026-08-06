@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.config import DEFAULT_POSTFLOP_IP_RANGE, DEFAULT_POSTFLOP_OOP_RANGE
-from app.models import CanonicalState, PreflopAction
+from app.models import CanonicalState, PostflopAction, PreflopAction
 from app.solvers.postflop_ranges import select_postflop_ranges
 from app.solvers.preflop_chart import hand_classes_in_policy_band
 
@@ -13,6 +13,8 @@ def single_raised_pot_state(*, hero_position: str = "big_blind") -> CanonicalSta
         hero_position=hero_position,
         opponent_position=opponent_position,
         street="flop",
+        pot_size=5.5,
+        current_bet=0,
         preflop_action_history=[
             PreflopAction(actor="button", action="raise", amount=2.5),
             PreflopAction(actor="big_blind", action="call", amount=2.5),
@@ -88,6 +90,18 @@ def test_keeps_configured_ranges_for_incomplete_or_contradictory_history() -> No
     state.preflop_open_size = 3.0
     assert select(state).source == "configured"
 
+    state = single_raised_pot_state()
+    state.pot_size = 15.0
+    assert select(state).source == "configured"
+
+    state = single_raised_pot_state()
+    state.pot_size = None
+    assert select(state).source == "configured"
+
+    state = single_raised_pot_state()
+    state.street = "turn"
+    assert select(state).source == "configured"
+
 
 def test_policy_band_excludes_the_reraise_segment() -> None:
     caller_classes = hand_classes_in_policy_band(0.4, minimum_exclusive=0.12)
@@ -102,9 +116,11 @@ def test_open_size_adjusts_the_contextual_caller_band() -> None:
     small_open = single_raised_pot_state()
     small_open.preflop_action_history[0].amount = 2.0
     small_open.preflop_action_history[1].amount = 2.0
+    small_open.pot_size = 4.5
     large_open = single_raised_pot_state()
     large_open.preflop_action_history[0].amount = 4.0
     large_open.preflop_action_history[1].amount = 4.0
+    large_open.pot_size = 8.5
 
     small_selection = select(small_open)
     large_selection = select(large_open)
@@ -118,3 +134,21 @@ def test_open_size_adjusts_the_contextual_caller_band() -> None:
     assert len(small_selection.oop_range.split(",")) > len(
         large_selection.oop_range.split(",")
     )
+
+
+def test_reconstructs_flop_root_from_current_street_wagers() -> None:
+    facing_bet = single_raised_pot_state()
+    facing_bet.pot_size = 7.5
+    facing_bet.current_bet = 2.0
+    facing_bet.facing_action = "bet"
+    assert select(facing_bet).source == "preflop_chart_single_raised_pot"
+
+    facing_raise = single_raised_pot_state()
+    facing_raise.pot_size = 14.5
+    facing_raise.current_bet = 5.0
+    facing_raise.facing_action = "raise"
+    facing_raise.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0),
+        PostflopAction(actor="ip", action="raise", amount=7.0),
+    ]
+    assert select(facing_raise).source == "preflop_chart_single_raised_pot"

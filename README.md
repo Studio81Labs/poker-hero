@@ -164,18 +164,22 @@ requires explicit IP/OOP review because the order depends on whether the small
 blind is also the heads-up dealer. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
-In the default `contextual` range mode, an exact two-player flop state with an
+In the default `contextual` range mode, an exact two-player state with an
 open-and-call, open/3-bet/call, or open/3-bet/4-bet/call preflop history selects
 transparent ranges from the same position-aware chart boundaries used by the
 preflop trainer. The reviewed sizes and a provable starting effective stack
 apply the chart's existing response adjustments, and the backend verifies that
-the reconstructed flop-root pot agrees with the final preflop commitments.
+the reconstructed flop-root pot agrees with the final preflop commitments. A
+turn additionally requires one terminal completed-flop history; a river requires
+terminal completed-flop and completed-turn histories in order. Each completed
+history ends in check-check or a matching call and records each wager as the
+actor's total BB committed on that street.
 When current-street money cannot be reconciled to the reviewed visible stacks,
 the range context retains a labeled 100 BB stack assumption. Unsupported,
-incomplete, contradictory, other preflop trees, turn, and river states retain
-the configured OOP/IP ranges. Recommendation evidence records the selected
-source and policy context. Set the mode to `configured` to disable contextual
-selection.
+incomplete, contradictory, and other preflop trees retain the configured OOP/IP
+ranges. Recommendation evidence records the selected source, policy context,
+decision street, and completed-street verification. Set the mode to `configured`
+to disable contextual selection.
 Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
 facing action must identify the outstanding wager. Raised heads-up decisions
@@ -183,6 +187,8 @@ also require the opponent's visible stack and ordered current-street action
 history. Each history wager is the player's total BB committed on that street;
 the adapter validates the actors, pot, call amount, stacks, and final hero turn
 before replaying the line. Incomplete or contradictory histories use fallback.
+Completed-street history is separate from that replayed current-street list and
+is used only to verify later-street range and stack assumptions.
 
 `pnpm bootstrap` builds the adapter into
 `solver-plugins/postflop/target/release/poker-postflop-solver`; the local backend

@@ -1197,6 +1197,10 @@ button:disabled {
   grid-template-columns: 20px minmax(54px, 0.7fr) minmax(74px, 1fr) minmax(55px, 0.75fr) 28px;
 }
 
+.completed-action-history-row {
+  grid-template-columns: 20px minmax(52px, 0.75fr) minmax(48px, 0.65fr) minmax(70px, 1fr) minmax(52px, 0.7fr) 28px;
+}
+
 .action-history-row > span {
   align-items: center;
   color: var(--muted);

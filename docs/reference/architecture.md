@@ -112,7 +112,7 @@ six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a bare small-blind versus
 big-blind pair remain ambiguous and use fallback. First-bet decisions retain
 the compact reconstruction path. In `contextual` range mode, an exact reviewed
-heads-up flop state with an open-and-call preflop history whose actors match the
+heads-up state with an open-and-call preflop history whose actors match the
 reviewed seats replaces the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.
 An exact open/3-bet/call history can instead use the chart's adjusted 3-bettor
@@ -128,9 +128,13 @@ postflop, both visible stacks and either explicit first-bet context or ordered
 OOP/IP contributions must reconcile. The resulting short, medium, standard, or
 deep policy adjusts the range boundaries. Incomplete or contradictory stack
 evidence retains an explicit 100 BB standard assumption instead of blocking an
-otherwise verified range. Turn and river states retain configured ranges
-because the original flop pot cannot be proven from the compact state. Range
-source, depth source, and boundaries are retained as solver evidence. Raised
+otherwise verified range. Turn states require one exact terminal completed-flop
+line; river states require exact completed-flop and completed-turn lines. Their
+final OOP/IP commitments plus current-street contributions reconstruct the
+original flop pot and, with visible stacks, starting depth. Partial or
+contradictory completed histories retain configured ranges. Range source, depth
+source, decision street, completed-street count, and boundaries are retained as
+solver evidence. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a

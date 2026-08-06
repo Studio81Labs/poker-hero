@@ -132,9 +132,10 @@ def build_parser_dataset_archive_from_cases(
             for history_field in (
                 "preflop_action_history",
                 "postflop_action_history",
+                "completed_postflop_streets",
             ):
-                if not expected_state[history_field]:
-                    del expected_state[history_field]
+                if not expected_state.get(history_field):
+                    expected_state.pop(history_field, None)
             cases.append(
                 {
                     "job_id": case.job_id,

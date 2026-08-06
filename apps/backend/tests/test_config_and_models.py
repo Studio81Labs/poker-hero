@@ -9,6 +9,8 @@ from app.models import (
     BenchmarkFieldComparison,
     Card,
     CanonicalState,
+    CompletedPostflopAction,
+    CompletedPostflopStreetHistory,
     DetectedState,
     ParserResult,
     PreflopAction,
@@ -356,6 +358,98 @@ def test_postflop_action_rejects_inconsistent_amount(values: dict[str, object]) 
 
 
 @pytest.mark.parametrize(
+    "actions",
+    [
+        [{"actor": "oop", "action": "check"}],
+        [
+            {"actor": "ip", "action": "check"},
+            {"actor": "oop", "action": "check"},
+        ],
+        [
+            {"actor": "oop", "action": "bet", "amount": 2.0},
+            {"actor": "ip", "action": "call", "amount": 1.5},
+        ],
+        [
+            {"actor": "oop", "action": "bet", "amount": 2.0},
+            {"actor": "ip", "action": "check"},
+        ],
+        [
+            {"actor": "oop", "action": "bet", "amount": 2.0},
+            {"actor": "ip", "action": "call", "amount": 2.0},
+            {"actor": "oop", "action": "check"},
+        ],
+    ],
+)
+def test_completed_postflop_history_rejects_nonterminal_or_illegal_lines(
+    actions: list[dict[str, object]],
+) -> None:
+    with pytest.raises(ValidationError):
+        CompletedPostflopStreetHistory(street="flop", actions=actions)
+
+
+def test_completed_postflop_history_accepts_checked_and_raised_lines() -> None:
+    checked = CompletedPostflopStreetHistory(
+        street="flop",
+        actions=[
+            CompletedPostflopAction(actor="oop", action="check"),
+            CompletedPostflopAction(actor="ip", action="check"),
+        ],
+    )
+    raised = CompletedPostflopStreetHistory(
+        street="turn",
+        actions=[
+            CompletedPostflopAction(actor="oop", action="check"),
+            CompletedPostflopAction(actor="ip", action="bet", amount=2.0),
+            CompletedPostflopAction(actor="oop", action="raise", amount=6.0),
+            CompletedPostflopAction(actor="ip", action="call", amount=6.0),
+        ],
+    )
+
+    assert checked.actions[-1].action == "check"
+    assert raised.actions[-1].amount == 6.0
+
+
+def test_completed_postflop_history_serializes_only_when_present() -> None:
+    empty = CanonicalState(street="turn")
+    populated = CanonicalState(
+        street="turn",
+        completed_postflop_streets=[
+            CompletedPostflopStreetHistory(
+                street="flop",
+                actions=[
+                    CompletedPostflopAction(actor="oop", action="check"),
+                    CompletedPostflopAction(actor="ip", action="check"),
+                ],
+            )
+        ],
+    )
+
+    assert "completed_postflop_streets" not in empty.model_dump(mode="json")
+    assert populated.model_dump(mode="json")["completed_postflop_streets"] == [
+        {
+            "street": "flop",
+            "actions": [
+                {"actor": "oop", "action": "check", "amount": None},
+                {"actor": "ip", "action": "check", "amount": None},
+            ],
+        }
+    ]
+
+
+def test_state_rejects_completed_history_at_or_after_current_street() -> None:
+    history = CompletedPostflopStreetHistory(
+        street="turn",
+        actions=[
+            CompletedPostflopAction(actor="oop", action="check"),
+            CompletedPostflopAction(actor="ip", action="check"),
+        ],
+    )
+
+    with pytest.raises(ValidationError, match="before the current street"):
+        CanonicalState(street="turn", completed_postflop_streets=[history])
+
+
+@pytest.mark.parametrize(
     "values",
     [
         {"actor": "dealer", "action": "raise", "amount": 2.5},
@@ -681,10 +775,19 @@ def test_canonical_state_copies_detected_values() -> None:
         preflop_action_history=[
             PreflopAction(actor="cutoff", action="raise", amount=2.5)
         ],
-        street="flop",
+        street="turn",
         facing_action="bet",
         postflop_action_history=[
             PostflopAction(actor="oop", action="bet", amount=2.5)
+        ],
+        completed_postflop_streets=[
+            CompletedPostflopStreetHistory(
+                street="flop",
+                actions=[
+                    CompletedPostflopAction(actor="oop", action="check"),
+                    CompletedPostflopAction(actor="ip", action="check"),
+                ],
+            )
         ],
         action_context="Cutoff bet 2.5 into 12.5",
     )
@@ -707,6 +810,10 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.opponent_commitment_total == 10
     assert canonical.facing_action == "bet"
     assert canonical.postflop_action_history == detected.postflop_action_history
+    assert (
+        canonical.completed_postflop_streets
+        == detected.completed_postflop_streets
+    )
     assert canonical.preflop_action_history == detected.preflop_action_history
     assert canonical.preflop_opener_position == "cutoff"
     assert canonical.preflop_open_size == 2.5

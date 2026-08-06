@@ -48,9 +48,10 @@ class HttpRecommendationProvider:
         for history_field in (
             "preflop_action_history",
             "postflop_action_history",
+            "completed_postflop_streets",
         ):
-            if not state_payload[history_field]:
-                del state_payload[history_field]
+            if not state_payload.get(history_field):
+                state_payload.pop(history_field, None)
 
         try:
             response = httpx.post(

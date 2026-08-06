@@ -270,10 +270,10 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         .sizing
         .map(|size| format!(" to {} BB", display_amount(size)))
         .unwrap_or_default();
-    let range_description = if range_source == "preflop_chart_single_raised_pot" {
-        "preflop-history-derived ranges"
-    } else {
+    let range_description = if range_source == "configured" {
         "configured ranges"
+    } else {
+        "preflop-history-derived ranges"
     };
     let explanation = format!(
         "Postflop solver analyzed a heads-up {street} tree using {range_description} and recommends {}{size_text} at {:.0}% frequency. The position was modeled as {position}; tree exploitability was {:.3} BB. Treat the result as training guidance because the ranges and modeled tree are assumptions.",
@@ -907,7 +907,9 @@ fn env_string(name: &str, default: &str) -> String {
 
 fn validated_range_source(value: &str) -> Result<&str, String> {
     match value {
-        "configured" | "preflop_chart_single_raised_pot" => Ok(value),
+        "configured" | "preflop_chart_single_raised_pot" | "preflop_chart_three_bet_pot" => {
+            Ok(value)
+        }
         _ => Err("POKER_POSTFLOP_SOLVER_RANGE_SOURCE is unsupported".to_string()),
     }
 }
@@ -1171,6 +1173,10 @@ mod tests {
         assert_eq!(
             validated_range_source("preflop_chart_single_raised_pot"),
             Ok("preflop_chart_single_raised_pot")
+        );
+        assert_eq!(
+            validated_range_source("preflop_chart_three_bet_pot"),
+            Ok("preflop_chart_three_bet_pot")
         );
         assert!(validated_range_source("automatic").is_err());
         assert_eq!(

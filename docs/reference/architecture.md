@@ -115,12 +115,15 @@ the compact reconstruction path. In `contextual` range mode, an exact reviewed
 heads-up flop state with an open-and-call preflop history whose actors match the
 reviewed seats replaces the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.
-The supported 2-4 BB open, matching call, optional legacy opener metadata, both
-seats, and reconstructed flop-root pot must agree. The chart's existing
-open-size policy widens or tightens the caller boundaries; otherwise configured
-ranges remain active. Turn and river states retain configured ranges because
-the original flop pot cannot be proven from the compact state. Range source and
-boundaries are retained as solver evidence. Raised
+An exact open/3-bet/call history can instead use the chart's adjusted 3-bettor
+range and the opener's continue band after excluding its 4-bet segment. The
+supported 2-4 BB open, matching final commitments, legal seat order, optional
+legacy opener metadata, both reviewed seats, and reconstructed flop-root pot
+must agree. Open and 3-bet size policies use the chart's standard-stack profile
+to widen or tighten the response boundaries; otherwise configured ranges remain
+active. Turn and river states retain configured ranges because the original
+flop pot cannot be proven from the compact state. Range source and boundaries
+are retained as solver evidence. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a

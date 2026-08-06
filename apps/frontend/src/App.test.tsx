@@ -10039,6 +10039,61 @@ describe("App", () => {
     expect(within(modeledRanges).getByText("QQ-22,AQs-A2s,ATo+")).toBeVisible();
   });
 
+  it("shows contextual three-bet pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "three-bet-postflop-job",
+      original_filename: "three-bet-postflop.png",
+      image_filename: "three-bet-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "ip",
+          range_source: "preflop_chart_three_bet_pot",
+          range_context: {
+            scenario: "three_bet_pot",
+            opener_position: "button",
+            three_bettor_position: "big_blind",
+            opening_size_bb: 2.5,
+            three_bet_size_bb: 8,
+            three_bettor_fraction: 0.12,
+            opener_continue_fraction: 0.18,
+            opener_four_bet_fraction: 0.065,
+          },
+          ranges: {
+            oop: "AA-77,AKs-AJs",
+            ip: "JJ-66,AQs-ATs",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText("Preflop chart · 3-bet pot")).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Button opens 2.5 BB · Big blind 3-bets 8 BB · Button calls",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText("3-bet 12% · flat 6.5%-18%")).toBeInTheDocument();
+  });
+
   it("omits malformed postflop context while preserving valid evidence", async () => {
     const malformedJob: JobRecord = {
       ...recommendedJob(),

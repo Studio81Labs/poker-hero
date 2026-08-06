@@ -17,7 +17,14 @@ from app.dataset_export import (
     ParserDatasetArchiveCase,
     build_parser_dataset_archive_from_cases,
 )
-from app.models import CanonicalState, Card, PostflopAction, PreflopAction
+from app.models import (
+    CanonicalState,
+    Card,
+    CompletedPostflopAction,
+    CompletedPostflopStreetHistory,
+    PostflopAction,
+    PreflopAction,
+)
 
 
 VALID_PNG = base64.b64decode(
@@ -115,6 +122,67 @@ def test_dataset_archive_preserves_structured_postflop_history() -> None:
     assert exported["postflop_action_history"] == [
         {"actor": "oop", "action": "bet", "amount": 2},
         {"actor": "ip", "action": "raise", "amount": 7},
+    ]
+
+
+def test_dataset_archive_preserves_completed_postflop_streets() -> None:
+    expected_state = expected_mock_state(
+        board_cards=[
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+            Card.from_code("3d"),
+        ],
+        street="turn",
+        completed_postflop_streets=[
+            CompletedPostflopStreetHistory(
+                street="flop",
+                actions=[
+                    CompletedPostflopAction(
+                        actor="oop",
+                        action="bet",
+                        amount=2,
+                    ),
+                    CompletedPostflopAction(
+                        actor="ip",
+                        action="call",
+                        amount=2,
+                    ),
+                ],
+            )
+        ],
+    )
+
+    archive = build_parser_dataset_archive_from_cases(
+        [
+            ParserDatasetArchiveCase(
+                job_id="a" * 32,
+                original_filename="turn.png",
+                image_suffix=".png",
+                image_source=VALID_PNG,
+                expected_state=expected_state,
+            )
+        ],
+        parser_provider="ocr_cv",
+        layout_profile="fortuna_nations",
+        max_archive_bytes=1024 * 1024,
+    )
+    try:
+        with ZipFile(BytesIO(archive.read())) as dataset:
+            manifest = json.loads(dataset.read("manifest.json"))
+    finally:
+        archive.close()
+
+    assert manifest["cases"][0]["expected_state"][
+        "completed_postflop_streets"
+    ] == [
+        {
+            "street": "flop",
+            "actions": [
+                {"actor": "oop", "action": "bet", "amount": 2},
+                {"actor": "ip", "action": "call", "amount": 2},
+            ],
+        }
     ]
 
 

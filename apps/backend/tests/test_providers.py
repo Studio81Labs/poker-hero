@@ -10,6 +10,8 @@ from app.config import Settings
 from app.models import (
     CanonicalState,
     Card,
+    CompletedPostflopAction,
+    CompletedPostflopStreetHistory,
     PostflopAction,
     PreflopAction,
     RecommendationRequest,
@@ -1973,6 +1975,77 @@ def test_local_solver_derives_ranges_from_complete_single_raised_pot(
     state.preflop_action_history = [
         PreflopAction(actor="button", action="raise", amount=2.5),
         PreflopAction(actor="big_blind", action="call", amount=2.5),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
+def test_local_solver_derives_ranges_on_turn_from_completed_flop(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
+        "'preflop_chart_single_raised_pot'\n"
+        "assert context['starting_effective_stack_bb'] == 100\n"
+        "assert context['stack_depth_source'] == 'reconstructed'\n"
+        "assert payload['state']['completed_postflop_streets'][0]['street'] == 'flop'\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual turn range response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.board_cards.append(Card.from_code("3d"))
+    state.street = "turn"
+    state.current_bet = 0
+    state.pot_size = 9.5
+    state.hero_stack = 95.5
+    state.opponent_stack = 95.5
+    state.effective_stack = 95.5
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.hero_position = "big_blind"
+    state.opponent_position = "button"
+    state.preflop_action_history = [
+        PreflopAction(actor="button", action="raise", amount=2.5),
+        PreflopAction(actor="big_blind", action="call", amount=2.5),
+    ]
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(
+                    actor="oop",
+                    action="bet",
+                    amount=2.0,
+                ),
+                CompletedPostflopAction(
+                    actor="ip",
+                    action="call",
+                    amount=2.0,
+                ),
+            ],
+        )
     ]
 
     result = provider.recommend(

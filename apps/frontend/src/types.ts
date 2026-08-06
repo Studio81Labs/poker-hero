@@ -6,6 +6,8 @@ export type PreflopPosition = "utg" | "hijack" | "cutoff" | "button" | "small_bl
 export type PreflopActionType = "call" | "raise";
 export type PostflopActor = "oop" | "ip";
 export type PostflopActionType = "check" | "bet" | "raise";
+export type CompletedPostflopActionType = "check" | "bet" | "raise" | "call";
+export type CompletedPostflopStreet = "flop" | "turn";
 export type RecommendationAction = "fold" | "check" | "call" | "bet" | "raise";
 export type TrainingCertainty = "low" | "medium" | "high";
 
@@ -18,6 +20,17 @@ export interface PostflopAction {
   actor: PostflopActor;
   action: PostflopActionType;
   amount: number | null;
+}
+
+export interface CompletedPostflopAction {
+  actor: PostflopActor;
+  action: CompletedPostflopActionType;
+  amount: number | null;
+}
+
+export interface CompletedPostflopStreetHistory {
+  street: CompletedPostflopStreet;
+  actions: CompletedPostflopAction[];
 }
 
 export interface PreflopAction {
@@ -46,6 +59,7 @@ export interface DetectedState {
   street: Street | null;
   facing_action: FacingAction | null;
   postflop_action_history?: PostflopAction[];
+  completed_postflop_streets?: CompletedPostflopStreetHistory[];
   action_context: string | null;
 }
 

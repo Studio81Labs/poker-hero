@@ -39,6 +39,10 @@ import type {
   BenchmarkReportSummary,
   CanonicalState,
   Card,
+  CompletedPostflopAction,
+  CompletedPostflopActionType,
+  CompletedPostflopStreet,
+  CompletedPostflopStreetHistory,
   DetectedState,
   FacingAction,
   JobHistory,
@@ -123,6 +127,7 @@ const EMPTY_STATE: CanonicalState = {
   street: null,
   facing_action: null,
   postflop_action_history: [],
+  completed_postflop_streets: [],
   action_context: null,
   user_approved: false,
 };
@@ -255,12 +260,20 @@ interface StateForm {
   street: StreetOption;
   facing_action: FacingActionOption;
   postflop_action_history: PostflopActionForm[];
+  completed_postflop_actions: CompletedPostflopActionForm[];
   action_context: string;
 }
 
 interface PostflopActionForm {
   actor: PostflopActor;
   action: PostflopActionType;
+  amount: string;
+}
+
+interface CompletedPostflopActionForm {
+  street: CompletedPostflopStreet;
+  actor: PostflopActor;
+  action: CompletedPostflopActionType;
   amount: string;
 }
 
@@ -949,6 +962,26 @@ function recommendationEvidenceFromRaw(
         label: "Range depth",
         value: `${rangeStackPolicy} · ${formatEvidenceBb(rangeStartingStack)} ${
           rangeStackSource === "reconstructed" ? "starting" : "assumed"
+        }`,
+      });
+    }
+    const rangeDecisionStreet = metadataString(
+      rangeContext?.decision_street,
+      20,
+    );
+    const rangeCompletedStreetCount = metadataNumber(
+      rangeContext?.completed_street_count,
+    );
+    if (
+      (rangeDecisionStreet === "turn" || rangeDecisionStreet === "river")
+      && rangeCompletedStreetCount !== null
+      && Number.isInteger(rangeCompletedStreetCount)
+      && rangeCompletedStreetCount > 0
+    ) {
+      details.push({
+        label: "Range verification",
+        value: `${metadataLabel(rangeDecisionStreet)} · ${rangeCompletedStreetCount} completed ${
+          rangeCompletedStreetCount === 1 ? "street" : "streets"
         }`,
       });
     }
@@ -2265,6 +2298,121 @@ function isCachedPostflopAction(value: unknown): value is PostflopAction {
     );
 }
 
+function isCachedCompletedPostflopAction(
+  value: unknown,
+): value is CompletedPostflopAction {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const action = value as Partial<CompletedPostflopAction>;
+  return (action.actor === "oop" || action.actor === "ip")
+    && (
+      action.action === "check"
+      || action.action === "bet"
+      || action.action === "raise"
+      || action.action === "call"
+    )
+    && (
+      action.action === "check"
+        ? action.amount === null
+        : typeof action.amount === "number"
+          && Number.isFinite(action.amount)
+          && action.amount > 0
+    );
+}
+
+function isCachedCompletedPostflopStreet(
+  value: unknown,
+): value is CompletedPostflopStreetHistory {
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  const history = value as Partial<CompletedPostflopStreetHistory>;
+  if (!(
+    (history.street === "flop" || history.street === "turn")
+    && Array.isArray(history.actions)
+    && history.actions.length >= 2
+    && history.actions.length <= 8
+    && history.actions.every(isCachedCompletedPostflopAction)
+  )) {
+    return false;
+  }
+
+  const contributions: Record<PostflopActor, number> = { oop: 0, ip: 0 };
+  let nextActor: PostflopActor = "oop";
+  let previousAction: CompletedPostflopActionType | null = null;
+  let terminal = false;
+  for (let index = 0; index < history.actions.length; index += 1) {
+    const action = history.actions[index];
+    if (terminal || action.actor !== nextActor) {
+      return false;
+    }
+    const opponent: PostflopActor = action.actor === "oop" ? "ip" : "oop";
+    const actorTotal = contributions[action.actor];
+    const opponentTotal = contributions[opponent];
+    const amount = action.amount ?? 0;
+    if (action.action === "check") {
+      if (Math.abs(actorTotal - opponentTotal) > SIZING_MATCH_TOLERANCE) {
+        return false;
+      }
+      terminal = previousAction === "check";
+    } else if (action.action === "bet") {
+      if (
+        Math.abs(actorTotal - opponentTotal) > SIZING_MATCH_TOLERANCE
+        || actorTotal > SIZING_MATCH_TOLERANCE
+      ) {
+        return false;
+      }
+      contributions[action.actor] = amount;
+    } else if (action.action === "raise") {
+      if (
+        actorTotal >= opponentTotal - SIZING_MATCH_TOLERANCE
+        || amount <= opponentTotal + SIZING_MATCH_TOLERANCE
+      ) {
+        return false;
+      }
+      contributions[action.actor] = amount;
+    } else {
+      if (
+        actorTotal >= opponentTotal - SIZING_MATCH_TOLERANCE
+        || Math.abs(amount - opponentTotal) > SIZING_MATCH_TOLERANCE
+      ) {
+        return false;
+      }
+      contributions[action.actor] = opponentTotal;
+      terminal = true;
+    }
+    if (terminal && index !== history.actions.length - 1) {
+      return false;
+    }
+    previousAction = action.action;
+    nextActor = opponent;
+  }
+  return terminal;
+}
+
+function isCachedCompletedPostflopHistory(
+  value: unknown,
+  currentStreet: unknown,
+): value is CompletedPostflopStreetHistory[] | undefined {
+  if (value === undefined) {
+    return true;
+  }
+  if (
+    !Array.isArray(value)
+    || value.length > 2
+    || !value.every(isCachedCompletedPostflopStreet)
+  ) {
+    return false;
+  }
+  const expected = currentStreet === "turn"
+    ? ["flop"]
+    : currentStreet === "river"
+      ? ["flop", "turn"]
+      : [];
+  return value.every((history, index) => history.street === expected[index]);
+}
+
 function isCachedPreflopAction(value: unknown): value is PreflopAction {
   if (value === null || typeof value !== "object") {
     return false;
@@ -2391,6 +2539,10 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
         && state.postflop_action_history.length <= 8
         && state.postflop_action_history.every(isCachedPostflopAction)
       )
+    )
+    && isCachedCompletedPostflopHistory(
+      state.completed_postflop_streets,
+      state.street,
     )
     && isNullableCachedString(state.action_context);
 }
@@ -3709,6 +3861,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     street: state.street,
     facing_action: state.facing_action ?? null,
     postflop_action_history: state.postflop_action_history ?? [],
+    completed_postflop_streets: state.completed_postflop_streets ?? [],
     action_context: state.action_context,
     user_approved: "user_approved" in state ? state.user_approved : false,
   };
@@ -3728,6 +3881,9 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
+  const showOpponentStack = showPostflopHistory
+    || state.street === "turn"
+    || state.street === "river";
   const showOpponentPosition = requiresOpponentPosition(state);
   const preflopActionHistory: PreflopActionForm[] = (state.preflop_action_history ?? []).map(
     (action) => ({
@@ -3739,13 +3895,21 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const structuredOpener = preflopActionHistory[0]?.action === "raise"
     ? preflopActionHistory[0]
     : null;
+  const completedPostflopActions: CompletedPostflopActionForm[] = (
+    state.completed_postflop_streets ?? []
+  ).flatMap((history) => history.actions.map((action) => ({
+    street: history.street,
+    actor: action.actor,
+    action: action.action,
+    amount: action.amount === null ? "" : String(action.amount),
+  })));
   return {
     hero_cards: formatCards(state.hero_cards),
     board_cards: formatCards(state.board_cards),
     pot_size: state.pot_size === null ? "" : String(state.pot_size),
     current_bet: state.current_bet === null ? "" : String(state.current_bet),
     hero_stack: state.hero_stack == null ? "" : String(state.hero_stack),
-    opponent_stack: showPostflopHistory && state.opponent_stack != null
+    opponent_stack: showOpponentStack && state.opponent_stack != null
       ? String(state.opponent_stack)
       : "",
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
@@ -3781,6 +3945,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
           amount: action.amount === null ? "" : String(action.amount),
         }))
       : [],
+    completed_postflop_actions: completedPostflopActions,
     action_context: state.action_context ?? "",
   };
 }
@@ -3792,6 +3957,9 @@ function formToCanonical(form: StateForm): CanonicalState {
   const showPostflopHistory = form.street !== ""
     && form.street !== "preflop"
     && form.facing_action === "raise";
+  const showOpponentStack = showPostflopHistory
+    || form.street === "turn"
+    || form.street === "river";
   const legacyPreflopOpenSize = form.preflop_action_history.length === 0
     ? parseOptionalNumber(form.preflop_open_size, "Opening size")
     : null;
@@ -3820,6 +3988,37 @@ function formToCanonical(form: StateForm): CanonicalState {
         return { actor: item.actor, action: item.action, amount };
       })
     : [];
+  const completedPostflopActions: Array<
+    CompletedPostflopAction & { street: CompletedPostflopStreet }
+  > = form.street === "turn" || form.street === "river"
+    ? form.completed_postflop_actions.map((item, index) => {
+        const amount = item.action === "check"
+          ? null
+          : parseOptionalNumber(
+              item.amount,
+              `Completed action ${index + 1} amount`,
+            );
+        if (item.action !== "check" && (amount === null || amount <= 0)) {
+          throw new Error(
+            `Completed action ${index + 1} amount must be greater than 0`,
+          );
+        }
+        return {
+          street: item.street,
+          actor: item.actor,
+          action: item.action,
+          amount,
+        };
+      })
+    : [];
+  const completedPostflopStreets: CompletedPostflopStreetHistory[] = (
+    ["flop", "turn"] as const
+  ).flatMap((street) => {
+    const actions = completedPostflopActions
+      .filter((action) => action.street === street)
+      .map(({ actor, action, amount }) => ({ actor, action, amount }));
+    return actions.length > 0 ? [{ street, actions }] : [];
+  });
   const potSize = parseOptionalNumber(form.pot_size, "Pot");
   const playersInHand = parseOptionalInteger(form.players_in_hand, "Players in hand");
   const currentBet = parseOptionalNumber(form.current_bet, "Current bet");
@@ -3919,7 +4118,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     pot_size: potSize,
     current_bet: currentBet,
     hero_stack: parseOptionalNumber(form.hero_stack, "Hero stack"),
-    opponent_stack: showPostflopHistory
+    opponent_stack: showOpponentStack
       ? parseOptionalNumber(form.opponent_stack, "Opponent stack")
       : null,
     effective_stack: parseOptionalNumber(form.effective_stack, "Effective stack"),
@@ -3946,6 +4145,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     street: form.street === "" ? null : form.street,
     facing_action: form.facing_action === "" ? null : form.facing_action,
     postflop_action_history: postflopActionHistory,
+    completed_postflop_streets: completedPostflopStreets,
     action_context: form.action_context.trim() === "" ? null : form.action_context.trim(),
     user_approved: false,
   };
@@ -3972,6 +4172,7 @@ function approvalKey(state: CanonicalState): string {
     street: state.street,
     facing_action: state.facing_action ?? null,
     postflop_action_history: state.postflop_action_history ?? [],
+    completed_postflop_streets: state.completed_postflop_streets ?? [],
     action_context: state.action_context,
   });
 }
@@ -7038,9 +7239,20 @@ export default function App() {
       const usesPostflopHistory = next.facing_action === "raise"
         && next.street !== ""
         && next.street !== "preflop";
+      const usesCompletedPostflopHistory = next.street === "turn"
+        || next.street === "river";
       if (!usesPostflopHistory) {
-        next.opponent_stack = "";
         next.postflop_action_history = [];
+      }
+      if (!usesCompletedPostflopHistory) {
+        next.completed_postflop_actions = [];
+      } else if (next.street === "turn") {
+        next.completed_postflop_actions = next.completed_postflop_actions.filter(
+          (action) => action.street === "flop",
+        );
+      }
+      if (!usesPostflopHistory && !usesCompletedPostflopHistory) {
+        next.opponent_stack = "";
       }
       const usesOpponentPosition = requiresOpponentPosition(next);
       if (!usesOpponentPosition) {
@@ -7144,6 +7356,57 @@ export default function App() {
     updateForm(
       "postflop_action_history",
       form.postflop_action_history.filter((_, actionIndex) => actionIndex !== index),
+    );
+  }
+
+  function addCompletedPostflopAction() {
+    const previous = form.completed_postflop_actions[
+      form.completed_postflop_actions.length - 1
+    ];
+    const street: CompletedPostflopStreet = form.street === "river"
+      ? previous?.street ?? "flop"
+      : "flop";
+    const streetActionCount = form.completed_postflop_actions.filter(
+      (action) => action.street === street,
+    ).length;
+    updateForm("completed_postflop_actions", [
+      ...form.completed_postflop_actions,
+      {
+        street,
+        actor: streetActionCount % 2 === 0 ? "oop" : "ip",
+        action: "check",
+        amount: "",
+      },
+    ]);
+  }
+
+  function updateCompletedPostflopAction(
+    index: number,
+    field: keyof CompletedPostflopActionForm,
+    value: string,
+  ) {
+    const next = form.completed_postflop_actions.map((action, actionIndex) => {
+      if (actionIndex !== index) {
+        return action;
+      }
+      const updated = {
+        ...action,
+        [field]: value,
+      } as CompletedPostflopActionForm;
+      if (field === "action" && value === "check") {
+        updated.amount = "";
+      }
+      return updated;
+    });
+    updateForm("completed_postflop_actions", next);
+  }
+
+  function removeCompletedPostflopAction(index: number) {
+    updateForm(
+      "completed_postflop_actions",
+      form.completed_postflop_actions.filter(
+        (_, actionIndex) => actionIndex !== index,
+      ),
     );
   }
 
@@ -8518,81 +8781,160 @@ export default function App() {
                   <option value="raise">Raise or check-raise</option>
                 </select>
               </Field>
-              {form.street !== "" && form.street !== "preflop" && form.facing_action === "raise" ? (
-                <>
-                  <Field label="Opponent stack" confidence="manual">
-                    <input
-                      disabled={stateControlsDisabled}
-                      inputMode="decimal"
-                      value={form.opponent_stack}
-                      onChange={(event) => updateForm("opponent_stack", event.target.value)}
-                      placeholder="BB behind"
-                    />
-                  </Field>
-                  <div className="action-history-field">
-                    <div className="action-history-header">
-                      <div>
-                        <strong>Postflop history (total BB)</strong>
-                      </div>
-                      <button
-                        type="button"
-                        className="action-history-add"
-                        disabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
-                        onClick={addPostflopAction}
-                      >
-                        <Plus size={13} aria-hidden="true" />
-                        Add action
-                      </button>
+              {(
+                (form.street !== "" && form.street !== "preflop" && form.facing_action === "raise")
+                || form.street === "turn"
+                || form.street === "river"
+              ) ? (
+                <Field label="Opponent stack" confidence="manual">
+                  <input
+                    disabled={stateControlsDisabled}
+                    inputMode="decimal"
+                    value={form.opponent_stack}
+                    onChange={(event) => updateForm("opponent_stack", event.target.value)}
+                    placeholder="BB behind"
+                  />
+                </Field>
+              ) : null}
+              {form.street === "turn" || form.street === "river" ? (
+                <div className="action-history-field">
+                  <div className="action-history-header">
+                    <div>
+                      <strong>Completed streets (total BB)</strong>
                     </div>
-                    {form.postflop_action_history.length > 0 ? (
-                      <div className="action-history-list">
-                        {form.postflop_action_history.map((action, index) => (
-                          <div className="action-history-row" key={index}>
-                            <span>{index + 1}</span>
-                            <select
-                              aria-label={`Action ${index + 1} actor`}
-                              disabled={stateControlsDisabled}
-                              value={action.actor}
-                              onChange={(event) => updatePostflopAction(index, "actor", event.target.value)}
-                            >
-                              <option value="oop">OOP</option>
-                              <option value="ip">IP</option>
-                            </select>
-                            <select
-                              aria-label={`Action ${index + 1} type`}
-                              disabled={stateControlsDisabled}
-                              value={action.action}
-                              onChange={(event) => updatePostflopAction(index, "action", event.target.value)}
-                            >
-                              <option value="check">Check</option>
-                              <option value="bet">Bet</option>
-                              <option value="raise">Raise to</option>
-                            </select>
-                            <input
-                              aria-label={`Action ${index + 1} amount`}
-                              disabled={stateControlsDisabled || action.action === "check"}
-                              inputMode="decimal"
-                              value={action.amount}
-                              onChange={(event) => updatePostflopAction(index, "amount", event.target.value)}
-                              placeholder={action.action === "check" ? "-" : "BB"}
-                            />
-                            <button
-                              type="button"
-                              disabled={stateControlsDisabled}
-                              onClick={() => removePostflopAction(index)}
-                              title={`Remove action ${index + 1}`}
-                              aria-label={`Remove action ${index + 1}`}
-                            >
-                              <X size={13} aria-hidden="true" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p>No actions recorded</p>
-                    )}
+                    <button
+                      type="button"
+                      className="action-history-add"
+                      disabled={stateControlsDisabled || form.completed_postflop_actions.length >= 16}
+                      onClick={addCompletedPostflopAction}
+                    >
+                      <Plus size={13} aria-hidden="true" />
+                      Add action
+                    </button>
                   </div>
-                </>
+                  {form.completed_postflop_actions.length > 0 ? (
+                    <div className="action-history-list">
+                      {form.completed_postflop_actions.map((action, index) => (
+                        <div className="action-history-row completed-action-history-row" key={index}>
+                          <span>{index + 1}</span>
+                          <select
+                            aria-label={`Completed action ${index + 1} street`}
+                            disabled={stateControlsDisabled}
+                            value={action.street}
+                            onChange={(event) => updateCompletedPostflopAction(index, "street", event.target.value)}
+                          >
+                            <option value="flop">Flop</option>
+                            {form.street === "river" ? <option value="turn">Turn</option> : null}
+                          </select>
+                          <select
+                            aria-label={`Completed action ${index + 1} actor`}
+                            disabled={stateControlsDisabled}
+                            value={action.actor}
+                            onChange={(event) => updateCompletedPostflopAction(index, "actor", event.target.value)}
+                          >
+                            <option value="oop">OOP</option>
+                            <option value="ip">IP</option>
+                          </select>
+                          <select
+                            aria-label={`Completed action ${index + 1} type`}
+                            disabled={stateControlsDisabled}
+                            value={action.action}
+                            onChange={(event) => updateCompletedPostflopAction(index, "action", event.target.value)}
+                          >
+                            <option value="check">Check</option>
+                            <option value="bet">Bet</option>
+                            <option value="raise">Raise to</option>
+                            <option value="call">Call to</option>
+                          </select>
+                          <input
+                            aria-label={`Completed action ${index + 1} amount`}
+                            disabled={stateControlsDisabled || action.action === "check"}
+                            inputMode="decimal"
+                            value={action.amount}
+                            onChange={(event) => updateCompletedPostflopAction(index, "amount", event.target.value)}
+                            placeholder={action.action === "check" ? "-" : "BB"}
+                          />
+                          <button
+                            type="button"
+                            disabled={stateControlsDisabled}
+                            onClick={() => removeCompletedPostflopAction(index)}
+                            title={`Remove completed action ${index + 1}`}
+                            aria-label={`Remove completed action ${index + 1}`}
+                          >
+                            <X size={13} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No completed streets recorded</p>
+                  )}
+                </div>
+              ) : null}
+              {form.street !== "" && form.street !== "preflop" && form.facing_action === "raise" ? (
+                <div className="action-history-field">
+                  <div className="action-history-header">
+                    <div>
+                      <strong>Current street history (total BB)</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="action-history-add"
+                      disabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
+                      onClick={addPostflopAction}
+                    >
+                      <Plus size={13} aria-hidden="true" />
+                      Add action
+                    </button>
+                  </div>
+                  {form.postflop_action_history.length > 0 ? (
+                    <div className="action-history-list">
+                      {form.postflop_action_history.map((action, index) => (
+                        <div className="action-history-row" key={index}>
+                          <span>{index + 1}</span>
+                          <select
+                            aria-label={`Action ${index + 1} actor`}
+                            disabled={stateControlsDisabled}
+                            value={action.actor}
+                            onChange={(event) => updatePostflopAction(index, "actor", event.target.value)}
+                          >
+                            <option value="oop">OOP</option>
+                            <option value="ip">IP</option>
+                          </select>
+                          <select
+                            aria-label={`Action ${index + 1} type`}
+                            disabled={stateControlsDisabled}
+                            value={action.action}
+                            onChange={(event) => updatePostflopAction(index, "action", event.target.value)}
+                          >
+                            <option value="check">Check</option>
+                            <option value="bet">Bet</option>
+                            <option value="raise">Raise to</option>
+                          </select>
+                          <input
+                            aria-label={`Action ${index + 1} amount`}
+                            disabled={stateControlsDisabled || action.action === "check"}
+                            inputMode="decimal"
+                            value={action.amount}
+                            onChange={(event) => updatePostflopAction(index, "amount", event.target.value)}
+                            placeholder={action.action === "check" ? "-" : "BB"}
+                          />
+                          <button
+                            type="button"
+                            disabled={stateControlsDisabled}
+                            onClick={() => removePostflopAction(index)}
+                            title={`Remove action ${index + 1}`}
+                            aria-label={`Remove action ${index + 1}`}
+                          >
+                            <X size={13} aria-hidden="true" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No current-street actions recorded</p>
+                  )}
+                </div>
               ) : null}
               {form.street === "preflop" && form.facing_action === "raise" ? (
                 <>

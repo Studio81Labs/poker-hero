@@ -51,11 +51,14 @@ def select_postflop_ranges(
     if (
         not contextual_enabled
         or hero_relative_position is None
-        or state.street != "flop"
+        or state.street not in {"flop", "turn", "river"}
     ):
         return configured
 
-    single_raised_context = _single_raised_pot_context(state)
+    single_raised_context = _single_raised_pot_context(
+        state,
+        hero_relative_position,
+    )
     if single_raised_context is not None:
         selection = _single_raised_pot_selection(
             state,
@@ -65,7 +68,10 @@ def select_postflop_ranges(
         if selection is not None:
             return selection
 
-    three_bet_context = _three_bet_pot_context(state)
+    three_bet_context = _three_bet_pot_context(
+        state,
+        hero_relative_position,
+    )
     if three_bet_context is not None:
         selection = _three_bet_pot_selection(
             state,
@@ -75,7 +81,10 @@ def select_postflop_ranges(
         if selection is not None:
             return selection
 
-    four_bet_context = _four_bet_pot_context(state)
+    four_bet_context = _four_bet_pot_context(
+        state,
+        hero_relative_position,
+    )
     if four_bet_context is not None:
         selection = _four_bet_pot_selection(
             state,
@@ -365,16 +374,26 @@ def _selection_for_ranges(
         if hero_relative_position == "oop"
         else (opponent_range, hero_range)
     )
+    resolved_context = context
+    if state.street in {"turn", "river"}:
+        resolved_context = {
+            **context,
+            "decision_street": state.street,
+            "completed_street_count": float(
+                len(state.completed_postflop_streets)
+            ),
+        }
     return PostflopRangeSelection(
         oop_range=oop_range,
         ip_range=ip_range,
         source=source,
-        context=context,
+        context=resolved_context,
     )
 
 
 def _single_raised_pot_context(
     state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
 ) -> tuple[Position, Position, float] | None:
     if state.players_in_hand != 2 or len(state.preflop_action_history) != 2:
         return None
@@ -414,7 +433,7 @@ def _single_raised_pot_context(
         > MONEY_TOLERANCE_BB
     ):
         return None
-    flop_root_pot = _flop_root_pot(state)
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
     if not pot_matches_preflop_actions(
         flop_root_pot,
         (
@@ -428,6 +447,7 @@ def _single_raised_pot_context(
 
 def _three_bet_pot_context(
     state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
 ) -> tuple[Position, Position, float, float] | None:
     if state.players_in_hand != 2 or len(state.preflop_action_history) != 3:
         return None
@@ -482,7 +502,7 @@ def _three_bet_pot_context(
         > MONEY_TOLERANCE_BB
     ):
         return None
-    flop_root_pot = _flop_root_pot(state)
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
     if not pot_matches_preflop_actions(
         flop_root_pot,
         (
@@ -501,6 +521,7 @@ def _three_bet_pot_context(
 
 def _four_bet_pot_context(
     state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
 ) -> tuple[Position, Position, float, float, float] | None:
     if state.players_in_hand != 2 or len(state.preflop_action_history) != 4:
         return None
@@ -564,7 +585,7 @@ def _four_bet_pot_context(
         > MONEY_TOLERANCE_BB
     ):
         return None
-    flop_root_pot = _flop_root_pot(state)
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
     if not pot_matches_preflop_actions(
         flop_root_pot,
         (
@@ -606,7 +627,7 @@ def _reconstructed_starting_effective_stack(
 ) -> float | None:
     if state.effective_stack is None:
         return None
-    contributions = _current_street_contributions(
+    contributions = _postflop_contributions(
         state,
         hero_relative_position,
     )
@@ -721,23 +742,57 @@ def _current_street_contributions(
     return contributions
 
 
-def _flop_root_pot(state: CanonicalState) -> float | None:
-    if state.street != "flop" or state.pot_size is None:
+def _postflop_contributions(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> dict[Literal["ip", "oop"], float] | None:
+    expected_completed = {
+        "flop": (),
+        "turn": ("flop",),
+        "river": ("flop", "turn"),
+    }.get(state.street)
+    if expected_completed is None:
         return None
-    if state.postflop_action_history:
-        contributions = {"oop": 0.0, "ip": 0.0}
-        for action in state.postflop_action_history:
+
+    completed_streets = tuple(
+        history.street for history in state.completed_postflop_streets
+    )
+    if completed_streets != expected_completed:
+        return None
+
+    contributions: dict[Literal["ip", "oop"], float] = {
+        "oop": 0.0,
+        "ip": 0.0,
+    }
+    for history in state.completed_postflop_streets:
+        street_contributions: dict[Literal["ip", "oop"], float] = {
+            "oop": 0.0,
+            "ip": 0.0,
+        }
+        for action in history.actions:
             if action.amount is not None:
-                contributions[action.actor] = action.amount
-        root_pot = state.pot_size - sum(contributions.values())
-    elif (state.current_bet or 0) > 0:
-        if state.facing_action != "bet":
-            return None
-        root_pot = state.pot_size - (state.current_bet or 0)
-    else:
-        if state.facing_action is not None:
-            return None
-        root_pot = state.pot_size
+                street_contributions[action.actor] = action.amount
+        for actor, amount in street_contributions.items():
+            contributions[actor] += amount
+
+    current = _current_street_contributions(state, hero_relative_position)
+    if current is None:
+        return None
+    for actor, amount in current.items():
+        contributions[actor] += amount
+    return contributions
+
+
+def _flop_root_pot(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> float | None:
+    if state.pot_size is None:
+        return None
+    contributions = _postflop_contributions(state, hero_relative_position)
+    if contributions is None:
+        return None
+    root_pot = state.pot_size - sum(contributions.values())
     return root_pot if root_pot > 0 else None
 
 

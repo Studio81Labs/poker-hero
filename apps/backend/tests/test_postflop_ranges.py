@@ -3,7 +3,13 @@ from __future__ import annotations
 import pytest
 
 from app.config import DEFAULT_POSTFLOP_IP_RANGE, DEFAULT_POSTFLOP_OOP_RANGE
-from app.models import CanonicalState, PostflopAction, PreflopAction
+from app.models import (
+    CanonicalState,
+    CompletedPostflopAction,
+    CompletedPostflopStreetHistory,
+    PostflopAction,
+    PreflopAction,
+)
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import select_postflop_ranges
 from app.solvers.preflop_chart import (
@@ -111,6 +117,186 @@ def test_assigns_contextual_ranges_by_relative_position() -> None:
 
     assert opener_hero.ip_range == caller_hero.ip_range
     assert opener_hero.oop_range == caller_hero.oop_range
+
+
+def test_selects_single_raised_ranges_on_turn_after_completed_flop() -> None:
+    state = single_raised_pot_state()
+    state.street = "turn"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_single_raised_pot"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_reconstructs_turn_range_depth_after_flop_bet_call() -> None:
+    state = single_raised_pot_state()
+    state.street = "turn"
+    state.pot_size = 9.5
+    state.hero_stack = 95.5
+    state.opponent_stack = 95.5
+    state.effective_stack = 95.5
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(
+                    actor="oop",
+                    action="bet",
+                    amount=2.0,
+                ),
+                CompletedPostflopAction(
+                    actor="ip",
+                    action="call",
+                    amount=2.0,
+                ),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_single_raised_pot"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_selects_single_raised_ranges_on_river_after_exact_prior_streets() -> None:
+    state = single_raised_pot_state()
+    state.street = "river"
+    state.pot_size = 11.5
+    state.hero_stack = 94.5
+    state.opponent_stack = 94.5
+    state.effective_stack = 94.5
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        ),
+        CompletedPostflopStreetHistory(
+            street="turn",
+            actions=[
+                CompletedPostflopAction(
+                    actor="oop",
+                    action="bet",
+                    amount=3.0,
+                ),
+                CompletedPostflopAction(
+                    actor="ip",
+                    action="call",
+                    amount=3.0,
+                ),
+            ],
+        ),
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_single_raised_pot"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["decision_street"] == "river"
+    assert selection.context["completed_street_count"] == 2.0
+
+
+def test_selects_turn_ranges_while_facing_a_current_street_bet() -> None:
+    state = single_raised_pot_state()
+    state.street = "turn"
+    state.pot_size = 11.5
+    state.current_bet = 2.0
+    state.facing_action = "bet"
+    state.hero_stack = 95.5
+    state.opponent_stack = 93.5
+    state.effective_stack = 93.5
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(
+                    actor="oop",
+                    action="bet",
+                    amount=2.0,
+                ),
+                CompletedPostflopAction(
+                    actor="ip",
+                    action="call",
+                    amount=2.0,
+                ),
+            ],
+        )
+    ]
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="check"),
+        PostflopAction(actor="ip", action="bet", amount=2.0),
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_single_raised_pot"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+
+
+def test_keeps_configured_ranges_for_incomplete_river_history() -> None:
+    state = single_raised_pot_state()
+    state.street = "river"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "configured"
+
+
+def test_keeps_configured_ranges_for_contradictory_completed_street_pot() -> None:
+    state = single_raised_pot_state()
+    state.street = "turn"
+    state.pot_size = 10.5
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(
+                    actor="oop",
+                    action="bet",
+                    amount=2.0,
+                ),
+                CompletedPostflopAction(
+                    actor="ip",
+                    action="call",
+                    amount=2.0,
+                ),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "configured"
 
 
 def test_selects_chart_ranges_for_heads_up_three_bet_pot() -> None:

@@ -29,6 +29,8 @@ PreflopPosition = Literal[
 PreflopActionType = Literal["call", "raise"]
 PostflopActor = Literal["oop", "ip"]
 PostflopActionType = Literal["check", "bet", "raise"]
+CompletedPostflopActionType = Literal["check", "bet", "raise", "call"]
+CompletedPostflopStreet = Literal["flop", "turn"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
 TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
@@ -210,6 +212,113 @@ class PostflopAction(BaseModel):
         return self
 
 
+class CompletedPostflopAction(BaseModel):
+    actor: PostflopActor
+    action: CompletedPostflopActionType
+    amount: PositiveFiniteNumber | None = None
+
+    @model_validator(mode="after")
+    def validate_amount(self) -> Self:
+        if self.action == "check" and self.amount is not None:
+            raise ValueError("A completed postflop check cannot have an amount")
+        if self.action in {"bet", "raise", "call"} and self.amount is None:
+            raise ValueError(
+                f"A completed postflop {self.action} requires an amount"
+            )
+        return self
+
+
+class CompletedPostflopStreetHistory(BaseModel):
+    street: CompletedPostflopStreet
+    actions: list[CompletedPostflopAction] = Field(
+        min_length=2,
+        max_length=8,
+    )
+
+    @model_validator(mode="after")
+    def validate_completed_line(self) -> Self:
+        contributions: dict[PostflopActor, float] = {"oop": 0.0, "ip": 0.0}
+        next_actor: PostflopActor = "oop"
+        terminal = False
+        previous_action: CompletedPostflopActionType | None = None
+
+        for index, action in enumerate(self.actions):
+            if terminal:
+                raise ValueError(
+                    f"The completed {self.street} history continues after its terminal action"
+                )
+            if action.actor != next_actor:
+                raise ValueError(
+                    f"The completed {self.street} history must alternate from OOP"
+                )
+            opponent: PostflopActor = "ip" if action.actor == "oop" else "oop"
+            actor_total = contributions[action.actor]
+            opponent_total = contributions[opponent]
+
+            if action.action == "check":
+                if not math.isclose(
+                    actor_total,
+                    opponent_total,
+                    rel_tol=0,
+                    abs_tol=0.01,
+                ):
+                    raise ValueError(
+                        f"A completed {self.street} check cannot face a wager"
+                    )
+                terminal = previous_action == "check"
+            elif action.action == "bet":
+                if (
+                    not math.isclose(
+                        actor_total,
+                        opponent_total,
+                        rel_tol=0,
+                        abs_tol=0.01,
+                    )
+                    or actor_total > 0.01
+                ):
+                    raise ValueError(
+                        f"A completed {self.street} bet requires an unopened street"
+                    )
+                contributions[action.actor] = action.amount or 0.0
+            elif action.action == "raise":
+                if (
+                    actor_total >= opponent_total - 0.01
+                    or (action.amount or 0.0) <= opponent_total + 0.01
+                ):
+                    raise ValueError(
+                        f"A completed {self.street} raise must increase a faced wager"
+                    )
+                contributions[action.actor] = action.amount or 0.0
+            else:
+                if (
+                    actor_total >= opponent_total - 0.01
+                    or not math.isclose(
+                        action.amount or 0.0,
+                        opponent_total,
+                        rel_tol=0,
+                        abs_tol=0.01,
+                    )
+                ):
+                    raise ValueError(
+                        f"A completed {self.street} call must match the faced total"
+                    )
+                contributions[action.actor] = opponent_total
+                terminal = True
+
+            previous_action = action.action
+            next_actor = opponent
+            if terminal and index != len(self.actions) - 1:
+                raise ValueError(
+                    f"The completed {self.street} history continues after its terminal action"
+                )
+
+        if not terminal:
+            raise ValueError(
+                f"The completed {self.street} history must end with check-check or a call"
+            )
+        return self
+
+
 class PreflopAction(BaseModel):
     actor: PreflopPosition
     action: PreflopActionType
@@ -222,7 +331,10 @@ def normalize_benchmark_value(field_name: BenchmarkFieldName, value: Any) -> Any
     if field_name in {"hero_cards", "board_cards"}:
         codes = [card.code if isinstance(card, Card) else card for card in value]
         return sorted(codes)
-    if field_name in {"preflop_action_history", "postflop_action_history"}:
+    if field_name in {
+        "preflop_action_history",
+        "postflop_action_history",
+    }:
         action_model = (
             PreflopAction
             if field_name == "preflop_action_history"
@@ -268,6 +380,11 @@ class DetectedState(BaseModel):
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     postflop_action_history: list[PostflopAction] = Field(default_factory=list, max_length=8)
+    completed_postflop_streets: list[CompletedPostflopStreetHistory] = Field(
+        default_factory=list,
+        max_length=2,
+        exclude_if=lambda value: not value,
+    )
     action_context: str | None = Field(default=None)
 
     @field_validator("hero_cards")
@@ -286,6 +403,7 @@ class DetectedState(BaseModel):
         _validate_opponents_at_current_bet(self)
         _validate_opponent_wager(self)
         _validate_opponent_commitment_total(self)
+        _validate_completed_postflop_streets(self)
         return self
 
 
@@ -324,6 +442,11 @@ class CanonicalState(BaseModel):
     street: Street | None = Field(default=None)
     facing_action: FacingAction | None = Field(default=None)
     postflop_action_history: list[PostflopAction] = Field(default_factory=list, max_length=8)
+    completed_postflop_streets: list[CompletedPostflopStreetHistory] = Field(
+        default_factory=list,
+        max_length=2,
+        exclude_if=lambda value: not value,
+    )
     action_context: str | None = Field(default=None)
     user_approved: bool = Field(default=False)
 
@@ -343,6 +466,7 @@ class CanonicalState(BaseModel):
         _validate_opponents_at_current_bet(self)
         _validate_opponent_wager(self)
         _validate_opponent_commitment_total(self)
+        _validate_completed_postflop_streets(self)
         return self
 
     @classmethod
@@ -368,7 +492,29 @@ class CanonicalState(BaseModel):
             street=state.street,
             facing_action=state.facing_action,
             postflop_action_history=state.postflop_action_history,
+            completed_postflop_streets=state.completed_postflop_streets,
             action_context=state.action_context,
+        )
+
+
+def _validate_completed_postflop_streets(
+    state: DetectedState | CanonicalState,
+) -> None:
+    histories = state.completed_postflop_streets
+    if not histories:
+        return
+
+    expected_before = {
+        "preflop": (),
+        "flop": (),
+        "turn": ("flop",),
+        "river": ("flop", "turn"),
+        None: (),
+    }[state.street]
+    streets = tuple(history.street for history in histories)
+    if streets != expected_before[: len(streets)]:
+        raise ValueError(
+            "Completed postflop streets must be unique, chronological, and before the current street"
         )
 
 

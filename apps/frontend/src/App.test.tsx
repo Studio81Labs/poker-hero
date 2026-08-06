@@ -9987,6 +9987,8 @@ describe("App", () => {
             stack_depth_policy: "standard",
             starting_effective_stack_bb: 100,
             stack_depth_source: "reconstructed",
+            decision_street: "turn",
+            completed_street_count: 1,
             opener_fraction: 0.45,
             caller_continue_fraction: 0.4,
             caller_reraise_fraction: 0.12,
@@ -10032,6 +10034,7 @@ describe("App", () => {
     expect(within(decisionContext).getByText("1% pot exploitability")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Preflop chart · single-raised pot")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Standard · 100 BB starting")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Turn · 1 completed street")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Button opens 2.5 BB · Big blind calls")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Open 45% · flat 12%-40%")).toBeInTheDocument();
 
@@ -11460,6 +11463,69 @@ describe("App", () => {
     expect(payload.postflop_action_history).toEqual([
       { actor: "oop", action: "bet", amount: 2 },
       { actor: "ip", action: "raise", amount: 7 },
+    ]);
+  });
+
+  it("loads and submits completed street history for a turn decision", async () => {
+    const turnState: DetectedState = {
+      ...detectedState,
+      board_cards: [
+        ...detectedState.board_cards,
+        { rank: "2", suit: "diamonds" },
+      ],
+      pot_size: 9.5,
+      current_bet: 0,
+      hero_stack: 95.5,
+      opponent_stack: 95.5,
+      effective_stack: 95.5,
+      players_in_hand: 2,
+      hero_position: "OOP",
+      opponent_position: "IP",
+      street: "turn",
+      facing_action: null,
+      completed_postflop_streets: [
+        {
+          street: "flop",
+          actions: [
+            { actor: "oop", action: "bet", amount: 2 },
+            { actor: "ip", action: "call", amount: 2 },
+          ],
+        },
+      ],
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: turnState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    expect(await screen.findByLabelText("Completed action 1 street")).toHaveValue("flop");
+    expect(screen.getByLabelText("Completed action 1 actor")).toHaveValue("oop");
+    expect(screen.getByLabelText("Completed action 1 type")).toHaveValue("bet");
+    expect(screen.getByLabelText("Completed action 1 amount")).toHaveValue("2");
+    expect(screen.getByLabelText("Completed action 2 actor")).toHaveValue("ip");
+    expect(screen.getByLabelText("Completed action 2 type")).toHaveValue("call");
+    expect(screen.getByLabelText(/Opponent stack/)).toHaveValue("95.5");
+
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.completed_postflop_streets).toEqual([
+      {
+        street: "flop",
+        actions: [
+          { actor: "oop", action: "bet", amount: 2 },
+          { actor: "ip", action: "call", amount: 2 },
+        ],
+      },
     ]);
   });
 

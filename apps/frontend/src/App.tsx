@@ -928,6 +928,30 @@ function recommendationEvidenceFromRaw(
     const rangeContext = contextualRangeSource
       ? metadataRecord(raw.range_context)
       : null;
+    const rangeStackPolicy = metadataLabel(rangeContext?.stack_depth_policy);
+    const rangeStartingStack = metadataNumber(
+      rangeContext?.starting_effective_stack_bb,
+    );
+    const rangeStackSource = metadataString(
+      rangeContext?.stack_depth_source,
+      40,
+    );
+    if (
+      rangeStackPolicy
+      && rangeStartingStack !== null
+      && rangeStartingStack > 0
+      && (
+        rangeStackSource === "reconstructed"
+        || rangeStackSource === "standard_assumption"
+      )
+    ) {
+      details.push({
+        label: "Range depth",
+        value: `${rangeStackPolicy} · ${formatEvidenceBb(rangeStartingStack)} ${
+          rangeStackSource === "reconstructed" ? "starting" : "assumed"
+        }`,
+      });
+    }
     if (rawRangeSource === "preflop_chart_single_raised_pot") {
       const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
       const rangeCallerPosition = metadataLabel(rangeContext?.caller_position);

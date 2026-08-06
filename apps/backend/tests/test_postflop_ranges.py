@@ -22,6 +22,7 @@ def single_raised_pot_state(*, hero_position: str = "big_blind") -> CanonicalSta
         street="flop",
         pot_size=5.5,
         current_bet=0,
+        effective_stack=97.5,
         preflop_action_history=[
             PreflopAction(actor="button", action="raise", amount=2.5),
             PreflopAction(actor="big_blind", action="call", amount=2.5),
@@ -38,6 +39,7 @@ def three_bet_pot_state(*, hero_position: str = "button") -> CanonicalState:
         street="flop",
         pot_size=16.5,
         current_bet=0,
+        effective_stack=92.0,
         preflop_action_history=[
             PreflopAction(actor="button", action="raise", amount=2.5),
             PreflopAction(actor="big_blind", action="raise", amount=8.0),
@@ -55,6 +57,7 @@ def four_bet_pot_state(*, hero_position: str = "button") -> CanonicalState:
         street="flop",
         pot_size=40.5,
         current_bet=0,
+        effective_stack=80.0,
         preflop_action_history=[
             PreflopAction(actor="button", action="raise", amount=2.5),
             PreflopAction(actor="big_blind", action="raise", amount=8.0),
@@ -86,6 +89,10 @@ def test_selects_chart_ranges_for_heads_up_single_raised_pot() -> None:
         "caller_position": "big_blind",
         "opening_size_bb": 2.5,
         "open_size_policy": "standard",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
+        "opener_base_fraction": 0.45,
         "opener_fraction": 0.45,
         "caller_base_continue_fraction": 0.4,
         "caller_base_reraise_fraction": 0.12,
@@ -118,6 +125,9 @@ def test_selects_chart_ranges_for_heads_up_three_bet_pot() -> None:
         "three_bet_size_bb": 8.0,
         "open_size_policy": "standard",
         "three_bet_size_policy": "standard",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
         "three_bettor_base_fraction": 0.12,
         "three_bettor_fraction": 0.12,
         "opener_base_continue_fraction": 0.18,
@@ -193,6 +203,9 @@ def test_selects_chart_ranges_for_heads_up_four_bet_pot() -> None:
         "four_bet_size_bb": 20.0,
         "three_bet_size_policy": "standard",
         "four_bet_size_policy": "standard",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
         "opener_base_four_bet_fraction": 0.065,
         "opener_four_bet_fraction": 0.065,
         "three_bettor_base_continue_fraction": 0.07,
@@ -350,6 +363,138 @@ def test_three_bet_size_adjusts_the_opener_call_band() -> None:
     assert len(small_selection.ip_range.split(",")) > len(
         large_selection.ip_range.split(",")
     )
+
+
+def test_short_starting_stack_adjusts_single_raised_pot_ranges() -> None:
+    state = single_raised_pot_state()
+    state.effective_stack = 17.5
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "short"
+    assert selection.context["starting_effective_stack_bb"] == 20.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["opener_base_fraction"] == 0.45
+    assert selection.context["opener_fraction"] == 0.405
+    assert selection.context["caller_continue_fraction"] == 0.36
+    assert selection.context["caller_reraise_fraction"] == 0.156
+
+
+def test_deep_starting_stack_adjusts_three_bet_pot_ranges() -> None:
+    state = three_bet_pot_state()
+    state.effective_stack = 192.0
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "deep"
+    assert selection.context["starting_effective_stack_bb"] == 200.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["three_bettor_fraction"] == 0.108
+    assert selection.context["opener_continue_fraction"] == 0.189
+    assert selection.context["opener_four_bet_fraction"] == 0.0585
+
+
+def test_medium_starting_stack_adjusts_four_bet_pot_ranges() -> None:
+    state = four_bet_pot_state()
+    state.effective_stack = 30.0
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "medium"
+    assert selection.context["starting_effective_stack_bb"] == 50.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+    assert selection.context["opener_four_bet_fraction"] == 0.0747
+    assert selection.context["three_bettor_continue_fraction"] == 0.0665
+    assert selection.context["three_bettor_five_bet_fraction"] == 0.0437
+
+
+def test_reconstructs_starting_stack_across_current_street_wagers() -> None:
+    state = three_bet_pot_state()
+    state.pot_size = 18.5
+    state.current_bet = 2.0
+    state.facing_action = "bet"
+    state.hero_stack = 92.0
+    state.opponent_stack = 90.0
+    state.effective_stack = 90.0
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0)
+    ]
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "standard"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+
+
+def test_reconstructs_starting_stack_from_explicit_first_bet() -> None:
+    state = three_bet_pot_state()
+    state.pot_size = 18.5
+    state.current_bet = 2.0
+    state.facing_action = "bet"
+    state.hero_stack = 92.0
+    state.opponent_stack = 90.0
+    state.effective_stack = 90.0
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "standard"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+
+
+def test_reconstructs_starting_stack_across_current_street_reraises() -> None:
+    state = three_bet_pot_state(hero_position="button")
+    state.pot_size = 32.5
+    state.current_bet = 4.0
+    state.facing_action = "raise"
+    state.hero_stack = 86.0
+    state.opponent_stack = 82.0
+    state.effective_stack = 82.0
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0),
+        PostflopAction(actor="ip", action="raise", amount=6.0),
+        PostflopAction(actor="oop", action="raise", amount=10.0),
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_three_bet_pot"
+    assert selection.context["stack_depth_policy"] == "standard"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "reconstructed"
+
+
+def test_uses_standard_stack_assumption_when_reconstruction_is_incomplete() -> None:
+    state = three_bet_pot_state()
+    state.pot_size = 18.5
+    state.current_bet = 2.0
+    state.facing_action = "bet"
+    state.hero_stack = 92.0
+    state.opponent_stack = None
+    state.effective_stack = 90.0
+    state.postflop_action_history = [
+        PostflopAction(actor="oop", action="bet", amount=2.0)
+    ]
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "standard"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "standard_assumption"
+
+
+def test_uses_standard_stack_assumption_for_contradictory_visible_stacks() -> None:
+    state = single_raised_pot_state()
+    state.hero_stack = 97.5
+    state.opponent_stack = 95.0
+    state.effective_stack = 94.0
+
+    selection = select(state)
+
+    assert selection.context["stack_depth_policy"] == "standard"
+    assert selection.context["starting_effective_stack_bb"] == 100.0
+    assert selection.context["stack_depth_source"] == "standard_assumption"
 
 
 def test_keeps_configured_ranges_for_contradictory_three_bet_history() -> None:

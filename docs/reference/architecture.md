@@ -121,13 +121,17 @@ exact continuation through a 4-bet by the opener and matching call by the
 original 3-bettor can use the opener's adjusted 4-bet band and the 3-bettor's
 continue band after excluding its 5-bet segment. The supported 2-4 BB open,
 matching final commitments, legal seat order, optional legacy opener metadata,
-both reviewed seats, and reconstructed flop-root pot must agree. The relevant
-open, 3-bet, and 4-bet size policies use the chart's standard-stack profile to
-widen or tighten response boundaries; otherwise configured ranges remain
-active. Turn and river states retain configured ranges because the original
-flop pot cannot be proven from the compact state. Range source and boundaries
-are retained as solver evidence. Raised decisions additionally carry both
-visible stacks and ordered current-street
+both reviewed seats, and reconstructed flop-root pot must agree. With no
+current-street wager, the effective stack behind plus each player's matching
+final preflop commitment reconstructs the starting depth. Once money is wagered
+postflop, both visible stacks and either explicit first-bet context or ordered
+OOP/IP contributions must reconcile. The resulting short, medium, standard, or
+deep policy adjusts the range boundaries. Incomplete or contradictory stack
+evidence retains an explicit 100 BB standard assumption instead of blocking an
+otherwise verified range. Turn and river states retain configured ranges
+because the original flop pot cannot be proven from the compact state. Range
+source, depth source, and boundaries are retained as solver evidence. Raised
+decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a
 recorded fallback for ambiguous or unsupported preflop history, ambiguous

@@ -23,6 +23,9 @@ RangeSource = Literal[
     "preflop_chart_three_bet_pot",
     "preflop_chart_four_bet_pot",
 ]
+StackDepthSource = Literal["reconstructed", "standard_assumption"]
+
+STANDARD_CONTEXTUAL_STACK_BB = 100.0
 
 
 @dataclass(frozen=True)
@@ -94,25 +97,33 @@ def _single_raised_pot_selection(
         DEFENSE_POLICIES,
         POSITION_POLICIES,
         adjusted_defense_policy,
+        adjusted_open_fraction,
         policy_for_open_size,
         policy_for_stack_depth,
     )
 
-    opener_fraction = POSITION_POLICIES[opener].open_fraction
+    opener_policy = POSITION_POLICIES[opener]
+    base_opener_fraction = opener_policy.open_fraction
     base_defense = DEFENSE_POLICIES.get((opener, caller))
     size_policy = policy_for_open_size(opening_size)
-    standard_stack_policy = policy_for_stack_depth(100)
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=opening_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
     if (
-        opener_fraction <= 0
+        base_opener_fraction <= 0
         or base_defense is None
         or size_policy is None
-        or standard_stack_policy is None
+        or stack_policy is None
     ):
         return None
+    opener_fraction = adjusted_open_fraction(opener_policy, stack_policy)
     defense = adjusted_defense_policy(
         base_defense,
         size_policy,
-        standard_stack_policy,
+        stack_policy,
     )
 
     opener_range = _range_for_policy_band(opener_fraction)
@@ -134,6 +145,10 @@ def _single_raised_pot_selection(
             "caller_position": caller,
             "opening_size_bb": opening_size,
             "open_size_policy": size_policy.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
+            "opener_base_fraction": base_opener_fraction,
             "opener_fraction": opener_fraction,
             "caller_base_continue_fraction": base_defense.continue_fraction,
             "caller_base_reraise_fraction": base_defense.reraise_fraction,
@@ -167,25 +182,30 @@ def _three_bet_pot_selection(
     three_bet_size_policy = policy_for_three_bet_size(
         three_bet_size / opening_size
     )
-    standard_stack_policy = policy_for_stack_depth(100)
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=three_bet_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
     if (
         base_three_bettor is None
         or base_opener is None
         or open_size_policy is None
         or three_bet_size_policy is None
-        or standard_stack_policy is None
+        or stack_policy is None
     ):
         return None
 
     three_bettor_policy = adjusted_defense_policy(
         base_three_bettor,
         open_size_policy,
-        standard_stack_policy,
+        stack_policy,
     )
     opener_policy = adjusted_three_bet_defense_policy(
         base_opener,
         three_bet_size_policy,
-        standard_stack_policy,
+        stack_policy,
     )
     three_bettor_range = _range_for_policy_band(
         three_bettor_policy.reraise_fraction
@@ -213,6 +233,9 @@ def _three_bet_pot_selection(
             "three_bet_size_bb": three_bet_size,
             "open_size_policy": open_size_policy.name,
             "three_bet_size_policy": three_bet_size_policy.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
             "three_bettor_base_fraction": base_three_bettor.reraise_fraction,
             "three_bettor_fraction": three_bettor_policy.reraise_fraction,
             "opener_base_continue_fraction": base_opener.continue_fraction,
@@ -247,25 +270,30 @@ def _four_bet_pot_selection(
     four_bet_size_policy = policy_for_four_bet_size(
         four_bet_size / three_bet_size
     )
-    standard_stack_policy = policy_for_stack_depth(100)
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=four_bet_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
     if (
         base_opener is None
         or base_three_bettor is None
         or three_bet_size_policy is None
         or four_bet_size_policy is None
-        or standard_stack_policy is None
+        or stack_policy is None
     ):
         return None
 
     opener_policy = adjusted_three_bet_defense_policy(
         base_opener,
         three_bet_size_policy,
-        standard_stack_policy,
+        stack_policy,
     )
     three_bettor_policy = adjusted_four_bet_defense_policy(
         base_three_bettor,
         four_bet_size_policy,
-        standard_stack_policy,
+        stack_policy,
     )
     opener_four_bet_range = _range_for_policy_band(
         opener_policy.four_bet_fraction
@@ -294,6 +322,9 @@ def _four_bet_pot_selection(
             "four_bet_size_bb": four_bet_size,
             "three_bet_size_policy": three_bet_size_policy.name,
             "four_bet_size_policy": four_bet_size_policy.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
             "opener_base_four_bet_fraction": base_opener.four_bet_fraction,
             "opener_four_bet_fraction": opener_policy.four_bet_fraction,
             "three_bettor_base_continue_fraction": (
@@ -549,6 +580,145 @@ def _four_bet_pot_context(
         three_bet_action.amount,
         four_bet_action.amount,
     )
+
+
+def _contextual_stack_depth(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    *,
+    final_preflop_commitment: float,
+) -> tuple[float, StackDepthSource]:
+    reconstructed = _reconstructed_starting_effective_stack(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=final_preflop_commitment,
+    )
+    if reconstructed is not None:
+        return reconstructed, "reconstructed"
+    return STANDARD_CONTEXTUAL_STACK_BB, "standard_assumption"
+
+
+def _reconstructed_starting_effective_stack(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    *,
+    final_preflop_commitment: float,
+) -> float | None:
+    if state.effective_stack is None:
+        return None
+    contributions = _current_street_contributions(
+        state,
+        hero_relative_position,
+    )
+    if contributions is None:
+        return None
+
+    visible_stacks = (state.hero_stack, state.opponent_stack)
+    if all(stack is not None for stack in visible_stacks):
+        visible_effective = min(
+            stack for stack in visible_stacks if stack is not None
+        )
+        if (
+            abs(state.effective_stack - visible_effective)
+            > MONEY_TOLERANCE_BB
+        ):
+            return None
+
+    if all(amount <= MONEY_TOLERANCE_BB for amount in contributions.values()):
+        return round(state.effective_stack + final_preflop_commitment, 4)
+    if state.hero_stack is None or state.opponent_stack is None:
+        return None
+
+    hero_actor = hero_relative_position
+    opponent_actor: Literal["ip", "oop"] = (
+        "oop" if hero_actor == "ip" else "ip"
+    )
+    effective_before_postflop = min(
+        state.hero_stack + contributions[hero_actor],
+        state.opponent_stack + contributions[opponent_actor],
+    )
+    return round(effective_before_postflop + final_preflop_commitment, 4)
+
+
+def _current_street_contributions(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> dict[Literal["ip", "oop"], float] | None:
+    contributions: dict[Literal["ip", "oop"], float] = {
+        "oop": 0.0,
+        "ip": 0.0,
+    }
+    current_bet = state.current_bet or 0
+    if not state.postflop_action_history:
+        if current_bet <= MONEY_TOLERANCE_BB:
+            return contributions if state.facing_action is None else None
+        if state.facing_action != "bet":
+            return None
+        opponent_actor: Literal["ip", "oop"] = (
+            "oop" if hero_relative_position == "ip" else "ip"
+        )
+        contributions[opponent_actor] = current_bet
+        return contributions
+
+    next_actor: Literal["ip", "oop"] = "oop"
+    last_aggression: Literal["bet", "raise"] | None = None
+    for action in state.postflop_action_history:
+        if action.actor != next_actor:
+            return None
+        opponent_actor: Literal["ip", "oop"] = (
+            "oop" if action.actor == "ip" else "ip"
+        )
+        if action.action == "check":
+            if (
+                abs(
+                    contributions[action.actor]
+                    - contributions[opponent_actor]
+                )
+                > MONEY_TOLERANCE_BB
+            ):
+                return None
+        elif action.action == "bet":
+            if (
+                abs(
+                    contributions[action.actor]
+                    - contributions[opponent_actor]
+                )
+                > MONEY_TOLERANCE_BB
+                or action.amount is None
+            ):
+                return None
+            contributions[action.actor] = action.amount
+            last_aggression = "bet"
+        else:
+            if (
+                contributions[action.actor]
+                >= contributions[opponent_actor] - MONEY_TOLERANCE_BB
+                or action.amount is None
+                or action.amount
+                <= contributions[opponent_actor] + MONEY_TOLERANCE_BB
+            ):
+                return None
+            contributions[action.actor] = action.amount
+            last_aggression = "raise"
+        next_actor = opponent_actor
+
+    if next_actor != hero_relative_position:
+        return None
+    opponent_actor = "oop" if hero_relative_position == "ip" else "ip"
+    expected_call = (
+        contributions[opponent_actor] - contributions[hero_relative_position]
+    )
+    if (
+        expected_call < -MONEY_TOLERANCE_BB
+        or abs(max(0.0, expected_call) - current_bet) > MONEY_TOLERANCE_BB
+    ):
+        return None
+    expected_facing_action = (
+        last_aggression if expected_call > MONEY_TOLERANCE_BB else None
+    )
+    if state.facing_action != expected_facing_action:
+        return None
+    return contributions
 
 
 def _flop_root_pot(state: CanonicalState) -> float | None:

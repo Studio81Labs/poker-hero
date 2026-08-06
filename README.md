@@ -167,12 +167,15 @@ the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player flop state with an
 open-and-call, open/3-bet/call, or open/3-bet/4-bet/call preflop history selects
 transparent ranges from the same position-aware chart boundaries used by the
-preflop trainer. The reviewed sizes apply the chart's existing response
-adjustments, and the backend verifies that the reconstructed flop-root pot
-agrees with the final preflop commitments. Unsupported, incomplete,
-contradictory, other preflop trees, turn, and river states retain the configured
-OOP/IP ranges. Recommendation evidence records the selected source and policy
-context. Set the mode to `configured` to disable contextual selection.
+preflop trainer. The reviewed sizes and a provable starting effective stack
+apply the chart's existing response adjustments, and the backend verifies that
+the reconstructed flop-root pot agrees with the final preflop commitments.
+When current-street money cannot be reconciled to the reviewed visible stacks,
+the range context retains a labeled 100 BB stack assumption. Unsupported,
+incomplete, contradictory, other preflop trees, turn, and river states retain
+the configured OOP/IP ranges. Recommendation evidence records the selected
+source and policy context. Set the mode to `configured` to disable contextual
+selection.
 Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
 facing action must identify the outstanding wager. Raised heads-up decisions

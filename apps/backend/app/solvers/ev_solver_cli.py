@@ -52,6 +52,8 @@ class ContinuationBranch:
     callers: int
     probability: float
     called_equity: float
+    existing_wager_adjustment: float
+    final_pot: float
     ev: float
 
 
@@ -525,6 +527,7 @@ def _action_candidates(
                 per_opponent_fold_equity=per_opponent_fold_equity,
                 continuation_equities=continuation_equities,
                 analysis=analysis,
+                existing_wager=current_bet,
             )
             ev = fold_equity * pot_size + sum(
                 branch.probability * branch.ev for branch in continuations
@@ -555,6 +558,7 @@ def _action_candidates(
             per_opponent_fold_equity=per_opponent_fold_equity,
             continuation_equities=continuation_equities,
             analysis=analysis,
+            existing_wager=0,
         )
         ev = fold_equity * pot_size + sum(
             branch.probability * branch.ev for branch in continuations
@@ -630,6 +634,7 @@ def _continuation_branches(
     per_opponent_fold_equity: float,
     continuation_equities: dict[int, float],
     analysis: PostflopAnalysis | None,
+    existing_wager: float,
 ) -> tuple[ContinuationBranch, ...]:
     opponents = max(1, min(players - 1, 5))
     call_probability = 1 - per_opponent_fold_equity
@@ -643,12 +648,19 @@ def _continuation_branches(
         called_equity = _called_equity(
             continuation_equities[callers], size, pot_size, analysis
         )
-        final_pot = pot_size + (callers + 1) * size
+        existing_wager_adjustment = existing_wager * callers / opponents
+        final_pot = (
+            pot_size
+            + (callers + 1) * size
+            - existing_wager_adjustment
+        )
         branches.append(
             ContinuationBranch(
                 callers=callers,
                 probability=probability,
                 called_equity=called_equity,
+                existing_wager_adjustment=existing_wager_adjustment,
+                final_pot=final_pot,
                 ev=called_equity * final_pot - size,
             )
         )
@@ -745,6 +757,10 @@ def _candidate_raw(candidate: Candidate) -> dict[str, object]:
                 "callers": branch.callers,
                 "probability": round(branch.probability, 6),
                 "called_equity": branch.called_equity,
+                "existing_wager_adjustment": round(
+                    branch.existing_wager_adjustment, 3
+                ),
+                "final_pot": round(branch.final_pot, 3),
                 "ev": round(branch.ev, 3),
             }
             for branch in candidate.continuations

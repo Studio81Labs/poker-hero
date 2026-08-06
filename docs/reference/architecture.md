@@ -118,7 +118,10 @@ failed postflop solves. For multiway fallback aggression, `local_ev` converts
 its per-opponent response estimate into the probability that the entire field
 folds under an explicit independent equal-response assumption. It enumerates
 every possible caller count, estimates equity against that surviving field,
-and weights each branch using its own final pot and continuation value.
+and weights each branch using its own final pot and continuation value. When
+raising into an outstanding wager already included in the pot, the
+equal-response model weights whether that bettor is among the callers and
+subtracts the corresponding already-counted commitment from each branch.
 Candidate evidence retains the fold probabilities and continuation branches so
 the approximation remains reviewable.
 Explicit custom

@@ -239,6 +239,14 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
         assert continuations[1]["probability"] == pytest.approx(
             (1 - per_opponent) ** 2
         )
+        assert continuations[0]["existing_wager_adjustment"] == 1.25
+        assert continuations[1]["existing_wager_adjustment"] == 2.5
+        assert continuations[0]["final_pot"] == pytest.approx(
+            approved_state().pot_size + 2 * candidate["sizing"] - 1.25
+        )
+        assert continuations[1]["final_pot"] == pytest.approx(
+            approved_state().pot_size + 3 * candidate["sizing"] - 2.5
+        )
         assert candidate["fold_equity"] + sum(
             branch["probability"] for branch in continuations
         ) == pytest.approx(1)
@@ -276,6 +284,10 @@ def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
         assert candidate["continuations"][0]["callers"] == 1
         assert candidate["continuations"][0]["probability"] == pytest.approx(
             1 - candidate["fold_equity"]
+        )
+        assert candidate["continuations"][0]["existing_wager_adjustment"] == 2.5
+        assert candidate["continuations"][0]["final_pot"] == pytest.approx(
+            12.5 + 2 * candidate["sizing"] - 2.5
         )
     assert "every opponent to fold" not in result.explanation.lower()
 

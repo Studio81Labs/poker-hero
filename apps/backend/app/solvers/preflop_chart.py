@@ -1435,6 +1435,30 @@ def hand_top_fraction(cards: list[Card]) -> float:
     return _top_fraction_for_class(canonical_hand_class(cards))
 
 
+def hand_classes_in_policy_band(
+    maximum_fraction: float,
+    *,
+    minimum_exclusive: float = 0,
+) -> tuple[str, ...]:
+    if not 0 <= minimum_exclusive < maximum_fraction <= 1:
+        raise ValueError("A hand-class policy band must satisfy 0 <= minimum < maximum <= 1")
+    return tuple(
+        sorted(
+            (
+                hand_class
+                for hand_class in _class_scores()
+                if minimum_exclusive
+                < _top_fraction_for_class(hand_class)
+                <= maximum_fraction
+            ),
+            key=lambda hand_class: (
+                _top_fraction_for_class(hand_class),
+                hand_class,
+            ),
+        )
+    )
+
+
 @lru_cache(maxsize=1)
 def _class_scores() -> dict[str, float]:
     scores: dict[str, float] = {}

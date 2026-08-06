@@ -725,6 +725,13 @@ def _pot_matches_actions(
     return minimum - MONEY_TOLERANCE_BB <= pot_size <= maximum + MONEY_TOLERANCE_BB
 
 
+def pot_matches_preflop_actions(
+    pot_size: float | None,
+    commitments: tuple[tuple[Position, float], ...],
+) -> bool:
+    return _pot_matches_actions(pot_size, commitments)
+
+
 def normalize_position(value: str | None) -> Position | None:
     if value is None:
         return None

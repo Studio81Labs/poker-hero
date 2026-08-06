@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     postflop_solver_raise_sizes: str = Field(default="2.5x")
     postflop_solver_rake_rate: float = Field(default=0, ge=0, le=1)
     postflop_solver_rake_cap: float = Field(default=0, ge=0)
+    postflop_solver_range_mode: Literal["contextual", "configured"] = "contextual"
     postflop_solver_oop_range: str = Field(default=DEFAULT_POSTFLOP_OOP_RANGE)
     postflop_solver_ip_range: str = Field(default=DEFAULT_POSTFLOP_IP_RANGE)
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)

@@ -72,6 +72,7 @@ def test_settings_defaults_use_local_training_backends(tmp_path: Path) -> None:
     assert settings.postflop_solver_max_memory_mb == 768
     assert settings.postflop_solver_bet_sizes == "70%"
     assert settings.postflop_solver_raise_sizes == "2.5x"
+    assert settings.postflop_solver_range_mode == "contextual"
     assert settings.max_upload_bytes == 10 * 1024 * 1024
     assert settings.max_dataset_upload_bytes == 100 * 1024 * 1024
     assert settings.max_backup_upload_bytes == 100 * 1024 * 1024
@@ -189,6 +190,8 @@ def test_settings_rejects_invalid_postflop_solver_limits() -> None:
         Settings(postflop_solver_max_memory_mb=0)
     with pytest.raises(ValidationError):
         Settings(postflop_solver_rake_rate=-0.01)
+    with pytest.raises(ValidationError):
+        Settings(postflop_solver_range_mode="automatic")
 
 
 def test_settings_rejects_non_positive_max_upload_bytes() -> None:

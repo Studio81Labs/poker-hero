@@ -397,12 +397,15 @@ def _validate_opponent_commitment_total(
         return
     if state.pot_size is not None and total > state.pot_size + 1e-6:
         raise ValueError("opponent_commitment_total cannot exceed pot_size")
+    if state.street == "preflop":
+        current_street_history = state.preflop_action_history
+    elif state.street is not None:
+        current_street_history = state.postflop_action_history
+    else:
+        current_street_history = []
     recorded_wagers = [
         action.amount
-        for action in [
-            *state.preflop_action_history,
-            *state.postflop_action_history,
-        ]
+        for action in current_street_history
         if action.amount is not None
     ]
     wager = max(

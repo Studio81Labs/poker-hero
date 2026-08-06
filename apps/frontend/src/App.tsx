@@ -3663,12 +3663,13 @@ function formToCanonical(form: StateForm): CanonicalState {
   ) {
     throw new Error("Opponent commitments total cannot exceed the pot");
   }
-  const recordedWagers = [
-    ...preflopActionHistory.map((action) => action.amount),
-    ...postflopActionHistory.flatMap((action) => (
-      action.amount === null ? [] : [action.amount]
-    )),
-  ];
+  const recordedWagers = form.street === "preflop"
+    ? preflopActionHistory.map((action) => action.amount)
+    : form.street !== ""
+      ? postflopActionHistory.flatMap((action) => (
+        action.amount === null ? [] : [action.amount]
+      ))
+      : [];
   const knownOpponentWager = Math.max(
     currentBet ?? 0,
     opponentWager ?? 0,

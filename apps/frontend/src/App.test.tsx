@@ -4181,6 +4181,48 @@ describe("App", () => {
     expect(payload.opponent_commitment_total).toBe(5);
   });
 
+  it("validates commitment totals against current-street history only", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      pot_size: 30,
+      current_bet: 15,
+      players_in_hand: 3,
+      opponents_at_current_bet: 1,
+      opponent_wager: 15,
+      opponent_commitment_total: null,
+      preflop_action_history: [
+        { actor: "button", action: "raise", amount: 25 },
+      ],
+      facing_action: "raise",
+      postflop_action_history: [
+        { actor: "oop", action: "bet", amount: 5 },
+        { actor: "ip", action: "raise", amount: 15 },
+      ],
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...postflopState,
+      opponent_commitment_total: 20,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.type(screen.getByLabelText(/Opponent commitments total/), "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_commitment_total).toBe(20);
+  });
+
   it("re-approves corrections to an approved-only imported job", async () => {
     const importedJob = {
       ...approvedJob(),

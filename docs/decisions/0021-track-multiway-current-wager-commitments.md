@@ -34,14 +34,17 @@ structured history, its current total wager requires explicit review.
 
 Under the fallback's independent equal-response model, a branch with `k`
 callers out of `N` opponents contains an expected `k * committed / N` callers
-whose total current-street wager is already included in the pot. Hero's existing
+at each recorded wager level. When structured preflop history represents every
+active opponent, the fallback retains each actor's latest total commitment and
+sums those values. Otherwise it uses the reviewed latest-wager count and treats
+unrepresented opponents as having no current-street wager. Hero's existing
 wager is `opponent_wager - current_bet`. Each caller must match hero's resulting
 total wager, so the branch pot is reconstructed as:
 
-`pot + hero_size + k * (hero_size + hero_wager) - opponent_wager * k * committed / N`
+`pot + hero_size + k * (hero_size + hero_wager) - opponent_commitment_total * k / N`
 
-This treats opponents outside the reviewed committed count as having no
-current-street wager, matching the fallback's equal-response approximation.
+This weights all recorded active-opponent commitment levels under the same
+equal-response approximation used for caller counts.
 
 ## Consequences
 
@@ -49,6 +52,8 @@ current-street wager, matching the fallback's equal-response approximation.
 - Blind-defense and raised-pot continuation pots use opponents' total committed
   wager and hero's derived existing wager rather than conflating either with
   hero's remaining call amount.
+- Re-raised histories include lower-level active commitments as well as the
+  latest wager when reconstructing continuation pots.
 - The review UI exposes the count for multiway facing-wager states and exposes
   the total wager when raised-action context may require correction.
 - Automation may approve such a state, but recommendation waits for this

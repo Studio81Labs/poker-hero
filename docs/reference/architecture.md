@@ -124,10 +124,12 @@ state can record both how many opponents have committed it and their total
 current-street wager. The total wager is distinct from hero's remaining amount
 to call and is resolved from explicit review, structured action history,
 preflop opening context, or a simple first-bet state. Hero's existing wager is
-derived from their difference. The equal-response model reconstructs each
-caller's additional contribution from both values and the expected committed
-callers in that branch. Fallback is withheld until any commitment context that
-cannot be derived has been reviewed.
+derived from their difference. When structured preflop history represents all
+active opponents, each actor's latest commitment contributes to an aggregate
+opponent total, including lower wager levels in re-raised pots. The
+equal-response model reconstructs each caller's additional contribution from
+that aggregate and hero's existing wager. Fallback is withheld until any
+commitment context that cannot be derived has been reviewed.
 Preflop opening context is eligible only when the opening total agrees with the
 call amount plus hero's posted blind; stale initial-open metadata is not reused
 after later aggression.

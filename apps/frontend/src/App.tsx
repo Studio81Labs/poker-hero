@@ -518,19 +518,41 @@ function recommendationEvidenceFromRaw(
   }
   const committedOpponents = metadataNumber(raw.opponents_at_current_bet);
   const opponentWager = metadataNumber(raw.opponent_wager);
+  const opponentCommitmentTotal = metadataNumber(raw.opponent_commitment_total);
   const heroWager = metadataNumber(raw.hero_wager);
   const hasCommittedOpponentCount = committedOpponents !== null
     && Number.isInteger(committedOpponents)
     && committedOpponents > 0;
   const hasOpponentWager = opponentWager !== null && opponentWager > 0;
+  const hasDistinctCommitmentTotal = opponentCommitmentTotal !== null
+    && opponentCommitmentTotal > 0
+    && (
+      !hasCommittedOpponentCount
+      || !hasOpponentWager
+      || Math.abs(
+        opponentCommitmentTotal - committedOpponents * opponentWager
+      ) > 0.001
+    );
   const hasHeroWager = heroWager !== null && heroWager > 0;
-  if (hasCommittedOpponentCount || hasOpponentWager || hasHeroWager) {
+  if (
+    hasCommittedOpponentCount
+    || hasOpponentWager
+    || hasDistinctCommitmentTotal
+    || hasHeroWager
+  ) {
     const context = [];
     if (hasCommittedOpponentCount) {
       context.push(`${committedOpponents} ${committedOpponents === 1 ? "opponent" : "opponents"}`);
     }
     if (hasOpponentWager) {
-      context.push(`${formatEvidenceBb(opponentWager)} each`);
+      context.push(
+        hasCommittedOpponentCount && committedOpponents === 1
+          ? `${formatEvidenceBb(opponentWager)} committed`
+          : `${formatEvidenceBb(opponentWager)} each`,
+      );
+    }
+    if (hasDistinctCommitmentTotal) {
+      context.push(`${formatEvidenceBb(opponentCommitmentTotal)} total`);
     }
     if (hasHeroWager) {
       context.push(`hero ${formatEvidenceBb(heroWager)}`);

@@ -22,7 +22,10 @@ from app.providers.base import (
 )
 from app.providers.registry import build_provider
 from app.solvers.ev_solver_cli import _hero_outcomes
-from app.solvers.wager_context import resolve_opponent_wager
+from app.solvers.wager_context import (
+    resolve_opponent_commitment_total,
+    resolve_opponent_wager,
+)
 
 
 def approved_state() -> CanonicalState:
@@ -343,6 +346,33 @@ def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> Non
         )
     ) is None
 
+    reraised = CanonicalState(
+        current_bet=2,
+        players_in_hand=2,
+        opponents_at_current_bet=1,
+        hero_position="cutoff",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=3),
+            PreflopAction(actor="button", action="raise", amount=5),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+    assert resolve_opponent_commitment_total(
+        reraised,
+        opponent_wager=5,
+        opponents_at_current_bet=1,
+    ) == 5
+    ambiguous_multiway = reraised.model_copy(
+        update={"players_in_hand": 3, "hero_position": None}
+    )
+    assert resolve_opponent_commitment_total(
+        ambiguous_multiway,
+        opponent_wager=5,
+        opponents_at_current_bet=1,
+    ) == 5
+
 
 def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
     tmp_path: Path,
@@ -436,6 +466,64 @@ def test_local_ev_reconstructs_multiway_calls_from_both_existing_wagers(
                 state.pot_size
                 + (callers + 1) * candidate["sizing"]
                 - continuation["existing_wager_adjustment"]
+            )
+
+
+def test_local_ev_includes_every_recorded_opponent_commitment(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=14.5,
+        current_bet=9,
+        effective_stack=99,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=3),
+            PreflopAction(actor="button", action="raise", amount=10),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["opponent_wager"] == 10
+    assert result.raw["opponent_commitment_total"] == 13
+    assert result.raw["hero_wager"] == 1
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 5.5
+        assert continuations[1]["existing_wager_adjustment"] == 11
+        for continuation in continuations:
+            callers = continuation["callers"]
+            expected_opponent_commitment = 13 * callers / 2
+            expected_caller_contribution = (
+                callers * (candidate["sizing"] + 1)
+                - expected_opponent_commitment
+            )
+            assert continuation["final_pot"] == pytest.approx(
+                state.pot_size
+                + candidate["sizing"]
+                + expected_caller_contribution
             )
 
 

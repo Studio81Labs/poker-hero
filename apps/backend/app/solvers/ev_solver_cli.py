@@ -25,6 +25,7 @@ from app.providers.rule_based import (
 )
 from app.solvers.preflop_chart import solve_preflop_chart
 from app.solvers.wager_context import (
+    resolve_hero_wager,
     resolve_opponent_commitment_total,
     resolve_opponent_wager,
 )
@@ -110,11 +111,15 @@ def solve(
             "opponent_wager is required when the total opponent commitment "
             "cannot be derived"
         )
-    hero_wager = max(0.0, (opponent_wager or 0) - current_bet)
+    hero_wager = resolve_hero_wager(
+        state,
+        opponent_wager=opponent_wager or 0,
+    )
     opponent_commitment_total = resolve_opponent_commitment_total(
         state,
         opponent_wager=opponent_wager or 0,
         opponents_at_current_bet=opponents_at_current_bet,
+        hero_wager=hero_wager,
     )
 
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
@@ -593,8 +598,8 @@ def _action_candidates(
             per_opponent_fold_equity=per_opponent_fold_equity,
             continuation_equities=continuation_equities,
             analysis=analysis,
-            opponent_commitment_total=0,
-            existing_hero_wager=0,
+            opponent_commitment_total=opponent_commitment_total,
+            existing_hero_wager=hero_wager,
         )
         ev = fold_equity * pot_size + sum(
             branch.probability * branch.ev for branch in continuations

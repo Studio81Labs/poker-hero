@@ -23,6 +23,7 @@ from app.providers.base import (
 from app.providers.registry import build_provider
 from app.solvers.ev_solver_cli import _hero_outcomes
 from app.solvers.wager_context import (
+    resolve_hero_wager,
     resolve_opponent_commitment_total,
     resolve_opponent_wager,
 )
@@ -373,6 +374,27 @@ def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> Non
         opponents_at_current_bet=1,
     ) == 5
 
+    big_blind_option = CanonicalState(
+        pot_size=3.5,
+        current_bet=0,
+        players_in_hand=3,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="call", amount=1),
+            PreflopAction(actor="button", action="call", amount=1),
+        ],
+        street="preflop",
+        user_approved=True,
+    )
+    hero_wager = resolve_hero_wager(big_blind_option, opponent_wager=0)
+    assert hero_wager == 1
+    assert resolve_opponent_commitment_total(
+        big_blind_option,
+        opponent_wager=0,
+        opponents_at_current_bet=0,
+        hero_wager=hero_wager,
+    ) == 2
+
 
 def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
     tmp_path: Path,
@@ -670,6 +692,46 @@ def test_local_ev_selection_bypasses_supported_preflop_chart(tmp_path: Path) -> 
     assert result.raw["engine"] == "local_ev_solver_v1"
     assert "requested_engine" not in result.raw
     assert "routing_reason" not in result.raw
+
+
+def test_local_ev_accounts_for_posted_blinds_in_open_branches(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
+        pot_size=1.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=3,
+        hero_position="button",
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["hero_wager"] == 0
+    assert result.raw["opponent_commitment_total"] == 1.5
+    open_candidate = next(
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["action"] == "bet" and candidate["sizing"] == 2.5
+    )
+    continuations = open_candidate["continuations"]
+    assert [branch["callers"] for branch in continuations] == [1, 2]
+    assert continuations[0]["existing_wager_adjustment"] == 0.75
+    assert continuations[0]["final_pot"] == 5.75
+    assert continuations[1]["existing_wager_adjustment"] == 1.5
+    assert continuations[1]["final_pot"] == 7.5
 
 
 @pytest.mark.parametrize("fallback_enabled", [True, False])

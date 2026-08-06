@@ -50,24 +50,56 @@ def resolve_opponent_wager(state: CanonicalState) -> float | None:
     return None
 
 
+def resolve_hero_wager(
+    state: CanonicalState,
+    *,
+    opponent_wager: float,
+) -> float:
+    """Resolve hero's current-street commitment before the modeled action."""
+    amount_to_call = state.current_bet or 0
+    if amount_to_call > 0:
+        return max(0.0, opponent_wager - amount_to_call)
+    if state.street != "preflop":
+        return 0.0
+
+    hero_position = normalize_position(state.hero_position)
+    if hero_position is None:
+        return 0.0
+    hero_actions = [
+        action.amount
+        for action in state.preflop_action_history
+        if action.actor == hero_position
+    ]
+    return max([POSTED_BLIND_BB[hero_position], *hero_actions])
+
+
 def resolve_opponent_commitment_total(
     state: CanonicalState,
     *,
     opponent_wager: float,
     opponents_at_current_bet: int,
+    hero_wager: float = 0.0,
 ) -> float:
     """Resolve active opponents' aggregate current-street commitments."""
-    if (state.current_bet or 0) <= 0:
-        return 0.0
     opponents = max(1, min((state.players_in_hand or 2) - 1, 5))
+    commitments = {
+        actor: max(
+            action.amount
+            for action in state.preflop_action_history
+            if action.actor == actor
+        )
+        for actor in {action.actor for action in state.preflop_action_history}
+    }
+    hero_position = normalize_position(state.hero_position)
+    if (state.current_bet or 0) <= 0:
+        if state.street == "preflop":
+            if hero_position is not None:
+                commitments.pop(hero_position, None)
+                if len(commitments) == opponents:
+                    return sum(commitments.values())
+            return max(0.0, (state.pot_size or 0) - hero_wager)
+        return 0.0
     if state.street == "preflop" and state.preflop_action_history:
-        commitments: dict[str, float] = {}
-        for action in state.preflop_action_history:
-            commitments[action.actor] = max(
-                commitments.get(action.actor, 0.0), action.amount
-            )
-
-        hero_position = normalize_position(state.hero_position)
         history_identifies_active_opponents = False
         if hero_position is not None:
             commitments.pop(hero_position, None)

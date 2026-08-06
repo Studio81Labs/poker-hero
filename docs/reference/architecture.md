@@ -130,6 +130,10 @@ opponent total, including lower wager levels in re-raised pots. The
 equal-response model reconstructs each caller's additional contribution from
 that aggregate and hero's existing wager. Fallback is withheld until any
 commitment context that cannot be derived has been reviewed.
+Preflop states with no call amount retain hero's posted blind or latest
+structured action. Complete active-player history provides the opponent
+commitment total; otherwise the remaining pre-action pot forms that aggregate,
+so open branches account for posted blinds and limps.
 Preflop opening context is eligible only when the opening total agrees with the
 call amount plus hero's posted blind; stale initial-open metadata is not reused
 after later aggression.

@@ -558,7 +558,9 @@ function recommendationEvidenceFromRaw(
       context.push(`hero ${formatEvidenceBb(heroWager)}`);
     }
     details.push({
-      label: "At current wager",
+      label: hasCommittedOpponentCount || hasOpponentWager
+        ? "At current wager"
+        : "Existing commitments",
       value: context.join(" · "),
     });
   }

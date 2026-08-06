@@ -46,6 +46,13 @@ total wager, so the branch pot is reconstructed as:
 This weights all recorded active-opponent commitment levels under the same
 equal-response approximation used for caller counts.
 
+For a preflop action with no amount to call, the fallback still reconstructs
+existing wagers. Hero's posted blind or latest structured action is retained,
+Complete active-player history supplies the opponent total directly; otherwise
+the remaining pre-action pot forms the aggregate opponent commitment pool. Open
+branches therefore subtract the expected posted-blind and limp commitments of
+their callers instead of treating every caller as uninvested.
+
 ## Consequences
 
 - Multiway continuation pots account for initial bets plus existing callers.
@@ -54,6 +61,8 @@ equal-response approximation used for caller counts.
   hero's remaining call amount.
 - Re-raised histories include lower-level active commitments as well as the
   latest wager when reconstructing continuation pots.
+- First-in and limp-pot branches retain posted blinds and prior limps even when
+  hero has no amount to call.
 - The review UI exposes the count for multiway facing-wager states and exposes
   the total wager when raised-action context may require correction.
 - Automation may approve such a state, but recommendation waits for this

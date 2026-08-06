@@ -116,8 +116,11 @@ recorded fallback for ambiguous or unsupported preflop history, ambiguous
 position, unsupported multiway states, incomplete context, resource-limited, or
 failed postflop solves. For multiway fallback aggression, `local_ev` converts
 its per-opponent response estimate into the probability that the entire field
-folds under an explicit independent equal-response assumption. Candidate
-evidence retains both probabilities so the approximation remains reviewable.
+folds under an explicit independent equal-response assumption. It enumerates
+every possible caller count, estimates equity against that surviving field,
+and weights each branch using its own final pot and continuation value.
+Candidate evidence retains the fold probabilities and continuation branches so
+the approximation remains reviewable.
 Explicit custom
 commands still override the bundled engine selection.
 

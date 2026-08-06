@@ -21,6 +21,7 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.registry import build_provider
+from app.solvers.ev_solver_cli import _hero_outcomes
 
 
 def approved_state() -> CanonicalState:
@@ -229,7 +230,25 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert wager_candidates
     for candidate in wager_candidates:
         per_opponent = candidate["per_opponent_fold_equity"]
-        assert candidate["fold_equity"] == round(per_opponent**2, 3)
+        assert candidate["fold_equity"] == pytest.approx(per_opponent**2)
+        continuations = candidate["continuations"]
+        assert [branch["callers"] for branch in continuations] == [1, 2]
+        assert continuations[0]["probability"] == pytest.approx(
+            2 * (1 - per_opponent) * per_opponent
+        )
+        assert continuations[1]["probability"] == pytest.approx(
+            (1 - per_opponent) ** 2
+        )
+        assert candidate["fold_equity"] + sum(
+            branch["probability"] for branch in continuations
+        ) == pytest.approx(1)
+        assert candidate["ev"] == pytest.approx(
+            candidate["fold_equity"] * approved_state().pot_size
+            + sum(
+                branch["probability"] * branch["ev"] for branch in continuations
+            ),
+            abs=0.002,
+        )
 
 
 def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
@@ -253,7 +272,36 @@ def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
     assert wager_candidates
     for candidate in wager_candidates:
         assert candidate["fold_equity"] == candidate["per_opponent_fold_equity"]
+        assert len(candidate["continuations"]) == 1
+        assert candidate["continuations"][0]["callers"] == 1
+        assert candidate["continuations"][0]["probability"] == pytest.approx(
+            1 - candidate["fold_equity"]
+        )
     assert "every opponent to fold" not in result.explanation.lower()
+
+
+def test_multiway_outcomes_track_each_surviving_field_size() -> None:
+    tied_board = [Card.from_code(code) for code in ("As", "Ks", "Qs", "Js", "Ts")]
+    tied_outcomes = _hero_outcomes(
+        [Card.from_code("2c"), Card.from_code("3d")],
+        [
+            [Card.from_code("4c"), Card.from_code("5d")],
+            [Card.from_code("6c"), Card.from_code("7d")],
+        ],
+        tied_board,
+    )
+    assert tied_outcomes[1] == 0.5
+    assert tied_outcomes[2] == pytest.approx(1 / 3)
+
+    changing_outcomes = _hero_outcomes(
+        [Card.from_code("Ah"), Card.from_code("Kd")],
+        [
+            [Card.from_code("Qh"), Card.from_code("Jd")],
+            [Card.from_code("6h"), Card.from_code("7d")],
+        ],
+        [Card.from_code(code) for code in ("2c", "3d", "4h", "5s", "9c")],
+    )
+    assert changing_outcomes == {1: 1.0, 2: 0.0}
 
 
 def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) -> None:

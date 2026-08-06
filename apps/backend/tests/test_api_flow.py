@@ -2787,6 +2787,28 @@ def test_recommend_reports_missing_required_fields(tmp_path: Path) -> None:
     assert job.recommendation_pending is False
 
 
+def test_multiway_ev_recommendation_requires_committed_opponent_count(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "missing_fields": ["opponents_at_current_bet"]
+    }
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.error is None
+    assert job.recommendation_pending is False
+
+
 @pytest.mark.parametrize(
     ("missing_field", "value"),
     [

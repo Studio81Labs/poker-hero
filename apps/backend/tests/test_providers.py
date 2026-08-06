@@ -33,6 +33,7 @@ def approved_state() -> CanonicalState:
         hero_stack=97.5,
         effective_stack=96.0,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="button",
         street="flop",
         facing_action="bet",
@@ -217,6 +218,7 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
     assert result.raw["requested_engine"] == "postflop_solver"
+    assert result.raw["opponents_at_current_bet"] == 1
     assert "heads-up postflop" in result.raw["fallback_reason"]
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
@@ -257,6 +259,48 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
             ),
             abs=0.002,
         )
+
+
+def test_local_solver_requires_committed_opponent_count_for_multiway_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = approved_state().model_copy(
+        update={"opponents_at_current_bet": None}
+    )
+
+    assert "opponents_at_current_bet" in provider.required_fields_for(state)
+
+
+def test_local_ev_accounts_for_multiple_opponents_already_at_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = approved_state().model_copy(
+        update={"opponents_at_current_bet": 2}
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        assert candidate["continuations"][0]["existing_wager_adjustment"] == 2.5
+        assert candidate["continuations"][1]["existing_wager_adjustment"] == 5
 
 
 def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
@@ -723,6 +767,7 @@ def test_local_solver_keeps_fallback_for_cold_three_bet_with_hidden_player(
         hero_stack=99,
         effective_stack=92,
         players_in_hand=4,
+        opponents_at_current_bet=1,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -788,6 +833,7 @@ def test_local_solver_keeps_fallback_for_squeeze_with_active_opener(
         hero_stack=97.5,
         effective_stack=90,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -888,6 +934,7 @@ def test_local_solver_keeps_fallback_for_cold_four_bet_with_hidden_player(
         hero_stack=92,
         effective_stack=80,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="cutoff",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -920,6 +967,7 @@ def test_local_solver_keeps_fallback_for_four_bet_with_hidden_player(
         hero_stack=92,
         effective_stack=80,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="cutoff", action="raise", amount=2.5),
@@ -1169,6 +1217,7 @@ def test_local_solver_routes_single_caller_to_preflop_chart(tmp_path: Path) -> N
     assert result.raw["scenario"] == "facing_open_with_caller"
     assert result.raw["caller_positions"] == ["hijack"]
     assert result.raw["routing_reason"] == "the hand is preflop"
+    assert "opponents_at_current_bet" not in provider.required_fields_for(state)
 
 
 def test_local_solver_routes_double_caller_to_preflop_chart(tmp_path: Path) -> None:
@@ -1293,6 +1342,7 @@ def test_local_solver_keeps_fallback_for_four_caller_with_repeated_seat(
         current_bet=1.5,
         effective_stack=100,
         players_in_hand=6,
+        opponents_at_current_bet=5,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1326,6 +1376,7 @@ def test_local_solver_keeps_fallback_for_triple_caller_with_hidden_player(
         current_bet=2,
         effective_stack=100,
         players_in_hand=6,
+        opponents_at_current_bet=4,
         hero_position="small_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1358,6 +1409,7 @@ def test_local_solver_keeps_fallback_for_double_caller_with_hidden_player(
         current_bet=2.5,
         effective_stack=100,
         players_in_hand=5,
+        opponents_at_current_bet=3,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1389,6 +1441,7 @@ def test_local_solver_keeps_fallback_for_single_caller_with_hidden_player(
         current_bet=2.5,
         effective_stack=100,
         players_in_hand=4,
+        opponents_at_current_bet=2,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1657,6 +1710,7 @@ def test_postflop_solver_rejects_unknown_facing_action(tmp_path: Path) -> None:
 def test_postflop_solver_rejects_facing_action_without_call_amount(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
     state.current_bet = 0
+    state.opponents_at_current_bet = None
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
@@ -2139,6 +2193,7 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 "hero_stack": 97.5,
                 "effective_stack": 96.0,
                 "players_in_hand": 3,
+                "opponents_at_current_bet": 1,
                 "hero_position": "button",
                 "street": "flop",
                 "facing_action": "bet",
@@ -2284,6 +2339,7 @@ def test_local_solver_keeps_fallback_when_limper_is_not_hero(
         hero_stack=99,
         effective_stack=90,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="call", amount=1),

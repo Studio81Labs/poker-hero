@@ -47,6 +47,7 @@ const recommendationWithEvidence: RecommendationResult = {
     equity: { equity: 0.61 },
     realized_equity: 0.55,
     required_equity: 0.2,
+    opponents_at_current_bet: 2,
     stack_depth_policy: 42,
     effective_stack: -1,
     opening_raise_size: "2.5",
@@ -4129,6 +4130,25 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
+  });
+
+  it("records the reviewed committed-opponent count for multiway wagers", async () => {
+    const created = jobRecord();
+    const approvedState = canonicalState({ opponents_at_current_bet: 2 });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const committedInput = await screen.findByLabelText(/Opponents at wager/);
+    await user.type(committedInput, "2");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
+    expect(payload.opponents_at_current_bet).toBe(2);
   });
 
   it("re-approves corrections to an approved-only imported job", async () => {
@@ -9635,12 +9655,14 @@ describe("App", () => {
     expect(within(evidence).getByText("EV 2.4 BB")).toBeInTheDocument();
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
     expect(within(evidence).getByText("Field folds 9% · each 30%")).toBeInTheDocument();
+    expect(within(evidence).getByText("At current wager")).toBeInTheDocument();
+    expect(within(evidence).getByText("2 opponents")).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
     expect(chosen).toHaveTextContent("7.5 BB");
     expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
-    expect(within(evidence).queryByLabelText("Decision context")).not.toBeInTheDocument();
+    expect(within(evidence).getByLabelText("Decision context")).toBeInTheDocument();
     expect(within(evidence).queryByLabelText("Modeled ranges")).not.toBeInTheDocument();
   });
 

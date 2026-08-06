@@ -28,6 +28,10 @@ from app.solvers.preflop_chart import solve_preflop_chart
 MAX_EXACT_CASES = 140_000
 
 
+class SolverInputError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class WeightedCombo:
     cards: tuple[Card, Card]
@@ -91,6 +95,12 @@ def solve(
         if chart_result is not None:
             return chart_result
 
+    opponents_at_current_bet = _opponents_at_current_bet(
+        players=players,
+        current_bet=current_bet,
+        configured=state.opponents_at_current_bet,
+    )
+
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
     equity_by_opponents = _estimate_range_equities(
         hero_cards=hero_cards,
@@ -121,6 +131,7 @@ def solve(
         continuation_equities=continuation_equities,
         analysis=analysis,
         hero_cards=hero_cards,
+        opponents_at_current_bet=opponents_at_current_bet,
     )
     best = max(candidates, key=lambda candidate: (candidate.ev, _action_rank(candidate.action)))
     second_best = sorted(candidates, key=lambda candidate: candidate.ev, reverse=True)[1] if len(candidates) > 1 else best
@@ -138,6 +149,7 @@ def solve(
             "equity": _equity_raw(equity),
             "realized_equity": realized_equity,
             "required_equity": required_equity,
+            "opponents_at_current_bet": opponents_at_current_bet,
             "hand_category": _hand_category_label(analysis),
             "draws": _draw_raw(analysis.draws) if analysis is not None else None,
             "wet_board": analysis.wet_board if analysis is not None else None,
@@ -509,6 +521,7 @@ def _action_candidates(
     continuation_equities: dict[int, float],
     analysis: PostflopAnalysis | None,
     hero_cards: list[Card],
+    opponents_at_current_bet: int,
 ) -> list[Candidate]:
     if facing_bet:
         candidates = [
@@ -528,6 +541,7 @@ def _action_candidates(
                 continuation_equities=continuation_equities,
                 analysis=analysis,
                 existing_wager=current_bet,
+                opponents_with_existing_wager=opponents_at_current_bet,
             )
             ev = fold_equity * pot_size + sum(
                 branch.probability * branch.ev for branch in continuations
@@ -559,6 +573,7 @@ def _action_candidates(
             continuation_equities=continuation_equities,
             analysis=analysis,
             existing_wager=0,
+            opponents_with_existing_wager=0,
         )
         ev = fold_equity * pot_size + sum(
             branch.probability * branch.ev for branch in continuations
@@ -626,6 +641,21 @@ def _field_fold_equity(per_opponent_fold_equity: float, players: int) -> float:
     return per_opponent_fold_equity**opponents
 
 
+def _opponents_at_current_bet(
+    *, players: int, current_bet: float, configured: int | None
+) -> int:
+    if current_bet <= 0:
+        return 0
+    opponents = max(1, min(players - 1, 5))
+    if opponents == 1:
+        return 1
+    if configured is None:
+        raise SolverInputError(
+            "opponents_at_current_bet is required for multiway facing-bet estimates"
+        )
+    return max(1, min(configured, opponents))
+
+
 def _continuation_branches(
     *,
     size: float,
@@ -635,6 +665,7 @@ def _continuation_branches(
     continuation_equities: dict[int, float],
     analysis: PostflopAnalysis | None,
     existing_wager: float,
+    opponents_with_existing_wager: int,
 ) -> tuple[ContinuationBranch, ...]:
     opponents = max(1, min(players - 1, 5))
     call_probability = 1 - per_opponent_fold_equity
@@ -648,7 +679,12 @@ def _continuation_branches(
         called_equity = _called_equity(
             continuation_equities[callers], size, pot_size, analysis
         )
-        existing_wager_adjustment = existing_wager * callers / opponents
+        existing_wager_adjustment = (
+            existing_wager
+            * callers
+            * opponents_with_existing_wager
+            / opponents
+        )
         final_pot = (
             pot_size
             + (callers + 1) * size
@@ -802,7 +838,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = recommend(sys.stdin.read(), preflop_chart_enabled=args.preflop_chart)
-    except ValidationError as exc:
+    except (SolverInputError, ValidationError) as exc:
         print(f"Invalid solver request: {exc}", file=sys.stderr)
         return 2
 

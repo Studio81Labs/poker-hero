@@ -211,7 +211,7 @@ The recommendation registry loads the active recommendation provider from config
 
 Provider types:
 
-- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to five-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots. Multiway fallback aggression estimates independent equal-response probabilities, enumerates every caller-count branch with its own range equity and final pot, adjusts facing-bet branches for the bettor's wager already included in the pot, and exposes both per-opponent and whole-field fold equity as decision evidence.
+- `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to five-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots. Multiway fallback aggression estimates independent equal-response probabilities, enumerates every caller-count branch with its own range equity and final pot, requires the reviewed count of opponents already committed at the current wager, and exposes both per-opponent and whole-field fold equity as decision evidence.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -231,6 +231,8 @@ Canonical state should include, where available:
 - The heads-up opponent's visible stack when reconstructing a postflop history.
 - Effective stack, defined as the minimum visible stack behind.
 - Number of players/seats.
+- Number of opponents already committed at the current wager in a multiway
+  facing-bet spot.
 - Hero position when detectable.
 - Preflop opener position and total opening size when facing a raise.
 - Ordered preflop actions, with canonical seat, action type, and total BB
@@ -249,6 +251,8 @@ without guessing which player is covered. It also requires an explicit action
 classification. A raised heads-up decision requires both visible player stacks
 and a complete ordered history from the first OOP action on the current street.
 The call amount and facing-action classification must agree with that history.
+Multiway range/EV fallback facing a wager requires the reviewed number of
+opponents already committed at that wager so the pot is not counted twice.
 If a solver-style provider requires more context than the screenshot contains,
 the UI must ask the user to supply or correct those fields instead of guessing.
 

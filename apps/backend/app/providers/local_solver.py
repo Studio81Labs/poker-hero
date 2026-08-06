@@ -36,15 +36,36 @@ class LocalSolverProvider:
 
     def required_fields_for(self, state: CanonicalState) -> list[str]:
         required_fields = list(self.required_fields)
-        uses_builtin_chart_routing = (
-            not (self.settings.local_solver_command or "").strip()
-            and self.settings.local_solver_engine.strip().lower() == "postflop_solver"
+        custom_command_missing = not (self.settings.local_solver_command or "").strip()
+        engine = self.settings.local_solver_engine.strip().lower()
+        uses_builtin_chart_routing = custom_command_missing and engine == "postflop_solver"
+        chart_needs_hero_stack = (
+            uses_builtin_chart_routing
+            and state.street == "preflop"
+            and requires_hero_stack_for_preflop_chart(state)
+        )
+        chart_candidate = uses_builtin_chart_routing and state.street == "preflop" and (
+            chart_needs_hero_stack
+            or supports_preflop_chart(
+                RecommendationRequest(state=state, provider=self.name)
+            )
+        )
+        if chart_needs_hero_stack:
+            required_fields.append("hero_stack")
+        uses_builtin_ev = custom_command_missing and (
+            engine == "local_ev"
+            or (
+                engine == "postflop_solver"
+                and self.settings.postflop_solver_fallback_enabled
+            )
         )
         if (
-            uses_builtin_chart_routing
-            and requires_hero_stack_for_preflop_chart(state)
+            uses_builtin_ev
+            and not chart_candidate
+            and (state.current_bet or 0) > 0
+            and (state.players_in_hand or 0) > 2
         ):
-            required_fields.append("hero_stack")
+            required_fields.append("opponents_at_current_bet")
         if not self._requires_postflop_solver_inputs(state):
             return required_fields
 

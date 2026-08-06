@@ -251,6 +251,7 @@ class DetectedState(BaseModel):
     opponent_stack: NonNegativeFiniteNumber | None = None
     effective_stack: NonNegativeFiniteNumber | None = None
     players_in_hand: PositiveInteger | None = None
+    opponents_at_current_bet: PositiveInteger | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
@@ -271,8 +272,9 @@ class DetectedState(BaseModel):
         return _validate_card_count("board_cards", value, 5)
 
     @model_validator(mode="after")
-    def validate_unique_cards(self) -> Self:
+    def validate_state(self) -> Self:
         _validate_unique_cards(self.hero_cards, self.board_cards)
+        _validate_opponents_at_current_bet(self)
         return self
 
 
@@ -300,6 +302,7 @@ class CanonicalState(BaseModel):
     opponent_stack: NonNegativeFiniteNumber | None = None
     effective_stack: NonNegativeFiniteNumber | None = None
     players_in_hand: PositiveInteger | None = None
+    opponents_at_current_bet: PositiveInteger | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
@@ -321,8 +324,9 @@ class CanonicalState(BaseModel):
         return _validate_card_count("board_cards", value, 5)
 
     @model_validator(mode="after")
-    def validate_unique_cards(self) -> Self:
+    def validate_state(self) -> Self:
         _validate_unique_cards(self.hero_cards, self.board_cards)
+        _validate_opponents_at_current_bet(self)
         return self
 
     @classmethod
@@ -337,6 +341,7 @@ class CanonicalState(BaseModel):
             opponent_stack=state.opponent_stack,
             effective_stack=state.effective_stack,
             players_in_hand=state.players_in_hand,
+            opponents_at_current_bet=state.opponents_at_current_bet,
             hero_position=state.hero_position,
             preflop_opener_position=state.preflop_opener_position,
             preflop_open_size=state.preflop_open_size,
@@ -345,6 +350,22 @@ class CanonicalState(BaseModel):
             facing_action=state.facing_action,
             postflop_action_history=state.postflop_action_history,
             action_context=state.action_context,
+        )
+
+
+def _validate_opponents_at_current_bet(
+    state: DetectedState | CanonicalState,
+) -> None:
+    committed = state.opponents_at_current_bet
+    if committed is None:
+        return
+    if state.current_bet is None or state.current_bet <= 0:
+        raise ValueError("opponents_at_current_bet requires a positive current_bet")
+    if state.players_in_hand is None:
+        raise ValueError("opponents_at_current_bet requires players_in_hand")
+    if committed >= state.players_in_hand:
+        raise ValueError(
+            "opponents_at_current_bet must be lower than players_in_hand"
         )
 
 

@@ -104,6 +104,7 @@ PreflopChartScenario = Literal[
     "two_limpers_big_blind",
     "three_limpers_big_blind",
     "four_limpers_big_blind",
+    "five_limpers_big_blind",
     "facing_isolation_raise_after_limp",
     "facing_limp_reraise",
     "facing_open_raise",
@@ -263,7 +264,7 @@ def _structured_big_blind_limp_context(
         or state.facing_action is not None
         or state.preflop_opener_position is not None
         or state.preflop_open_size is not None
-        or len(history) not in {1, 2, 3, 4}
+        or len(history) not in {1, 2, 3, 4, 5}
         or state.players_in_hand != len(history) + 1
     ):
         return None
@@ -299,6 +300,7 @@ def _structured_big_blind_limp_context(
         2: "two_limpers_big_blind",
         3: "three_limpers_big_blind",
         4: "four_limpers_big_blind",
+        5: "five_limpers_big_blind",
     }
     return PreflopChartContext(
         scenario=limp_scenarios[len(history)],

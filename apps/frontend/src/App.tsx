@@ -513,7 +513,7 @@ function recommendationEvidenceFromRaw(
 
   const isolationRaiserPosition = metadataLabel(raw.isolation_raiser_position);
   const limpReraiserPosition = metadataLabel(raw.limp_reraiser_position);
-  const limperPositions = metadataStringList(raw.limper_positions, 4)
+  const limperPositions = metadataStringList(raw.limper_positions, 5)
     .map((position) => metadataLabel(position))
     .filter((position): position is string => position !== null);
   if (limperPositions.length > 0) {

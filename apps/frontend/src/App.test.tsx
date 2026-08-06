@@ -10021,6 +10021,63 @@ describe("App", () => {
     expect(within(chartContext).getByText("101 BB")).toBeInTheDocument();
   });
 
+  it("shows five-limper big-blind chart context", async () => {
+    const chartJob: JobRecord = {
+      ...recommendedJob(),
+      id: "five-limper-chart-job",
+      original_filename: "five-limpers.png",
+      image_filename: "five-limpers.png",
+      recommendation: {
+        action: "raise",
+        sizing: 9,
+        confidence: 0.8,
+        explanation: "The preflop chart recommends isolating five limpers.",
+        raw: {
+          provider: "local_solver",
+          engine: "preflop_chart_v1",
+          hand_top_fraction: 0.0059,
+          policy_fraction: 0.06,
+          stack_depth_policy: "standard",
+          effective_stack: 100,
+          limper_positions: ["utg", "hijack", "cutoff", "button", "small_blind"],
+          limper_count: 5,
+          limp_size: 1,
+          multi_limp_response_policy: "big_blind_five_limpers",
+          base_multi_limp_raise_fraction: 0.06,
+          multi_limp_raise_fraction: 0.06,
+          target_multi_limp_raise_size: 9,
+          maximum_multi_limp_raise_total: 101,
+          candidates: [
+            { action: "check", sizing: null, frequency: 0 },
+            { action: "raise", sizing: 9, frequency: 1 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: chartJob.id, job: chartJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const chartContext = within(evidence).getByLabelText("Decision context");
+    expect(within(chartContext).getByText("Standard · 100 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("Limpers")).toBeInTheDocument();
+    expect(
+      within(chartContext).getByText("UTG · Hijack · Cutoff · Button · Small blind"),
+    ).toBeInTheDocument();
+    expect(within(chartContext).getByText("Big blind five limpers")).toBeInTheDocument();
+    expect(within(chartContext).getByText("6%")).toBeInTheDocument();
+    expect(within(chartContext).getByText("1 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("9 BB")).toBeInTheDocument();
+    expect(within(chartContext).getByText("101 BB")).toBeInTheDocument();
+  });
+
   it("shows isolation-raise response chart context", async () => {
     const chartJob: JobRecord = {
       ...recommendedJob(),

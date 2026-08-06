@@ -123,10 +123,11 @@ raising into an outstanding wager already included in the pot, the canonical
 state can record both how many opponents have committed it and their total
 current-street wager. The total wager is distinct from hero's remaining amount
 to call and is resolved from explicit review, structured action history,
-preflop opening context, or a simple first-bet state. The equal-response model
-uses the expected committed callers in each branch and subtracts every
-corresponding already-counted commitment. Fallback is withheld until any
-commitment context that cannot be derived has been reviewed.
+preflop opening context, or a simple first-bet state. Hero's existing wager is
+derived from their difference. The equal-response model reconstructs each
+caller's additional contribution from both values and the expected committed
+callers in that branch. Fallback is withheld until any commitment context that
+cannot be derived has been reviewed.
 Candidate evidence retains the fold probabilities and continuation branches so
 the approximation remains reviewable.
 Explicit custom

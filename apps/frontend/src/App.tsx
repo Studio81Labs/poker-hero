@@ -518,17 +518,22 @@ function recommendationEvidenceFromRaw(
   }
   const committedOpponents = metadataNumber(raw.opponents_at_current_bet);
   const opponentWager = metadataNumber(raw.opponent_wager);
+  const heroWager = metadataNumber(raw.hero_wager);
   const hasCommittedOpponentCount = committedOpponents !== null
     && Number.isInteger(committedOpponents)
     && committedOpponents > 0;
   const hasOpponentWager = opponentWager !== null && opponentWager > 0;
-  if (hasCommittedOpponentCount || hasOpponentWager) {
+  const hasHeroWager = heroWager !== null && heroWager > 0;
+  if (hasCommittedOpponentCount || hasOpponentWager || hasHeroWager) {
     const context = [];
     if (hasCommittedOpponentCount) {
       context.push(`${committedOpponents} ${committedOpponents === 1 ? "opponent" : "opponents"}`);
     }
     if (hasOpponentWager) {
       context.push(`${formatEvidenceBb(opponentWager)} each`);
+    }
+    if (hasHeroWager) {
+      context.push(`hero ${formatEvidenceBb(heroWager)}`);
     }
     details.push({
       label: "At current wager",

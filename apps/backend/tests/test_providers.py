@@ -355,6 +355,7 @@ def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
     )
 
     assert result.raw["opponent_wager"] == 2.5
+    assert result.raw["hero_wager"] == 1
     wager_candidates = [
         candidate
         for candidate in result.raw["candidates"]
@@ -362,7 +363,63 @@ def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
     ]
     assert wager_candidates
     for candidate in wager_candidates:
-        assert candidate["continuations"][0]["existing_wager_adjustment"] == 2.5
+        continuation = candidate["continuations"][0]
+        assert continuation["existing_wager_adjustment"] == 1.5
+        assert continuation["final_pot"] == pytest.approx(
+            state.pot_size + 2 * candidate["sizing"] - state.current_bet
+        )
+        assert continuation["ev"] == pytest.approx(
+            continuation["called_equity"] * continuation["final_pot"]
+            - candidate["sizing"],
+            abs=0.001,
+        )
+
+
+def test_local_ev_reconstructs_multiway_calls_from_both_existing_wagers(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=5,
+        current_bet=1.5,
+        effective_stack=99,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_wager=2.5,
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["hero_wager"] == 1
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 0.25
+        assert continuations[1]["existing_wager_adjustment"] == 0.5
+        for continuation in continuations:
+            callers = continuation["callers"]
+            assert continuation["final_pot"] == pytest.approx(
+                state.pot_size
+                + (callers + 1) * candidate["sizing"]
+                - continuation["existing_wager_adjustment"]
+            )
 
 
 def test_local_ev_accounts_for_multiple_opponents_already_at_bet(

@@ -49,6 +49,7 @@ const recommendationWithEvidence: RecommendationResult = {
     required_equity: 0.2,
     opponents_at_current_bet: 2,
     opponent_wager: 5,
+    hero_wager: 1,
     stack_depth_policy: 42,
     effective_stack: -1,
     opening_raise_size: "2.5",
@@ -9680,7 +9681,7 @@ describe("App", () => {
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
     expect(within(evidence).getByText("Field folds 9% · each 30%")).toBeInTheDocument();
     expect(within(evidence).getByText("At current wager")).toBeInTheDocument();
-    expect(within(evidence).getByText("2 opponents · 5 BB each")).toBeInTheDocument();
+    expect(within(evidence).getByText("2 opponents · 5 BB each · hero 1 BB")).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
     expect(chosen).toHaveTextContent("7.5 BB");

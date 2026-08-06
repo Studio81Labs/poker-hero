@@ -69,7 +69,11 @@ def external_solver_service() -> Iterator[tuple[str, list[dict[str, Any]]]]:
         thread.join(timeout=5)
 
 
-def create_approved_job(client: TestClient) -> str:
+def create_approved_job(
+    client: TestClient,
+    *,
+    opponents_at_current_bet: int | None = None,
+) -> str:
     upload = client.post(
         "/api/jobs",
         files={"file": ("table.png", VALID_PNG, "image/png")},
@@ -80,6 +84,8 @@ def create_approved_job(client: TestClient) -> str:
         **job["parser_result"]["state"],
         "user_approved": True,
     }
+    if opponents_at_current_bet is not None:
+        approved_state["opponents_at_current_bet"] = opponents_at_current_bet
 
     approve = client.post(
         f"/api/jobs/{job['id']}/approve",
@@ -100,7 +106,7 @@ def test_local_solver_subprocess_completes_api_recommendation(
     )
 
     with TestClient(create_app(settings)) as client:
-        job_id = create_approved_job(client)
+        job_id = create_approved_job(client, opponents_at_current_bet=1)
         response = client.post(f"/api/jobs/{job_id}/recommend")
 
     assert response.status_code == 200

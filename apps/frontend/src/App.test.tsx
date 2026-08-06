@@ -47,6 +47,10 @@ const recommendationWithEvidence: RecommendationResult = {
     equity: { equity: 0.61 },
     realized_equity: 0.55,
     required_equity: 0.2,
+    opponents_at_current_bet: 1,
+    opponent_wager: 10,
+    opponent_commitment_total: 13,
+    hero_wager: 1,
     stack_depth_policy: 42,
     effective_stack: -1,
     opening_raise_size: "2.5",
@@ -57,7 +61,14 @@ const recommendationWithEvidence: RecommendationResult = {
       { action: "check", sizing: null, ev: 3 },
       { action: "bet", sizing: 2.5, ev: 2.9 },
       { action: "raise", sizing: 4, ev: 2.8 },
-      { action: "raise", sizing: 7.5, ev: 2.4, frequency: 0.72 },
+      {
+        action: "raise",
+        sizing: 7.5,
+        ev: 2.4,
+        frequency: 0.72,
+        fold_equity: 0.09,
+        per_opponent_fold_equity: 0.3,
+      },
       { action: "invalid", sizing: -1, ev: "unknown" },
     ],
   },
@@ -4122,6 +4133,256 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
+  });
+
+  it("records the reviewed committed-opponent count for multiway wagers", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 6.5,
+      current_bet: 1.5,
+      players_in_hand: 3,
+      opponents_at_current_bet: null,
+      opponent_wager: null,
+      hero_position: "big_blind",
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Cutoff opens to 2.5 BB and button calls",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...preflopState,
+      opponents_at_current_bet: 2,
+      opponent_wager: 2.5,
+      opponent_commitment_total: 5,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const committedInput = await screen.findByLabelText(/Opponents at wager/);
+    await user.type(committedInput, "2");
+    await user.type(screen.getByLabelText(/Opponent wager total/), "2.5");
+    await user.type(screen.getByLabelText(/Opponent commitments total/), "5");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
+    expect(payload.opponents_at_current_bet).toBe(2);
+    expect(payload.opponent_wager).toBe(2.5);
+    expect(payload.opponent_commitment_total).toBe(5);
+  });
+
+  it("clears multiway commitments when players in hand is corrected to heads-up", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 6.5,
+      current_bet: 1.5,
+      players_in_hand: 3,
+      opponents_at_current_bet: 2,
+      opponent_wager: 2.5,
+      opponent_commitment_total: 5,
+      hero_position: "big_blind",
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Cutoff opens to 2.5 BB and button calls",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...preflopState,
+      players_in_hand: 2,
+      opponents_at_current_bet: null,
+      opponent_commitment_total: null,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const playersInput = screen.getByLabelText(/Players in hand/);
+    expect(screen.getByLabelText(/Opponent commitments total/)).toHaveValue("5");
+    await user.clear(playersInput);
+    await user.type(playersInput, "2");
+    expect(screen.queryByLabelText(/Opponent commitments total/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.players_in_hand).toBe(2);
+    expect(payload.opponents_at_current_bet).toBeNull();
+    expect(payload.opponent_commitment_total).toBeNull();
+  });
+
+  it("rejects commitments above the latest wager across active opponents", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 10,
+      current_bet: 1.5,
+      players_in_hand: 3,
+      opponents_at_current_bet: 1,
+      opponent_wager: 2.5,
+      opponent_commitment_total: 6,
+      hero_position: "big_blind",
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Cutoff opens to 2.5 BB",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    expect(await screen.findByText(
+      "Opponent commitments total cannot exceed the latest wager across active opponents",
+    )).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+  });
+
+  it("validates commitment totals against current-street history only", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      pot_size: 30,
+      current_bet: 15,
+      players_in_hand: 3,
+      opponents_at_current_bet: 1,
+      opponent_wager: 15,
+      opponent_commitment_total: null,
+      preflop_action_history: [
+        { actor: "button", action: "raise", amount: 25 },
+      ],
+      facing_action: "raise",
+      postflop_action_history: [
+        { actor: "oop", action: "bet", amount: 5 },
+        { actor: "ip", action: "raise", amount: 15 },
+      ],
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...postflopState,
+      opponent_commitment_total: 20,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.type(screen.getByLabelText(/Opponent commitments total/), "20");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_commitment_total).toBe(20);
+  });
+
+  it("validates commitments against a corrected wager instead of stale history", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 30,
+      current_bet: 5,
+      players_in_hand: 3,
+      opponents_at_current_bet: 1,
+      opponent_wager: 10,
+      opponent_commitment_total: 15,
+      hero_position: "big_blind",
+      street: "preflop",
+      facing_action: "raise",
+      preflop_action_history: [
+        { actor: "button", action: "raise", amount: 20 },
+      ],
+      action_context: "Reviewed wager corrects stale parsed history",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState(preflopState);
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBe(10);
+    expect(payload.opponent_commitment_total).toBe(15);
+  });
+
+  it("preserves reviewed preflop commitments when there is no call amount", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 2.5,
+      current_bet: 0,
+      players_in_hand: 2,
+      opponent_commitment_total: 1.5,
+      hero_position: "button",
+      street: "preflop",
+      facing_action: null,
+      action_context: "Folded dead money remains in the pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...preflopState,
+      opponent_commitment_total: 1.25,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const commitmentInput = await screen.findByLabelText(/Opponent commitments total/);
+    expect(commitmentInput).toHaveValue("1.5");
+    await user.clear(commitmentInput);
+    await user.type(commitmentInput, "1.25");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.current_bet).toBe(0);
+    expect(payload.opponent_commitment_total).toBe(1.25);
   });
 
   it("re-approves corrections to an approved-only imported job", async () => {
@@ -9627,12 +9888,17 @@ describe("App", () => {
     expect(within(evidence).getByText("20%")).toBeInTheDocument();
     expect(within(evidence).getByText("EV 2.4 BB")).toBeInTheDocument();
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
+    expect(within(evidence).getByText("Field folds 9% · each 30%")).toBeInTheDocument();
+    expect(within(evidence).getByText("At current wager")).toBeInTheDocument();
+    expect(within(evidence).getByText(
+      "1 opponent · 10 BB committed · 13 BB total · hero 1 BB",
+    )).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
     expect(chosen).toHaveTextContent("7.5 BB");
     expect(within(evidence).getAllByRole("listitem")).toHaveLength(4);
     expect(within(evidence).queryByText("invalid")).not.toBeInTheDocument();
-    expect(within(evidence).queryByLabelText("Decision context")).not.toBeInTheDocument();
+    expect(within(evidence).getByLabelText("Decision context")).toBeInTheDocument();
     expect(within(evidence).queryByLabelText("Modeled ranges")).not.toBeInTheDocument();
   });
 

@@ -24,8 +24,17 @@ from app.providers.rule_based import (
     _starting_hand_score,
 )
 from app.solvers.preflop_chart import solve_preflop_chart
+from app.solvers.wager_context import (
+    resolve_hero_wager,
+    resolve_opponent_commitment_total,
+    resolve_opponent_wager,
+)
 
 MAX_EXACT_CASES = 140_000
+
+
+class SolverInputError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -48,12 +57,24 @@ class EquityEstimate:
 
 
 @dataclass(frozen=True)
+class ContinuationBranch:
+    callers: int
+    probability: float
+    called_equity: float
+    existing_wager_adjustment: float
+    final_pot: float
+    ev: float
+
+
+@dataclass(frozen=True)
 class Candidate:
     action: RecommendationAction
     sizing: float | None
     ev: float
     fold_equity: float | None = None
     called_equity: float | None = None
+    per_opponent_fold_equity: float | None = None
+    continuations: tuple[ContinuationBranch, ...] = ()
 
 
 def recommend(raw_request: str, *, preflop_chart_enabled: bool = False) -> RecommendationResult:
@@ -79,15 +100,50 @@ def solve(
         if chart_result is not None:
             return chart_result
 
+    opponents_at_current_bet = _opponents_at_current_bet(
+        players=players,
+        current_bet=current_bet,
+        configured=state.opponents_at_current_bet,
+    )
+    opponent_wager = resolve_opponent_wager(state)
+    if current_bet > 0 and opponent_wager is None:
+        raise SolverInputError(
+            "opponent_wager is required when the total opponent commitment "
+            "cannot be derived"
+        )
+    hero_wager = resolve_hero_wager(
+        state,
+        opponent_wager=opponent_wager or 0,
+    )
+    opponent_commitment_total = resolve_opponent_commitment_total(
+        state,
+        opponent_wager=opponent_wager or 0,
+        opponents_at_current_bet=opponents_at_current_bet,
+        hero_wager=hero_wager,
+    )
+    if opponent_commitment_total is None:
+        raise SolverInputError(
+            "opponent_commitment_total is required when active opponents have "
+            "different commitments that cannot be derived"
+        )
+
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
-    equity = _estimate_range_equity(
+    equity_by_opponents = _estimate_range_equities(
         hero_cards=hero_cards,
         board_cards=board_cards,
         players_in_hand=players,
         street=street,
         facing_bet=facing_bet,
     )
+    equity = equity_by_opponents[max(equity_by_opponents)]
     realized_equity = _realized_equity(equity.equity, hero_cards, analysis, players, facing_bet, street)
+    continuation_equities = _continuation_equities(
+        equity_by_opponents=equity_by_opponents,
+        street=street,
+        facing_bet=facing_bet,
+        analysis=analysis,
+        hero_cards=hero_cards,
+    )
     required_equity = _pot_odds(current_bet, pot_size) if facing_bet else None
 
     candidates = _action_candidates(
@@ -98,8 +154,11 @@ def solve(
         street=street,
         facing_bet=facing_bet,
         realized_equity=realized_equity,
+        continuation_equities=continuation_equities,
         analysis=analysis,
         hero_cards=hero_cards,
+        opponent_commitment_total=opponent_commitment_total,
+        hero_wager=hero_wager,
     )
     best = max(candidates, key=lambda candidate: (candidate.ev, _action_rank(candidate.action)))
     second_best = sorted(candidates, key=lambda candidate: candidate.ev, reverse=True)[1] if len(candidates) > 1 else best
@@ -117,6 +176,10 @@ def solve(
             "equity": _equity_raw(equity),
             "realized_equity": realized_equity,
             "required_equity": required_equity,
+            "opponents_at_current_bet": opponents_at_current_bet,
+            "opponent_wager": opponent_wager,
+            "opponent_commitment_total": opponent_commitment_total,
+            "hero_wager": hero_wager,
             "hand_category": _hand_category_label(analysis),
             "draws": _draw_raw(analysis.draws) if analysis is not None else None,
             "wet_board": analysis.wet_board if analysis is not None else None,
@@ -126,20 +189,23 @@ def solve(
     )
 
 
-def _estimate_range_equity(
+def _estimate_range_equities(
     *,
     hero_cards: list[Card],
     board_cards: list[Card],
     players_in_hand: int,
     street: str,
     facing_bet: bool,
-) -> EquityEstimate:
+) -> dict[int, EquityEstimate]:
     opponents = max(1, min(players_in_hand - 1, 5))
     known_codes = {card.code for card in [*hero_cards, *board_cards]}
     deck = [Card.from_code(code) for code in DECK_CODES if code not in known_codes]
     board_needed = max(0, 5 - len(board_cards))
     if len(hero_cards) < 2 or board_needed + opponents * 2 > len(deck):
-        return EquityEstimate(0, 0, 0, 0, opponents, "unavailable", 0, 0)
+        return {
+            count: EquityEstimate(0, 0, 0, 0, count, "unavailable", 0, 0)
+            for count in range(1, opponents + 1)
+        }
 
     combos, range_fraction = _opponent_range(deck, board_cards, street, facing_bet, players_in_hand)
     if not combos:
@@ -148,9 +214,13 @@ def _estimate_range_equity(
 
     exact_cases = len(combos) * (comb(max(0, len(deck) - 2), board_needed) if board_needed else 1)
     if opponents == 1 and exact_cases <= MAX_EXACT_CASES:
-        return _exact_single_opponent_equity(hero_cards, board_cards, deck, combos, board_needed, range_fraction)
+        return {
+            1: _exact_single_opponent_equity(
+                hero_cards, board_cards, deck, combos, board_needed, range_fraction
+            )
+        }
 
-    return _monte_carlo_equity(
+    return _monte_carlo_equities(
         hero_cards=hero_cards,
         board_cards=board_cards,
         deck=deck,
@@ -162,6 +232,27 @@ def _estimate_range_equity(
         players_in_hand=players_in_hand,
         range_fraction=range_fraction,
     )
+
+
+def _continuation_equities(
+    *,
+    equity_by_opponents: dict[int, EquityEstimate],
+    street: str,
+    facing_bet: bool,
+    analysis: PostflopAnalysis | None,
+    hero_cards: list[Card],
+) -> dict[int, float]:
+    equities: dict[int, float] = {}
+    for callers, estimate in equity_by_opponents.items():
+        equities[callers] = _realized_equity(
+            estimate.equity,
+            hero_cards,
+            analysis,
+            callers + 1,
+            facing_bet,
+            street,
+        )
+    return equities
 
 
 def _opponent_range(
@@ -273,7 +364,7 @@ def _exact_single_opponent_equity(
     )
 
 
-def _monte_carlo_equity(
+def _monte_carlo_equities(
     *,
     hero_cards: list[Card],
     board_cards: list[Card],
@@ -285,12 +376,12 @@ def _monte_carlo_equity(
     facing_bet: bool,
     players_in_hand: int,
     range_fraction: float,
-) -> EquityEstimate:
+) -> dict[int, EquityEstimate]:
     iterations = _sample_budget(street, opponents)
     rng = random.Random(_seed(hero_cards, board_cards, players_in_hand, street, facing_bet))
-    equity_total = 0.0
-    wins = 0
-    ties = 0
+    equity_totals = [0.0] * (opponents + 1)
+    wins = [0] * (opponents + 1)
+    ties = [0] * (opponents + 1)
     completed = 0
 
     for _ in range(iterations):
@@ -315,27 +406,43 @@ def _monte_carlo_equity(
         if len(board_deck) < board_needed:
             continue
         final_board = [*board_cards, *rng.sample(board_deck, board_needed)]
-        outcome = _hero_outcome(hero_cards, opponent_hands, final_board)
-        equity_total += outcome
-        if outcome == 1:
-            wins += 1
-        elif outcome > 0:
-            ties += 1
+        outcomes = _hero_outcomes(hero_cards, opponent_hands, final_board)
+        for opponent_count, outcome in outcomes.items():
+            equity_totals[opponent_count] += outcome
+            if outcome == 1:
+                wins[opponent_count] += 1
+            elif outcome > 0:
+                ties[opponent_count] += 1
         completed += 1
 
     if completed == 0:
-        return EquityEstimate(0, 0, 0, 0, opponents, "monte_carlo_range", len(combos), range_fraction)
+        return {
+            count: EquityEstimate(
+                0,
+                0,
+                0,
+                0,
+                count,
+                "monte_carlo_range",
+                len(combos),
+                range_fraction,
+            )
+            for count in range(1, opponents + 1)
+        }
 
-    return EquityEstimate(
-        equity=round(equity_total / completed, 3),
-        win_rate=round(wins / completed, 3),
-        tie_rate=round(ties / completed, 3),
-        iterations=completed,
-        opponents=opponents,
-        method="monte_carlo_range",
-        opponent_combos=len(combos),
-        range_fraction=range_fraction,
-    )
+    return {
+        count: EquityEstimate(
+            equity=round(equity_totals[count] / completed, 3),
+            win_rate=round(wins[count] / completed, 3),
+            tie_rate=round(ties[count] / completed, 3),
+            iterations=completed,
+            opponents=count,
+            method="monte_carlo_range",
+            opponent_combos=len(combos),
+            range_fraction=range_fraction,
+        )
+        for count in range(1, opponents + 1)
+    }
 
 
 def _sample_budget(street: str, opponents: int) -> int:
@@ -367,13 +474,27 @@ def _weighted_choice_available(
 
 
 def _hero_outcome(hero_cards: list[Card], opponent_hands: list[list[Card]], final_board: list[Card]) -> float:
+    return _hero_outcomes(hero_cards, opponent_hands, final_board)[len(opponent_hands)]
+
+
+def _hero_outcomes(
+    hero_cards: list[Card], opponent_hands: list[list[Card]], final_board: list[Card]
+) -> dict[int, float]:
     hero_score = _score_key(_best_hand_score([*hero_cards, *final_board]))
     opponent_scores = [_score_key(_best_hand_score([*hand, *final_board])) for hand in opponent_hands]
-    best_score = max([hero_score, *opponent_scores])
-    if hero_score != best_score:
-        return 0.0
-    winner_count = 1 + sum(1 for score in opponent_scores if score == best_score)
-    return 1 / winner_count
+    outcomes: dict[int, float] = {}
+    best_score = hero_score
+    tied_opponents = 0
+    for opponent_count, opponent_score in enumerate(opponent_scores, start=1):
+        if opponent_score > best_score:
+            best_score = opponent_score
+            tied_opponents = 1
+        elif opponent_score == best_score:
+            tied_opponents += 1
+        outcomes[opponent_count] = (
+            1 / (tied_opponents + 1) if hero_score == best_score else 0.0
+        )
+    return outcomes
 
 
 def _realized_equity(
@@ -427,8 +548,11 @@ def _action_candidates(
     street: str,
     facing_bet: bool,
     realized_equity: float,
+    continuation_equities: dict[int, float],
     analysis: PostflopAnalysis | None,
     hero_cards: list[Card],
+    opponent_commitment_total: float,
+    hero_wager: float,
 ) -> list[Candidate]:
     if facing_bet:
         candidates = [
@@ -436,20 +560,66 @@ def _action_candidates(
             Candidate("call", None, round(realized_equity * (pot_size + current_bet) - current_bet, 3)),
         ]
         for raise_size in _raise_sizes(current_bet, pot_size, effective_stack):
-            fold_equity = _fold_equity(raise_size, pot_size, players, street, facing_bet, analysis)
-            called_equity = _called_equity(realized_equity, raise_size, pot_size, analysis)
-            called_pot = pot_size + 2 * raise_size
-            ev = fold_equity * pot_size + (1 - fold_equity) * (called_equity * called_pot - raise_size)
-            candidates.append(Candidate("raise", raise_size, round(ev, 3), fold_equity, called_equity))
+            per_opponent_fold_equity = _per_opponent_fold_equity(
+                raise_size, pot_size, street, facing_bet, analysis
+            )
+            fold_equity = _field_fold_equity(per_opponent_fold_equity, players)
+            continuations = _continuation_branches(
+                size=raise_size,
+                pot_size=pot_size,
+                players=players,
+                per_opponent_fold_equity=per_opponent_fold_equity,
+                continuation_equities=continuation_equities,
+                analysis=analysis,
+                opponent_commitment_total=opponent_commitment_total,
+                existing_hero_wager=hero_wager,
+            )
+            ev = fold_equity * pot_size + sum(
+                branch.probability * branch.ev for branch in continuations
+            )
+            candidates.append(
+                Candidate(
+                    "raise",
+                    raise_size,
+                    round(ev, 3),
+                    round(fold_equity, 6),
+                    continuations[-1].called_equity,
+                    per_opponent_fold_equity,
+                    continuations,
+                )
+            )
         return candidates
 
     candidates = [Candidate("check", None, round(realized_equity * pot_size, 3))]
     for bet_size in _bet_sizes(pot_size, effective_stack, street, hero_cards):
-        fold_equity = _fold_equity(bet_size, pot_size, players, street, facing_bet, analysis)
-        called_equity = _called_equity(realized_equity, bet_size, pot_size, analysis)
-        called_pot = pot_size + 2 * bet_size
-        ev = fold_equity * pot_size + (1 - fold_equity) * (called_equity * called_pot - bet_size)
-        candidates.append(Candidate("bet", bet_size, round(ev, 3), fold_equity, called_equity))
+        per_opponent_fold_equity = _per_opponent_fold_equity(
+            bet_size, pot_size, street, facing_bet, analysis
+        )
+        fold_equity = _field_fold_equity(per_opponent_fold_equity, players)
+        continuations = _continuation_branches(
+            size=bet_size,
+            pot_size=pot_size,
+            players=players,
+            per_opponent_fold_equity=per_opponent_fold_equity,
+            continuation_equities=continuation_equities,
+            analysis=analysis,
+            opponent_commitment_total=opponent_commitment_total,
+            existing_hero_wager=hero_wager,
+        )
+        ev = fold_equity * pot_size + sum(
+            branch.probability * branch.ev for branch in continuations
+        )
+        candidates.append(
+            Candidate(
+                "bet",
+                bet_size,
+                round(ev, 3),
+                round(fold_equity, 6),
+                continuations[-1].called_equity,
+                per_opponent_fold_equity,
+                continuations,
+            )
+        )
     return candidates
 
 
@@ -474,17 +644,15 @@ def _unique_sizes(sizes: Iterable[float]) -> list[float]:
     return unique[:3]
 
 
-def _fold_equity(
+def _per_opponent_fold_equity(
     size: float,
     pot_size: float,
-    players: int,
     street: str,
     facing_bet: bool,
     analysis: PostflopAnalysis | None,
 ) -> float:
     fraction = size / pot_size if pot_size > 0 else 1.0
     base = 0.22 + min(0.22, fraction * 0.16)
-    base -= max(0, players - 2) * 0.08
     if facing_bet:
         base -= 0.08
     if street == "river":
@@ -497,6 +665,73 @@ def _fold_equity(
         elif analysis.draws.has_strong_draw:
             base += 0.02
     return round(min(0.58, max(0.04, base)), 3)
+
+
+def _field_fold_equity(per_opponent_fold_equity: float, players: int) -> float:
+    opponents = max(1, min(players - 1, 5))
+    return per_opponent_fold_equity**opponents
+
+
+def _opponents_at_current_bet(
+    *, players: int, current_bet: float, configured: int | None
+) -> int:
+    if current_bet <= 0:
+        return 0
+    opponents = max(1, min(players - 1, 5))
+    if opponents == 1:
+        return 1
+    if configured is None:
+        raise SolverInputError(
+            "opponents_at_current_bet is required for multiway facing-bet estimates"
+        )
+    return max(1, min(configured, opponents))
+
+
+def _continuation_branches(
+    *,
+    size: float,
+    pot_size: float,
+    players: int,
+    per_opponent_fold_equity: float,
+    continuation_equities: dict[int, float],
+    analysis: PostflopAnalysis | None,
+    opponent_commitment_total: float,
+    existing_hero_wager: float,
+) -> tuple[ContinuationBranch, ...]:
+    opponents = max(1, min(players - 1, 5))
+    call_probability = 1 - per_opponent_fold_equity
+    branches: list[ContinuationBranch] = []
+    for callers in range(1, opponents + 1):
+        probability = (
+            comb(opponents, callers)
+            * call_probability**callers
+            * per_opponent_fold_equity ** (opponents - callers)
+        )
+        called_equity = _called_equity(
+            continuation_equities[callers], size, pot_size, analysis
+        )
+        expected_opponent_wager = (
+            opponent_commitment_total * callers / opponents
+        )
+        additional_caller_contribution = (
+            callers * (size + existing_hero_wager)
+            - expected_opponent_wager
+        )
+        existing_wager_adjustment = (
+            expected_opponent_wager - callers * existing_hero_wager
+        )
+        final_pot = pot_size + size + additional_caller_contribution
+        branches.append(
+            ContinuationBranch(
+                callers=callers,
+                probability=probability,
+                called_equity=called_equity,
+                existing_wager_adjustment=existing_wager_adjustment,
+                final_pot=final_pot,
+                ev=called_equity * final_pot - size,
+            )
+        )
+    return tuple(branches)
 
 
 def _called_equity(
@@ -545,9 +780,15 @@ def _explanation(
         )
     size_text = f" {best.sizing:g} BB" if best.sizing is not None else ""
     hand_text = f" with {label}" if label else ""
+    field_text = (
+        " Multiway fold equity requires every opponent to fold and uses "
+        "independent equal-response estimates."
+        if equity.opponents > 1
+        else ""
+    )
     return (
         f"Solver compared candidate actions and chose {best.action}{size_text}{hand_text}. "
-        f"{context} This is a local range/EV estimate, not a full GTO tree solve."
+        f"{context}{field_text} This is a local range/EV estimate, not a full GTO tree solve."
     )
 
 
@@ -576,7 +817,21 @@ def _candidate_raw(candidate: Candidate) -> dict[str, object]:
         "sizing": candidate.sizing,
         "ev": candidate.ev,
         "fold_equity": candidate.fold_equity,
+        "per_opponent_fold_equity": candidate.per_opponent_fold_equity,
         "called_equity": candidate.called_equity,
+        "continuations": [
+            {
+                "callers": branch.callers,
+                "probability": round(branch.probability, 6),
+                "called_equity": branch.called_equity,
+                "existing_wager_adjustment": round(
+                    branch.existing_wager_adjustment, 3
+                ),
+                "final_pot": round(branch.final_pot, 3),
+                "ev": round(branch.ev, 3),
+            }
+            for branch in candidate.continuations
+        ],
     }
 
 
@@ -614,7 +869,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = recommend(sys.stdin.read(), preflop_chart_enabled=args.preflop_chart)
-    except ValidationError as exc:
+    except (SolverInputError, ValidationError) as exc:
         print(f"Invalid solver request: {exc}", file=sys.stderr)
         return 2
 

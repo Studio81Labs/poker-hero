@@ -112,6 +112,9 @@ const EMPTY_STATE: CanonicalState = {
   opponent_stack: null,
   effective_stack: null,
   players_in_hand: null,
+  opponents_at_current_bet: null,
+  opponent_wager: null,
+  opponent_commitment_total: null,
   hero_position: null,
   preflop_opener_position: null,
   preflop_open_size: null,
@@ -240,6 +243,9 @@ interface StateForm {
   opponent_stack: string;
   effective_stack: string;
   players_in_hand: string;
+  opponents_at_current_bet: string;
+  opponent_wager: string;
+  opponent_commitment_total: string;
   hero_position: string;
   preflop_opener_position: string;
   preflop_open_size: string;
@@ -294,6 +300,8 @@ interface RecommendationEvidenceCandidate {
   sizing: number | null;
   ev: number | null;
   frequency: number | null;
+  foldEquity: number | null;
+  perOpponentFoldEquity: number | null;
 }
 
 interface RecommendationEvidence {
@@ -509,6 +517,54 @@ function recommendationEvidenceFromRaw(
   const effectiveStack = metadataNumber(raw.effective_stack);
   if (stackPolicy && effectiveStack !== null && effectiveStack >= 0) {
     details.push({ label: "Stack depth", value: `${stackPolicy} · ${formatEvidenceBb(effectiveStack)}` });
+  }
+  const committedOpponents = metadataNumber(raw.opponents_at_current_bet);
+  const opponentWager = metadataNumber(raw.opponent_wager);
+  const opponentCommitmentTotal = metadataNumber(raw.opponent_commitment_total);
+  const heroWager = metadataNumber(raw.hero_wager);
+  const hasCommittedOpponentCount = committedOpponents !== null
+    && Number.isInteger(committedOpponents)
+    && committedOpponents > 0;
+  const hasOpponentWager = opponentWager !== null && opponentWager > 0;
+  const hasDistinctCommitmentTotal = opponentCommitmentTotal !== null
+    && opponentCommitmentTotal > 0
+    && (
+      !hasCommittedOpponentCount
+      || !hasOpponentWager
+      || Math.abs(
+        opponentCommitmentTotal - committedOpponents * opponentWager
+      ) > 0.001
+    );
+  const hasHeroWager = heroWager !== null && heroWager > 0;
+  if (
+    hasCommittedOpponentCount
+    || hasOpponentWager
+    || hasDistinctCommitmentTotal
+    || hasHeroWager
+  ) {
+    const context = [];
+    if (hasCommittedOpponentCount) {
+      context.push(`${committedOpponents} ${committedOpponents === 1 ? "opponent" : "opponents"}`);
+    }
+    if (hasOpponentWager) {
+      context.push(
+        hasCommittedOpponentCount && committedOpponents === 1
+          ? `${formatEvidenceBb(opponentWager)} committed`
+          : `${formatEvidenceBb(opponentWager)} each`,
+      );
+    }
+    if (hasDistinctCommitmentTotal) {
+      context.push(`${formatEvidenceBb(opponentCommitmentTotal)} total`);
+    }
+    if (hasHeroWager) {
+      context.push(`hero ${formatEvidenceBb(heroWager)}`);
+    }
+    details.push({
+      label: hasCommittedOpponentCount || hasOpponentWager
+        ? "At current wager"
+        : "Existing commitments",
+      value: context.join(" · "),
+    });
   }
 
   const isolationRaiserPosition = metadataLabel(raw.isolation_raiser_position);
@@ -865,6 +921,8 @@ function recommendationEvidenceFromRaw(
       const action = metadataString(record?.action, 24);
       const ev = metadataNumber(record?.ev);
       const frequency = metadataRatio(record?.frequency);
+      const foldEquity = metadataRatio(record?.fold_equity);
+      const perOpponentFoldEquity = metadataRatio(record?.per_opponent_fold_equity);
       const rawSizing = metadataNumber(record?.sizing);
       if (!record || !action || (ev === null && frequency === null)) {
         return [];
@@ -874,6 +932,8 @@ function recommendationEvidenceFromRaw(
         sizing: rawSizing !== null && rawSizing >= 0 ? rawSizing : null,
         ev,
         frequency,
+        foldEquity,
+        perOpponentFoldEquity,
       }];
     })
     .sort((left, right) => {
@@ -2061,6 +2121,53 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
         typeof state.players_in_hand === "number"
         && Number.isInteger(state.players_in_hand)
         && state.players_in_hand >= 1
+      )
+    )
+    && (
+      state.opponents_at_current_bet === undefined
+      || state.opponents_at_current_bet === null
+      || (
+        typeof state.opponents_at_current_bet === "number"
+        && Number.isInteger(state.opponents_at_current_bet)
+        && state.opponents_at_current_bet >= 1
+        && typeof state.current_bet === "number"
+        && state.current_bet > 0
+        && typeof state.players_in_hand === "number"
+        && state.opponents_at_current_bet < state.players_in_hand
+      )
+    )
+    && (
+      state.opponent_wager === undefined
+      || state.opponent_wager === null
+      || (
+        typeof state.opponent_wager === "number"
+        && Number.isFinite(state.opponent_wager)
+        && state.opponent_wager > 0
+        && typeof state.current_bet === "number"
+        && state.current_bet > 0
+        && state.opponent_wager >= state.current_bet
+      )
+    )
+    && (
+      state.opponent_commitment_total === undefined
+      || state.opponent_commitment_total === null
+      || (
+        typeof state.opponent_commitment_total === "number"
+        && Number.isFinite(state.opponent_commitment_total)
+        && state.opponent_commitment_total > 0
+        && (
+          typeof state.pot_size !== "number"
+          || state.opponent_commitment_total <= state.pot_size + 0.000001
+        )
+        && (
+          typeof state.opponent_wager !== "number"
+          || state.opponent_commitment_total + 0.000001 >= state.opponent_wager
+            * (
+              typeof state.opponents_at_current_bet === "number"
+                ? state.opponents_at_current_bet
+                : 1
+            )
+        )
       )
     )
     && isNullableCachedString(state.hero_position)
@@ -3392,6 +3499,9 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     opponent_stack: state.opponent_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
+    opponents_at_current_bet: state.opponents_at_current_bet ?? null,
+    opponent_wager: state.opponent_wager ?? null,
+    opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
@@ -3439,6 +3549,13 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
       : "",
     effective_stack: state.effective_stack === null ? "" : String(state.effective_stack),
     players_in_hand: state.players_in_hand === null ? "" : String(state.players_in_hand),
+    opponents_at_current_bet: state.opponents_at_current_bet == null
+      ? ""
+      : String(state.opponents_at_current_bet),
+    opponent_wager: state.opponent_wager == null ? "" : String(state.opponent_wager),
+    opponent_commitment_total: state.opponent_commitment_total == null
+      ? ""
+      : String(state.opponent_commitment_total),
     hero_position: state.hero_position ?? "",
     preflop_opener_position:
       structuredOpener?.actor
@@ -3499,18 +3616,110 @@ function formToCanonical(form: StateForm): CanonicalState {
         return { actor: item.actor, action: item.action, amount };
       })
     : [];
+  const potSize = parseOptionalNumber(form.pot_size, "Pot");
+  const playersInHand = parseOptionalInteger(form.players_in_hand, "Players in hand");
+  const currentBet = parseOptionalNumber(form.current_bet, "Current bet");
+  const needsCommittedOpponentCount = (currentBet ?? 0) > 0
+    && (playersInHand ?? 0) > 2;
+  const opponentsAtCurrentBet = needsCommittedOpponentCount
+    ? parseOptionalInteger(
+      form.opponents_at_current_bet,
+      "Opponents at current bet",
+    )
+    : null;
+  const opponentWager = (currentBet ?? 0) > 0
+    ? parseOptionalNumber(form.opponent_wager, "Opponent wager total")
+    : null;
+  const usesOpponentCommitmentTotal = (
+    (currentBet ?? 0) <= 0 && form.street === "preflop"
+  ) || (
+    (currentBet ?? 0) > 0 && (playersInHand ?? 0) > 2
+  );
+  const opponentCommitmentTotal = usesOpponentCommitmentTotal
+    ? parseOptionalNumber(
+      form.opponent_commitment_total,
+      "Opponent commitments total",
+    )
+    : null;
+  if (
+    opponentsAtCurrentBet !== null
+    && playersInHand !== null
+    && opponentsAtCurrentBet >= playersInHand
+  ) {
+    throw new Error("Opponents at current bet must be lower than players in hand");
+  }
+  if (opponentWager !== null && opponentWager <= 0) {
+    throw new Error("Opponent wager total must be greater than 0");
+  }
+  if (
+    opponentWager !== null
+    && currentBet !== null
+    && opponentWager < currentBet
+  ) {
+    throw new Error("Opponent wager total must be at least the current bet");
+  }
+  if (opponentCommitmentTotal !== null && opponentCommitmentTotal <= 0) {
+    throw new Error("Opponent commitments total must be greater than 0");
+  }
+  if (
+    opponentCommitmentTotal !== null
+    && potSize !== null
+    && opponentCommitmentTotal > potSize + 0.000001
+  ) {
+    throw new Error("Opponent commitments total cannot exceed the pot");
+  }
+  const recordedWagers = form.street === "preflop"
+    ? preflopActionHistory.map((action) => action.amount)
+    : form.street !== ""
+      ? postflopActionHistory.flatMap((action) => (
+        action.amount === null ? [] : [action.amount]
+      ))
+      : [];
+  const knownOpponentWager = opponentWager ?? Math.max(
+    currentBet ?? 0,
+    ...recordedWagers,
+  );
+  const minimumOpponentCommitments = knownOpponentWager > 0
+    ? knownOpponentWager * (opponentsAtCurrentBet ?? 1)
+    : null;
+  if (
+    opponentCommitmentTotal !== null
+    && minimumOpponentCommitments !== null
+    && opponentCommitmentTotal + 0.000001 < minimumOpponentCommitments
+  ) {
+    throw new Error("Opponent commitments total must cover opponents at the current wager");
+  }
+  const knownLatestWager = opponentWager ?? Math.max(0, ...recordedWagers);
+  const maximumOpponentCommitments = knownLatestWager > 0
+    && playersInHand !== null
+    ? knownLatestWager * (playersInHand - 1)
+    : null;
+  if (
+    opponentCommitmentTotal !== null
+    && maximumOpponentCommitments !== null
+    && opponentCommitmentTotal > maximumOpponentCommitments + 0.000001
+  ) {
+    throw new Error(
+      "Opponent commitments total cannot exceed the latest wager across active opponents",
+    );
+  }
 
   return {
     hero_cards: heroCards,
     board_cards: boardCards,
-    pot_size: parseOptionalNumber(form.pot_size, "Pot"),
-    current_bet: parseOptionalNumber(form.current_bet, "Current bet"),
+    pot_size: potSize,
+    current_bet: currentBet,
     hero_stack: parseOptionalNumber(form.hero_stack, "Hero stack"),
     opponent_stack: showPostflopHistory
       ? parseOptionalNumber(form.opponent_stack, "Opponent stack")
       : null,
     effective_stack: parseOptionalNumber(form.effective_stack, "Effective stack"),
-    players_in_hand: parseOptionalInteger(form.players_in_hand, "Players in hand"),
+    players_in_hand: playersInHand,
+    opponents_at_current_bet: needsCommittedOpponentCount
+      ? opponentsAtCurrentBet
+      : null,
+    opponent_wager: opponentWager,
+    opponent_commitment_total: opponentCommitmentTotal,
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
     preflop_opener_position:
       structuredOpener?.actor
@@ -3540,6 +3749,9 @@ function approvalKey(state: CanonicalState): string {
     opponent_stack: state.opponent_stack ?? null,
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
+    opponents_at_current_bet: state.opponents_at_current_bet ?? null,
+    opponent_wager: state.opponent_wager ?? null,
+    opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
@@ -6614,6 +6826,20 @@ export default function App() {
         next.opponent_stack = "";
         next.postflop_action_history = [];
       }
+      const usesCommittedOpponentCount = Number(next.current_bet) > 0
+        && Number(next.players_in_hand) > 2;
+      if (!usesCommittedOpponentCount) {
+        next.opponents_at_current_bet = "";
+        if (Number(next.current_bet) > 0) {
+          next.opponent_commitment_total = "";
+        }
+      }
+      if (Number(next.current_bet) <= 0) {
+        next.opponent_wager = "";
+        if (next.street !== "preflop") {
+          next.opponent_commitment_total = "";
+        }
+      }
       formDirtyRef.current = JSON.stringify(next)
         !== JSON.stringify(formBaselineRef.current);
       return next;
@@ -8004,6 +8230,59 @@ export default function App() {
                   onChange={(event) => updateForm("players_in_hand", event.target.value)}
                 />
               </Field>
+              {Number(form.current_bet) > 0 && Number(form.players_in_hand) > 2 ? (
+                <Field label="Opponents at wager" confidence="manual">
+                  <input
+                    disabled={stateControlsDisabled}
+                    inputMode="numeric"
+                    min="1"
+                    max={Math.max(1, Number(form.players_in_hand) - 1)}
+                    value={form.opponents_at_current_bet}
+                    onChange={(event) => updateForm("opponents_at_current_bet", event.target.value)}
+                    placeholder="Already committed"
+                  />
+                </Field>
+              ) : null}
+              {Number(form.current_bet) > 0 && (
+                form.street === "preflop"
+                || form.facing_action === "raise"
+                || form.opponent_wager !== ""
+              ) ? (
+                <Field label="Opponent wager total" confidence="manual">
+                  <input
+                    disabled={stateControlsDisabled}
+                    inputMode="decimal"
+                    min={form.current_bet || "0"}
+                    value={form.opponent_wager}
+                    onChange={(event) => updateForm("opponent_wager", event.target.value)}
+                    placeholder="Total BB committed"
+                  />
+                </Field>
+              ) : null}
+              {(form.street === "preflop" && Number(form.current_bet) <= 0)
+                || (
+                  Number(form.current_bet) > 0
+                  && Number(form.players_in_hand) > 2
+                  && (
+                    form.street === "preflop"
+                    || form.facing_action === "raise"
+                    || form.opponent_commitment_total !== ""
+                  )
+                ) ? (
+                  <Field label="Opponent commitments total" confidence="manual">
+                    <input
+                      disabled={stateControlsDisabled}
+                      inputMode="decimal"
+                      min="0"
+                      value={form.opponent_commitment_total}
+                      onChange={(event) => updateForm(
+                        "opponent_commitment_total",
+                        event.target.value,
+                      )}
+                      placeholder="All opponents, BB"
+                    />
+                  </Field>
+                ) : null}
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
               </Field>
@@ -8482,6 +8761,14 @@ export default function App() {
                               <span className="recommendation-candidate-values">
                                 {candidate.ev !== null ? <strong>EV {formatCandidateValue(candidate.ev)} BB</strong> : null}
                                 {candidate.frequency !== null ? <small>{Math.round(candidate.frequency * 100)}% frequency</small> : null}
+                                {candidate.foldEquity !== null ? (
+                                  <small>
+                                    Field folds {Math.round(candidate.foldEquity * 100)}%
+                                    {candidate.perOpponentFoldEquity !== null && candidate.perOpponentFoldEquity !== candidate.foldEquity
+                                      ? ` · each ${Math.round(candidate.perOpponentFoldEquity * 100)}%`
+                                      : ""}
+                                  </small>
+                                ) : null}
                               </span>
                             </div>
                           );

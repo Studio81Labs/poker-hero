@@ -21,6 +21,12 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.registry import build_provider
+from app.solvers.ev_solver_cli import _hero_outcomes
+from app.solvers.wager_context import (
+    resolve_hero_wager,
+    resolve_opponent_commitment_total,
+    resolve_opponent_wager,
+)
 
 
 def approved_state() -> CanonicalState:
@@ -32,6 +38,7 @@ def approved_state() -> CanonicalState:
         hero_stack=97.5,
         effective_stack=96.0,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="button",
         street="flop",
         facing_action="bet",
@@ -216,10 +223,468 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.raw["provider"] == "local_solver"
     assert result.raw["engine"] == "local_ev_solver_v1"
     assert result.raw["requested_engine"] == "postflop_solver"
+    assert result.raw["opponents_at_current_bet"] == 1
     assert "heads-up postflop" in result.raw["fallback_reason"]
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
     assert "solver compared candidate actions" in result.explanation.lower()
+    assert "every opponent to fold" in result.explanation.lower()
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        per_opponent = candidate["per_opponent_fold_equity"]
+        assert candidate["fold_equity"] == pytest.approx(per_opponent**2)
+        continuations = candidate["continuations"]
+        assert [branch["callers"] for branch in continuations] == [1, 2]
+        assert continuations[0]["probability"] == pytest.approx(
+            2 * (1 - per_opponent) * per_opponent
+        )
+        assert continuations[1]["probability"] == pytest.approx(
+            (1 - per_opponent) ** 2
+        )
+        assert continuations[0]["existing_wager_adjustment"] == 1.25
+        assert continuations[1]["existing_wager_adjustment"] == 2.5
+        assert continuations[0]["final_pot"] == pytest.approx(
+            approved_state().pot_size + 2 * candidate["sizing"] - 1.25
+        )
+        assert continuations[1]["final_pot"] == pytest.approx(
+            approved_state().pot_size + 3 * candidate["sizing"] - 2.5
+        )
+        assert candidate["fold_equity"] + sum(
+            branch["probability"] for branch in continuations
+        ) == pytest.approx(1)
+        assert candidate["ev"] == pytest.approx(
+            candidate["fold_equity"] * approved_state().pot_size
+            + sum(
+                branch["probability"] * branch["ev"] for branch in continuations
+            ),
+            abs=0.002,
+        )
+
+
+def test_local_solver_requires_committed_opponent_count_for_multiway_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = approved_state().model_copy(
+        update={"opponents_at_current_bet": None}
+    )
+
+    assert "opponents_at_current_bet" in provider.required_fields_for(state)
+
+
+def test_local_solver_requires_total_wager_when_it_cannot_be_derived(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(data_dir=tmp_path, recommendation_provider="local_solver")
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=4,
+        current_bet=1.5,
+        effective_stack=99,
+        players_in_hand=2,
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "opponent_wager" in provider.required_fields_for(state)
+
+
+def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> None:
+    base = CanonicalState(
+        current_bet=1.5,
+        hero_position="big_blind",
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert resolve_opponent_wager(base) is None
+    assert resolve_opponent_wager(
+        base.model_copy(update={"opponent_wager": 3.0})
+    ) == 3.0
+    assert resolve_opponent_wager(
+        base.model_copy(
+            update={
+                "preflop_action_history": [
+                    PreflopAction(actor="cutoff", action="raise", amount=2.5),
+                    PreflopAction(actor="button", action="call", amount=2.5),
+                ]
+            }
+        )
+    ) == 2.5
+    assert resolve_opponent_wager(
+        base.model_copy(update={"preflop_open_size": 2.5})
+    ) == 2.5
+    assert resolve_opponent_wager(
+        base.model_copy(update={"action_context": "Cutoff opens to 2.5 BB"})
+    ) == 2.5
+    assert resolve_opponent_wager(
+        base.model_copy(update={"street": "flop", "facing_action": "bet"})
+    ) == 1.5
+    assert resolve_opponent_wager(
+        base.model_copy(
+            update={
+                "current_bet": 2,
+                "hero_position": "cutoff",
+                "preflop_open_size": 3,
+                "action_context": "Cutoff opens to 3 BB, then button reraises",
+            }
+        )
+    ) is None
+    assert resolve_opponent_wager(
+        base.model_copy(
+            update={"facing_action": "bet", "preflop_open_size": 2.5}
+        )
+    ) is None
+
+    reraised = CanonicalState(
+        current_bet=2,
+        players_in_hand=2,
+        opponents_at_current_bet=1,
+        hero_position="cutoff",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=3),
+            PreflopAction(actor="button", action="raise", amount=5),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+    assert resolve_opponent_commitment_total(
+        reraised,
+        opponent_wager=5,
+        opponents_at_current_bet=1,
+    ) == 5
+    ambiguous_multiway = reraised.model_copy(
+        update={"players_in_hand": 3, "hero_position": None}
+    )
+    assert resolve_opponent_commitment_total(
+        ambiguous_multiway,
+        opponent_wager=5,
+        opponents_at_current_bet=1,
+    ) is None
+
+    big_blind_option = CanonicalState(
+        pot_size=3.5,
+        current_bet=0,
+        players_in_hand=3,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="call", amount=1),
+            PreflopAction(actor="button", action="call", amount=1),
+        ],
+        street="preflop",
+        user_approved=True,
+    )
+    hero_wager = resolve_hero_wager(big_blind_option, opponent_wager=0)
+    assert hero_wager == 1
+    assert resolve_opponent_commitment_total(
+        big_blind_option,
+        opponent_wager=0,
+        opponents_at_current_bet=0,
+        hero_wager=hero_wager,
+    ) == 2
+
+
+def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=4,
+        current_bet=1.5,
+        effective_stack=99,
+        players_in_hand=2,
+        hero_position="big_blind",
+        preflop_open_size=2.5,
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["opponent_wager"] == 2.5
+    assert result.raw["hero_wager"] == 1
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuation = candidate["continuations"][0]
+        assert continuation["existing_wager_adjustment"] == 1.5
+        assert continuation["final_pot"] == pytest.approx(
+            state.pot_size + 2 * candidate["sizing"] - state.current_bet
+        )
+        assert continuation["ev"] == pytest.approx(
+            continuation["called_equity"] * continuation["final_pot"]
+            - candidate["sizing"],
+            abs=0.001,
+        )
+
+
+def test_local_ev_reconstructs_multiway_calls_from_both_existing_wagers(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=5,
+        current_bet=1.5,
+        effective_stack=99,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_wager=2.5,
+        opponent_commitment_total=2.5,
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["hero_wager"] == 1
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 0.25
+        assert continuations[1]["existing_wager_adjustment"] == 0.5
+        for continuation in continuations:
+            callers = continuation["callers"]
+            assert continuation["final_pot"] == pytest.approx(
+                state.pot_size
+                + (callers + 1) * candidate["sizing"]
+                - continuation["existing_wager_adjustment"]
+            )
+
+
+def test_local_ev_includes_every_recorded_opponent_commitment(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        pot_size=14.5,
+        current_bet=9,
+        effective_stack=99,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        hero_position="big_blind",
+        preflop_action_history=[
+            PreflopAction(actor="cutoff", action="raise", amount=3),
+            PreflopAction(actor="button", action="raise", amount=10),
+        ],
+        street="preflop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["opponent_wager"] == 10
+    assert result.raw["opponent_commitment_total"] == 13
+    assert result.raw["hero_wager"] == 1
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 5.5
+        assert continuations[1]["existing_wager_adjustment"] == 11
+        for continuation in continuations:
+            callers = continuation["callers"]
+            expected_opponent_commitment = 13 * callers / 2
+            expected_caller_contribution = (
+                callers * (candidate["sizing"] + 1)
+                - expected_opponent_commitment
+            )
+            assert continuation["final_pot"] == pytest.approx(
+                state.pot_size
+                + candidate["sizing"]
+                + expected_caller_contribution
+            )
+
+
+def test_local_ev_requires_multiway_postflop_commitment_total(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        board_cards=[
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+        ],
+        pot_size=30,
+        current_bet=15,
+        effective_stack=85,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_wager=15,
+        hero_position="button",
+        street="flop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "opponent_commitment_total" in provider.required_fields_for(state)
+
+    reviewed_state = state.model_copy(
+        update={"opponent_commitment_total": 20}
+    )
+    result = provider.recommend(
+        RecommendationRequest(state=reviewed_state, provider=provider.name)
+    )
+
+    assert result.raw["opponent_commitment_total"] == 20
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 10
+        assert continuations[1]["existing_wager_adjustment"] == 20
+
+
+def test_local_ev_accounts_for_multiple_opponents_already_at_bet(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = approved_state().model_copy(
+        update={"opponents_at_current_bet": 2}
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        assert candidate["continuations"][0]["existing_wager_adjustment"] == 2.5
+        assert candidate["continuations"][1]["existing_wager_adjustment"] == 5
+
+
+def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        assert candidate["fold_equity"] == candidate["per_opponent_fold_equity"]
+        assert len(candidate["continuations"]) == 1
+        assert candidate["continuations"][0]["callers"] == 1
+        assert candidate["continuations"][0]["probability"] == pytest.approx(
+            1 - candidate["fold_equity"]
+        )
+        assert candidate["continuations"][0]["existing_wager_adjustment"] == 2.5
+        assert candidate["continuations"][0]["final_pot"] == pytest.approx(
+            12.5 + 2 * candidate["sizing"] - 2.5
+        )
+    assert "every opponent to fold" not in result.explanation.lower()
+
+
+def test_multiway_outcomes_track_each_surviving_field_size() -> None:
+    tied_board = [Card.from_code(code) for code in ("As", "Ks", "Qs", "Js", "Ts")]
+    tied_outcomes = _hero_outcomes(
+        [Card.from_code("2c"), Card.from_code("3d")],
+        [
+            [Card.from_code("4c"), Card.from_code("5d")],
+            [Card.from_code("6c"), Card.from_code("7d")],
+        ],
+        tied_board,
+    )
+    assert tied_outcomes[1] == 0.5
+    assert tied_outcomes[2] == pytest.approx(1 / 3)
+
+    changing_outcomes = _hero_outcomes(
+        [Card.from_code("Ah"), Card.from_code("Kd")],
+        [
+            [Card.from_code("Qh"), Card.from_code("Jd")],
+            [Card.from_code("6h"), Card.from_code("7d")],
+        ],
+        [Card.from_code(code) for code in ("2c", "3d", "4h", "5s", "9c")],
+    )
+    assert changing_outcomes == {1: 1.0, 2: 0.0}
 
 
 def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) -> None:
@@ -279,6 +744,46 @@ def test_local_ev_selection_bypasses_supported_preflop_chart(tmp_path: Path) -> 
     assert result.raw["engine"] == "local_ev_solver_v1"
     assert "requested_engine" not in result.raw
     assert "routing_reason" not in result.raw
+
+
+def test_local_ev_accounts_for_posted_blinds_in_open_branches(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("2h")],
+        pot_size=1.5,
+        current_bet=0,
+        effective_stack=100,
+        players_in_hand=3,
+        hero_position="button",
+        street="preflop",
+        user_approved=True,
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.raw["hero_wager"] == 0
+    assert result.raw["opponent_commitment_total"] == 1.5
+    open_candidate = next(
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["action"] == "bet" and candidate["sizing"] == 2.5
+    )
+    continuations = open_candidate["continuations"]
+    assert [branch["callers"] for branch in continuations] == [1, 2]
+    assert continuations[0]["existing_wager_adjustment"] == 0.75
+    assert continuations[0]["final_pot"] == 5.75
+    assert continuations[1]["existing_wager_adjustment"] == 1.5
+    assert continuations[1]["final_pot"] == 7.5
 
 
 @pytest.mark.parametrize("fallback_enabled", [True, False])
@@ -629,6 +1134,8 @@ def test_local_solver_keeps_fallback_for_cold_three_bet_with_hidden_player(
         hero_stack=99,
         effective_stack=92,
         players_in_hand=4,
+        opponents_at_current_bet=1,
+        opponent_commitment_total=10.5,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -694,6 +1201,7 @@ def test_local_solver_keeps_fallback_for_squeeze_with_active_opener(
         hero_stack=97.5,
         effective_stack=90,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -794,6 +1302,7 @@ def test_local_solver_keeps_fallback_for_cold_four_bet_with_hidden_player(
         hero_stack=92,
         effective_stack=80,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="cutoff",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -826,6 +1335,8 @@ def test_local_solver_keeps_fallback_for_four_bet_with_hidden_player(
         hero_stack=92,
         effective_stack=80,
         players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_commitment_total=20,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="cutoff", action="raise", amount=2.5),
@@ -1075,6 +1586,7 @@ def test_local_solver_routes_single_caller_to_preflop_chart(tmp_path: Path) -> N
     assert result.raw["scenario"] == "facing_open_with_caller"
     assert result.raw["caller_positions"] == ["hijack"]
     assert result.raw["routing_reason"] == "the hand is preflop"
+    assert "opponents_at_current_bet" not in provider.required_fields_for(state)
 
 
 def test_local_solver_routes_double_caller_to_preflop_chart(tmp_path: Path) -> None:
@@ -1199,6 +1711,7 @@ def test_local_solver_keeps_fallback_for_four_caller_with_repeated_seat(
         current_bet=1.5,
         effective_stack=100,
         players_in_hand=6,
+        opponents_at_current_bet=5,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1232,6 +1745,8 @@ def test_local_solver_keeps_fallback_for_triple_caller_with_hidden_player(
         current_bet=2,
         effective_stack=100,
         players_in_hand=6,
+        opponents_at_current_bet=4,
+        opponent_commitment_total=11,
         hero_position="small_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1264,6 +1779,8 @@ def test_local_solver_keeps_fallback_for_double_caller_with_hidden_player(
         current_bet=2.5,
         effective_stack=100,
         players_in_hand=5,
+        opponents_at_current_bet=3,
+        opponent_commitment_total=8.5,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1295,6 +1812,8 @@ def test_local_solver_keeps_fallback_for_single_caller_with_hidden_player(
         current_bet=2.5,
         effective_stack=100,
         players_in_hand=4,
+        opponents_at_current_bet=2,
+        opponent_commitment_total=6,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1563,6 +2082,7 @@ def test_postflop_solver_rejects_unknown_facing_action(tmp_path: Path) -> None:
 def test_postflop_solver_rejects_facing_action_without_call_amount(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
     state.current_bet = 0
+    state.opponents_at_current_bet = None
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
@@ -2045,6 +2565,7 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 "hero_stack": 97.5,
                 "effective_stack": 96.0,
                 "players_in_hand": 3,
+                "opponents_at_current_bet": 1,
                 "hero_position": "button",
                 "street": "flop",
                 "facing_action": "bet",
@@ -2190,6 +2711,7 @@ def test_local_solver_keeps_fallback_when_limper_is_not_hero(
         hero_stack=99,
         effective_stack=90,
         players_in_hand=3,
+        opponents_at_current_bet=1,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="call", amount=1),

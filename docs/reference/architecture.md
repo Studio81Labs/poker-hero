@@ -114,7 +114,36 @@ OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a
 recorded fallback for ambiguous or unsupported preflop history, ambiguous
 position, unsupported multiway states, incomplete context, resource-limited, or
-failed postflop solves. Explicit custom
+failed postflop solves. For multiway fallback aggression, `local_ev` converts
+its per-opponent response estimate into the probability that the entire field
+folds under an explicit independent equal-response assumption. It enumerates
+every possible caller count, estimates equity against that surviving field,
+and weights each branch using its own final pot and continuation value. When
+raising into an outstanding wager already included in the pot, the canonical
+state can record both how many opponents have committed it and their total
+current-street wager. The total wager is distinct from hero's remaining amount
+to call and is resolved from explicit review, structured action history,
+preflop opening context, or a simple first-bet state. Hero's existing wager is
+derived from their difference. When structured preflop history represents all
+active opponents, each actor's latest commitment contributes to an aggregate
+opponent total, including lower wager levels in re-raised pots. The
+equal-response model reconstructs each caller's additional contribution from
+that aggregate and hero's existing wager. Fallback is withheld until any
+commitment context that cannot be derived has been reviewed.
+Because OOP/IP postflop history cannot identify multiple opponents, a multiway
+raise with different active wager levels requires a reviewed aggregate
+opponent commitment total. Heads-up states, first bets, complete preflop
+histories, and fields entirely at the latest wager remain automatic.
+Preflop states with no call amount retain hero's posted blind or latest
+structured action. Complete active-player history provides the opponent
+commitment total; otherwise the remaining pre-action pot forms that aggregate,
+so open branches account for posted blinds and limps.
+Preflop opening context is eligible only when the opening total agrees with the
+call amount plus hero's posted blind; stale initial-open metadata is not reused
+after later aggression.
+Candidate evidence retains the fold probabilities and continuation branches so
+the approximation remains reviewable.
+Explicit custom
 commands still override the bundled engine selection.
 
 External vision, solver, and LLM adapters use independent optional bearer

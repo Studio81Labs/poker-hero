@@ -45,6 +45,7 @@ BenchmarkFieldName = Literal[
     "effective_stack",
     "players_in_hand",
     "hero_position",
+    "opponent_position",
     "preflop_opener_position",
     "preflop_open_size",
     "preflop_action_history",
@@ -63,6 +64,7 @@ BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
     "effective_stack",
     "players_in_hand",
     "hero_position",
+    "opponent_position",
     "preflop_opener_position",
     "preflop_open_size",
     "preflop_action_history",
@@ -236,7 +238,11 @@ def normalize_benchmark_value(field_name: BenchmarkFieldName, value: Any) -> Any
         ]
     if isinstance(value, str):
         normalized = re.sub(r"\s+", " ", value.strip().lower())
-        if field_name in {"hero_position", "preflop_opener_position"}:
+        if field_name in {
+            "hero_position",
+            "opponent_position",
+            "preflop_opener_position",
+        }:
             return BENCHMARK_POSITION_ALIASES.get(normalized, normalized)
         return normalized
     return value
@@ -255,6 +261,7 @@ class DetectedState(BaseModel):
     opponent_wager: PositiveFiniteNumber | None = None
     opponent_commitment_total: PositiveFiniteNumber | None = None
     hero_position: str | None = Field(default=None)
+    opponent_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
     preflop_action_history: list[PreflopAction] = Field(default_factory=list, max_length=8)
@@ -310,6 +317,7 @@ class CanonicalState(BaseModel):
     opponent_wager: PositiveFiniteNumber | None = None
     opponent_commitment_total: PositiveFiniteNumber | None = None
     hero_position: str | None = Field(default=None)
+    opponent_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
     preflop_action_history: list[PreflopAction] = Field(default_factory=list, max_length=8)
@@ -353,6 +361,7 @@ class CanonicalState(BaseModel):
             opponent_wager=state.opponent_wager,
             opponent_commitment_total=state.opponent_commitment_total,
             hero_position=state.hero_position,
+            opponent_position=state.opponent_position,
             preflop_opener_position=state.preflop_opener_position,
             preflop_open_size=state.preflop_open_size,
             preflop_action_history=state.preflop_action_history,
@@ -796,6 +805,7 @@ _BENCHMARK_NONNEGATIVE_NUMERIC_FIELDS = {
 }
 _BENCHMARK_TEXT_FIELDS = {
     "hero_position",
+    "opponent_position",
     "preflop_opener_position",
     "action_context",
 }

@@ -6,14 +6,16 @@ Hero's stdin/stdout JSON recommendation contract. The dependency is pinned to
 revision `9d1509fe5077d019825f833eed04b16d342dfda1`.
 
 It supports heads-up flop, turn, and river decisions with explicit IP/OOP
-position. Canonical `dealer` positions are equivalent to the button and use the
-IP route. A raised decision requires ordered current-street OOP/IP actions and
-both visible player stacks. Bet and raise amounts are total chips committed by
-that player on the street; contradictory or incomplete histories are rejected
-before solving. Poker Hero routes supported preflop states to its position-aware
-training chart, and routes ambiguous positions, ambiguous preflop, multiway
-postflop, incomplete, and resource-limited spots to the bundled range/EV engine
-when fallback is enabled.
+position or an unambiguous pair of reviewed six-max seats. Canonical `dealer`
+positions are equivalent to the button and use the IP route. Contradictory,
+duplicate, unknown, and bare small-blind versus big-blind seat pairs are
+rejected rather than guessed. A raised decision requires ordered current-street
+OOP/IP actions and both visible player stacks. Bet and raise amounts are total
+chips committed by that player on the street; contradictory or incomplete
+histories are rejected before solving. Poker Hero routes supported preflop
+states to its position-aware training chart, and routes ambiguous positions,
+ambiguous preflop, multiway postflop, incomplete, and resource-limited spots to
+the bundled range/EV engine when fallback is enabled.
 
 The plugin and its combined work are distributed under AGPL-3.0-or-later. See
 the upstream repository and `Cargo.lock` for dependency details.

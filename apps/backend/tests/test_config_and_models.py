@@ -34,6 +34,8 @@ from app.models import (
         ("facing_action", "check"),
         ("hero_position", []),
         ("hero_position", "BTN"),
+        ("opponent_position", []),
+        ("opponent_position", "BTN"),
         ("preflop_opener_position", " OOP "),
         ("action_context", ""),
         ("action_context", "  cutoff   raises  "),

@@ -60,6 +60,7 @@ status `2` when the corpus or provider configuration is invalid.
         "effective_stack": 95.0,
         "players_in_hand": 2,
         "hero_position": "button",
+        "opponent_position": "big_blind",
         "preflop_opener_position": null,
         "preflop_open_size": null,
         "street": "flop",

@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.providers.base import ProviderConfigurationError, ProviderError, ProviderInputError
 from app.solvers.preflop_context import (
+    normalize_position,
     requires_hero_stack_for_preflop_chart,
     supports_preflop_chart,
 )
@@ -105,7 +106,15 @@ class LocalSolverProvider:
         if not self._requires_postflop_solver_inputs(state):
             return required_fields
 
-        required_fields.extend(["board_cards", "hero_position"])
+        required_fields.append("board_cards")
+        if _postflop_position(
+            state.hero_position,
+            state.opponent_position,
+        ) is None:
+            if state.hero_position is None or not state.hero_position.strip():
+                required_fields.append("hero_position")
+            elif state.opponent_position is None or not state.opponent_position.strip():
+                required_fields.append("opponent_position")
         if (state.current_bet or 0) > 0:
             required_fields.extend(["facing_action", "hero_stack"])
         if state.facing_action == "raise":
@@ -251,8 +260,14 @@ class LocalSolverProvider:
             return f"the {state.street} requires {expected_board_cards[state.street]} board cards"
         if state.players_in_hand != 2:
             return "the open-source engine supports heads-up postflop spots only"
-        if _postflop_position(state.hero_position) is None:
-            return "hero position must identify IP or OOP"
+        if _postflop_position(
+            state.hero_position,
+            state.opponent_position,
+        ) is None:
+            return (
+                "hero position must identify IP or OOP, or hero and opponent "
+                "seats must establish relative position"
+            )
         history_reason = _postflop_history_unsupported_reason(state)
         if history_reason is not None:
             return history_reason
@@ -301,15 +316,61 @@ class LocalSolverProvider:
         return environment
 
 
-def _postflop_position(value: str | None) -> Literal["ip", "oop"] | None:
+_POSTFLOP_SEAT_ORDER = {
+    "small_blind": 0,
+    "big_blind": 1,
+    "utg": 2,
+    "hijack": 3,
+    "cutoff": 4,
+    "button": 5,
+}
+_POSTFLOP_RELATIVE_POSITION_ALIASES = {
+    "ip": "ip",
+    "in position": "ip",
+    "oop": "oop",
+    "out of position": "oop",
+}
+
+
+def _normalize_postflop_position(value: str | None) -> str | None:
     if value is None:
         return None
-    normalized = " ".join(value.lower().replace("_", " ").replace("-", " ").split())
-    if normalized in {"ip", "in position", "button", "btn", "dealer"}:
-        return "ip"
-    if normalized in {"oop", "out of position"}:
-        return "oop"
-    return None
+    normalized = " ".join(
+        value.lower().replace("_", " ").replace("-", " ").split()
+    )
+    return _POSTFLOP_RELATIVE_POSITION_ALIASES.get(normalized) or normalize_position(
+        value
+    )
+
+
+def _postflop_position(
+    hero_position: str | None,
+    opponent_position: str | None = None,
+) -> Literal["ip", "oop"] | None:
+    hero = _normalize_postflop_position(hero_position)
+    opponent = _normalize_postflop_position(opponent_position)
+    inferred: list[Literal["ip", "oop"]] = []
+    if hero in {"ip", "oop"}:
+        inferred.append(hero)
+    if opponent == "ip":
+        inferred.append("oop")
+    elif opponent == "oop":
+        inferred.append("ip")
+    if hero == "button":
+        inferred.append("ip")
+    if opponent == "button":
+        inferred.append("oop")
+    if inferred:
+        return inferred[0] if len(set(inferred)) == 1 else None
+    if hero not in _POSTFLOP_SEAT_ORDER or opponent not in _POSTFLOP_SEAT_ORDER:
+        return None
+    if hero == opponent or {hero, opponent} == {"small_blind", "big_blind"}:
+        return None
+    return (
+        "ip"
+        if _POSTFLOP_SEAT_ORDER[hero] > _POSTFLOP_SEAT_ORDER[opponent]
+        else "oop"
+    )
 
 
 _SOLVER_MAX_CENTS = 2_147_483_647
@@ -337,7 +398,10 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
             return "facing action must identify the outstanding wager"
         return None
 
-    hero_actor = _postflop_position(state.hero_position)
+    hero_actor = _postflop_position(
+        state.hero_position,
+        state.opponent_position,
+    )
     if hero_actor is None:
         return "hero position must identify IP or OOP"
     if state.hero_stack is None or state.hero_stack <= 0:

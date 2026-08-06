@@ -4130,9 +4130,68 @@ describe("App", () => {
     expect(screen.getByLabelText(/Facing action/)).toHaveValue("bet");
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
+  });
+
+  it("reviews an opponent seat for heads-up postflop solver routing", async () => {
+    const headsUpState: DetectedState = {
+      ...detectedState,
+      players_in_hand: 2,
+      hero_position: "big_blind",
+      opponent_position: null,
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: headsUpState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...headsUpState,
+      opponent_position: "button",
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const opponentPosition = await screen.findByLabelText(/Opponent position/);
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/12")).toBeInTheDocument();
+    await user.type(opponentPosition, "button");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.hero_position).toBe("big_blind");
+    expect(payload.opponent_position).toBe("button");
+  });
+
+  it("omits opponent-seat confidence when hero position already resolves postflop order", async () => {
+    const headsUpState: DetectedState = {
+      ...detectedState,
+      players_in_hand: 2,
+      hero_position: "IP",
+      opponent_position: null,
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: headsUpState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    await uploadScreenshot();
+
+    expect(screen.queryByLabelText(/Opponent position/)).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
   });
 
   it("records the reviewed committed-opponent count for multiway wagers", async () => {

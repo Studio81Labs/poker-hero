@@ -32,6 +32,7 @@ struct CanonicalState {
     effective_stack: Option<f64>,
     players_in_hand: Option<u8>,
     hero_position: Option<String>,
+    opponent_position: Option<String>,
     street: Option<String>,
     facing_action: Option<String>,
     #[serde(default)]
@@ -131,7 +132,10 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
 
     let street = state.street.as_deref().unwrap();
     let board_state = board_state(street)?;
-    let hero_player = hero_player(state.hero_position.as_deref())?;
+    let hero_player = hero_player(
+        state.hero_position.as_deref(),
+        state.opponent_position.as_deref(),
+    )?;
     let pot_size = positive_value(state.pot_size, "pot_size")?;
     let current_bet = non_negative_value(state.current_bet, "current_bet")?;
     let effective_stack = effective_stack_value(state.effective_stack, current_bet)?;
@@ -573,14 +577,75 @@ fn card_code(card: &InputCard) -> Result<String, String> {
     Ok(format!("{}{suit}", card.rank.to_uppercase()))
 }
 
-fn hero_player(position: Option<&str>) -> Result<usize, String> {
+fn normalized_position(position: Option<&str>) -> Option<&'static str> {
     let normalized = position
         .map(|value| value.to_lowercase().replace(['_', '-'], " "))
-        .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "));
-    match normalized.as_deref() {
-        Some("ip" | "in position" | "button" | "btn" | "dealer") => Ok(1),
-        Some("oop" | "out of position") => Ok(0),
-        _ => Err("hero position must identify IP or OOP".to_string()),
+        .map(|value| value.split_whitespace().collect::<Vec<_>>().join(" "))?;
+    match normalized.as_str() {
+        "ip" | "in position" => Some("ip"),
+        "oop" | "out of position" => Some("oop"),
+        "utg" | "under the gun" | "ep" | "early" | "early position" => Some("utg"),
+        "hijack" | "hj" | "mp" | "middle" | "middle position" => Some("hijack"),
+        "cutoff" | "co" => Some("cutoff"),
+        "button" | "btn" | "dealer" => Some("button"),
+        "small blind" | "sb" => Some("small_blind"),
+        "big blind" | "bb" => Some("big_blind"),
+        _ => None,
+    }
+}
+
+fn seat_order(position: &str) -> Option<u8> {
+    match position {
+        "small_blind" => Some(0),
+        "big_blind" => Some(1),
+        "utg" => Some(2),
+        "hijack" => Some(3),
+        "cutoff" => Some(4),
+        "button" => Some(5),
+        _ => None,
+    }
+}
+
+fn hero_player(
+    hero_position: Option<&str>,
+    opponent_position: Option<&str>,
+) -> Result<usize, String> {
+    let hero = normalized_position(hero_position);
+    let opponent = normalized_position(opponent_position);
+    let mut inferred = Vec::new();
+    match hero {
+        Some("ip") => inferred.push(1),
+        Some("oop") => inferred.push(0),
+        Some("button") => inferred.push(1),
+        _ => {}
+    }
+    match opponent {
+        Some("ip" | "button") => inferred.push(0),
+        Some("oop") => inferred.push(1),
+        _ => {}
+    }
+    if let Some(first) = inferred.first() {
+        return if inferred.iter().all(|value| value == first) {
+            Ok(*first)
+        } else {
+            Err("hero and opponent positions are contradictory".to_string())
+        };
+    }
+    if hero == opponent
+        || matches!(
+            (hero, opponent),
+            (Some("small_blind"), Some("big_blind")) | (Some("big_blind"), Some("small_blind"))
+        )
+    {
+        return Err("hero and opponent positions do not establish relative position".to_string());
+    }
+    match (hero.and_then(seat_order), opponent.and_then(seat_order)) {
+        (Some(hero_order), Some(opponent_order)) if hero_order > opponent_order => Ok(1),
+        (Some(_), Some(_)) => Ok(0),
+        _ => Err(
+            "hero position must identify IP or OOP, or hero and opponent seats must establish relative position"
+                .to_string(),
+        ),
     }
 }
 
@@ -914,6 +979,7 @@ mod tests {
             effective_stack: Some(10.0),
             players_in_hand: Some(2),
             hero_position: Some("IP".to_string()),
+            opponent_position: None,
             street: Some("flop".to_string()),
             facing_action: facing_action.map(str::to_string),
             postflop_action_history: Vec::new(),
@@ -955,13 +1021,20 @@ mod tests {
 
     #[test]
     fn position_parser_accepts_explicit_and_unambiguous_labels() {
-        assert_eq!(hero_player(Some("IP")), Ok(1));
-        assert_eq!(hero_player(Some("button")), Ok(1));
-        assert_eq!(hero_player(Some("dealer")), Ok(1));
-        assert_eq!(hero_player(Some("out-of-position")), Ok(0));
-        assert!(hero_player(Some("SB")).is_err());
-        assert!(hero_player(Some("BB")).is_err());
-        assert!(hero_player(Some("cutoff")).is_err());
+        assert_eq!(hero_player(Some("IP"), None), Ok(1));
+        assert_eq!(hero_player(Some("button"), None), Ok(1));
+        assert_eq!(hero_player(Some("dealer"), None), Ok(1));
+        assert_eq!(hero_player(Some("out-of-position"), None), Ok(0));
+        assert_eq!(hero_player(Some("BB"), Some("button")), Ok(0));
+        assert_eq!(hero_player(Some("cutoff"), Some("HJ")), Ok(1));
+        assert_eq!(hero_player(Some("HJ"), Some("cutoff")), Ok(0));
+        assert_eq!(hero_player(Some("under-the-gun"), Some("CO")), Ok(0));
+        assert_eq!(hero_player(Some("middle"), Some("early")), Ok(1));
+        assert_eq!(hero_player(None, Some("IP")), Ok(0));
+        assert!(hero_player(Some("IP"), Some("IP")).is_err());
+        assert!(hero_player(Some("SB"), Some("BB")).is_err());
+        assert!(hero_player(Some("BB"), None).is_err());
+        assert!(hero_player(Some("cutoff"), None).is_err());
     }
 
     #[test]

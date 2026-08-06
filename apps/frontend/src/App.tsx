@@ -116,6 +116,7 @@ const EMPTY_STATE: CanonicalState = {
   opponent_wager: null,
   opponent_commitment_total: null,
   hero_position: null,
+  opponent_position: null,
   preflop_opener_position: null,
   preflop_open_size: null,
   preflop_action_history: [],
@@ -247,6 +248,7 @@ interface StateForm {
   opponent_wager: string;
   opponent_commitment_total: string;
   hero_position: string;
+  opponent_position: string;
   preflop_opener_position: string;
   preflop_open_size: string;
   preflop_action_history: PreflopActionForm[];
@@ -1918,6 +1920,35 @@ function normalizePreflopPosition(value: string | null | undefined): PreflopPosi
   return PREFLOP_POSITION_ALIASES[normalized] ?? null;
 }
 
+function requiresOpponentPosition(state: {
+  street: StreetOption | null;
+  players_in_hand: number | string | null;
+  hero_position: string | null | undefined;
+}): boolean {
+  if (
+    state.street === null
+    || state.street === ""
+    || state.street === "preflop"
+    || Number(state.players_in_hand) !== 2
+  ) {
+    return false;
+  }
+  const normalizedHeroPosition = (state.hero_position ?? "")
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ![
+    "ip",
+    "in position",
+    "oop",
+    "out of position",
+    "button",
+    "btn",
+    "dealer",
+  ].includes(normalizedHeroPosition);
+}
+
 function previousBenchmarkFieldMetric(
   metric: BenchmarkFieldMetric,
   previousReport: BenchmarkReportSummary | null,
@@ -2171,6 +2202,10 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
       )
     )
     && isNullableCachedString(state.hero_position)
+    && (
+      state.opponent_position === undefined
+      || isNullableCachedString(state.opponent_position)
+    )
     && isNullableCachedString(state.preflop_opener_position)
     && isNullableCachedNumber(state.preflop_open_size, 0, false)
     && (
@@ -3475,8 +3510,15 @@ function confidenceTone(value: number | undefined): string {
   return "high";
 }
 
-function summarizeConfidences(confidences: Record<string, number>, warnings: string[]) {
-  const values = CONFIDENCE_KEYS.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
+function summarizeConfidences(
+  confidences: Record<string, number>,
+  warnings: string[],
+  state: CanonicalState | null,
+) {
+  const confidenceKeys: readonly string[] = state && requiresOpponentPosition(state)
+    ? [...CONFIDENCE_KEYS, "opponent_position"]
+    : CONFIDENCE_KEYS;
+  const values = confidenceKeys.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
   const detectedCount = values.length;
   const averageConfidence = detectedCount === 0 ? 0 : Math.round((values.reduce((sum, value) => sum + value, 0) / detectedCount) * 100);
   const reviewCount = values.filter((value) => value < 0.7).length + warnings.length;
@@ -3484,7 +3526,7 @@ function summarizeConfidences(confidences: Record<string, number>, warnings: str
   return {
     averageConfidence,
     detectedCount,
-    fieldTotal: CONFIDENCE_KEYS.length,
+    fieldTotal: confidenceKeys.length,
     reviewCount,
   };
 }
@@ -3503,6 +3545,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     opponent_wager: state.opponent_wager ?? null,
     opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
+    opponent_position: state.opponent_position ?? null,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
     preflop_action_history: state.preflop_action_history ?? [],
@@ -3528,6 +3571,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
+  const showOpponentPosition = requiresOpponentPosition(state);
   const preflopActionHistory: PreflopActionForm[] = (state.preflop_action_history ?? []).map(
     (action) => ({
       actor: action.actor,
@@ -3557,6 +3601,9 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
       ? ""
       : String(state.opponent_commitment_total),
     hero_position: state.hero_position ?? "",
+    opponent_position: showOpponentPosition
+      ? state.opponent_position ?? ""
+      : "",
     preflop_opener_position:
       structuredOpener?.actor
       ?? normalizePreflopPosition(state.preflop_opener_position)
@@ -3619,6 +3666,11 @@ function formToCanonical(form: StateForm): CanonicalState {
   const potSize = parseOptionalNumber(form.pot_size, "Pot");
   const playersInHand = parseOptionalInteger(form.players_in_hand, "Players in hand");
   const currentBet = parseOptionalNumber(form.current_bet, "Current bet");
+  const usesOpponentPosition = requiresOpponentPosition({
+    street: form.street,
+    players_in_hand: playersInHand,
+    hero_position: form.hero_position,
+  });
   const needsCommittedOpponentCount = (currentBet ?? 0) > 0
     && (playersInHand ?? 0) > 2;
   const opponentsAtCurrentBet = needsCommittedOpponentCount
@@ -3721,6 +3773,9 @@ function formToCanonical(form: StateForm): CanonicalState {
     opponent_wager: opponentWager,
     opponent_commitment_total: opponentCommitmentTotal,
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
+    opponent_position: usesOpponentPosition && form.opponent_position.trim() !== ""
+      ? form.opponent_position.trim()
+      : null,
     preflop_opener_position:
       structuredOpener?.actor
       ?? (
@@ -3753,6 +3808,7 @@ function approvalKey(state: CanonicalState): string {
     opponent_wager: state.opponent_wager ?? null,
     opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
+    opponent_position: state.opponent_position ?? null,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
     preflop_action_history: state.preflop_action_history ?? [],
@@ -4408,7 +4464,10 @@ export default function App() {
   const stateControlsDisabled = busy;
   const screenshotUrl = useMemo(() => (job && job.image_filename !== "" ? imageUrl(job.id) : null), [job]);
   const screenSharing = screenStream !== null;
-  const confidenceSummary = useMemo(() => summarizeConfidences(confidences, warnings), [confidences, warnings]);
+  const confidenceSummary = useMemo(
+    () => summarizeConfidences(confidences, warnings, validation.state),
+    [confidences, validation.state, warnings],
+  );
   const filmstripCount = jobs.length > 0 ? jobs.length : files.length;
   const frameLabel = job?.original_filename ?? (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
   const frameStreet = form.street === "" ? "No street" : form.street;
@@ -6826,6 +6885,10 @@ export default function App() {
         next.opponent_stack = "";
         next.postflop_action_history = [];
       }
+      const usesOpponentPosition = requiresOpponentPosition(next);
+      if (!usesOpponentPosition) {
+        next.opponent_position = "";
+      }
       const usesCommittedOpponentCount = Number(next.current_bet) > 0
         && Number(next.players_in_hand) > 2;
       if (!usesCommittedOpponentCount) {
@@ -8286,6 +8349,11 @@ export default function App() {
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
               </Field>
+              {requiresOpponentPosition(form) ? (
+                  <Field label="Opponent position" confidence={confidenceLabel(confidences.opponent_position)} confidenceValue={confidences.opponent_position}>
+                    <input disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
+                  </Field>
+                ) : null}
               <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
                 <select disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
                   <option value="">Select action</option>

@@ -155,8 +155,10 @@ Worker-to-backend shared secret to an untrusted agent.
 With `POKER_RECOMMENDATION_PROVIDER=local_solver`, the default
 `postflop_solver` engine runs the pinned Rust Discounted CFR adapter. It accepts
 heads-up flop, turn, and river states when `hero_position` identifies `IP`,
-`OOP`, or button. Blind labels require explicit IP/OOP review because active
-player count does not identify the opponent's seat. Its ranges, bet tree,
+`OOP`, or button, or when reviewed hero and opponent seats establish an
+unambiguous postflop order. A bare small-blind versus big-blind pair still
+requires explicit IP/OOP review because the order depends on whether the small
+blind is also the heads-up dealer. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 Facing-bet trees also require the visible hero stack so the adapter can

@@ -53,6 +53,7 @@ BenchmarkFieldName = Literal[
     "preflop_action_history",
     "facing_action",
     "postflop_action_history",
+    "completed_postflop_streets",
     "action_context",
 ]
 BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
@@ -72,6 +73,7 @@ BENCHMARK_FIELDS: tuple[BenchmarkFieldName, ...] = (
     "preflop_action_history",
     "facing_action",
     "postflop_action_history",
+    "completed_postflop_streets",
     "action_context",
 )
 BENCHMARK_POSITION_ALIASES = {
@@ -347,6 +349,15 @@ def normalize_benchmark_value(field_name: BenchmarkFieldName, value: Any) -> Any
                 else action_model.model_validate(action)
             ).model_dump(mode="json")
             for action in value
+        ]
+    if field_name == "completed_postflop_streets":
+        return [
+            (
+                history
+                if isinstance(history, CompletedPostflopStreetHistory)
+                else CompletedPostflopStreetHistory.model_validate(history)
+            ).model_dump(mode="json")
+            for history in value
         ]
     if isinstance(value, str):
         normalized = re.sub(r"\s+", " ", value.strip().lower())
@@ -1043,6 +1054,34 @@ def _validate_benchmark_comparison_value(
                 ) from exc
             if normalized != item:
                 raise ValueError(f"Benchmark {field_name} actions must be canonical")
+        return
+
+    if field_name == "completed_postflop_streets":
+        if type(value) is not list or len(value) > 2:
+            raise ValueError(
+                "Benchmark completed_postflop_streets must contain street histories"
+            )
+        if not allow_none and not value:
+            raise ValueError(
+                "Benchmark completed_postflop_streets expected value cannot be empty"
+            )
+        for item in value:
+            if type(item) is not dict:
+                raise ValueError(
+                    "Benchmark completed_postflop_streets must contain street histories"
+                )
+            try:
+                normalized = CompletedPostflopStreetHistory.model_validate(
+                    item
+                ).model_dump(mode="json")
+            except ValidationError as exc:
+                raise ValueError(
+                    "Benchmark completed_postflop_streets must contain valid street histories"
+                ) from exc
+            if normalized != item:
+                raise ValueError(
+                    "Benchmark completed_postflop_streets histories must be canonical"
+                )
         return
 
     if field_name in _BENCHMARK_TEXT_FIELDS:

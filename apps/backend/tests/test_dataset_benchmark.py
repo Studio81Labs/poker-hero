@@ -255,6 +255,48 @@ def test_benchmark_scores_structured_postflop_fields(tmp_path: Path) -> None:
     assert metrics["postflop_action_history"].correct == 0
 
 
+def test_benchmark_scores_completed_postflop_streets(tmp_path: Path) -> None:
+    expected_state = expected_mock_state(
+        board_cards=[
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+            Card.from_code("3d"),
+        ],
+        street="turn",
+        completed_postflop_streets=[
+            CompletedPostflopStreetHistory(
+                street="flop",
+                actions=[
+                    CompletedPostflopAction(
+                        actor="oop",
+                        action="bet",
+                        amount=2,
+                    ),
+                    CompletedPostflopAction(
+                        actor="ip",
+                        action="call",
+                        amount=2,
+                    ),
+                ],
+            )
+        ],
+    )
+    dataset_path = write_dataset_archive(
+        tmp_path / "completed-streets-dataset.zip",
+        expected_state,
+    )
+
+    report = benchmark_dataset_archive(
+        dataset_path,
+        Settings(data_dir=tmp_path / "unused", parser_provider="mock"),
+    )
+
+    metrics = {metric.field: metric for metric in report.field_metrics}
+    assert metrics["completed_postflop_streets"].total == 1
+    assert metrics["completed_postflop_streets"].correct == 0
+
+
 def test_benchmark_scores_structured_preflop_history(tmp_path: Path) -> None:
     expected_state = expected_mock_state(
         preflop_action_history=[

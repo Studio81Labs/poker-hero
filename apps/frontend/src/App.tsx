@@ -113,6 +113,7 @@ const EMPTY_STATE: CanonicalState = {
   effective_stack: null,
   players_in_hand: null,
   opponents_at_current_bet: null,
+  opponent_wager: null,
   hero_position: null,
   preflop_opener_position: null,
   preflop_open_size: null,
@@ -242,6 +243,7 @@ interface StateForm {
   effective_stack: string;
   players_in_hand: string;
   opponents_at_current_bet: string;
+  opponent_wager: string;
   hero_position: string;
   preflop_opener_position: string;
   preflop_open_size: string;
@@ -515,10 +517,22 @@ function recommendationEvidenceFromRaw(
     details.push({ label: "Stack depth", value: `${stackPolicy} · ${formatEvidenceBb(effectiveStack)}` });
   }
   const committedOpponents = metadataNumber(raw.opponents_at_current_bet);
-  if (committedOpponents !== null && Number.isInteger(committedOpponents) && committedOpponents > 0) {
+  const opponentWager = metadataNumber(raw.opponent_wager);
+  const hasCommittedOpponentCount = committedOpponents !== null
+    && Number.isInteger(committedOpponents)
+    && committedOpponents > 0;
+  const hasOpponentWager = opponentWager !== null && opponentWager > 0;
+  if (hasCommittedOpponentCount || hasOpponentWager) {
+    const context = [];
+    if (hasCommittedOpponentCount) {
+      context.push(`${committedOpponents} ${committedOpponents === 1 ? "opponent" : "opponents"}`);
+    }
+    if (hasOpponentWager) {
+      context.push(`${formatEvidenceBb(opponentWager)} each`);
+    }
     details.push({
       label: "At current wager",
-      value: `${committedOpponents} ${committedOpponents === 1 ? "opponent" : "opponents"}`,
+      value: context.join(" · "),
     });
   }
 
@@ -2091,6 +2105,18 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
         && state.opponents_at_current_bet < state.players_in_hand
       )
     )
+    && (
+      state.opponent_wager === undefined
+      || state.opponent_wager === null
+      || (
+        typeof state.opponent_wager === "number"
+        && Number.isFinite(state.opponent_wager)
+        && state.opponent_wager > 0
+        && typeof state.current_bet === "number"
+        && state.current_bet > 0
+        && state.opponent_wager >= state.current_bet
+      )
+    )
     && isNullableCachedString(state.hero_position)
     && isNullableCachedString(state.preflop_opener_position)
     && isNullableCachedNumber(state.preflop_open_size, 0, false)
@@ -3421,6 +3447,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     opponents_at_current_bet: state.opponents_at_current_bet ?? null,
+    opponent_wager: state.opponent_wager ?? null,
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
@@ -3471,6 +3498,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
     opponents_at_current_bet: state.opponents_at_current_bet == null
       ? ""
       : String(state.opponents_at_current_bet),
+    opponent_wager: state.opponent_wager == null ? "" : String(state.opponent_wager),
     hero_position: state.hero_position ?? "",
     preflop_opener_position:
       structuredOpener?.actor
@@ -3541,12 +3569,25 @@ function formToCanonical(form: StateForm): CanonicalState {
       "Opponents at current bet",
     )
     : null;
+  const opponentWager = (currentBet ?? 0) > 0
+    ? parseOptionalNumber(form.opponent_wager, "Opponent wager total")
+    : null;
   if (
     opponentsAtCurrentBet !== null
     && playersInHand !== null
     && opponentsAtCurrentBet >= playersInHand
   ) {
     throw new Error("Opponents at current bet must be lower than players in hand");
+  }
+  if (opponentWager !== null && opponentWager <= 0) {
+    throw new Error("Opponent wager total must be greater than 0");
+  }
+  if (
+    opponentWager !== null
+    && currentBet !== null
+    && opponentWager < currentBet
+  ) {
+    throw new Error("Opponent wager total must be at least the current bet");
   }
 
   return {
@@ -3563,6 +3604,7 @@ function formToCanonical(form: StateForm): CanonicalState {
     opponents_at_current_bet: needsCommittedOpponentCount
       ? opponentsAtCurrentBet
       : null,
+    opponent_wager: opponentWager,
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
     preflop_opener_position:
       structuredOpener?.actor
@@ -3593,6 +3635,7 @@ function approvalKey(state: CanonicalState): string {
     effective_stack: state.effective_stack,
     players_in_hand: state.players_in_hand,
     opponents_at_current_bet: state.opponents_at_current_bet ?? null,
+    opponent_wager: state.opponent_wager ?? null,
     hero_position: state.hero_position,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
@@ -6672,6 +6715,9 @@ export default function App() {
       if (!usesCommittedOpponentCount) {
         next.opponents_at_current_bet = "";
       }
+      if (Number(next.current_bet) <= 0) {
+        next.opponent_wager = "";
+      }
       formDirtyRef.current = JSON.stringify(next)
         !== JSON.stringify(formBaselineRef.current);
       return next;
@@ -8072,6 +8118,22 @@ export default function App() {
                     value={form.opponents_at_current_bet}
                     onChange={(event) => updateForm("opponents_at_current_bet", event.target.value)}
                     placeholder="Already committed"
+                  />
+                </Field>
+              ) : null}
+              {Number(form.current_bet) > 0 && (
+                form.street === "preflop"
+                || form.facing_action === "raise"
+                || form.opponent_wager !== ""
+              ) ? (
+                <Field label="Opponent wager total" confidence="manual">
+                  <input
+                    disabled={stateControlsDisabled}
+                    inputMode="decimal"
+                    min={form.current_bet || "0"}
+                    value={form.opponent_wager}
+                    onChange={(event) => updateForm("opponent_wager", event.target.value)}
+                    placeholder="Total BB committed"
                   />
                 </Field>
               ) : null}

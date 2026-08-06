@@ -39,6 +39,7 @@ class HttpRecommendationProvider:
             "preflop_open_size",
             "opponent_stack",
             "opponents_at_current_bet",
+            "opponent_wager",
         ):
             if state_payload[field] is None:
                 del state_payload[field]

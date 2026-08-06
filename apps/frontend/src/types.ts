@@ -36,6 +36,7 @@ export interface DetectedState {
   effective_stack: number | null;
   players_in_hand: number | null;
   opponents_at_current_bet?: number | null;
+  opponent_wager?: number | null;
   hero_position: string | null;
   preflop_opener_position: string | null;
   preflop_open_size: number | null;

@@ -119,11 +119,14 @@ its per-opponent response estimate into the probability that the entire field
 folds under an explicit independent equal-response assumption. It enumerates
 every possible caller count, estimates equity against that surviving field,
 and weights each branch using its own final pot and continuation value. When
-raising into an outstanding wager already included in the pot, the
-canonical state records how many opponents have already committed that wager.
-The equal-response model uses the expected committed callers in each branch and
-subtracts every corresponding already-counted commitment. Multiway facing-bet
-fallback is withheld until that count is reviewed.
+raising into an outstanding wager already included in the pot, the canonical
+state can record both how many opponents have committed it and their total
+current-street wager. The total wager is distinct from hero's remaining amount
+to call and is resolved from explicit review, structured action history,
+preflop opening context, or a simple first-bet state. The equal-response model
+uses the expected committed callers in each branch and subtracts every
+corresponding already-counted commitment. Fallback is withheld until any
+commitment context that cannot be derived has been reviewed.
 Candidate evidence retains the fold probabilities and continuation branches so
 the approximation remains reviewable.
 Explicit custom

@@ -2809,6 +2809,47 @@ def test_multiway_ev_recommendation_requires_committed_opponent_count(
     assert job.recommendation_pending is False
 
 
+def test_local_ev_requires_total_opponent_wager_when_not_derivable(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="local_ev",
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(
+        client,
+        job_id,
+        {
+            "hero_cards": [
+                {"rank": "A", "suit": "hearts"},
+                {"rank": "K", "suit": "diamonds"},
+            ],
+            "board_cards": [],
+            "pot_size": 4,
+            "current_bet": 1.5,
+            "hero_stack": 99,
+            "effective_stack": 99,
+            "players_in_hand": 2,
+            "hero_position": "big_blind",
+            "street": "preflop",
+            "facing_action": "raise",
+            "action_context": "",
+            "user_approved": True,
+        },
+    )
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"missing_fields": ["opponent_wager"]}
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.error is None
+    assert job.recommendation_pending is False
+
+
 @pytest.mark.parametrize(
     ("missing_field", "value"),
     [

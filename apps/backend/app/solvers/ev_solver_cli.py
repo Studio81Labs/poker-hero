@@ -24,6 +24,7 @@ from app.providers.rule_based import (
     _starting_hand_score,
 )
 from app.solvers.preflop_chart import solve_preflop_chart
+from app.solvers.wager_context import resolve_opponent_wager
 
 MAX_EXACT_CASES = 140_000
 
@@ -100,6 +101,12 @@ def solve(
         current_bet=current_bet,
         configured=state.opponents_at_current_bet,
     )
+    opponent_wager = resolve_opponent_wager(state)
+    if current_bet > 0 and opponent_wager is None:
+        raise SolverInputError(
+            "opponent_wager is required when the total opponent commitment "
+            "cannot be derived"
+        )
 
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
     equity_by_opponents = _estimate_range_equities(
@@ -132,6 +139,7 @@ def solve(
         analysis=analysis,
         hero_cards=hero_cards,
         opponents_at_current_bet=opponents_at_current_bet,
+        opponent_wager=opponent_wager or 0,
     )
     best = max(candidates, key=lambda candidate: (candidate.ev, _action_rank(candidate.action)))
     second_best = sorted(candidates, key=lambda candidate: candidate.ev, reverse=True)[1] if len(candidates) > 1 else best
@@ -150,6 +158,7 @@ def solve(
             "realized_equity": realized_equity,
             "required_equity": required_equity,
             "opponents_at_current_bet": opponents_at_current_bet,
+            "opponent_wager": opponent_wager,
             "hand_category": _hand_category_label(analysis),
             "draws": _draw_raw(analysis.draws) if analysis is not None else None,
             "wet_board": analysis.wet_board if analysis is not None else None,
@@ -522,6 +531,7 @@ def _action_candidates(
     analysis: PostflopAnalysis | None,
     hero_cards: list[Card],
     opponents_at_current_bet: int,
+    opponent_wager: float,
 ) -> list[Candidate]:
     if facing_bet:
         candidates = [
@@ -540,7 +550,7 @@ def _action_candidates(
                 per_opponent_fold_equity=per_opponent_fold_equity,
                 continuation_equities=continuation_equities,
                 analysis=analysis,
-                existing_wager=current_bet,
+                existing_opponent_wager=opponent_wager,
                 opponents_with_existing_wager=opponents_at_current_bet,
             )
             ev = fold_equity * pot_size + sum(
@@ -572,7 +582,7 @@ def _action_candidates(
             per_opponent_fold_equity=per_opponent_fold_equity,
             continuation_equities=continuation_equities,
             analysis=analysis,
-            existing_wager=0,
+            existing_opponent_wager=0,
             opponents_with_existing_wager=0,
         )
         ev = fold_equity * pot_size + sum(
@@ -664,7 +674,7 @@ def _continuation_branches(
     per_opponent_fold_equity: float,
     continuation_equities: dict[int, float],
     analysis: PostflopAnalysis | None,
-    existing_wager: float,
+    existing_opponent_wager: float,
     opponents_with_existing_wager: int,
 ) -> tuple[ContinuationBranch, ...]:
     opponents = max(1, min(players - 1, 5))
@@ -680,7 +690,7 @@ def _continuation_branches(
             continuation_equities[callers], size, pot_size, analysis
         )
         existing_wager_adjustment = (
-            existing_wager
+            existing_opponent_wager
             * callers
             * opponents_with_existing_wager
             / opponents

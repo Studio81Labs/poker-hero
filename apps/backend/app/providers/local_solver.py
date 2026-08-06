@@ -21,6 +21,7 @@ from app.solvers.preflop_context import (
     requires_hero_stack_for_preflop_chart,
     supports_preflop_chart,
 )
+from app.solvers.wager_context import resolve_opponent_wager
 
 
 class _LocalSolverResponseError(ProviderError):
@@ -59,6 +60,13 @@ class LocalSolverProvider:
                 and self.settings.postflop_solver_fallback_enabled
             )
         )
+        if (
+            uses_builtin_ev
+            and not chart_candidate
+            and (state.current_bet or 0) > 0
+            and resolve_opponent_wager(state) is None
+        ):
+            required_fields.append("opponent_wager")
         if (
             uses_builtin_ev
             and not chart_candidate

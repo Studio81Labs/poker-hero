@@ -560,9 +560,11 @@ def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> Non
         current_bet=2.5,
         players_in_hand=3,
         opponents_at_current_bet=2,
+        opponent_wager=5,
     )
 
     assert state.opponents_at_current_bet == 2
+    assert state.opponent_wager == 5
     with pytest.raises(ValidationError, match="lower than players_in_hand"):
         model(
             current_bet=2.5,
@@ -580,6 +582,10 @@ def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> Non
             current_bet=2.5,
             opponents_at_current_bet=1,
         )
+    with pytest.raises(ValidationError, match="opponent_wager requires"):
+        model(opponent_wager=2.5)
+    with pytest.raises(ValidationError, match="at least current_bet"):
+        model(current_bet=2.5, opponent_wager=2)
 
 
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
@@ -598,6 +604,7 @@ def test_canonical_state_copies_detected_values() -> None:
         effective_stack=96.0,
         players_in_hand=3,
         opponents_at_current_bet=2,
+        opponent_wager=5,
         hero_position="button",
         preflop_opener_position="cutoff",
         preflop_open_size=2.5,
@@ -626,6 +633,7 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.hero_stack == 97.5
     assert canonical.opponent_stack == 96.0
     assert canonical.opponents_at_current_bet == 2
+    assert canonical.opponent_wager == 5
     assert canonical.facing_action == "bet"
     assert canonical.postflop_action_history == detected.postflop_action_history
     assert canonical.preflop_action_history == detected.preflop_action_history

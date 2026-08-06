@@ -48,6 +48,7 @@ const recommendationWithEvidence: RecommendationResult = {
     realized_equity: 0.55,
     required_equity: 0.2,
     opponents_at_current_bet: 2,
+    opponent_wager: 5,
     stack_depth_policy: 42,
     effective_stack: -1,
     opening_raise_size: "2.5",
@@ -4133,8 +4134,29 @@ describe("App", () => {
   });
 
   it("records the reviewed committed-opponent count for multiway wagers", async () => {
-    const created = jobRecord();
-    const approvedState = canonicalState({ opponents_at_current_bet: 2 });
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 6.5,
+      current_bet: 1.5,
+      players_in_hand: 3,
+      opponents_at_current_bet: null,
+      opponent_wager: null,
+      street: "preflop",
+      facing_action: "raise",
+      action_context: "Cutoff opens to 2.5 BB and button calls",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...preflopState,
+      opponents_at_current_bet: 2,
+      opponent_wager: 2.5,
+    });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
       .mockResolvedValueOnce(processingQueueResponse([created]))
@@ -4144,11 +4166,13 @@ describe("App", () => {
     const user = await uploadScreenshot();
     const committedInput = await screen.findByLabelText(/Opponents at wager/);
     await user.type(committedInput, "2");
+    await user.type(screen.getByLabelText(/Opponent wager total/), "2.5");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
     const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.opponents_at_current_bet).toBe(2);
+    expect(payload.opponent_wager).toBe(2.5);
   });
 
   it("re-approves corrections to an approved-only imported job", async () => {
@@ -9656,7 +9680,7 @@ describe("App", () => {
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
     expect(within(evidence).getByText("Field folds 9% · each 30%")).toBeInTheDocument();
     expect(within(evidence).getByText("At current wager")).toBeInTheDocument();
-    expect(within(evidence).getByText("2 opponents")).toBeInTheDocument();
+    expect(within(evidence).getByText("2 opponents · 5 BB each")).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
     expect(chosen).toHaveTextContent("7.5 BB");

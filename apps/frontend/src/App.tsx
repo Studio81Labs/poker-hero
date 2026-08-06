@@ -360,6 +360,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   rule_based: "Rule-based trainer",
   rule_based_training_v2: "Rule-based trainer",
 };
+const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
+  preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
+  preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
+};
 
 const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
   { value: "browser", label: "Tab" },
@@ -911,43 +915,82 @@ function recommendationEvidenceFromRaw(
     if (rangeSource) {
       details.push({
         label: "Range source",
-        value: rawRangeSource === "preflop_chart_single_raised_pot"
-          ? "Preflop chart · single-raised pot"
-          : rangeSource,
+        value: POSTFLOP_RANGE_SOURCE_LABELS[rawRangeSource ?? ""] ?? rangeSource,
       });
     }
 
-    const rangeContext = rawRangeSource === "preflop_chart_single_raised_pot"
+    const contextualRangeSource = (
+      rawRangeSource === "preflop_chart_single_raised_pot"
+      || rawRangeSource === "preflop_chart_three_bet_pot"
+    );
+    const rangeContext = contextualRangeSource
       ? metadataRecord(raw.range_context)
       : null;
-    const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
-    const rangeCallerPosition = metadataLabel(rangeContext?.caller_position);
-    const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
-    if (rangeOpenerPosition && rangeCallerPosition) {
-      details.push({
-        label: "Range actors",
-        value: `${rangeOpenerPosition} opens${
-          rangeOpeningSize !== null && rangeOpeningSize > 0
-            ? ` ${formatEvidenceBb(rangeOpeningSize)}`
-            : ""
-        } · ${rangeCallerPosition} calls`,
-      });
-    }
-    const rangeOpenerFraction = metadataRatio(rangeContext?.opener_fraction);
-    const rangeCallerContinue = metadataRatio(rangeContext?.caller_continue_fraction);
-    const rangeCallerReraise = metadataRatio(rangeContext?.caller_reraise_fraction);
-    if (
-      rangeOpenerFraction !== null
-      && rangeCallerContinue !== null
-      && rangeCallerReraise !== null
-      && rangeCallerReraise < rangeCallerContinue
-    ) {
-      details.push({
-        label: "Range bands",
-        value: `Open ${formatEvidenceRatio(rangeOpenerFraction)} · flat ${
-          formatEvidenceRatio(rangeCallerReraise)
-        }-${formatEvidenceRatio(rangeCallerContinue)}`,
-      });
+    if (rawRangeSource === "preflop_chart_single_raised_pot") {
+      const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
+      const rangeCallerPosition = metadataLabel(rangeContext?.caller_position);
+      const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
+      if (rangeOpenerPosition && rangeCallerPosition) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeOpenerPosition} opens${
+            rangeOpeningSize !== null && rangeOpeningSize > 0
+              ? ` ${formatEvidenceBb(rangeOpeningSize)}`
+              : ""
+          } · ${rangeCallerPosition} calls`,
+        });
+      }
+      const rangeOpenerFraction = metadataRatio(rangeContext?.opener_fraction);
+      const rangeCallerContinue = metadataRatio(rangeContext?.caller_continue_fraction);
+      const rangeCallerReraise = metadataRatio(rangeContext?.caller_reraise_fraction);
+      if (
+        rangeOpenerFraction !== null
+        && rangeCallerContinue !== null
+        && rangeCallerReraise !== null
+        && rangeCallerReraise < rangeCallerContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `Open ${formatEvidenceRatio(rangeOpenerFraction)} · flat ${
+            formatEvidenceRatio(rangeCallerReraise)
+          }-${formatEvidenceRatio(rangeCallerContinue)}`,
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_three_bet_pot") {
+      const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
+      const rangeThreeBettorPosition = metadataLabel(rangeContext?.three_bettor_position);
+      const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
+      const rangeThreeBetSize = metadataNumber(rangeContext?.three_bet_size_bb);
+      if (rangeOpenerPosition && rangeThreeBettorPosition) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeOpenerPosition} opens${
+            rangeOpeningSize !== null && rangeOpeningSize > 0
+              ? ` ${formatEvidenceBb(rangeOpeningSize)}`
+              : ""
+          } · ${rangeThreeBettorPosition} 3-bets${
+            rangeThreeBetSize !== null && rangeThreeBetSize > 0
+              ? ` ${formatEvidenceBb(rangeThreeBetSize)}`
+              : ""
+          } · ${rangeOpenerPosition} calls`,
+        });
+      }
+      const rangeThreeBettorFraction = metadataRatio(rangeContext?.three_bettor_fraction);
+      const rangeOpenerContinue = metadataRatio(rangeContext?.opener_continue_fraction);
+      const rangeOpenerFourBet = metadataRatio(rangeContext?.opener_four_bet_fraction);
+      if (
+        rangeThreeBettorFraction !== null
+        && rangeOpenerContinue !== null
+        && rangeOpenerFourBet !== null
+        && rangeOpenerFourBet < rangeOpenerContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `3-bet ${formatEvidenceRatio(rangeThreeBettorFraction)} · flat ${
+            formatEvidenceRatio(rangeOpenerFourBet)
+          }-${formatEvidenceRatio(rangeOpenerContinue)}`,
+        });
+      }
     }
 
     const rawRanges = metadataRecord(raw.ranges);

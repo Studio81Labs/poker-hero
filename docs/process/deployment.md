@@ -35,10 +35,11 @@ tree limit is separate from container overhead, so allocate at least 1.5 GB RAM
 or lower `POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB`. Keep provider URLs and
 credentials in Coolify secrets.
 `POKER_POSTFLOP_SOLVER_RANGE_MODE=contextual` uses a complete supported flop
-open-and-call history whose reconstructed root pot matches the recorded actions
-to select position-aware ranges. Turn, river, incomplete, and contradictory
-states retain the configured ranges. Set the mode to `configured` when the
-deployment's explicit OOP/IP range strings must always take precedence.
+open-and-call or open/3-bet/call history whose reconstructed root pot matches
+the recorded final commitments to select position-aware ranges. Turn, river,
+incomplete, and contradictory states retain the configured ranges. Set the
+mode to `configured` when the deployment's explicit OOP/IP range strings must
+always take precedence.
 
 External OCR, solver, and LLM endpoints can each use an independent bearer
 token. Configure the matching `POKER_*_BEARER_TOKEN` value as a Coolify secret

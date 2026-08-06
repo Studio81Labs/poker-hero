@@ -9984,6 +9984,9 @@ describe("App", () => {
             opener_position: "button",
             caller_position: "big_blind",
             opening_size_bb: 2.5,
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
             opener_fraction: 0.45,
             caller_continue_fraction: 0.4,
             caller_reraise_fraction: 0.12,
@@ -10028,6 +10031,7 @@ describe("App", () => {
     expect(within(decisionContext).getByText("400 iterations · 34.6 MB estimate")).toBeInTheDocument();
     expect(within(decisionContext).getByText("1% pot exploitability")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Preflop chart · single-raised pot")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Standard · 100 BB starting")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Button opens 2.5 BB · Big blind calls")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Open 45% · flat 12%-40%")).toBeInTheDocument();
 
@@ -10061,6 +10065,9 @@ describe("App", () => {
             three_bettor_position: "big_blind",
             opening_size_bb: 2.5,
             three_bet_size_bb: 8,
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "standard_assumption",
             three_bettor_fraction: 0.12,
             opener_continue_fraction: 0.18,
             opener_four_bet_fraction: 0.065,
@@ -10088,6 +10095,7 @@ describe("App", () => {
     const evidence = await screen.findByLabelText("Decision evidence");
     const decisionContext = within(evidence).getByLabelText("Decision context");
     expect(within(decisionContext).getByText("Preflop chart · 3-bet pot")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Standard · 100 BB assumed")).toBeInTheDocument();
     expect(within(decisionContext).getByText(
       "Button opens 2.5 BB · Big blind 3-bets 8 BB · Button calls",
     )).toBeInTheDocument();
@@ -10117,9 +10125,12 @@ describe("App", () => {
             opening_size_bb: 2.5,
             three_bet_size_bb: 8,
             four_bet_size_bb: 20,
-            opener_four_bet_fraction: 0.065,
-            three_bettor_continue_fraction: 0.07,
-            three_bettor_five_bet_fraction: 0.038,
+            stack_depth_policy: "medium",
+            starting_effective_stack_bb: 50,
+            stack_depth_source: "reconstructed",
+            opener_four_bet_fraction: 0.0747,
+            three_bettor_continue_fraction: 0.0665,
+            three_bettor_five_bet_fraction: 0.0437,
           },
           ranges: {
             oop: "JJ-77,AQs-AJs",
@@ -10144,10 +10155,11 @@ describe("App", () => {
     const evidence = await screen.findByLabelText("Decision evidence");
     const decisionContext = within(evidence).getByLabelText("Decision context");
     expect(within(decisionContext).getByText("Preflop chart · 4-bet pot")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Medium · 50 BB starting")).toBeInTheDocument();
     expect(within(decisionContext).getByText(
       "Button opens 2.5 BB · Big blind 3-bets 8 BB · Button 4-bets 20 BB · Big blind calls",
     )).toBeInTheDocument();
-    expect(within(decisionContext).getByText("4-bet 6.5% · flat 3.8%-7%")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("4-bet 7.5% · flat 4.4%-6.7%")).toBeInTheDocument();
   });
 
   it("omits malformed postflop context while preserving valid evidence", async () => {

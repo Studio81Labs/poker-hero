@@ -1996,6 +1996,11 @@ def test_local_solver_derives_ranges_from_complete_three_bet_pot(
         "assert context['opener_position'] == 'button'\n"
         "assert context['three_bettor_position'] == 'big_blind'\n"
         "assert context['three_bet_size_bb'] == 8\n"
+        "assert context['stack_depth_policy'] == 'medium'\n"
+        "assert context['starting_effective_stack_bb'] == 50\n"
+        "assert context['stack_depth_source'] == 'reconstructed'\n"
+        "assert context['three_bettor_fraction'] == 0.138\n"
+        "assert context['opener_continue_fraction'] == 0.171\n"
         "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
         "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
         "print(json.dumps({"
@@ -2019,6 +2024,7 @@ def test_local_solver_derives_ranges_from_complete_three_bet_pot(
     state.opponent_wager = None
     state.opponent_commitment_total = None
     state.facing_action = None
+    state.effective_stack = 42.0
     state.hero_position = "button"
     state.opponent_position = "big_blind"
     state.preflop_action_history = [

@@ -2850,6 +2850,41 @@ def test_local_ev_requires_total_opponent_wager_when_not_derivable(
     assert job.recommendation_pending is False
 
 
+def test_local_ev_requires_aggregate_multiway_commitments(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine="local_ev",
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(
+        client,
+        job_id,
+        {
+            **APPROVED_STATE,
+            "pot_size": 30,
+            "current_bet": 15,
+            "effective_stack": 85,
+            "opponents_at_current_bet": 1,
+            "opponent_wager": 15,
+            "facing_action": "raise",
+        },
+    )
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "missing_fields": ["opponent_commitment_total"]
+    }
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "approved"
+    assert job.error is None
+    assert job.recommendation_pending is False
+
+
 @pytest.mark.parametrize(
     ("missing_field", "value"),
     [

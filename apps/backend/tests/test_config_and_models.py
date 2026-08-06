@@ -557,14 +557,17 @@ def test_table_state_accepts_integer_player_count(model: type[Any]) -> None:
 @pytest.mark.parametrize("model", [DetectedState, CanonicalState])
 def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> None:
     state = model(
+        pot_size=12.5,
         current_bet=2.5,
         players_in_hand=3,
         opponents_at_current_bet=2,
         opponent_wager=5,
+        opponent_commitment_total=10,
     )
 
     assert state.opponents_at_current_bet == 2
     assert state.opponent_wager == 5
+    assert state.opponent_commitment_total == 10
     with pytest.raises(ValidationError, match="lower than players_in_hand"):
         model(
             current_bet=2.5,
@@ -586,6 +589,28 @@ def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> Non
         model(opponent_wager=2.5)
     with pytest.raises(ValidationError, match="at least current_bet"):
         model(current_bet=2.5, opponent_wager=2)
+    with pytest.raises(ValidationError, match="cannot exceed pot_size"):
+        model(pot_size=9, opponent_commitment_total=10)
+    with pytest.raises(ValidationError, match="must cover"):
+        model(
+            pot_size=12.5,
+            current_bet=2.5,
+            players_in_hand=3,
+            opponents_at_current_bet=2,
+            opponent_wager=5,
+            opponent_commitment_total=9,
+        )
+    with pytest.raises(ValidationError, match="must cover"):
+        model(
+            pot_size=10,
+            current_bet=2,
+            players_in_hand=2,
+            opponents_at_current_bet=1,
+            opponent_commitment_total=4,
+            preflop_action_history=[
+                PreflopAction(actor="button", action="raise", amount=5),
+            ],
+        )
 
 
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:
@@ -605,6 +630,7 @@ def test_canonical_state_copies_detected_values() -> None:
         players_in_hand=3,
         opponents_at_current_bet=2,
         opponent_wager=5,
+        opponent_commitment_total=10,
         hero_position="button",
         preflop_opener_position="cutoff",
         preflop_open_size=2.5,
@@ -634,6 +660,7 @@ def test_canonical_state_copies_detected_values() -> None:
     assert canonical.opponent_stack == 96.0
     assert canonical.opponents_at_current_bet == 2
     assert canonical.opponent_wager == 5
+    assert canonical.opponent_commitment_total == 10
     assert canonical.facing_action == "bet"
     assert canonical.postflop_action_history == detected.postflop_action_history
     assert canonical.preflop_action_history == detected.preflop_action_history

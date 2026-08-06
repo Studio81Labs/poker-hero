@@ -79,8 +79,10 @@ def resolve_opponent_commitment_total(
     opponent_wager: float,
     opponents_at_current_bet: int,
     hero_wager: float = 0.0,
-) -> float:
+) -> float | None:
     """Resolve active opponents' aggregate current-street commitments."""
+    if state.opponent_commitment_total is not None:
+        return state.opponent_commitment_total
     opponents = max(1, min((state.players_in_hand or 2) - 1, 5))
     commitments = {
         actor: max(
@@ -131,4 +133,8 @@ def resolve_opponent_commitment_total(
         ):
             return sum(commitments.values())
 
-    return opponent_wager * opponents_at_current_bet
+    if opponents_at_current_bet == opponents:
+        return opponent_wager * opponents
+    if state.street != "preflop" and state.facing_action == "bet":
+        return opponent_wager * opponents_at_current_bet
+    return None

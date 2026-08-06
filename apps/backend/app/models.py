@@ -253,6 +253,7 @@ class DetectedState(BaseModel):
     players_in_hand: PositiveInteger | None = None
     opponents_at_current_bet: PositiveInteger | None = None
     opponent_wager: PositiveFiniteNumber | None = None
+    opponent_commitment_total: PositiveFiniteNumber | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
@@ -277,6 +278,7 @@ class DetectedState(BaseModel):
         _validate_unique_cards(self.hero_cards, self.board_cards)
         _validate_opponents_at_current_bet(self)
         _validate_opponent_wager(self)
+        _validate_opponent_commitment_total(self)
         return self
 
 
@@ -306,6 +308,7 @@ class CanonicalState(BaseModel):
     players_in_hand: PositiveInteger | None = None
     opponents_at_current_bet: PositiveInteger | None = None
     opponent_wager: PositiveFiniteNumber | None = None
+    opponent_commitment_total: PositiveFiniteNumber | None = None
     hero_position: str | None = Field(default=None)
     preflop_opener_position: str | None = Field(default=None)
     preflop_open_size: PositiveFiniteNumber | None = None
@@ -331,6 +334,7 @@ class CanonicalState(BaseModel):
         _validate_unique_cards(self.hero_cards, self.board_cards)
         _validate_opponents_at_current_bet(self)
         _validate_opponent_wager(self)
+        _validate_opponent_commitment_total(self)
         return self
 
     @classmethod
@@ -347,6 +351,7 @@ class CanonicalState(BaseModel):
             players_in_hand=state.players_in_hand,
             opponents_at_current_bet=state.opponents_at_current_bet,
             opponent_wager=state.opponent_wager,
+            opponent_commitment_total=state.opponent_commitment_total,
             hero_position=state.hero_position,
             preflop_opener_position=state.preflop_opener_position,
             preflop_open_size=state.preflop_open_size,
@@ -382,6 +387,37 @@ def _validate_opponent_wager(state: DetectedState | CanonicalState) -> None:
         raise ValueError("opponent_wager requires a positive current_bet")
     if wager < state.current_bet:
         raise ValueError("opponent_wager must be at least current_bet")
+
+
+def _validate_opponent_commitment_total(
+    state: DetectedState | CanonicalState,
+) -> None:
+    total = state.opponent_commitment_total
+    if total is None:
+        return
+    if state.pot_size is not None and total > state.pot_size + 1e-6:
+        raise ValueError("opponent_commitment_total cannot exceed pot_size")
+    recorded_wagers = [
+        action.amount
+        for action in [
+            *state.preflop_action_history,
+            *state.postflop_action_history,
+        ]
+        if action.amount is not None
+    ]
+    wager = max(
+        state.current_bet or 0,
+        state.opponent_wager or 0,
+        *recorded_wagers,
+    )
+    if wager <= 0:
+        return
+    committed_opponents = state.opponents_at_current_bet
+    minimum = wager * (committed_opponents or 1)
+    if total + 1e-6 < minimum:
+        raise ValueError(
+            "opponent_commitment_total must cover opponents_at_current_bet"
+        )
 
 
 class RecommendationRequest(BaseModel):

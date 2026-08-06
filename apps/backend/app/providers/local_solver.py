@@ -21,7 +21,11 @@ from app.solvers.preflop_context import (
     requires_hero_stack_for_preflop_chart,
     supports_preflop_chart,
 )
-from app.solvers.wager_context import resolve_opponent_wager
+from app.solvers.wager_context import (
+    resolve_hero_wager,
+    resolve_opponent_commitment_total,
+    resolve_opponent_wager,
+)
 
 
 class _LocalSolverResponseError(ProviderError):
@@ -74,6 +78,30 @@ class LocalSolverProvider:
             and (state.players_in_hand or 0) > 2
         ):
             required_fields.append("opponents_at_current_bet")
+        resolved_wager = resolve_opponent_wager(state)
+        committed_opponents = (
+            1
+            if (state.players_in_hand or 0) == 2
+            else state.opponents_at_current_bet
+        )
+        if (
+            uses_builtin_ev
+            and not chart_candidate
+            and (state.current_bet or 0) > 0
+            and resolved_wager is not None
+            and committed_opponents is not None
+            and resolve_opponent_commitment_total(
+                state,
+                opponent_wager=resolved_wager,
+                opponents_at_current_bet=committed_opponents,
+                hero_wager=resolve_hero_wager(
+                    state,
+                    opponent_wager=resolved_wager,
+                ),
+            )
+            is None
+        ):
+            required_fields.append("opponent_commitment_total")
         if not self._requires_postflop_solver_inputs(state):
             return required_fields
 

@@ -4159,6 +4159,7 @@ describe("App", () => {
       ...preflopState,
       opponents_at_current_bet: 2,
       opponent_wager: 2.5,
+      opponent_commitment_total: 5,
     });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
@@ -4170,12 +4171,14 @@ describe("App", () => {
     const committedInput = await screen.findByLabelText(/Opponents at wager/);
     await user.type(committedInput, "2");
     await user.type(screen.getByLabelText(/Opponent wager total/), "2.5");
+    await user.type(screen.getByLabelText(/Opponent commitments total/), "5");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
     const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.opponents_at_current_bet).toBe(2);
     expect(payload.opponent_wager).toBe(2.5);
+    expect(payload.opponent_commitment_total).toBe(5);
   });
 
   it("re-approves corrections to an approved-only imported job", async () => {

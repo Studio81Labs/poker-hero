@@ -372,7 +372,7 @@ def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> Non
         ambiguous_multiway,
         opponent_wager=5,
         opponents_at_current_bet=1,
-    ) == 5
+    ) is None
 
     big_blind_option = CanonicalState(
         pot_size=3.5,
@@ -462,6 +462,7 @@ def test_local_ev_reconstructs_multiway_calls_from_both_existing_wagers(
         players_in_hand=3,
         opponents_at_current_bet=1,
         opponent_wager=2.5,
+        opponent_commitment_total=2.5,
         street="preflop",
         facing_action="raise",
         user_approved=True,
@@ -547,6 +548,57 @@ def test_local_ev_includes_every_recorded_opponent_commitment(
                 + candidate["sizing"]
                 + expected_caller_contribution
             )
+
+
+def test_local_ev_requires_multiway_postflop_commitment_total(
+    tmp_path: Path,
+) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+    state = CanonicalState(
+        hero_cards=[Card.from_code("Ah"), Card.from_code("Kd")],
+        board_cards=[
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+        ],
+        pot_size=30,
+        current_bet=15,
+        effective_stack=85,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_wager=15,
+        hero_position="button",
+        street="flop",
+        facing_action="raise",
+        user_approved=True,
+    )
+
+    assert "opponent_commitment_total" in provider.required_fields_for(state)
+
+    reviewed_state = state.model_copy(
+        update={"opponent_commitment_total": 20}
+    )
+    result = provider.recommend(
+        RecommendationRequest(state=reviewed_state, provider=provider.name)
+    )
+
+    assert result.raw["opponent_commitment_total"] == 20
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        continuations = candidate["continuations"]
+        assert continuations[0]["existing_wager_adjustment"] == 10
+        assert continuations[1]["existing_wager_adjustment"] == 20
 
 
 def test_local_ev_accounts_for_multiple_opponents_already_at_bet(
@@ -1083,6 +1135,7 @@ def test_local_solver_keeps_fallback_for_cold_three_bet_with_hidden_player(
         effective_stack=92,
         players_in_hand=4,
         opponents_at_current_bet=1,
+        opponent_commitment_total=10.5,
         hero_position="big_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1283,6 +1336,7 @@ def test_local_solver_keeps_fallback_for_four_bet_with_hidden_player(
         effective_stack=80,
         players_in_hand=3,
         opponents_at_current_bet=1,
+        opponent_commitment_total=20,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="cutoff", action="raise", amount=2.5),
@@ -1692,6 +1746,7 @@ def test_local_solver_keeps_fallback_for_triple_caller_with_hidden_player(
         effective_stack=100,
         players_in_hand=6,
         opponents_at_current_bet=4,
+        opponent_commitment_total=11,
         hero_position="small_blind",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1725,6 +1780,7 @@ def test_local_solver_keeps_fallback_for_double_caller_with_hidden_player(
         effective_stack=100,
         players_in_hand=5,
         opponents_at_current_bet=3,
+        opponent_commitment_total=8.5,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),
@@ -1757,6 +1813,7 @@ def test_local_solver_keeps_fallback_for_single_caller_with_hidden_player(
         effective_stack=100,
         players_in_hand=4,
         opponents_at_current_bet=2,
+        opponent_commitment_total=6,
         hero_position="button",
         preflop_action_history=[
             PreflopAction(actor="utg", action="raise", amount=2.5),

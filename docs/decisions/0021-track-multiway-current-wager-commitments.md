@@ -14,11 +14,14 @@ pots in blind defense and after an initial bet has already received calls.
 
 ## Decision
 
-Add optional canonical fields `opponents_at_current_bet` and `opponent_wager`.
-The first records how many opponents have committed the same current-street
-wager; the second records that wager's total size, distinct from the amount
-hero must call. For a multiway state facing a wager, the bundled range/EV
-fallback requires the reviewed opponent count. Heads-up states infer one.
+Add optional canonical fields `opponents_at_current_bet`, `opponent_wager`, and
+`opponent_commitment_total`. The first records how many opponents have
+committed the same latest current-street wager; the second records that wager's
+total size, distinct from the amount hero must call. The third records all
+active opponents' current-street commitments when they occupy different wager
+levels and structured history cannot identify them. For a multiway state facing
+a wager, the bundled range/EV fallback requires the reviewed opponent count.
+Heads-up states infer one.
 
 The fallback resolves the total opponent wager from an explicit reviewed value,
 ordered current-street action history, the reviewed preflop opening size, or a
@@ -26,6 +29,12 @@ simple first-bet state. It requests manual review when none of those sources is
 available. Supported preflop chart routes do not require these fallback-only
 fields. Custom solver commands and external providers may receive the optional
 canonical values without making them mandatory.
+
+Multiway postflop OOP/IP history cannot identify more than one opponent. When a
+raise leaves active opponents at different wager levels, the fallback requires
+the reviewed aggregate commitment total rather than treating lower wagers as
+zero. It derives the aggregate automatically for heads-up spots, first bets,
+fields entirely at the latest wager, and complete structured preflop history.
 
 Legacy preflop opening size or text is accepted only when it equals the current
 call amount plus hero's posted blind. That proves the state is still facing the
@@ -67,5 +76,5 @@ their callers instead of treating every caller as uninvested.
   the total wager when raised-action context may require correction.
 - Automation may approve such a state, but recommendation waits for this
   manually reviewed context when the fallback route needs it.
-- Existing persisted states remain valid because both fields are optional and
+- Existing persisted states remain valid because the fields are optional and
   derivable states require no migration.

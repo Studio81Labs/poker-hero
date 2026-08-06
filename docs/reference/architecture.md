@@ -130,6 +130,10 @@ opponent total, including lower wager levels in re-raised pots. The
 equal-response model reconstructs each caller's additional contribution from
 that aggregate and hero's existing wager. Fallback is withheld until any
 commitment context that cannot be derived has been reviewed.
+Because OOP/IP postflop history cannot identify multiple opponents, a multiway
+raise with different active wager levels requires a reviewed aggregate
+opponent commitment total. Heads-up states, first bets, complete preflop
+histories, and fields entirely at the latest wager remain automatic.
 Preflop states with no call amount retain hero's posted blind or latest
 structured action. Complete active-player history provides the opponent
 commitment total; otherwise the remaining pre-action pot forms that aggregate,

@@ -121,6 +121,11 @@ def solve(
         opponents_at_current_bet=opponents_at_current_bet,
         hero_wager=hero_wager,
     )
+    if opponent_commitment_total is None:
+        raise SolverInputError(
+            "opponent_commitment_total is required when active opponents have "
+            "different commitments that cannot be derived"
+        )
 
     analysis = _postflop_analysis(hero_cards, board_cards) if street != "preflop" else None
     equity_by_opponents = _estimate_range_equities(

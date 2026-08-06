@@ -612,6 +612,14 @@ def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> Non
                 PreflopAction(actor="button", action="raise", amount=5),
             ],
         )
+    with pytest.raises(ValidationError, match="cannot exceed the latest wager"):
+        model(
+            pot_size=30,
+            current_bet=5,
+            players_in_hand=2,
+            opponent_wager=15,
+            opponent_commitment_total=20,
+        )
     cross_street = model(
         pot_size=30,
         current_bet=15,

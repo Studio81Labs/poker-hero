@@ -421,6 +421,19 @@ def _validate_opponent_commitment_total(
         raise ValueError(
             "opponent_commitment_total must cover opponents_at_current_bet"
         )
+    known_latest_wagers = [
+        amount
+        for amount in [state.opponent_wager, *recorded_wagers]
+        if amount is not None
+    ]
+    if known_latest_wagers and state.players_in_hand is not None:
+        latest_wager = max(known_latest_wagers)
+        maximum = latest_wager * (state.players_in_hand - 1)
+        if total > maximum + 1e-6:
+            raise ValueError(
+                "opponent_commitment_total cannot exceed the latest wager "
+                "across active opponents"
+            )
 
 
 class RecommendationRequest(BaseModel):

@@ -3630,10 +3630,17 @@ function formToCanonical(form: StateForm): CanonicalState {
   const opponentWager = (currentBet ?? 0) > 0
     ? parseOptionalNumber(form.opponent_wager, "Opponent wager total")
     : null;
-  const opponentCommitmentTotal = parseOptionalNumber(
-    form.opponent_commitment_total,
-    "Opponent commitments total",
+  const usesOpponentCommitmentTotal = (
+    (currentBet ?? 0) <= 0 && form.street === "preflop"
+  ) || (
+    (currentBet ?? 0) > 0 && (playersInHand ?? 0) > 2
   );
+  const opponentCommitmentTotal = usesOpponentCommitmentTotal
+    ? parseOptionalNumber(
+      form.opponent_commitment_total,
+      "Opponent commitments total",
+    )
+    : null;
   if (
     opponentsAtCurrentBet !== null
     && playersInHand !== null
@@ -3682,6 +3689,23 @@ function formToCanonical(form: StateForm): CanonicalState {
     && opponentCommitmentTotal + 0.000001 < minimumOpponentCommitments
   ) {
     throw new Error("Opponent commitments total must cover opponents at the current wager");
+  }
+  const knownLatestWager = Math.max(
+    opponentWager ?? 0,
+    ...recordedWagers,
+  );
+  const maximumOpponentCommitments = knownLatestWager > 0
+    && playersInHand !== null
+    ? knownLatestWager * (playersInHand - 1)
+    : null;
+  if (
+    opponentCommitmentTotal !== null
+    && maximumOpponentCommitments !== null
+    && opponentCommitmentTotal > maximumOpponentCommitments + 0.000001
+  ) {
+    throw new Error(
+      "Opponent commitments total cannot exceed the latest wager across active opponents",
+    );
   }
 
   return {
@@ -6810,6 +6834,9 @@ export default function App() {
         && Number(next.players_in_hand) > 2;
       if (!usesCommittedOpponentCount) {
         next.opponents_at_current_bet = "";
+        if (Number(next.current_bet) > 0) {
+          next.opponent_commitment_total = "";
+        }
       }
       if (Number(next.current_bet) <= 0) {
         next.opponent_wager = "";

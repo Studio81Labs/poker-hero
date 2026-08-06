@@ -3630,12 +3630,10 @@ function formToCanonical(form: StateForm): CanonicalState {
   const opponentWager = (currentBet ?? 0) > 0
     ? parseOptionalNumber(form.opponent_wager, "Opponent wager total")
     : null;
-  const opponentCommitmentTotal = (currentBet ?? 0) > 0
-    ? parseOptionalNumber(
-      form.opponent_commitment_total,
-      "Opponent commitments total",
-    )
-    : null;
+  const opponentCommitmentTotal = parseOptionalNumber(
+    form.opponent_commitment_total,
+    "Opponent commitments total",
+  );
   if (
     opponentsAtCurrentBet !== null
     && playersInHand !== null
@@ -6815,7 +6813,9 @@ export default function App() {
       }
       if (Number(next.current_bet) <= 0) {
         next.opponent_wager = "";
-        next.opponent_commitment_total = "";
+        if (next.street !== "preflop") {
+          next.opponent_commitment_total = "";
+        }
       }
       formDirtyRef.current = JSON.stringify(next)
         !== JSON.stringify(formBaselineRef.current);
@@ -8236,12 +8236,15 @@ export default function App() {
                   />
                 </Field>
               ) : null}
-              {Number(form.current_bet) > 0
-                && Number(form.players_in_hand) > 2
-                && (
-                  form.street === "preflop"
-                  || form.facing_action === "raise"
-                  || form.opponent_commitment_total !== ""
+              {(form.street === "preflop" && Number(form.current_bet) <= 0)
+                || (
+                  Number(form.current_bet) > 0
+                  && Number(form.players_in_hand) > 2
+                  && (
+                    form.street === "preflop"
+                    || form.facing_action === "raise"
+                    || form.opponent_commitment_total !== ""
+                  )
                 ) ? (
                   <Field label="Opponent commitments total" confidence="manual">
                     <input

@@ -294,6 +294,8 @@ interface RecommendationEvidenceCandidate {
   sizing: number | null;
   ev: number | null;
   frequency: number | null;
+  foldEquity: number | null;
+  perOpponentFoldEquity: number | null;
 }
 
 interface RecommendationEvidence {
@@ -865,6 +867,8 @@ function recommendationEvidenceFromRaw(
       const action = metadataString(record?.action, 24);
       const ev = metadataNumber(record?.ev);
       const frequency = metadataRatio(record?.frequency);
+      const foldEquity = metadataRatio(record?.fold_equity);
+      const perOpponentFoldEquity = metadataRatio(record?.per_opponent_fold_equity);
       const rawSizing = metadataNumber(record?.sizing);
       if (!record || !action || (ev === null && frequency === null)) {
         return [];
@@ -874,6 +878,8 @@ function recommendationEvidenceFromRaw(
         sizing: rawSizing !== null && rawSizing >= 0 ? rawSizing : null,
         ev,
         frequency,
+        foldEquity,
+        perOpponentFoldEquity,
       }];
     })
     .sort((left, right) => {
@@ -8482,6 +8488,14 @@ export default function App() {
                               <span className="recommendation-candidate-values">
                                 {candidate.ev !== null ? <strong>EV {formatCandidateValue(candidate.ev)} BB</strong> : null}
                                 {candidate.frequency !== null ? <small>{Math.round(candidate.frequency * 100)}% frequency</small> : null}
+                                {candidate.foldEquity !== null ? (
+                                  <small>
+                                    Field folds {Math.round(candidate.foldEquity * 100)}%
+                                    {candidate.perOpponentFoldEquity !== null && candidate.perOpponentFoldEquity !== candidate.foldEquity
+                                      ? ` · each ${Math.round(candidate.perOpponentFoldEquity * 100)}%`
+                                      : ""}
+                                  </small>
+                                ) : null}
                               </span>
                             </div>
                           );

@@ -57,7 +57,14 @@ const recommendationWithEvidence: RecommendationResult = {
       { action: "check", sizing: null, ev: 3 },
       { action: "bet", sizing: 2.5, ev: 2.9 },
       { action: "raise", sizing: 4, ev: 2.8 },
-      { action: "raise", sizing: 7.5, ev: 2.4, frequency: 0.72 },
+      {
+        action: "raise",
+        sizing: 7.5,
+        ev: 2.4,
+        frequency: 0.72,
+        fold_equity: 0.09,
+        per_opponent_fold_equity: 0.3,
+      },
       { action: "invalid", sizing: -1, ev: "unknown" },
     ],
   },
@@ -9627,6 +9634,7 @@ describe("App", () => {
     expect(within(evidence).getByText("20%")).toBeInTheDocument();
     expect(within(evidence).getByText("EV 2.4 BB")).toBeInTheDocument();
     expect(within(evidence).getByText("72% frequency")).toBeInTheDocument();
+    expect(within(evidence).getByText("Field folds 9% · each 30%")).toBeInTheDocument();
     const chosen = within(evidence).getByText("Chosen").closest('[role="listitem"]');
     expect(chosen).toHaveTextContent("raise");
     expect(chosen).toHaveTextContent("7.5 BB");

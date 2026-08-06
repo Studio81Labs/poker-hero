@@ -1863,6 +1863,7 @@ button:disabled {
 }
 
 .recommendation-candidate-values {
+  flex-wrap: wrap;
   justify-content: flex-end;
   text-align: right;
 }

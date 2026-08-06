@@ -114,7 +114,11 @@ OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a
 recorded fallback for ambiguous or unsupported preflop history, ambiguous
 position, unsupported multiway states, incomplete context, resource-limited, or
-failed postflop solves. Explicit custom
+failed postflop solves. For multiway fallback aggression, `local_ev` converts
+its per-opponent response estimate into the probability that the entire field
+folds under an explicit independent equal-response assumption. Candidate
+evidence retains both probabilities so the approximation remains reviewable.
+Explicit custom
 commands still override the bundled engine selection.
 
 External vision, solver, and LLM adapters use independent optional bearer

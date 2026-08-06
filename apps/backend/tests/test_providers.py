@@ -220,6 +220,40 @@ def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path
     assert result.raw["equity"]["method"] == "monte_carlo_range"
     assert len(result.raw["candidates"]) >= 2
     assert "solver compared candidate actions" in result.explanation.lower()
+    assert "every opponent to fold" in result.explanation.lower()
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        per_opponent = candidate["per_opponent_fold_equity"]
+        assert candidate["fold_equity"] == round(per_opponent**2, 3)
+
+
+def test_local_ev_preserves_heads_up_fold_equity(tmp_path: Path) -> None:
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            local_solver_engine="local_ev",
+        )
+    )
+
+    result = provider.recommend(
+        RecommendationRequest(state=heads_up_postflop_state(), provider=provider.name)
+    )
+
+    wager_candidates = [
+        candidate
+        for candidate in result.raw["candidates"]
+        if candidate["fold_equity"] is not None
+    ]
+    assert wager_candidates
+    for candidate in wager_candidates:
+        assert candidate["fold_equity"] == candidate["per_opponent_fold_equity"]
+    assert "every opponent to fold" not in result.explanation.lower()
 
 
 def test_local_solver_uses_bundled_solver_when_command_is_blank(tmp_path: Path) -> None:

@@ -54,6 +54,7 @@ class Candidate:
     ev: float
     fold_equity: float | None = None
     called_equity: float | None = None
+    per_opponent_fold_equity: float | None = None
 
 
 def recommend(raw_request: str, *, preflop_chart_enabled: bool = False) -> RecommendationResult:
@@ -436,20 +437,44 @@ def _action_candidates(
             Candidate("call", None, round(realized_equity * (pot_size + current_bet) - current_bet, 3)),
         ]
         for raise_size in _raise_sizes(current_bet, pot_size, effective_stack):
-            fold_equity = _fold_equity(raise_size, pot_size, players, street, facing_bet, analysis)
+            per_opponent_fold_equity = _per_opponent_fold_equity(
+                raise_size, pot_size, street, facing_bet, analysis
+            )
+            fold_equity = _field_fold_equity(per_opponent_fold_equity, players)
             called_equity = _called_equity(realized_equity, raise_size, pot_size, analysis)
             called_pot = pot_size + 2 * raise_size
             ev = fold_equity * pot_size + (1 - fold_equity) * (called_equity * called_pot - raise_size)
-            candidates.append(Candidate("raise", raise_size, round(ev, 3), fold_equity, called_equity))
+            candidates.append(
+                Candidate(
+                    "raise",
+                    raise_size,
+                    round(ev, 3),
+                    fold_equity,
+                    called_equity,
+                    per_opponent_fold_equity,
+                )
+            )
         return candidates
 
     candidates = [Candidate("check", None, round(realized_equity * pot_size, 3))]
     for bet_size in _bet_sizes(pot_size, effective_stack, street, hero_cards):
-        fold_equity = _fold_equity(bet_size, pot_size, players, street, facing_bet, analysis)
+        per_opponent_fold_equity = _per_opponent_fold_equity(
+            bet_size, pot_size, street, facing_bet, analysis
+        )
+        fold_equity = _field_fold_equity(per_opponent_fold_equity, players)
         called_equity = _called_equity(realized_equity, bet_size, pot_size, analysis)
         called_pot = pot_size + 2 * bet_size
         ev = fold_equity * pot_size + (1 - fold_equity) * (called_equity * called_pot - bet_size)
-        candidates.append(Candidate("bet", bet_size, round(ev, 3), fold_equity, called_equity))
+        candidates.append(
+            Candidate(
+                "bet",
+                bet_size,
+                round(ev, 3),
+                fold_equity,
+                called_equity,
+                per_opponent_fold_equity,
+            )
+        )
     return candidates
 
 
@@ -474,17 +499,15 @@ def _unique_sizes(sizes: Iterable[float]) -> list[float]:
     return unique[:3]
 
 
-def _fold_equity(
+def _per_opponent_fold_equity(
     size: float,
     pot_size: float,
-    players: int,
     street: str,
     facing_bet: bool,
     analysis: PostflopAnalysis | None,
 ) -> float:
     fraction = size / pot_size if pot_size > 0 else 1.0
     base = 0.22 + min(0.22, fraction * 0.16)
-    base -= max(0, players - 2) * 0.08
     if facing_bet:
         base -= 0.08
     if street == "river":
@@ -497,6 +520,11 @@ def _fold_equity(
         elif analysis.draws.has_strong_draw:
             base += 0.02
     return round(min(0.58, max(0.04, base)), 3)
+
+
+def _field_fold_equity(per_opponent_fold_equity: float, players: int) -> float:
+    opponents = max(1, min(players - 1, 5))
+    return round(per_opponent_fold_equity**opponents, 3)
 
 
 def _called_equity(
@@ -545,9 +573,15 @@ def _explanation(
         )
     size_text = f" {best.sizing:g} BB" if best.sizing is not None else ""
     hand_text = f" with {label}" if label else ""
+    field_text = (
+        " Multiway fold equity requires every opponent to fold and uses "
+        "independent equal-response estimates."
+        if equity.opponents > 1
+        else ""
+    )
     return (
         f"Solver compared candidate actions and chose {best.action}{size_text}{hand_text}. "
-        f"{context} This is a local range/EV estimate, not a full GTO tree solve."
+        f"{context}{field_text} This is a local range/EV estimate, not a full GTO tree solve."
     )
 
 
@@ -576,6 +610,7 @@ def _candidate_raw(candidate: Candidate) -> dict[str, object]:
         "sizing": candidate.sizing,
         "ev": candidate.ev,
         "fold_equity": candidate.fold_equity,
+        "per_opponent_fold_equity": candidate.per_opponent_fold_equity,
         "called_equity": candidate.called_equity,
     }
 

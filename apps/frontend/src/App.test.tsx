@@ -11529,6 +11529,51 @@ describe("App", () => {
     ]);
   });
 
+  it("adds river history actions to a street with remaining capacity", async () => {
+    const riverState: DetectedState = {
+      ...detectedState,
+      board_cards: [
+        ...detectedState.board_cards,
+        { rank: "2", suit: "diamonds" },
+        { rank: "3", suit: "clubs" },
+      ],
+      street: "river",
+      facing_action: null,
+      completed_postflop_streets: [
+        {
+          street: "flop",
+          actions: [
+            { actor: "oop", action: "bet", amount: 1 },
+            { actor: "ip", action: "raise", amount: 2 },
+            { actor: "oop", action: "raise", amount: 3 },
+            { actor: "ip", action: "raise", amount: 4 },
+            { actor: "oop", action: "raise", amount: 5 },
+            { actor: "ip", action: "raise", amount: 6 },
+            { actor: "oop", action: "raise", amount: 7 },
+            { actor: "ip", action: "call", amount: 7 },
+          ],
+        },
+      ],
+    };
+    const parsedJob = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: riverState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(parsedJob, 201))
+      .mockResolvedValueOnce(processingQueueResponse([parsedJob]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+
+    const addedStreet = screen.getByLabelText("Completed action 9 street");
+    expect(addedStreet).toHaveValue("turn");
+    expect(within(addedStreet).getByRole("option", { name: "Flop" })).toBeDisabled();
+  });
+
   it("adds an approved hand to ground truth and runs the parser benchmark", async () => {
     const pendingOverview = deferredResponse();
     const pendingInclusion = deferredResponse();

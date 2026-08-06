@@ -4820,6 +4820,20 @@ export default function App() {
     && !job?.recommendation
     && !job?.recommendation_pending;
   const stateControlsDisabled = busy;
+  const completedPostflopActionCounts = useMemo(
+    () => form.completed_postflop_actions.reduce<Record<CompletedPostflopStreet, number>>(
+      (counts, action) => ({
+        ...counts,
+        [action.street]: counts[action.street] + 1,
+      }),
+      { flop: 0, turn: 0 },
+    ),
+    [form.completed_postflop_actions],
+  );
+  const completedPostflopActionsAtLimit = form.street === "turn"
+    ? completedPostflopActionCounts.flop >= 8
+    : completedPostflopActionCounts.flop >= 8
+      && completedPostflopActionCounts.turn >= 8;
   const screenshotUrl = useMemo(() => (job && job.image_filename !== "" ? imageUrl(job.id) : null), [job]);
   const screenSharing = screenStream !== null;
   const confidenceSummary = useMemo(
@@ -7363,12 +7377,16 @@ export default function App() {
     const previous = form.completed_postflop_actions[
       form.completed_postflop_actions.length - 1
     ];
-    const street: CompletedPostflopStreet = form.street === "river"
+    let street: CompletedPostflopStreet = form.street === "river"
       ? previous?.street ?? "flop"
       : "flop";
-    const streetActionCount = form.completed_postflop_actions.filter(
-      (action) => action.street === street,
-    ).length;
+    if (completedPostflopActionCounts[street] >= 8 && form.street === "river") {
+      street = street === "flop" ? "turn" : "flop";
+    }
+    const streetActionCount = completedPostflopActionCounts[street];
+    if (streetActionCount >= 8) {
+      return;
+    }
     updateForm("completed_postflop_actions", [
       ...form.completed_postflop_actions,
       {
@@ -8805,7 +8823,7 @@ export default function App() {
                     <button
                       type="button"
                       className="action-history-add"
-                      disabled={stateControlsDisabled || form.completed_postflop_actions.length >= 16}
+                      disabled={stateControlsDisabled || completedPostflopActionsAtLimit}
                       onClick={addCompletedPostflopAction}
                     >
                       <Plus size={13} aria-hidden="true" />
@@ -8823,8 +8841,26 @@ export default function App() {
                             value={action.street}
                             onChange={(event) => updateCompletedPostflopAction(index, "street", event.target.value)}
                           >
-                            <option value="flop">Flop</option>
-                            {form.street === "river" ? <option value="turn">Turn</option> : null}
+                            <option
+                              value="flop"
+                              disabled={
+                                action.street !== "flop"
+                                && completedPostflopActionCounts.flop >= 8
+                              }
+                            >
+                              Flop
+                            </option>
+                            {form.street === "river" ? (
+                              <option
+                                value="turn"
+                                disabled={
+                                  action.street !== "turn"
+                                  && completedPostflopActionCounts.turn >= 8
+                                }
+                              >
+                                Turn
+                              </option>
+                            ) : null}
                           </select>
                           <select
                             aria-label={`Completed action ${index + 1} actor`}

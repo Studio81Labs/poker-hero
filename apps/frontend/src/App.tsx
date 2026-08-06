@@ -116,6 +116,7 @@ const EMPTY_STATE: CanonicalState = {
   opponent_wager: null,
   opponent_commitment_total: null,
   hero_position: null,
+  opponent_position: null,
   preflop_opener_position: null,
   preflop_open_size: null,
   preflop_action_history: [],
@@ -247,6 +248,7 @@ interface StateForm {
   opponent_wager: string;
   opponent_commitment_total: string;
   hero_position: string;
+  opponent_position: string;
   preflop_opener_position: string;
   preflop_open_size: string;
   preflop_action_history: PreflopActionForm[];
@@ -404,6 +406,7 @@ const CONFIDENCE_KEYS = [
   "effective_stack",
   "players_in_hand",
   "hero_position",
+  "opponent_position",
   "facing_action",
   "action_context",
 ] as const;
@@ -2171,6 +2174,10 @@ function isCachedDetectedState(value: unknown): value is DetectedState {
       )
     )
     && isNullableCachedString(state.hero_position)
+    && (
+      state.opponent_position === undefined
+      || isNullableCachedString(state.opponent_position)
+    )
     && isNullableCachedString(state.preflop_opener_position)
     && isNullableCachedNumber(state.preflop_open_size, 0, false)
     && (
@@ -3503,6 +3510,7 @@ function toCanonicalState(state: DetectedState | CanonicalState): CanonicalState
     opponent_wager: state.opponent_wager ?? null,
     opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
+    opponent_position: state.opponent_position ?? null,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
     preflop_action_history: state.preflop_action_history ?? [],
@@ -3528,6 +3536,9 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
+  const showOpponentPosition = state.street !== null
+    && state.street !== "preflop"
+    && state.players_in_hand === 2;
   const preflopActionHistory: PreflopActionForm[] = (state.preflop_action_history ?? []).map(
     (action) => ({
       actor: action.actor,
@@ -3557,6 +3568,9 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
       ? ""
       : String(state.opponent_commitment_total),
     hero_position: state.hero_position ?? "",
+    opponent_position: showOpponentPosition
+      ? state.opponent_position ?? ""
+      : "",
     preflop_opener_position:
       structuredOpener?.actor
       ?? normalizePreflopPosition(state.preflop_opener_position)
@@ -3619,6 +3633,9 @@ function formToCanonical(form: StateForm): CanonicalState {
   const potSize = parseOptionalNumber(form.pot_size, "Pot");
   const playersInHand = parseOptionalInteger(form.players_in_hand, "Players in hand");
   const currentBet = parseOptionalNumber(form.current_bet, "Current bet");
+  const usesOpponentPosition = form.street !== ""
+    && form.street !== "preflop"
+    && playersInHand === 2;
   const needsCommittedOpponentCount = (currentBet ?? 0) > 0
     && (playersInHand ?? 0) > 2;
   const opponentsAtCurrentBet = needsCommittedOpponentCount
@@ -3721,6 +3738,9 @@ function formToCanonical(form: StateForm): CanonicalState {
     opponent_wager: opponentWager,
     opponent_commitment_total: opponentCommitmentTotal,
     hero_position: form.hero_position.trim() === "" ? null : form.hero_position.trim(),
+    opponent_position: usesOpponentPosition && form.opponent_position.trim() !== ""
+      ? form.opponent_position.trim()
+      : null,
     preflop_opener_position:
       structuredOpener?.actor
       ?? (
@@ -3753,6 +3773,7 @@ function approvalKey(state: CanonicalState): string {
     opponent_wager: state.opponent_wager ?? null,
     opponent_commitment_total: state.opponent_commitment_total ?? null,
     hero_position: state.hero_position,
+    opponent_position: state.opponent_position ?? null,
     preflop_opener_position: state.preflop_opener_position ?? null,
     preflop_open_size: state.preflop_open_size ?? null,
     preflop_action_history: state.preflop_action_history ?? [],
@@ -6826,6 +6847,12 @@ export default function App() {
         next.opponent_stack = "";
         next.postflop_action_history = [];
       }
+      const usesOpponentPosition = next.street !== ""
+        && next.street !== "preflop"
+        && Number(next.players_in_hand) === 2;
+      if (!usesOpponentPosition) {
+        next.opponent_position = "";
+      }
       const usesCommittedOpponentCount = Number(next.current_bet) > 0
         && Number(next.players_in_hand) > 2;
       if (!usesCommittedOpponentCount) {
@@ -8286,6 +8313,13 @@ export default function App() {
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
               </Field>
+              {form.street !== ""
+                && form.street !== "preflop"
+                && Number(form.players_in_hand) === 2 ? (
+                  <Field label="Opponent position" confidence={confidenceLabel(confidences.opponent_position)} confidenceValue={confidences.opponent_position}>
+                    <input disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
+                  </Field>
+                ) : null}
               <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
                 <select disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
                   <option value="">Select action</option>

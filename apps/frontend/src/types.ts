@@ -39,6 +39,7 @@ export interface DetectedState {
   opponent_wager?: number | null;
   opponent_commitment_total?: number | null;
   hero_position: string | null;
+  opponent_position?: string | null;
   preflop_opener_position: string | null;
   preflop_open_size: number | null;
   preflop_action_history?: PreflopAction[];

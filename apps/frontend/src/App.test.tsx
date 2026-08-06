@@ -4135,6 +4135,39 @@ describe("App", () => {
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
   });
 
+  it("reviews an opponent seat for heads-up postflop solver routing", async () => {
+    const headsUpState: DetectedState = {
+      ...detectedState,
+      players_in_hand: 2,
+      hero_position: "big_blind",
+      opponent_position: null,
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: headsUpState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...headsUpState,
+      opponent_position: "button",
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const opponentPosition = await screen.findByLabelText(/Opponent position/);
+    await user.type(opponentPosition, "button");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.hero_position).toBe("big_blind");
+    expect(payload.opponent_position).toBe("button");
+  });
+
   it("records the reviewed committed-opponent count for multiway wagers", async () => {
     const preflopState: DetectedState = {
       ...detectedState,

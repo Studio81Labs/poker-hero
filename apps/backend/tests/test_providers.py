@@ -20,6 +20,7 @@ from app.providers.base import (
     ProviderInputError,
     missing_required_fields,
 )
+from app.providers.local_solver import _postflop_position
 from app.providers.registry import build_provider
 from app.solvers.ev_solver_cli import _hero_outcomes
 from app.solvers.wager_context import (
@@ -52,6 +53,30 @@ def heads_up_postflop_state() -> CanonicalState:
     state.players_in_hand = 2
     state.hero_position = "IP"
     return state
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "expected"),
+    [
+        ("IP", None, "ip"),
+        ("button", None, "ip"),
+        ("BB", "button", "oop"),
+        ("cutoff", "HJ", "ip"),
+        ("HJ", "cutoff", "oop"),
+        ("under-the-gun", "CO", "oop"),
+        ("middle", "early", "ip"),
+        (None, "IP", "oop"),
+        ("IP", "IP", None),
+        ("SB", "BB", None),
+        ("cutoff", None, None),
+    ],
+)
+def test_postflop_position_inference(
+    hero_position: str | None,
+    opponent_position: str | None,
+    expected: str | None,
+) -> None:
+    assert _postflop_position(hero_position, opponent_position) == expected
 
 
 def raised_postflop_state() -> CanonicalState:
@@ -1940,6 +1965,42 @@ def test_postflop_solver_routes_dealer_as_ip(tmp_path: Path) -> None:
     assert "fallback_reason" not in result.raw
 
 
+def test_postflop_solver_routes_unambiguous_absolute_seats(tmp_path: Path) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, sys\n"
+        "payload = json.loads(sys.stdin.read())\n"
+        "state = payload['state']\n"
+        "assert state['hero_position'] == 'big_blind'\n"
+        "assert state['opponent_position'] == 'button'\n"
+        "print(json.dumps({"
+        "'action': 'call', "
+        "'sizing': None, "
+        "'confidence': 0.84, "
+        "'explanation': 'Inferred OOP postflop response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.hero_position = "big_blind"
+    state.opponent_position = "button"
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "call"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_postflop_solver_routes_complete_raised_history(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text(
@@ -2037,6 +2098,22 @@ def test_postflop_solver_malformed_response_does_not_use_ev_fallback(
 def test_postflop_solver_requires_position_when_fallback_is_disabled(tmp_path: Path) -> None:
     state = heads_up_postflop_state()
     state.hero_position = "SB"
+    state.opponent_position = "BB"
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    with pytest.raises(ProviderInputError, match="position must identify IP or OOP"):
+        provider.recommend(RecommendationRequest(state=state, provider=provider.name))
+
+
+def test_postflop_solver_rejects_contradictory_relative_positions(tmp_path: Path) -> None:
+    state = heads_up_postflop_state()
+    state.opponent_position = "IP"
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
@@ -2543,7 +2620,9 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
         )
     )
 
-    result = provider.recommend(RecommendationRequest(state=approved_state(), provider=provider.name))
+    state = approved_state()
+    state.opponent_position = "big_blind"
+    result = provider.recommend(RecommendationRequest(state=state, provider=provider.name))
 
     assert result.action == "bet"
     assert result.raw["provider"] == "external_solver"
@@ -2567,6 +2646,7 @@ def test_external_solver_posts_canonical_json_body(tmp_path: Path, monkeypatch: 
                 "players_in_hand": 3,
                 "opponents_at_current_bet": 1,
                 "hero_position": "button",
+                "opponent_position": "big_blind",
                 "street": "flop",
                 "facing_action": "bet",
                 "action_context": "Cutoff bet 2.5 into 12.5",

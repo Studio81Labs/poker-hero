@@ -771,6 +771,14 @@ def build_training_lessons_markdown(
                     else []
                 ),
                 *(
+                    [
+                        "- Opponent position: "
+                        f"{_markdown_code_span(state.opponent_position)}"
+                    ]
+                    if state is not None and state.opponent_position
+                    else []
+                ),
+                *(
                     [f"- Pot: {state.pot_size:g} BB"]
                     if state is not None and state.pot_size is not None
                     else []

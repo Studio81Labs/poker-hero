@@ -41,6 +41,7 @@ class HttpRecommendationProvider:
             "opponents_at_current_bet",
             "opponent_wager",
             "opponent_commitment_total",
+            "opponent_position",
         ):
             if state_payload[field] is None:
                 del state_payload[field]

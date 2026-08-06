@@ -1759,6 +1759,7 @@ def history_search_text(job: JobRecord) -> str:
             for value in [
                 state.street,
                 state.hero_position,
+                state.opponent_position,
                 state.preflop_opener_position,
                 state.facing_action,
                 state.action_context,

@@ -919,12 +919,14 @@ def test_training_lesson_export_uses_safe_code_span_delimiters() -> None:
     job.original_filename = "`table`<strong>unsafe</strong>.png"
     assert job.approved_state is not None
     job.approved_state.hero_position = "cut``off"
+    job.approved_state.opponent_position = "big``blind"
 
     document, exported_count = build_training_lessons_markdown([job])
 
     assert exported_count == 1
     assert "- Source: `` `table`<strong>unsafe</strong>.png ``" in document
     assert "- Position: ```cut``off```" in document
+    assert "- Opponent position: ```big``blind```" in document
     assert "\\`" not in document
 
 

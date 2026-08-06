@@ -107,8 +107,11 @@ from stack behind, the hero's posted blind, and hero stack when available; the
 resolved effective cap is retained for review.
 `postflop_solver` runs as a pinned Rust stdin/stdout process for heads-up
 postflop decisions with explicit relative position. Canonical `dealer` labels
-map to button/IP; non-button seat labels remain ambiguous without opponent
-position. First-bet decisions retain the compact reconstruction path. Raised
+map to button/IP. When both reviewed seats are available, distinct normalized
+six-max seats establish their postflop order; explicit relative labels take
+precedence. Contradictory labels, duplicate seats, and a bare small-blind versus
+big-blind pair remain ambiguous and use fallback. First-bet decisions retain
+the compact reconstruction path. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a

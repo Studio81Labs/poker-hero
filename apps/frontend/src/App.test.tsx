@@ -9978,6 +9978,16 @@ describe("App", () => {
           engine: "postflop_solver",
           hero_position: "ip",
           modeled_history: ["OOP bet 2.50 BB"],
+          range_source: "preflop_chart_single_raised_pot",
+          range_context: {
+            scenario: "single_raised_pot",
+            opener_position: "button",
+            caller_position: "big_blind",
+            opening_size_bb: 2.5,
+            opener_fraction: 0.45,
+            caller_continue_fraction: 0.4,
+            caller_reraise_fraction: 0.12,
+          },
           tree: {
             starting_pot: 10,
             effective_stack: 95,
@@ -10017,6 +10027,9 @@ describe("App", () => {
     expect(within(decisionContext).getByText("10 BB pot · 95 BB stack")).toBeInTheDocument();
     expect(within(decisionContext).getByText("400 iterations · 34.6 MB estimate")).toBeInTheDocument();
     expect(within(decisionContext).getByText("1% pot exploitability")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Preflop chart · single-raised pot")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Button opens 2.5 BB · Big blind calls")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Open 45% · flat 12%-40%")).toBeInTheDocument();
 
     const modeledRanges = within(evidence).getByLabelText("Modeled ranges");
     expect(modeledRanges).not.toHaveAttribute("open");

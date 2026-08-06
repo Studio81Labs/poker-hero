@@ -158,6 +158,10 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let hero_hand = hero_hand_code(&state.hero_cards)?;
     let mut oop_range = env_string("POKER_POSTFLOP_SOLVER_OOP_RANGE", DEFAULT_OOP_RANGE);
     let mut ip_range = env_string("POKER_POSTFLOP_SOLVER_IP_RANGE", DEFAULT_IP_RANGE);
+    let range_source_value = env_string("POKER_POSTFLOP_SOLVER_RANGE_SOURCE", "configured");
+    let range_source = validated_range_source(&range_source_value)?;
+    let range_context =
+        range_context_from_json(&env_string("POKER_POSTFLOP_SOLVER_RANGE_CONTEXT", "{}"))?;
     if hero_player == 0 {
         oop_range = include_hand(&oop_range, &hero_hand);
     } else {
@@ -266,8 +270,13 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         .sizing
         .map(|size| format!(" to {} BB", display_amount(size)))
         .unwrap_or_default();
+    let range_description = if range_source == "preflop_chart_single_raised_pot" {
+        "preflop-history-derived ranges"
+    } else {
+        "configured ranges"
+    };
     let explanation = format!(
-        "Postflop solver analyzed a heads-up {street} tree using configured ranges and recommends {}{size_text} at {:.0}% frequency. The position was modeled as {position}; tree exploitability was {:.3} BB. Treat the result as training guidance because the ranges and modeled tree are assumptions.",
+        "Postflop solver analyzed a heads-up {street} tree using {range_description} and recommends {}{size_text} at {:.0}% frequency. The position was modeled as {position}; tree exploitability was {:.3} BB. Treat the result as training guidance because the ranges and modeled tree are assumptions.",
         best.action,
         best.frequency * 100.0,
         exploitability_bb,
@@ -288,6 +297,8 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
             "facing_action": state.facing_action,
             "modeled_history": modeled_history,
             "ranges": {"oop": oop_range, "ip": ip_range},
+            "range_source": range_source,
+            "range_context": range_context,
             "tree": {
                 "starting_pot": starting_pot as f64 / CHIP_SCALE,
                 "effective_stack": tree_stack as f64 / CHIP_SCALE,
@@ -894,6 +905,22 @@ fn env_string(name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
 }
 
+fn validated_range_source(value: &str) -> Result<&str, String> {
+    match value {
+        "configured" | "preflop_chart_single_raised_pot" => Ok(value),
+        _ => Err("POKER_POSTFLOP_SOLVER_RANGE_SOURCE is unsupported".to_string()),
+    }
+}
+
+fn range_context_from_json(value: &str) -> Result<Value, String> {
+    let context: Value = serde_json::from_str(value)
+        .map_err(|_| "POKER_POSTFLOP_SOLVER_RANGE_CONTEXT must be valid JSON".to_string())?;
+    if !context.is_object() {
+        return Err("POKER_POSTFLOP_SOLVER_RANGE_CONTEXT must be a JSON object".to_string());
+    }
+    Ok(context)
+}
+
 fn env_number(name: &str, default: f64) -> Result<f64, String> {
     match env::var(name) {
         Ok(value) if !value.trim().is_empty() => value
@@ -1136,6 +1163,22 @@ mod tests {
 
         assert_eq!(hand, "AhKd");
         assert_eq!(include_hand("AKs,QQ+", &hand), "AhKd,AKs,QQ+");
+    }
+
+    #[test]
+    fn range_evidence_accepts_supported_sources_and_object_context() {
+        assert_eq!(validated_range_source("configured"), Ok("configured"));
+        assert_eq!(
+            validated_range_source("preflop_chart_single_raised_pot"),
+            Ok("preflop_chart_single_raised_pot")
+        );
+        assert!(validated_range_source("automatic").is_err());
+        assert_eq!(
+            range_context_from_json(r#"{"scenario":"single_raised_pot"}"#).unwrap(),
+            json!({"scenario": "single_raised_pot"})
+        );
+        assert!(range_context_from_json("[]").is_err());
+        assert!(range_context_from_json("not-json").is_err());
     }
 
     #[test]

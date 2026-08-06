@@ -111,7 +111,14 @@ map to button/IP. When both reviewed seats are available, distinct normalized
 six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a bare small-blind versus
 big-blind pair remain ambiguous and use fallback. First-bet decisions retain
-the compact reconstruction path. Raised
+the compact reconstruction path. In `contextual` range mode, an exact reviewed
+heads-up open-and-call preflop history whose actors match the reviewed seats
+replaces the configured generic ranges with the chart's opener range and its
+flat-caller continue band after excluding the reraise segment. The supported
+2-4 BB open, matching call, optional legacy opener metadata, and both seats must
+agree. The chart's existing open-size policy widens or tightens the caller
+boundaries; otherwise configured ranges remain active. Range source and
+boundaries are retained as solver evidence. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a

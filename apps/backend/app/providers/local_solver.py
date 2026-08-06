@@ -22,6 +22,7 @@ from app.solvers.preflop_context import (
     requires_hero_stack_for_preflop_chart,
     supports_preflop_chart,
 )
+from app.solvers.postflop_ranges import select_postflop_ranges
 from app.solvers.wager_context import (
     resolve_hero_wager,
     resolve_opponent_commitment_total,
@@ -163,7 +164,7 @@ class LocalSolverProvider:
                 text=True,
                 capture_output=True,
                 cwd=cwd,
-                env=self._environment(),
+                env=self._environment(request),
                 timeout=self.settings.local_solver_timeout_seconds,
                 check=False,
             )
@@ -292,8 +293,23 @@ class LocalSolverProvider:
             raise ProviderConfigurationError(f"{field_name} must not be blank")
         return command
 
-    def _environment(self) -> dict[str, str]:
+    def _environment(self, request: RecommendationRequest) -> dict[str, str]:
         environment = os.environ.copy()
+        range_selection = select_postflop_ranges(
+            request.state,
+            hero_relative_position=_postflop_position(
+                request.state.hero_position,
+                request.state.opponent_position,
+            ),
+            configured_oop_range=self.settings.postflop_solver_oop_range,
+            configured_ip_range=self.settings.postflop_solver_ip_range,
+            contextual_enabled=(
+                self.settings.postflop_solver_range_mode == "contextual"
+                and not (self.settings.local_solver_command or "").strip()
+                and self.settings.local_solver_engine.strip().lower()
+                == "postflop_solver"
+            ),
+        )
         environment.update(
             {
                 "POKER_POSTFLOP_SOLVER_MAX_ITERATIONS": str(
@@ -309,8 +325,14 @@ class LocalSolverProvider:
                 "POKER_POSTFLOP_SOLVER_RAISE_SIZES": self.settings.postflop_solver_raise_sizes,
                 "POKER_POSTFLOP_SOLVER_RAKE_RATE": str(self.settings.postflop_solver_rake_rate),
                 "POKER_POSTFLOP_SOLVER_RAKE_CAP": str(self.settings.postflop_solver_rake_cap),
-                "POKER_POSTFLOP_SOLVER_OOP_RANGE": self.settings.postflop_solver_oop_range,
-                "POKER_POSTFLOP_SOLVER_IP_RANGE": self.settings.postflop_solver_ip_range,
+                "POKER_POSTFLOP_SOLVER_OOP_RANGE": range_selection.oop_range,
+                "POKER_POSTFLOP_SOLVER_IP_RANGE": range_selection.ip_range,
+                "POKER_POSTFLOP_SOLVER_RANGE_SOURCE": range_selection.source,
+                "POKER_POSTFLOP_SOLVER_RANGE_CONTEXT": json.dumps(
+                    range_selection.context,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
             }
         )
         return environment

@@ -906,6 +906,50 @@ function recommendationEvidenceFromRaw(
       });
     }
 
+    const rawRangeSource = metadataString(raw.range_source, 80);
+    const rangeSource = metadataLabel(rawRangeSource);
+    if (rangeSource) {
+      details.push({
+        label: "Range source",
+        value: rawRangeSource === "preflop_chart_single_raised_pot"
+          ? "Preflop chart · single-raised pot"
+          : rangeSource,
+      });
+    }
+
+    const rangeContext = rawRangeSource === "preflop_chart_single_raised_pot"
+      ? metadataRecord(raw.range_context)
+      : null;
+    const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
+    const rangeCallerPosition = metadataLabel(rangeContext?.caller_position);
+    const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
+    if (rangeOpenerPosition && rangeCallerPosition) {
+      details.push({
+        label: "Range actors",
+        value: `${rangeOpenerPosition} opens${
+          rangeOpeningSize !== null && rangeOpeningSize > 0
+            ? ` ${formatEvidenceBb(rangeOpeningSize)}`
+            : ""
+        } · ${rangeCallerPosition} calls`,
+      });
+    }
+    const rangeOpenerFraction = metadataRatio(rangeContext?.opener_fraction);
+    const rangeCallerContinue = metadataRatio(rangeContext?.caller_continue_fraction);
+    const rangeCallerReraise = metadataRatio(rangeContext?.caller_reraise_fraction);
+    if (
+      rangeOpenerFraction !== null
+      && rangeCallerContinue !== null
+      && rangeCallerReraise !== null
+      && rangeCallerReraise < rangeCallerContinue
+    ) {
+      details.push({
+        label: "Range bands",
+        value: `Open ${formatEvidenceRatio(rangeOpenerFraction)} · flat ${
+          formatEvidenceRatio(rangeCallerReraise)
+        }-${formatEvidenceRatio(rangeCallerContinue)}`,
+      });
+    }
+
     const rawRanges = metadataRecord(raw.ranges);
     const oopRange = metadataExactString(rawRanges?.oop);
     const ipRange = metadataExactString(rawRanges?.ip);

@@ -80,6 +80,9 @@ The main provider switches are:
 - `POKER_PARSER_LAYOUT_PROFILE`: `generic`, `fortuna`, `nations`, or `fortuna_nations`
 - `POKER_RECOMMENDATION_PROVIDER`: `rule_based`, `mock`, `local_solver`, `external_solver`, or `llm_advice`
 - `POKER_LOCAL_SOLVER_ENGINE`: `postflop_solver` (default) or `local_ev`
+- `POKER_POSTFLOP_SOLVER_RANGE_MODE`: derive ranges from a complete supported
+  heads-up preflop history with `contextual` (default), or always use the
+  configured OOP/IP ranges with `configured`
 - `POKER_EXTERNAL_PARSER_BEARER_TOKEN`: optional bearer token for `llm_vision`
 - `POKER_EXTERNAL_PROVIDER_BEARER_TOKEN`: optional bearer token for `external_solver`
 - `POKER_LLM_ADVICE_BEARER_TOKEN`: optional bearer token for `llm_advice`
@@ -161,6 +164,13 @@ requires explicit IP/OOP review because the order depends on whether the small
 blind is also the heads-up dealer. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
+In the default `contextual` range mode, an exact two-player open-and-call
+preflop history selects transparent opener and flat-caller ranges from the same
+position-aware chart boundaries used by the preflop trainer; the reviewed open
+size applies the chart's existing caller-range adjustment. Unsupported,
+incomplete, contradictory, or non-single-raised histories retain the configured
+OOP/IP ranges. Recommendation evidence records the selected source and policy
+context. Set the mode to `configured` to disable contextual selection.
 Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
 facing action must identify the outstanding wager. Raised heads-up decisions

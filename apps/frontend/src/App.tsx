@@ -406,7 +406,6 @@ const CONFIDENCE_KEYS = [
   "effective_stack",
   "players_in_hand",
   "hero_position",
-  "opponent_position",
   "facing_action",
   "action_context",
 ] as const;
@@ -1919,6 +1918,35 @@ function normalizePreflopPosition(value: string | null | undefined): PreflopPosi
     .replace(/\s+/g, " ")
     .trim();
   return PREFLOP_POSITION_ALIASES[normalized] ?? null;
+}
+
+function requiresOpponentPosition(state: {
+  street: StreetOption | null;
+  players_in_hand: number | string | null;
+  hero_position: string | null | undefined;
+}): boolean {
+  if (
+    state.street === null
+    || state.street === ""
+    || state.street === "preflop"
+    || Number(state.players_in_hand) !== 2
+  ) {
+    return false;
+  }
+  const normalizedHeroPosition = (state.hero_position ?? "")
+    .toLowerCase()
+    .replace(/[_-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return ![
+    "ip",
+    "in position",
+    "oop",
+    "out of position",
+    "button",
+    "btn",
+    "dealer",
+  ].includes(normalizedHeroPosition);
 }
 
 function previousBenchmarkFieldMetric(
@@ -3482,8 +3510,15 @@ function confidenceTone(value: number | undefined): string {
   return "high";
 }
 
-function summarizeConfidences(confidences: Record<string, number>, warnings: string[]) {
-  const values = CONFIDENCE_KEYS.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
+function summarizeConfidences(
+  confidences: Record<string, number>,
+  warnings: string[],
+  state: CanonicalState | null,
+) {
+  const confidenceKeys: readonly string[] = state && requiresOpponentPosition(state)
+    ? [...CONFIDENCE_KEYS, "opponent_position"]
+    : CONFIDENCE_KEYS;
+  const values = confidenceKeys.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
   const detectedCount = values.length;
   const averageConfidence = detectedCount === 0 ? 0 : Math.round((values.reduce((sum, value) => sum + value, 0) / detectedCount) * 100);
   const reviewCount = values.filter((value) => value < 0.7).length + warnings.length;
@@ -3491,7 +3526,7 @@ function summarizeConfidences(confidences: Record<string, number>, warnings: str
   return {
     averageConfidence,
     detectedCount,
-    fieldTotal: CONFIDENCE_KEYS.length,
+    fieldTotal: confidenceKeys.length,
     reviewCount,
   };
 }
@@ -3536,9 +3571,7 @@ function stateToForm(state: DetectedState | CanonicalState): StateForm {
   const showPostflopHistory = state.street !== null
     && state.street !== "preflop"
     && state.facing_action === "raise";
-  const showOpponentPosition = state.street !== null
-    && state.street !== "preflop"
-    && state.players_in_hand === 2;
+  const showOpponentPosition = requiresOpponentPosition(state);
   const preflopActionHistory: PreflopActionForm[] = (state.preflop_action_history ?? []).map(
     (action) => ({
       actor: action.actor,
@@ -3633,9 +3666,11 @@ function formToCanonical(form: StateForm): CanonicalState {
   const potSize = parseOptionalNumber(form.pot_size, "Pot");
   const playersInHand = parseOptionalInteger(form.players_in_hand, "Players in hand");
   const currentBet = parseOptionalNumber(form.current_bet, "Current bet");
-  const usesOpponentPosition = form.street !== ""
-    && form.street !== "preflop"
-    && playersInHand === 2;
+  const usesOpponentPosition = requiresOpponentPosition({
+    street: form.street,
+    players_in_hand: playersInHand,
+    hero_position: form.hero_position,
+  });
   const needsCommittedOpponentCount = (currentBet ?? 0) > 0
     && (playersInHand ?? 0) > 2;
   const opponentsAtCurrentBet = needsCommittedOpponentCount
@@ -4429,7 +4464,10 @@ export default function App() {
   const stateControlsDisabled = busy;
   const screenshotUrl = useMemo(() => (job && job.image_filename !== "" ? imageUrl(job.id) : null), [job]);
   const screenSharing = screenStream !== null;
-  const confidenceSummary = useMemo(() => summarizeConfidences(confidences, warnings), [confidences, warnings]);
+  const confidenceSummary = useMemo(
+    () => summarizeConfidences(confidences, warnings, validation.state),
+    [confidences, validation.state, warnings],
+  );
   const filmstripCount = jobs.length > 0 ? jobs.length : files.length;
   const frameLabel = job?.original_filename ?? (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
   const frameStreet = form.street === "" ? "No street" : form.street;
@@ -6847,9 +6885,7 @@ export default function App() {
         next.opponent_stack = "";
         next.postflop_action_history = [];
       }
-      const usesOpponentPosition = next.street !== ""
-        && next.street !== "preflop"
-        && Number(next.players_in_hand) === 2;
+      const usesOpponentPosition = requiresOpponentPosition(next);
       if (!usesOpponentPosition) {
         next.opponent_position = "";
       }
@@ -8313,9 +8349,7 @@ export default function App() {
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
                 <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
               </Field>
-              {form.street !== ""
-                && form.street !== "preflop"
-                && Number(form.players_in_hand) === 2 ? (
+              {requiresOpponentPosition(form) ? (
                   <Field label="Opponent position" confidence={confidenceLabel(confidences.opponent_position)} confidenceValue={confidences.opponent_position}>
                     <input disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
                   </Field>

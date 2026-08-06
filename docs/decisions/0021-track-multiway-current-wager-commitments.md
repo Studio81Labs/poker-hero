@@ -27,6 +27,11 @@ available. Supported preflop chart routes do not require these fallback-only
 fields. Custom solver commands and external providers may receive the optional
 canonical values without making them mandatory.
 
+Legacy preflop opening size or text is accepted only when it equals the current
+call amount plus hero's posted blind. That proves the state is still facing the
+initial open. A later re-raise cannot reuse the initial opening size; without
+structured history, its current total wager requires explicit review.
+
 Under the fallback's independent equal-response model, a branch with `k`
 callers out of `N` opponents contains an expected `k * committed / N` callers
 whose total current-street wager is already included in the pot. Hero's existing

@@ -4143,6 +4143,7 @@ describe("App", () => {
       players_in_hand: 3,
       opponents_at_current_bet: null,
       opponent_wager: null,
+      hero_position: "big_blind",
       street: "preflop",
       facing_action: "raise",
       action_context: "Cutoff opens to 2.5 BB and button calls",

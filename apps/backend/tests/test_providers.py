@@ -298,6 +298,7 @@ def test_local_solver_requires_total_wager_when_it_cannot_be_derived(
 def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> None:
     base = CanonicalState(
         current_bet=1.5,
+        hero_position="big_blind",
         street="preflop",
         facing_action="raise",
         user_approved=True,
@@ -326,6 +327,21 @@ def test_opponent_wager_resolution_uses_reviewed_and_structured_context() -> Non
     assert resolve_opponent_wager(
         base.model_copy(update={"street": "flop", "facing_action": "bet"})
     ) == 1.5
+    assert resolve_opponent_wager(
+        base.model_copy(
+            update={
+                "current_bet": 2,
+                "hero_position": "cutoff",
+                "preflop_open_size": 3,
+                "action_context": "Cutoff opens to 3 BB, then button reraises",
+            }
+        )
+    ) is None
+    assert resolve_opponent_wager(
+        base.model_copy(
+            update={"facing_action": "bet", "preflop_open_size": 2.5}
+        )
+    ) is None
 
 
 def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
@@ -344,6 +360,7 @@ def test_local_ev_uses_total_preflop_wager_in_continuation_pots(
         current_bet=1.5,
         effective_stack=99,
         players_in_hand=2,
+        hero_position="big_blind",
         preflop_open_size=2.5,
         street="preflop",
         facing_action="raise",

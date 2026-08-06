@@ -128,6 +128,9 @@ derived from their difference. The equal-response model reconstructs each
 caller's additional contribution from both values and the expected committed
 callers in that branch. Fallback is withheld until any commitment context that
 cannot be derived has been reviewed.
+Preflop opening context is eligible only when the opening total agrees with the
+call amount plus hero's posted blind; stale initial-open metadata is not reused
+after later aggression.
 Candidate evidence retains the fold probabilities and continuation branches so
 the approximation remains reviewable.
 Explicit custom

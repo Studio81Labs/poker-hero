@@ -4305,6 +4305,45 @@ describe("App", () => {
     expect(payload.opponent_commitment_total).toBe(20);
   });
 
+  it("validates commitments against a corrected wager instead of stale history", async () => {
+    const preflopState: DetectedState = {
+      ...detectedState,
+      board_cards: [],
+      pot_size: 30,
+      current_bet: 5,
+      players_in_hand: 3,
+      opponents_at_current_bet: 1,
+      opponent_wager: 10,
+      opponent_commitment_total: 15,
+      hero_position: "big_blind",
+      street: "preflop",
+      facing_action: "raise",
+      preflop_action_history: [
+        { actor: "button", action: "raise", amount: 20 },
+      ],
+      action_context: "Reviewed wager corrects stale parsed history",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: preflopState,
+      },
+    });
+    const approvedState = canonicalState(preflopState);
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBe(10);
+    expect(payload.opponent_commitment_total).toBe(15);
+  });
+
   it("preserves reviewed preflop commitments when there is no call amount", async () => {
     const preflopState: DetectedState = {
       ...detectedState,

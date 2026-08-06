@@ -637,6 +637,19 @@ def test_table_state_validates_opponents_at_current_bet(model: type[Any]) -> Non
         ],
     )
     assert cross_street.opponent_commitment_total == 20
+    corrected_wager = model(
+        pot_size=30,
+        current_bet=5,
+        players_in_hand=3,
+        opponents_at_current_bet=1,
+        opponent_wager=10,
+        opponent_commitment_total=15,
+        street="preflop",
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=20),
+        ],
+    )
+    assert corrected_wager.opponent_commitment_total == 15
 
 
 def test_canonical_state_rejects_non_positive_preflop_open_size() -> None:

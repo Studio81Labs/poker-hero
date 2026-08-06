@@ -3675,9 +3675,8 @@ function formToCanonical(form: StateForm): CanonicalState {
         action.amount === null ? [] : [action.amount]
       ))
       : [];
-  const knownOpponentWager = Math.max(
+  const knownOpponentWager = opponentWager ?? Math.max(
     currentBet ?? 0,
-    opponentWager ?? 0,
     ...recordedWagers,
   );
   const minimumOpponentCommitments = knownOpponentWager > 0
@@ -3690,10 +3689,7 @@ function formToCanonical(form: StateForm): CanonicalState {
   ) {
     throw new Error("Opponent commitments total must cover opponents at the current wager");
   }
-  const knownLatestWager = Math.max(
-    opponentWager ?? 0,
-    ...recordedWagers,
-  );
+  const knownLatestWager = opponentWager ?? Math.max(0, ...recordedWagers);
   const maximumOpponentCommitments = knownLatestWager > 0
     && playersInHand !== null
     ? knownLatestWager * (playersInHand - 1)

@@ -408,11 +408,12 @@ def _validate_opponent_commitment_total(
         for action in current_street_history
         if action.amount is not None
     ]
-    wager = max(
-        state.current_bet or 0,
-        state.opponent_wager or 0,
-        *recorded_wagers,
-    )
+    if state.opponent_wager is not None:
+        wager = state.opponent_wager
+        known_latest_wagers = [state.opponent_wager]
+    else:
+        wager = max(state.current_bet or 0, *recorded_wagers)
+        known_latest_wagers = recorded_wagers
     if wager <= 0:
         return
     committed_opponents = state.opponents_at_current_bet
@@ -421,11 +422,6 @@ def _validate_opponent_commitment_total(
         raise ValueError(
             "opponent_commitment_total must cover opponents_at_current_bet"
         )
-    known_latest_wagers = [
-        amount
-        for amount in [state.opponent_wager, *recorded_wagers]
-        if amount is not None
-    ]
     if known_latest_wagers and state.players_in_hand is not None:
         latest_wager = max(known_latest_wagers)
         maximum = latest_wager * (state.players_in_hand - 1)

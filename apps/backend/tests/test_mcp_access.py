@@ -103,7 +103,7 @@ def test_hosted_mcp_requires_an_environment_token(tmp_path: Path) -> None:
         data_dir=tmp_path,
         deployment_environment="staging",
         mcp_enabled=True,
-        mcp_public_url="https://poker.test/mcp",
+        mcp_public_url="https://poker.test:443/mcp",
         api_rate_limit_enabled=False,
     )
     with TestClient(create_app(settings), base_url="https://poker.test") as client:

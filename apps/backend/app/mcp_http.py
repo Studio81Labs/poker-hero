@@ -13,7 +13,7 @@ import httpx
 from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.config import Settings
+from app.config import Settings, normalize_https_authority
 from app.mcp_access import (
     MCP_PRINCIPAL_CONTEXT,
     McpEnvironment,
@@ -56,7 +56,8 @@ def build_hosted_mcp_runtime(
 ) -> HostedMcpRuntime:
     assert settings.mcp_public_url is not None
     parsed_url = urlsplit(settings.mcp_public_url)
-    public_origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    public_authority = normalize_https_authority(parsed_url)
+    public_origin = f"https://{public_authority}"
     environment = cast(McpEnvironment, settings.deployment_environment)
     gateway_settings = McpGatewaySettings(
         environment=environment,
@@ -92,7 +93,7 @@ def build_hosted_mcp_runtime(
         HostedMcpAuthMiddleware(
             app,
             principal_store=principal_store,
-            expected_host=parsed_url.netloc,
+            expected_host=public_authority,
             allowed_origins=frozenset(settings.mcp_allowed_origins),
             proxy_shared_secret=(
                 settings.proxy_shared_secret.get_secret_value()

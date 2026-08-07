@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal, Self
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +12,20 @@ DEFAULT_POSTFLOP_OOP_RANGE = "66+,A8s+,A5s-A4s,AJo+,K9s+,KQo,QTs+,JTs,96s+,85s+,
 DEFAULT_POSTFLOP_IP_RANGE = (
     "QQ-22,AQs-A2s,ATo+,K5s+,KJo+,Q8s+,J8s+,T7s+,96s+,86s+,75s+,64s+,53s+"
 )
+
+
+def normalize_https_authority(parsed_url: SplitResult) -> str:
+    if parsed_url.scheme.lower() != "https" or not parsed_url.hostname:
+        raise ValueError("URL must include an HTTPS hostname")
+    try:
+        port = parsed_url.port
+    except ValueError as exc:
+        raise ValueError("URL port is invalid") from exc
+    hostname = parsed_url.hostname.casefold()
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port not in {None, 443}:
+        authority = f"{authority}:{port}"
+    return authority
 
 
 class Settings(BaseSettings):
@@ -209,10 +223,15 @@ class Settings(BaseSettings):
             if self.mcp_public_url is None:
                 raise ValueError("POKER_MCP_PUBLIC_URL is required when MCP is enabled")
             parsed_mcp_url = urlsplit(self.mcp_public_url)
+            try:
+                mcp_authority = normalize_https_authority(parsed_mcp_url)
+            except ValueError as exc:
+                raise ValueError(
+                    "POKER_MCP_PUBLIC_URL must be a credential-free HTTPS URL "
+                    "with the exact path /mcp"
+                ) from exc
             if (
-                parsed_mcp_url.scheme.lower() != "https"
-                or not parsed_mcp_url.hostname
-                or "*" in parsed_mcp_url.netloc
+                "*" in parsed_mcp_url.netloc
                 or parsed_mcp_url.username
                 or parsed_mcp_url.password
                 or parsed_mcp_url.path != "/mcp"
@@ -223,14 +242,18 @@ class Settings(BaseSettings):
                     "POKER_MCP_PUBLIC_URL must be a credential-free HTTPS URL "
                     "with the exact path /mcp"
                 )
-            self.mcp_public_url = self.mcp_public_url.rstrip("/")
+            self.mcp_public_url = f"https://{mcp_authority}/mcp"
         normalized_mcp_origins: list[str] = []
         for origin in self.mcp_allowed_origins:
             parsed_origin = urlsplit(origin)
+            try:
+                origin_authority = normalize_https_authority(parsed_origin)
+            except ValueError as exc:
+                raise ValueError(
+                    "POKER_MCP_ALLOWED_ORIGINS must contain exact HTTPS origins"
+                ) from exc
             if (
-                parsed_origin.scheme.lower() != "https"
-                or not parsed_origin.hostname
-                or "*" in parsed_origin.netloc
+                "*" in parsed_origin.netloc
                 or parsed_origin.username
                 or parsed_origin.password
                 or parsed_origin.path not in {"", "/"}
@@ -240,7 +263,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "POKER_MCP_ALLOWED_ORIGINS must contain exact HTTPS origins"
                 )
-            normalized_mcp_origins.append(origin.rstrip("/").casefold())
+            normalized_mcp_origins.append(f"https://{origin_authority}")
         if len(set(normalized_mcp_origins)) != len(normalized_mcp_origins):
             raise ValueError("POKER_MCP_ALLOWED_ORIGINS must not contain duplicates")
         self.mcp_allowed_origins = normalized_mcp_origins

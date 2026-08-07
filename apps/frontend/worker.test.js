@@ -21,7 +21,7 @@ describe("API Worker proxy", () => {
     );
 
     const response = await worker.fetch(
-      new Request("https://poker-staging.example/mcp", {
+      new Request("https://poker-staging.example:443/mcp", {
         body: JSON.stringify({ jsonrpc: "2.0", method: "initialize" }),
         headers: {
           Authorization: "Bearer phmcp_test",

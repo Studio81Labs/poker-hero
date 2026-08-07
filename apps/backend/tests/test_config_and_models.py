@@ -230,17 +230,33 @@ def test_settings_validate_hosted_mcp_configuration() -> None:
             mcp_enabled=True,
             mcp_public_url="https://poker.example/api/mcp",
         )
+    with pytest.raises(ValidationError, match="exact path /mcp"):
+        Settings(
+            deployment_environment="staging",
+            mcp_enabled=True,
+            mcp_public_url="https://poker.example:not-a-port/mcp",
+        )
     with pytest.raises(ValidationError, match="supported only in staging"):
         Settings(deployment_environment="production", mcp_allow_writes=True)
 
     settings = Settings(
         deployment_environment="staging",
         mcp_enabled=True,
-        mcp_public_url="https://poker.example/mcp",
+        mcp_public_url="https://poker.example:443/mcp",
+        mcp_allowed_origins=["https://poker.example:443"],
         mcp_allow_writes=True,
     )
     assert settings.mcp_enabled is True
     assert settings.mcp_allow_writes is True
+    assert settings.mcp_public_url == "https://poker.example/mcp"
+    assert settings.mcp_allowed_origins == ["https://poker.example"]
+
+    non_default_port = Settings(
+        deployment_environment="staging",
+        mcp_enabled=True,
+        mcp_public_url="https://poker.example:8443/mcp",
+    )
+    assert non_default_port.mcp_public_url == "https://poker.example:8443/mcp"
 
 
 def test_settings_validates_data_volume_identity() -> None:

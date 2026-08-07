@@ -10241,6 +10241,74 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("shows contextual squeeze pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "squeeze-postflop-job",
+      original_filename: "squeeze-postflop.png",
+      image_filename: "squeeze-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "ip",
+          range_source: "preflop_chart_squeeze_pot",
+          range_context: {
+            scenario: "squeeze_pot",
+            folded_opener_position: "utg",
+            folded_opener_commitment_bb: 2.5,
+            caller_position: "button",
+            squeezer_position: "small_blind",
+            opening_size_bb: 2.5,
+            squeeze_size_bb: 10,
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
+            decision_street: "turn",
+            completed_street_count: 1,
+            squeezer_fraction: 0.045,
+            caller_continue_fraction: 0.0405,
+            caller_four_bet_fraction: 0.019,
+          },
+          ranges: {
+            oop: "AA-77,AKs-AJs",
+            ip: "JJ-66,AQs-ATs",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Preflop chart · squeeze pot",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Standard · 100 BB starting")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Turn · 1 completed street")).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "UTG opens 2.5 BB · Button calls · Small blind squeezes 10 BB · Button calls · UTG folds 2.5 BB dead",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Squeeze 4.5% · call 1.9%-4%",
+    )).toBeInTheDocument();
+  });
+
   it("shows contextual four-bet pot range assumptions", async () => {
     const postflopJob: JobRecord = {
       ...recommendedJob(),

@@ -1492,6 +1492,7 @@ fn validated_range_source(value: &str) -> Result<&str, String> {
         | "preflop_chart_single_raised_pot"
         | "preflop_chart_three_bet_pot"
         | "preflop_chart_cold_three_bet_pot"
+        | "preflop_chart_squeeze_pot"
         | "preflop_chart_four_bet_pot" => Ok(value),
         _ => Err("POKER_POSTFLOP_SOLVER_RANGE_SOURCE is unsupported".to_string()),
     }
@@ -1981,6 +1982,10 @@ mod tests {
         assert_eq!(
             validated_range_source("preflop_chart_cold_three_bet_pot"),
             Ok("preflop_chart_cold_three_bet_pot")
+        );
+        assert_eq!(
+            validated_range_source("preflop_chart_squeeze_pot"),
+            Ok("preflop_chart_squeeze_pot")
         );
         assert_eq!(
             validated_range_source("preflop_chart_four_bet_pot"),

@@ -120,9 +120,13 @@ range and the opener's continue band after excluding its 4-bet segment. The
 same three-action shape with a distinct later cold-caller and a folded opener
 uses the chart's three-seat cold-3-bet continue band against the adjusted
 3-bettor range. The folded opener receives no postflop range, but its final
-opening commitment remains mandatory dead money in the reconstructed root
-pot. The exact continuation through a 4-bet by the opener and matching call by
-the original 3-bettor can use the opener's adjusted 4-bet band and the
+opening commitment remains mandatory dead money in the reconstructed root pot.
+An exact open/call/squeeze/call line with that opener folded uses the
+one-caller-adjusted reraise band for the squeezer and the named squeeze-response
+continue band for the caller after excluding its 4-bet segment. The caller's
+initial call is not counted twice; its matching squeeze call is the final
+commitment. The exact continuation through a 4-bet by the opener and matching
+call by the original 3-bettor can use the opener's adjusted 4-bet band and the
 3-bettor's continue band after excluding its 5-bet segment. The supported 2-4
 BB open, matching final commitments, legal seat order, optional legacy opener
 metadata, both reviewed survivor seats, and reconstructed flop-root pot must

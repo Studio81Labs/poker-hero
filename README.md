@@ -166,16 +166,18 @@ iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player state with an
 open-and-call, ordinary open/3-bet/call, cold-caller open/3-bet/call, or
-open/3-bet/4-bet/call preflop history selects transparent ranges from the same
-position-aware chart boundaries used by the preflop trainer. A cold-call route
-requires the original opener to be absent from the two reviewed survivors and
-keeps that player's opening contribution in the reconstructed root pot. The
-reviewed sizes and a provable starting effective stack apply the chart's
-existing response adjustments, and the backend verifies that the reconstructed
-flop-root pot agrees with every represented commitment. A turn additionally
-requires one terminal completed-flop history; a river requires terminal
-completed-flop and completed-turn histories in order. Each completed history
-ends in check-check or a matching call and records each wager as the
+open/call/squeeze/call, or open/3-bet/4-bet/call preflop history selects
+transparent ranges from the same position-aware chart boundaries used by the
+preflop trainer. Dead-money routes require the original opener to be absent
+from the two reviewed survivors and keep that player's opening contribution in
+the reconstructed root pot. The squeeze route applies the chart's existing
+single-caller adjustment to the squeezer and its named squeeze-response policy
+to the caller. The reviewed sizes and a provable starting effective stack apply
+the remaining chart response adjustments, and the backend verifies that the
+reconstructed flop-root pot agrees with every represented commitment. A turn
+additionally requires one terminal completed-flop history; a river requires
+terminal completed-flop and completed-turn histories in order. Each completed
+history ends in check-check or a matching call and records each wager as the
 actor's total BB committed on that street.
 When current-street money cannot be reconciled to the reviewed visible stacks,
 the range context retains a labeled 100 BB stack assumption. Unsupported,

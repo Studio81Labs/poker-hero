@@ -11,7 +11,10 @@ from app.models import (
     PreflopAction,
 )
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
-from app.solvers.postflop_ranges import select_postflop_ranges
+from app.solvers.postflop_ranges import (
+    resolve_squeeze_pot_relative_position,
+    select_postflop_ranges,
+)
 from app.solvers.preflop_chart import (
     COLD_THREE_BET_DEFENSE_POLICIES,
     FOUR_BET_DEFENSE_POLICIES,
@@ -674,6 +677,46 @@ def test_supports_every_charted_squeeze_matchup(
     )
 
     assert select(state).source == "preflop_chart_squeeze_pot"
+
+
+def test_resolves_blind_squeeze_survivors_from_reviewed_history() -> None:
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position="small_blind",
+        opponent_position="big_blind",
+        street="flop",
+        pot_size=22.5,
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=2.5),
+            PreflopAction(actor="small_blind", action="call", amount=2.5),
+            PreflopAction(actor="big_blind", action="raise", amount=10.0),
+            PreflopAction(actor="small_blind", action="call", amount=10.0),
+        ],
+    )
+
+    assert resolve_squeeze_pot_relative_position(state) == "oop"
+    state.hero_position = "big_blind"
+    state.opponent_position = "small_blind"
+    assert resolve_squeeze_pot_relative_position(state) == "ip"
+
+
+def test_keeps_blind_pair_ambiguous_without_exact_squeeze_history() -> None:
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position="small_blind",
+        opponent_position="big_blind",
+        street="flop",
+        pot_size=22.5,
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=2.5),
+            PreflopAction(actor="small_blind", action="call", amount=2.5),
+            PreflopAction(actor="big_blind", action="raise", amount=10.0),
+        ],
+    )
+
+    assert resolve_squeeze_pot_relative_position(state) is None
 
 
 def test_selects_squeeze_ranges_on_turn_after_completed_flop() -> None:

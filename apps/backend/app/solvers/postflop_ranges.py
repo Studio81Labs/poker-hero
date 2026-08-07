@@ -124,6 +124,23 @@ def select_postflop_ranges(
     return configured
 
 
+def resolve_squeeze_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve an otherwise ambiguous blind pair from an exact squeeze line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _squeeze_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
+
+
 def _single_raised_pot_selection(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],

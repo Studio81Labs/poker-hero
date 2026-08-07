@@ -40,6 +40,8 @@ completed-history requirements as other contextual postflop ranges.
 ## Consequences
 
 - Exact heads-up squeeze pots no longer start from generic configured ranges.
+- Exact reviewed squeeze history resolves postflop order when the two survivors
+  are the otherwise ambiguous small-blind and big-blind pair.
 - The squeezer and caller retain their distinct preflop policy adjustments.
 - Hidden survivors, active openers, unmatched calls, unsupported sizes, or
   contradictory root pots retain configured ranges or the existing fallback.

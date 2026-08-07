@@ -117,14 +117,19 @@ reviewed seats replaces the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.
 An exact open/3-bet/call history can instead use the chart's adjusted 3-bettor
 range and the opener's continue band after excluding its 4-bet segment. The
-exact continuation through a 4-bet by the opener and matching call by the
-original 3-bettor can use the opener's adjusted 4-bet band and the 3-bettor's
-continue band after excluding its 5-bet segment. The supported 2-4 BB open,
-matching final commitments, legal seat order, optional legacy opener metadata,
-both reviewed seats, and reconstructed flop-root pot must agree. With no
-current-street wager, the effective stack behind plus each player's matching
-final preflop commitment reconstructs the starting depth. Once money is wagered
-postflop, both visible stacks and either explicit first-bet context or ordered
+same three-action shape with a distinct later cold-caller and a folded opener
+uses the chart's three-seat cold-3-bet continue band against the adjusted
+3-bettor range. The folded opener receives no postflop range, but its final
+opening commitment remains mandatory dead money in the reconstructed root
+pot. The exact continuation through a 4-bet by the opener and matching call by
+the original 3-bettor can use the opener's adjusted 4-bet band and the
+3-bettor's continue band after excluding its 5-bet segment. The supported 2-4
+BB open, matching final commitments, legal seat order, optional legacy opener
+metadata, both reviewed survivor seats, and reconstructed flop-root pot must
+agree. With no current-street wager, the effective stack behind plus each
+player's matching final preflop commitment reconstructs the starting depth.
+Once money is wagered postflop, both visible stacks and either explicit
+first-bet context or ordered
 OOP/IP contributions must reconcile. The resulting short, medium, standard, or
 deep policy adjusts the range boundaries. Incomplete or contradictory stack
 evidence retains an explicit 100 BB standard assumption instead of blocking an

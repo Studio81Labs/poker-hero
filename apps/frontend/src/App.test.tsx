@@ -10173,6 +10173,74 @@ describe("App", () => {
     expect(within(decisionContext).getByText("3-bet 12% · flat 6.5%-18%")).toBeInTheDocument();
   });
 
+  it("shows contextual cold-call three-bet pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "cold-three-bet-postflop-job",
+      original_filename: "cold-three-bet-postflop.png",
+      image_filename: "cold-three-bet-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "ip",
+          range_source: "preflop_chart_cold_three_bet_pot",
+          range_context: {
+            scenario: "cold_three_bet_pot",
+            folded_opener_position: "utg",
+            folded_opener_commitment_bb: 2.5,
+            three_bettor_position: "cutoff",
+            cold_caller_position: "button",
+            opening_size_bb: 2.5,
+            three_bet_size_bb: 8,
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
+            decision_street: "turn",
+            completed_street_count: 1,
+            three_bettor_fraction: 0.05,
+            cold_caller_continue_fraction: 0.05,
+            cold_caller_four_bet_fraction: 0.02,
+          },
+          ranges: {
+            oop: "AA-77,AKs-AJs",
+            ip: "JJ-66,AQs-ATs",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Preflop chart · cold-call 3-bet pot",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Standard · 100 BB starting")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Turn · 1 completed street")).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "UTG opens 2.5 BB · Cutoff 3-bets 8 BB · Button cold-calls · UTG folds 2.5 BB dead",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "3-bet 5% · cold-call 2%-5%",
+    )).toBeInTheDocument();
+  });
+
   it("shows contextual four-bet pot range assumptions", async () => {
     const postflopJob: JobRecord = {
       ...recommendedJob(),

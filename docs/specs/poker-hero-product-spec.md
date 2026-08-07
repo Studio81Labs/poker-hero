@@ -133,7 +133,8 @@ The frontend is a browser control panel for:
 - Reopening a completed review when it still needs attention.
 - Inspecting available decision evidence such as equity, call price, candidate
   action EVs or frequencies, solver quality, preflop chart policy context,
-  postflop tree and range assumptions, and fallback context.
+  postflop tree and range assumptions, later-street range-conditioning status
+  and reviewed-line evidence, and fallback context.
 - Seeing parser/provider errors and retrying when possible.
 - Moving completed items into an autosaved history, loading older archived
   hands, and searching the full archive without expanding or replacing the

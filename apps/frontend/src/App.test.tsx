@@ -9993,6 +9993,18 @@ describe("App", () => {
             caller_continue_fraction: 0.4,
             caller_reraise_fraction: 0.12,
           },
+          range_conditioning: {
+            status: "applied",
+            mode: "flop_root_posterior",
+            decision_street: "turn",
+            completed_streets: ["flop"],
+            modeled_history: ["OOP check", "IP check", "deal Qs"],
+            downstream_tree: "single_bet_no_raises",
+            active_hands: { oop: 131, ip: 236 },
+            hero_line_reach: 0.39559,
+            compressed_memory_mb: 175.2,
+            exploitability: { bb: 2.8216, pot_ratio: 0.51301 },
+          },
           tree: {
             starting_pot: 10,
             effective_stack: 95,
@@ -10037,6 +10049,16 @@ describe("App", () => {
     expect(within(decisionContext).getByText("Turn · 1 completed street")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Button opens 2.5 BB · Big blind calls")).toBeInTheDocument();
     expect(within(decisionContext).getByText("Open 45% · flat 12%-40%")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Applied · Flop → Turn")).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "OOP check → IP check → deal Qs",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Hero 39.6% · OOP 131 combos · IP 236 combos",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Single bet no raises · 175.2 MB estimate · 2.822 BB exploitability",
+    )).toBeInTheDocument();
 
     const modeledRanges = within(evidence).getByLabelText("Modeled ranges");
     expect(modeledRanges).not.toHaveAttribute("open");
@@ -10044,6 +10066,52 @@ describe("App", () => {
     expect(modeledRanges).toHaveAttribute("open");
     expect(within(modeledRanges).getByText(longOopRange)).toBeVisible();
     expect(within(modeledRanges).getByText("QQ-22,AQs-A2s,ATo+")).toBeVisible();
+  });
+
+  it("shows why later-street range conditioning was skipped", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "postflop-conditioning-skipped-job",
+      original_filename: "conditioning-skipped.png",
+      image_filename: "conditioning-skipped.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.72,
+        explanation: "The postflop solver recommends checking with the selected starting ranges.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          range_conditioning: {
+            status: "skipped",
+            reason: "conditioning tree exceeds the configured memory limit",
+            estimated_compressed_memory_mb: 812.4,
+            max_memory_mb: 768,
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Skipped · conditioning tree exceeds the configured memory limit",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "812.4 MB estimate · 768 MB limit",
+    )).toBeInTheDocument();
   });
 
   it("shows contextual three-bet pot range assumptions", async () => {
@@ -10187,6 +10255,11 @@ describe("App", () => {
             compressed_memory_mb: -1,
             max_iterations: 2.5,
             target_exploitability_ratio: 4,
+          },
+          range_conditioning: {
+            status: "pending",
+            hero_line_reach: 4,
+            compressed_memory_mb: -10,
           },
           ranges: { oop: 42, ip: "" },
           candidates: [{ action: "check", sizing: null, frequency: 1 }],

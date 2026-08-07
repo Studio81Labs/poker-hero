@@ -240,9 +240,11 @@ correction, automation controls, pre-reveal training decisions, recommendations,
 decision-evidence presentation, aggregate training progress, and history. It
 defensively normalizes optional provider metadata such as equity, candidate
 EVs/frequencies, exploitability, preflop stack/range/sizing policy, and fallback
-context. Supported postflop results also expose bounded tree/history metadata
-and keep exact configured OOP/IP ranges behind a collapsed disclosure; providers
-remain free to omit those fields. In production it uses same-origin `/api/*`;
+context. Supported postflop results also expose bounded tree/history metadata,
+later-street conditioning status, replayed line, posterior reach, active
+combinations, memory, and exploitability, while keeping exact configured OOP/IP
+ranges behind a collapsed disclosure; providers remain free to omit those
+fields. In production it uses same-origin `/api/*`;
 `worker.js` forwards those requests to `BACKEND_URL`, replaces any
 browser-supplied proxy credential with its private `API_PROXY_SECRET` binding,
 and serves all other routes from Worker Static Assets. When

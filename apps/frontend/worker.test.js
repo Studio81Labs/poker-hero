@@ -97,7 +97,7 @@ describe("API Worker proxy", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    for (const token of ["short", `${"a".repeat(32)}\n`]) {
+    for (const token of ["short", `${"a".repeat(32)}\n`, "Ā".repeat(32)]) {
       const response = await worker.fetch(
         new Request("https://poker.example/api/mcp/principals"),
         {

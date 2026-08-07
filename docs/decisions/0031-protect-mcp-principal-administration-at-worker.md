@@ -22,8 +22,8 @@ Each deployed Worker receives a high-entropy, environment-specific
 `/api/mcp/principals` and every descendant route. It compares SHA-256 digests,
 returns non-cacheable `401` responses for invalid credentials, and fails closed
 with `503` when the binding is missing or malformed. Deployment and runtime
-validation require at least 32 characters without whitespace or control
-characters, and deployment rejects reuse of `API_PROXY_SECRET`.
+validation require at least 32 printable ASCII characters without spaces, and
+deployment rejects reuse of `API_PROXY_SECRET`.
 
 After authorization, the Worker removes the operator `Authorization` header
 before proxying. The backend request is authenticated only by the existing

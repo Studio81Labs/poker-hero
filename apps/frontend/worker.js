@@ -52,11 +52,7 @@ function isMcpAdminRequest(pathname) {
 }
 
 function isStrongMcpAdminToken(token) {
-  return (
-    typeof token === "string" &&
-    token.length >= 32 &&
-    !/[\s\x00-\x1f\x7f]/u.test(token)
-  );
+  return typeof token === "string" && /^[\x21-\x7e]{32,}$/.test(token);
 }
 
 async function bearerTokenMatches(request, expectedToken) {

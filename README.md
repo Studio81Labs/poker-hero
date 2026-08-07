@@ -443,16 +443,19 @@ canonical hands and trusted reference policies:
 pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --provider local_solver \
   --minimum-action-accuracy 0.90 \
+  --minimum-conditioning-accuracy 1.00 \
+  --minimum-conditioning-coverage 1.00 \
   --maximum-ev-loss 0.05
 ```
 
 The report measures supported-action and exact sizing-line agreement, mixed
 policy distance, reference EV loss, provider failures, and recorded fallback
-use. Optional thresholds make the command suitable for local regression gates
-and CI; `--json` emits the complete case report. It reads no screenshots and
-does not change application data. Reference policy frequencies and EVs must
-come from a trusted solver or reviewed strategy source rather than the provider
-being evaluated. See
+use. Version-3 corpora can also require turn/river range-conditioning evidence
+and measure its agreement and coverage. Optional thresholds make the command
+suitable for local regression gates and CI; `--json` emits the complete case
+report. It reads no screenshots and does not change application data. Reference
+policy frequencies and EVs must come from a trusted solver or reviewed strategy
+source rather than the provider being evaluated. See
 [the recommendation benchmark format](./docs/reference/recommendation-benchmark.md).
 
 ## Docker

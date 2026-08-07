@@ -196,8 +196,11 @@ recorded fallback use only when the corpus or provider supplies the required
 evidence. Evaluation coverage makes missing optional evidence explicit, while
 street and scenario-tag breakdowns localize weak solver spots. Corpora may
 record the independent reference source, version, and configuration so CI can
-require provenance for trusted regression runs. Reference frequencies must sum
-to one, sizing identities must be
+require provenance for trusted regression runs. Version-3 turn and river cases
+may also require the provider to report whether reviewed prior-street actions
+were applied to range conditioning or deliberately skipped. Agreement and
+evidence-coverage thresholds catch incorrect or missing conditioning metadata.
+Reference frequencies must sum to one, sizing identities must be
 unambiguous at the configured tolerance, and EV labels cover either every line
 in a case or none.
 

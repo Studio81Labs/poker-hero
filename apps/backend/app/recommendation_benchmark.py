@@ -32,7 +32,8 @@ from app.providers.registry import build_provider
 
 
 RECOMMENDATION_BENCHMARK_SCHEMA = "poker-hero-recommendation-benchmark"
-RECOMMENDATION_BENCHMARK_SCHEMA_VERSION = 2
+RECOMMENDATION_BENCHMARK_SCHEMA_VERSION = 3
+RECOMMENDATION_BENCHMARK_PREVIOUS_SCHEMA_VERSION = 2
 RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION = 1
 MAX_RECOMMENDATION_BENCHMARK_BYTES = 4 * 1024 * 1024
 MAX_RECOMMENDATION_BENCHMARK_CASES = 1_000
@@ -41,6 +42,7 @@ PROVIDER_FREQUENCY_ROUNDING_UNIT = 0.0001
 MAX_PROVIDER_FREQUENCY_ROUNDING_ERROR = 0.001
 WAGER_ACTIONS = {"bet", "raise"}
 VALID_ACTIONS: frozenset[str] = frozenset(get_args(RecommendationAction))
+RangeConditioningStatus = Literal["applied", "skipped"]
 
 FiniteNumber = Annotated[
     float,
@@ -110,6 +112,7 @@ class RecommendationBenchmarkCase(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     tags: list[BenchmarkTag] = Field(default_factory=list, max_length=10)
     state: RecommendationBenchmarkState
+    expected_range_conditioning: RangeConditioningStatus | None = None
     reference_lines: list[RecommendationReferenceLine] = Field(
         min_length=1,
         max_length=MAX_REFERENCE_LINES,
@@ -151,6 +154,7 @@ class RecommendationBenchmarkDataset(BaseModel):
     schema_name: Literal[RECOMMENDATION_BENCHMARK_SCHEMA] = Field(alias="schema")
     schema_version: Literal[
         RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION,
+        RECOMMENDATION_BENCHMARK_PREVIOUS_SCHEMA_VERSION,
         RECOMMENDATION_BENCHMARK_SCHEMA_VERSION,
     ]
     name: str = Field(min_length=1, max_length=200)
@@ -178,10 +182,27 @@ class RecommendationBenchmarkDataset(BaseModel):
                 raise ValueError(
                     "Reference source and case tags require schema version 2"
                 )
+        if (
+            self.schema_version < RECOMMENDATION_BENCHMARK_SCHEMA_VERSION
+            and any(
+                case.expected_range_conditioning is not None
+                for case in self.cases
+            )
+        ):
+            raise ValueError(
+                "Range conditioning expectations require schema version 3"
+            )
         case_ids = [case.id for case in self.cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("Recommendation benchmark case IDs must be unique")
         for case in self.cases:
+            if (
+                case.expected_range_conditioning is not None
+                and case.state.street not in {"turn", "river"}
+            ):
+                raise ValueError(
+                    f"Case {case.id} can expect range conditioning only on turn or river"
+                )
             if not any(
                 line.frequency >= self.minimum_policy_frequency
                 for line in case.reference_lines
@@ -221,6 +242,9 @@ class RecommendationBenchmarkCaseResult(BaseModel):
     reference_ev_loss_bb: float | None = None
     engine: str | None = None
     fallback_reason: str | None = None
+    expected_range_conditioning: RangeConditioningStatus | None = None
+    range_conditioning_status: RangeConditioningStatus | None = None
+    range_conditioning_match: bool | None = None
 
 
 class RecommendationBenchmarkMetrics(BaseModel):
@@ -241,6 +265,11 @@ class RecommendationBenchmarkMetrics(BaseModel):
     ev_coverage: float = Field(ge=0, le=1)
     average_reference_ev_loss_bb: float | None = Field(default=None, ge=0)
     maximum_reference_ev_loss_bb: float | None = Field(default=None, ge=0)
+    conditioning_expected_cases: int = Field(ge=0)
+    conditioning_evaluated_cases: int = Field(ge=0)
+    conditioning_correct_cases: int = Field(ge=0)
+    conditioning_accuracy: float | None = Field(default=None, ge=0, le=1)
+    conditioning_coverage: float | None = Field(default=None, ge=0, le=1)
     fallback_cases: int = Field(ge=0)
     fallback_rate: float = Field(ge=0, le=1)
 
@@ -351,6 +380,20 @@ def _aggregate_metrics(
         for result in completed
         if result.reference_ev_loss_bb is not None
     ]
+    conditioning_expected = [
+        result
+        for result in results
+        if result.expected_range_conditioning is not None
+    ]
+    conditioning_evaluated = [
+        result
+        for result in conditioning_expected
+        if result.range_conditioning_status is not None
+    ]
+    conditioning_correct = sum(
+        result.range_conditioning_match is True
+        for result in conditioning_evaluated
+    )
     fallback_cases = sum(result.fallback_reason is not None for result in completed)
     completed_count = len(completed)
     return RecommendationBenchmarkMetrics(
@@ -375,6 +418,19 @@ def _aggregate_metrics(
         ev_coverage=len(ev_losses) / completed_count if completed else 0,
         average_reference_ev_loss_bb=_average(ev_losses),
         maximum_reference_ev_loss_bb=max(ev_losses) if ev_losses else None,
+        conditioning_expected_cases=len(conditioning_expected),
+        conditioning_evaluated_cases=len(conditioning_evaluated),
+        conditioning_correct_cases=conditioning_correct,
+        conditioning_accuracy=(
+            conditioning_correct / len(conditioning_evaluated)
+            if conditioning_evaluated
+            else None
+        ),
+        conditioning_coverage=(
+            len(conditioning_evaluated) / len(conditioning_expected)
+            if conditioning_expected
+            else None
+        ),
         fallback_cases=fallback_cases,
         fallback_rate=fallback_cases / completed_count if completed else 0,
     )
@@ -446,11 +502,28 @@ def format_recommendation_benchmark_report(
             report.completed_cases,
             report.ev_coverage,
         ),
-        (
-            f"Fallback: {report.fallback_cases}/{report.completed_cases}"
-            f" ({report.fallback_rate:.1%})"
-        ),
     ]
+    if report.conditioning_expected_cases:
+        lines.extend(
+            [
+                _optional_ratio(
+                    "Range conditioning agreement",
+                    report.conditioning_correct_cases,
+                    report.conditioning_evaluated_cases,
+                    report.conditioning_accuracy,
+                ),
+                _optional_ratio(
+                    "Range conditioning evidence coverage",
+                    report.conditioning_evaluated_cases,
+                    report.conditioning_expected_cases,
+                    report.conditioning_coverage,
+                ),
+            ]
+        )
+    lines.append(
+        f"Fallback: {report.fallback_cases}/{report.completed_cases}"
+        f" ({report.fallback_rate:.1%})"
+    )
     _append_breakdowns(lines, "Street breakdown", report.street_metrics)
     _append_breakdowns(lines, "Tag breakdown", report.tag_metrics)
     cases_needing_review = [
@@ -459,6 +532,10 @@ def format_recommendation_benchmark_report(
         if case.status == "error"
         or case.action_match is False
         or case.line_match is False
+        or (
+            case.expected_range_conditioning is not None
+            and case.range_conditioning_match is not True
+        )
     ]
     if cases_needing_review:
         lines.append("Cases needing review:")
@@ -493,6 +570,7 @@ def _run_case(
             tags=case.tags,
             status="error",
             error=str(exc) or exc.__class__.__name__,
+            expected_range_conditioning=case.expected_range_conditioning,
         )
 
     supported_lines = [
@@ -531,6 +609,15 @@ def _run_case(
     raw = result.raw
     engine = _nonempty_string(raw.get("engine"))
     fallback_reason = _nonempty_string(raw.get("fallback_reason"))
+    range_conditioning_status = _range_conditioning_status(
+        raw.get("range_conditioning")
+    )
+    range_conditioning_match = (
+        range_conditioning_status == case.expected_range_conditioning
+        if range_conditioning_status is not None
+        and case.expected_range_conditioning is not None
+        else None
+    )
     return RecommendationBenchmarkCaseResult(
         case_id=case.id,
         description=case.description,
@@ -554,6 +641,9 @@ def _run_case(
         ),
         engine=engine,
         fallback_reason=fallback_reason,
+        expected_range_conditioning=case.expected_range_conditioning,
+        range_conditioning_status=range_conditioning_status,
+        range_conditioning_match=range_conditioning_match,
     )
 
 
@@ -696,6 +786,17 @@ def _nonempty_string(value: object) -> str | None:
     return normalized or None
 
 
+def _range_conditioning_status(value: object) -> RangeConditioningStatus | None:
+    if not isinstance(value, dict):
+        return None
+    status = _nonempty_string(value.get("status"))
+    if status == "applied":
+        return "applied"
+    if status == "skipped":
+        return "skipped"
+    return None
+
+
 def _average(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 6) if values else None
 
@@ -764,12 +865,29 @@ def _append_breakdowns(
             if item.average_reference_ev_loss_bb is not None
             else "n/a"
         )
+        conditioning = ""
+        if item.conditioning_expected_cases:
+            conditioning_accuracy = (
+                f"{item.conditioning_accuracy:.1%}"
+                if item.conditioning_accuracy is not None
+                else "n/a"
+            )
+            conditioning_coverage = (
+                f"{item.conditioning_coverage:.1%}"
+                if item.conditioning_coverage is not None
+                else "n/a"
+            )
+            conditioning = (
+                f", conditioning {conditioning_accuracy}"
+                f" ({conditioning_coverage} coverage)"
+            )
         lines.append(
             f"  {item.key}: {item.completed_cases}/{item.total_cases} completed, "
             f"action {item.action_accuracy:.1%}, "
             f"line {line_accuracy} ({item.line_coverage:.1%} coverage), "
             f"policy distance {policy_distance} ({item.policy_coverage:.1%} coverage), "
-            f"EV loss {ev_loss} ({item.ev_coverage:.1%} coverage), "
+            f"EV loss {ev_loss} ({item.ev_coverage:.1%} coverage)"
+            f"{conditioning}, "
             f"fallback {item.fallback_rate:.1%}"
         )
 
@@ -780,6 +898,18 @@ def _case_mismatch_detail(case: RecommendationBenchmarkCaseResult) -> str:
         mismatches.append("action")
     if case.line_match is False:
         mismatches.append("line")
+    if case.expected_range_conditioning is not None:
+        if case.range_conditioning_status is None:
+            mismatches.append(
+                "range conditioning"
+                f" (expected {case.expected_range_conditioning}, not reported)"
+            )
+        elif case.range_conditioning_match is False:
+            mismatches.append(
+                "range conditioning"
+                f" (expected {case.expected_range_conditioning},"
+                f" got {case.range_conditioning_status})"
+            )
     return f"mismatched {', '.join(mismatches)}"
 
 
@@ -845,6 +975,16 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--minimum-ev-coverage",
         type=_unit_interval,
         help="Fail when too few completed cases produce comparable reference EV",
+    )
+    parser.add_argument(
+        "--minimum-conditioning-accuracy",
+        type=_unit_interval,
+        help="Fail below this expected range-conditioning agreement ratio",
+    )
+    parser.add_argument(
+        "--minimum-conditioning-coverage",
+        type=_unit_interval,
+        help="Fail when too few expected cases report range-conditioning status",
     )
     parser.add_argument(
         "--maximum-policy-distance",
@@ -965,6 +1105,24 @@ def _threshold_failures(
             "EV evaluation coverage",
             report.ev_coverage,
             args.minimum_ev_coverage,
+            comparison="minimum",
+            percent=True,
+        )
+    )
+    failures.extend(
+        _optional_threshold_failure(
+            "Range conditioning agreement",
+            report.conditioning_accuracy,
+            args.minimum_conditioning_accuracy,
+            comparison="minimum",
+            percent=True,
+        )
+    )
+    failures.extend(
+        _optional_threshold_failure(
+            "Range conditioning evidence coverage",
+            report.conditioning_coverage,
+            args.minimum_conditioning_coverage,
             comparison="minimum",
             percent=True,
         )

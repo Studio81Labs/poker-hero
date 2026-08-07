@@ -1698,7 +1698,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         assert mcp_principal_store is not None
         hosted_mcp_runtime = build_hosted_mcp_runtime(
             active_settings,
-            api_app=app,
+            api_app=RequestObservabilityMiddleware(
+                app,
+                access_log_level=ACCESS_LOG_LEVELS[
+                    active_settings.access_log_level
+                ],
+            ),
             principal_store=mcp_principal_store,
         )
         app.mount("/", hosted_mcp_runtime.app, name="mcp")

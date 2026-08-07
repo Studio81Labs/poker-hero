@@ -21,7 +21,7 @@ describe("API Worker proxy", () => {
     );
 
     const response = await worker.fetch(
-      new Request("https://münich.example:443/mcp", {
+      new Request("https://faß.example:443/mcp", {
         body: JSON.stringify({ jsonrpc: "2.0", method: "initialize" }),
         headers: {
           Authorization: "Bearer phmcp_test",
@@ -43,7 +43,7 @@ describe("API Worker proxy", () => {
       "Bearer phmcp_test",
     );
     expect(forwardedRequest.headers.get("X-Poker-MCP-Public-Host")).toBe(
-      "xn--mnich-kva.example",
+      "xn--fa-hia.example",
     );
     expect(forwardedRequest.headers.get("X-Poker-Proxy-Secret")).toBe(
       "trusted-worker-value",

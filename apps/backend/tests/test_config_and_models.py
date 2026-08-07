@@ -242,14 +242,14 @@ def test_settings_validate_hosted_mcp_configuration() -> None:
     settings = Settings(
         deployment_environment="staging",
         mcp_enabled=True,
-        mcp_public_url="https://münich.example:443/mcp",
-        mcp_allowed_origins=["https://münich.example:443"],
+        mcp_public_url="https://faß.example:443/mcp",
+        mcp_allowed_origins=["https://faß.example:443"],
         mcp_allow_writes=True,
     )
     assert settings.mcp_enabled is True
     assert settings.mcp_allow_writes is True
-    assert settings.mcp_public_url == "https://xn--mnich-kva.example/mcp"
-    assert settings.mcp_allowed_origins == ["https://xn--mnich-kva.example"]
+    assert settings.mcp_public_url == "https://xn--fa-hia.example/mcp"
+    assert settings.mcp_allowed_origins == ["https://xn--fa-hia.example"]
 
     non_default_port = Settings(
         deployment_environment="staging",

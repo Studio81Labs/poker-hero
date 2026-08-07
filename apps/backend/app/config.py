@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import SplitResult, urlsplit
 
+import idna
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -21,13 +22,17 @@ def normalize_https_authority(parsed_url: SplitResult) -> str:
         port = parsed_url.port
     except ValueError as exc:
         raise ValueError("URL port is invalid") from exc
-    hostname = parsed_url.hostname.casefold()
+    hostname = parsed_url.hostname
     if ":" in hostname:
-        authority = f"[{hostname}]"
+        authority = f"[{hostname.casefold()}]"
     else:
         try:
-            authority = hostname.encode("idna").decode("ascii").casefold()
-        except UnicodeError as exc:
+            authority = idna.encode(
+                hostname,
+                uts46=True,
+                transitional=False,
+            ).decode("ascii")
+        except idna.IDNAError as exc:
             raise ValueError("URL hostname is invalid") from exc
     if port not in {None, 443}:
         authority = f"{authority}:{port}"

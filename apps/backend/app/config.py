@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     api_rate_limit_data_transfers_per_minute: int = Field(default=6, gt=0, le=10_000)
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
     proxy_shared_secret: SecretStr | None = Field(default=None)
+    mcp_enabled: bool = Field(default=False)
+    mcp_public_url: str | None = Field(default=None)
+    mcp_allowed_origins: list[str] = Field(default_factory=list)
+    mcp_allow_writes: bool = Field(default=False)
+    mcp_read_calls_per_minute: int = Field(default=60, gt=0, le=10_000)
+    mcp_write_calls_per_minute: int = Field(default=10, gt=0, le=10_000)
     sentry_dsn: SecretStr | None = Field(default=None)
     sentry_environment: str = Field(
         default="local",
@@ -193,6 +199,51 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "POKER_SENTRY_DSN must be a complete HTTPS Sentry DSN"
                 )
+        if self.mcp_allow_writes and self.deployment_environment != "staging":
+            raise ValueError("POKER_MCP_ALLOW_WRITES is supported only in staging")
+        if self.mcp_enabled:
+            if self.deployment_environment not in {"staging", "production"}:
+                raise ValueError(
+                    "POKER_MCP_ENABLED requires a staging or production deployment"
+                )
+            if self.mcp_public_url is None:
+                raise ValueError("POKER_MCP_PUBLIC_URL is required when MCP is enabled")
+            parsed_mcp_url = urlsplit(self.mcp_public_url)
+            if (
+                parsed_mcp_url.scheme.lower() != "https"
+                or not parsed_mcp_url.hostname
+                or "*" in parsed_mcp_url.netloc
+                or parsed_mcp_url.username
+                or parsed_mcp_url.password
+                or parsed_mcp_url.path != "/mcp"
+                or parsed_mcp_url.query
+                or parsed_mcp_url.fragment
+            ):
+                raise ValueError(
+                    "POKER_MCP_PUBLIC_URL must be a credential-free HTTPS URL "
+                    "with the exact path /mcp"
+                )
+            self.mcp_public_url = self.mcp_public_url.rstrip("/")
+        normalized_mcp_origins: list[str] = []
+        for origin in self.mcp_allowed_origins:
+            parsed_origin = urlsplit(origin)
+            if (
+                parsed_origin.scheme.lower() != "https"
+                or not parsed_origin.hostname
+                or "*" in parsed_origin.netloc
+                or parsed_origin.username
+                or parsed_origin.password
+                or parsed_origin.path not in {"", "/"}
+                or parsed_origin.query
+                or parsed_origin.fragment
+            ):
+                raise ValueError(
+                    "POKER_MCP_ALLOWED_ORIGINS must contain exact HTTPS origins"
+                )
+            normalized_mcp_origins.append(origin.rstrip("/").casefold())
+        if len(set(normalized_mcp_origins)) != len(normalized_mcp_origins):
+            raise ValueError("POKER_MCP_ALLOWED_ORIGINS must not contain duplicates")
+        self.mcp_allowed_origins = normalized_mcp_origins
         return self
 
 

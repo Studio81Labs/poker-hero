@@ -7,6 +7,74 @@ afterEach(() => {
 });
 
 describe("API Worker proxy", () => {
+  it("proxies MCP with bearer auth and a Worker-signed public host", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return new Response(JSON.stringify({ jsonrpc: "2.0", result: {} }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://poker-staging.example/mcp", {
+        body: JSON.stringify({ jsonrpc: "2.0", method: "initialize" }),
+        headers: {
+          Authorization: "Bearer phmcp_test",
+          "Content-Type": "application/json",
+          "X-Poker-MCP-Public-Host": "spoofed.example",
+        },
+        method: "POST",
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example/api",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(forwardedRequest.url).toBe("https://backend.example/mcp");
+    expect(forwardedRequest.headers.get("Authorization")).toBe(
+      "Bearer phmcp_test",
+    );
+    expect(forwardedRequest.headers.get("X-Poker-MCP-Public-Host")).toBe(
+      "poker-staging.example",
+    );
+    expect(forwardedRequest.headers.get("X-Poker-Proxy-Secret")).toBe(
+      "trusted-worker-value",
+    );
+  });
+
+  it("does not follow MCP redirects outside the MCP route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, {
+        headers: { Location: "/api/jobs" },
+        status: 307,
+      })),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://poker-staging.example/mcp", {
+        body: "{}",
+        headers: { Authorization: "Bearer phmcp_test" },
+        method: "POST",
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example/api",
+      },
+    );
+
+    expect(response.status).toBe(502);
+  });
+
   it("replaces an incoming proxy credential with the Worker secret", async () => {
     let forwardedRequest;
     vi.stubGlobal(

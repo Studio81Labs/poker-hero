@@ -1,0 +1,343 @@
+from __future__ import annotations
+
+from collections import deque
+from contextlib import asynccontextmanager
+import json
+from secrets import compare_digest
+from threading import Lock
+from time import monotonic
+from typing import AsyncIterator, cast
+from urllib.parse import urlsplit
+
+import httpx
+from starlette.concurrency import run_in_threadpool
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.config import Settings
+from app.mcp_access import (
+    MCP_PRINCIPAL_CONTEXT,
+    McpEnvironment,
+    McpPrincipalStore,
+)
+from app.mcp_gateway import (
+    McpGatewaySettings,
+    PokerApiClient,
+    PokerMcpGateway,
+    build_mcp_server,
+)
+
+
+class HostedMcpRuntime:
+    def __init__(
+        self,
+        app: ASGIApp,
+        client: httpx.AsyncClient,
+        lifespan_app: ASGIApp,
+    ) -> None:
+        self.app = app
+        self.client = client
+        self.lifespan_app = lifespan_app
+
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        router = getattr(self.lifespan_app, "router")
+        async with router.lifespan_context(self.lifespan_app):
+            try:
+                yield
+            finally:
+                await self.client.aclose()
+
+
+def build_hosted_mcp_runtime(
+    settings: Settings,
+    *,
+    api_app: ASGIApp,
+    principal_store: McpPrincipalStore,
+) -> HostedMcpRuntime:
+    assert settings.mcp_public_url is not None
+    parsed_url = urlsplit(settings.mcp_public_url)
+    public_origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
+    environment = cast(McpEnvironment, settings.deployment_environment)
+    gateway_settings = McpGatewaySettings(
+        environment=environment,
+        api_base_url=public_origin,
+        allow_writes=settings.mcp_allow_writes,
+        image_root=settings.data_dir,
+        max_upload_bytes=settings.max_upload_bytes,
+        request_timeout_seconds=max(
+            settings.external_request_timeout_seconds,
+            settings.local_solver_timeout_seconds + 10,
+        ),
+        api_proxy_secret=settings.proxy_shared_secret,
+    )
+    client = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=api_app),
+        base_url=public_origin,
+        timeout=gateway_settings.request_timeout_seconds,
+        follow_redirects=False,
+    )
+    gateway = PokerMcpGateway(
+        gateway_settings,
+        api_client=PokerApiClient(gateway_settings, client=client),
+    )
+    server = build_mcp_server(
+        gateway_settings,
+        gateway=gateway,
+        require_auth=True,
+        include_screenshot_tool=False,
+        http_host=parsed_url.hostname or "poker-mcp",
+    )
+    app = server.streamable_http_app()
+    return HostedMcpRuntime(
+        HostedMcpAuthMiddleware(
+            app,
+            principal_store=principal_store,
+            expected_host=parsed_url.netloc,
+            allowed_origins=frozenset(settings.mcp_allowed_origins),
+            proxy_shared_secret=(
+                settings.proxy_shared_secret.get_secret_value()
+                if settings.proxy_shared_secret is not None
+                else None
+            ),
+            read_calls_per_minute=settings.mcp_read_calls_per_minute,
+            write_calls_per_minute=settings.mcp_write_calls_per_minute,
+        ),
+        client,
+        app,
+    )
+
+
+class HostedMcpAuthMiddleware:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        principal_store: McpPrincipalStore,
+        expected_host: str,
+        allowed_origins: frozenset[str],
+        proxy_shared_secret: str | None,
+        read_calls_per_minute: int,
+        write_calls_per_minute: int,
+    ) -> None:
+        self.app = app
+        self.principal_store = principal_store
+        self.expected_host = expected_host.casefold()
+        self.allowed_origins = allowed_origins
+        self.proxy_shared_secret = proxy_shared_secret
+        self.rate_limiter = _McpRateLimiter(
+            read_calls_per_minute=read_calls_per_minute,
+            write_calls_per_minute=write_calls_per_minute,
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        if scope.get("path") != "/mcp":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {
+            key.decode("latin-1").casefold(): value.decode("latin-1")
+            for key, value in scope.get("headers", [])
+        }
+        direct_host_matches = (
+            headers.get("host", "").casefold() == self.expected_host
+        )
+        forwarded_host_matches = (
+            self.proxy_shared_secret is not None
+            and headers.get("x-poker-mcp-public-host", "").casefold()
+            == self.expected_host
+            and compare_digest(
+                headers.get("x-poker-proxy-secret", ""),
+                self.proxy_shared_secret,
+            )
+        )
+        if not direct_host_matches and not forwarded_host_matches:
+            await _send_json(send, 403, {"detail": "Forbidden"})
+            return
+        origin = headers.get("origin")
+        if origin is not None and origin.casefold() not in self.allowed_origins:
+            await _send_json(send, 403, {"detail": "Forbidden"})
+            return
+        authorization = headers.get("authorization", "")
+        scheme, separator, token = authorization.partition(" ")
+        if separator != " " or scheme.casefold() != "bearer" or not token:
+            await _send_unauthorized(send)
+            return
+        principal = await run_in_threadpool(self.principal_store.authenticate, token)
+        if principal is None:
+            await _send_unauthorized(send)
+            return
+
+        try:
+            body, replay_receive = await _buffer_request_body(receive)
+        except _McpRequestTooLarge:
+            await _send_json(send, 413, {"detail": "MCP request body is too large"})
+            return
+        rate_category = _request_rate_category(body)
+        allowed, retry_after = self.rate_limiter.check(
+            principal.id,
+            rate_category,
+        )
+        if not allowed:
+            await _send_json(
+                send,
+                429,
+                {"detail": f"MCP {rate_category} rate limit exceeded"},
+                extra_headers=[
+                    (b"retry-after", str(retry_after).encode("ascii")),
+                ],
+            )
+            return
+
+        context_token = MCP_PRINCIPAL_CONTEXT.set(principal)
+
+        async def send_private(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                response_headers = list(message.get("headers", []))
+                response_headers.append((b"cache-control", b"no-store"))
+                message = {**message, "headers": response_headers}
+            await send(message)
+
+        try:
+            await self.app(scope, replay_receive, send_private)
+        finally:
+            MCP_PRINCIPAL_CONTEXT.reset(context_token)
+
+
+async def _send_unauthorized(send: Send) -> None:
+    await _send_json(
+        send,
+        401,
+        {"detail": "MCP authentication required"},
+        extra_headers=[(b"www-authenticate", b"Bearer")],
+    )
+
+
+async def _send_json(
+    send: Send,
+    status_code: int,
+    payload: dict[str, str],
+    *,
+    extra_headers: list[tuple[bytes, bytes]] | None = None,
+) -> None:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("ascii")),
+                (b"cache-control", b"no-store"),
+                *(extra_headers or []),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+MCP_WRITE_TOOLS = frozenset(
+    {
+        "approve_hand_state",
+        "record_training_decision",
+        "request_recommendation",
+        "save_training_review",
+    }
+)
+MCP_MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+
+
+class _McpRequestTooLarge(ValueError):
+    pass
+
+
+def _request_rate_category(body: bytes) -> str:
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return "read"
+    if (
+        isinstance(payload, dict)
+        and payload.get("method") == "tools/call"
+        and isinstance(payload.get("params"), dict)
+        and payload["params"].get("name") in MCP_WRITE_TOOLS
+    ):
+        return "write"
+    return "read"
+
+
+async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
+    frames: list[Message] = []
+    body_parts: list[bytes] = []
+    body_size = 0
+    while True:
+        message = await receive()
+        frames.append(message)
+        if message["type"] != "http.request":
+            break
+        body_part = message.get("body", b"")
+        body_parts.append(body_part)
+        body_size += len(body_part)
+        if body_size > MCP_MAX_REQUEST_BODY_BYTES:
+            raise _McpRequestTooLarge
+        if not message.get("more_body", False):
+            break
+
+    frame_index = 0
+
+    async def replay() -> Message:
+        nonlocal frame_index
+        if frame_index < len(frames):
+            message = frames[frame_index]
+            frame_index += 1
+            return message
+        return await receive()
+
+    return b"".join(body_parts), replay
+
+
+class _McpRateLimiter:
+    MAX_BUCKETS = 4_096
+
+    def __init__(
+        self,
+        *,
+        read_calls_per_minute: int,
+        write_calls_per_minute: int,
+    ) -> None:
+        self.limits = {
+            "read": read_calls_per_minute,
+            "write": write_calls_per_minute,
+        }
+        self.calls: dict[tuple[str, str], deque[float]] = {}
+        self.lock = Lock()
+
+    def check(self, principal_id: str, category: str) -> tuple[bool, int]:
+        now = monotonic()
+        cutoff = now - 60
+        key = (principal_id, category)
+        with self.lock:
+            if key not in self.calls and len(self.calls) >= self.MAX_BUCKETS:
+                inactive = [
+                    candidate_key
+                    for candidate_key, candidate_calls in self.calls.items()
+                    if not candidate_calls or candidate_calls[-1] <= cutoff
+                ]
+                for candidate_key in inactive:
+                    self.calls.pop(candidate_key, None)
+                if len(self.calls) >= self.MAX_BUCKETS:
+                    oldest_key = min(
+                        self.calls,
+                        key=lambda candidate_key: self.calls[candidate_key][-1],
+                    )
+                    self.calls.pop(oldest_key)
+            calls = self.calls.setdefault(key, deque())
+            while calls and calls[0] <= cutoff:
+                calls.popleft()
+            if len(calls) >= self.limits[category]:
+                retry_after = max(1, int(61 - (now - calls[0])))
+                return False, retry_after
+            calls.append(now)
+            return True, 0

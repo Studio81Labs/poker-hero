@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { McpAccessPanel } from "./McpAccessPanel";
 import {
   ApiResponseError,
   applicationBackupUrl,
@@ -9547,6 +9548,11 @@ export default function App() {
               <section className="info-dialog-section">
                 <h3>Training scope</h3>
                 <p>Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
+              </section>
+              <section className="info-dialog-section">
+                <h3>Agent access</h3>
+                <p>Create environment-bound bearer credentials for trusted developer agents. Store each token when it is shown; only its hash remains on the server.</p>
+                <McpAccessPanel />
               </section>
               <section className="info-dialog-section data-recovery-section">
                 <h3>Data and recovery</h3>

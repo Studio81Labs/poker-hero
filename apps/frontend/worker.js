@@ -2,7 +2,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
       return proxyApiRequest(request, env.BACKEND_URL, env.API_PROXY_SECRET);
     }
 
@@ -11,6 +11,7 @@ export default {
 };
 
 const PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret";
+const MCP_PUBLIC_HOST_HEADER = "X-Poker-MCP-Public-Host";
 const ACCESS_USER_HEADER = "CF-Access-Authenticated-User-Email";
 const MAX_BACKEND_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -30,11 +31,17 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   }
 
   let targetUrl = new URL(backendBase);
-  const basePath = backendBase.pathname.replace(/\/+$/, "");
+  let basePath = backendBase.pathname.replace(/\/+$/, "");
   let proxiedPath = incomingUrl.pathname;
+  let allowedRedirectBasePath = basePath;
 
   if (basePath.endsWith("/api") && proxiedPath.startsWith("/api/")) {
     proxiedPath = proxiedPath.slice("/api".length);
+  } else if (basePath.endsWith("/api") && proxiedPath === "/mcp") {
+    basePath = basePath.slice(0, -"/api".length);
+    allowedRedirectBasePath = `${basePath}/mcp`;
+  } else if (proxiedPath === "/mcp") {
+    allowedRedirectBasePath = `${basePath}/mcp`;
   }
 
   targetUrl.pathname = `${basePath}${proxiedPath}`;
@@ -44,11 +51,15 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   headers.delete("host");
   headers.delete("content-length");
   headers.delete(PROXY_SHARED_SECRET_HEADER);
+  headers.delete(MCP_PUBLIC_HOST_HEADER);
   // Access email is not independently verified by the backend and must not
   // become a caller-controlled rate-limit identity.
   headers.delete(ACCESS_USER_HEADER);
   if (proxySharedSecret) {
     headers.set(PROXY_SHARED_SECRET_HEADER, proxySharedSecret);
+  }
+  if (incomingUrl.pathname === "/mcp") {
+    headers.set(MCP_PUBLIC_HOST_HEADER, incomingUrl.host);
   }
 
   let method = request.method;
@@ -93,9 +104,9 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
       redirectUrl.origin !== backendBase.origin ||
       redirectUrl.username ||
       redirectUrl.password ||
-      (basePath &&
-        redirectUrl.pathname !== basePath &&
-        !redirectUrl.pathname.startsWith(`${basePath}/`))
+      (allowedRedirectBasePath &&
+        redirectUrl.pathname !== allowedRedirectBasePath &&
+        !redirectUrl.pathname.startsWith(`${allowedRedirectBasePath}/`))
     ) {
       await response.body?.cancel();
       return new Response("Backend redirect target is not allowed", {

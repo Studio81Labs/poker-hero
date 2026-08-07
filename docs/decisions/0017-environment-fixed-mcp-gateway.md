@@ -2,6 +2,9 @@
 
 Status: accepted
 
+The local stdio decision remains active. ADR 0018 supersedes only the statement
+that a hosted transport is future work.
+
 ## Context
 
 Agents need a supported way to inspect Poker Hero staging and production and,
@@ -43,5 +46,4 @@ tool failures carrying environment, status, request ID, and retry delay.
 - A misconfigured staging/production URL fails closed before job data is read.
 - Local stdio avoids prematurely publishing an unauthenticated remote MCP
   service, but every agent host needs its own process configuration.
-- A future shared Streamable HTTP server requires a separate MCP-compatible
-  authorization design and deployment decision.
+- Hosted Streamable HTTP is governed separately by ADR 0018.

@@ -104,9 +104,32 @@ def test_hosted_mcp_requires_an_environment_token(tmp_path: Path) -> None:
         deployment_environment="staging",
         mcp_enabled=True,
         mcp_public_url="https://poker.test:443/mcp",
+        mcp_allowed_origins=["https://agent.example:443"],
         api_rate_limit_enabled=False,
     )
     with TestClient(create_app(settings), base_url="https://poker.test") as client:
+        preflight = client.options(
+            "/mcp",
+            headers={
+                "Origin": "https://agent.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == (
+            "https://agent.example"
+        )
+        api_preflight = client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://agent.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert api_preflight.status_code == 400
+        assert "access-control-allow-origin" not in api_preflight.headers
+
         missing = client.post("/mcp", json=_initialize_request())
         assert missing.status_code == 401
         assert missing.headers["www-authenticate"] == "Bearer"
@@ -126,11 +149,15 @@ def test_hosted_mcp_requires_an_environment_token(tmp_path: Path) -> None:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Accept": "application/json, text/event-stream",
+                "Origin": "https://agent.example",
             },
             json=_initialize_request(),
         )
         assert initialized.status_code == 200
         assert initialized.headers["cache-control"] == "no-store"
+        assert initialized.headers["access-control-allow-origin"] == (
+            "https://agent.example"
+        )
         assert initialized.json()["result"]["serverInfo"]["name"] == "Poker Hero staging"
 
         tools = client.post(

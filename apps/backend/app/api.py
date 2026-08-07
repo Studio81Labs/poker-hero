@@ -417,6 +417,40 @@ class RequestObservabilityMiddleware:
         )
 
 
+class PathCorsMiddleware:
+    """Keep browser MCP origins from gaining CORS access to the admin API."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        api_origins: list[str],
+        mcp_origins: list[str],
+    ) -> None:
+        options: dict[str, Any] = {
+            "allow_credentials": True,
+            "allow_methods": ["*"],
+            "allow_headers": ["*"],
+            "expose_headers": [
+                REQUEST_ID_HEADER,
+                "Retry-After",
+                "X-RateLimit-Limit",
+                "X-RateLimit-Remaining",
+            ],
+        }
+        self.api_app = CORSMiddleware(app, allow_origins=api_origins, **options)
+        self.mcp_app = CORSMiddleware(app, allow_origins=mcp_origins, **options)
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        target = self.mcp_app if scope.get("path") == "/mcp" else self.api_app
+        await target(scope, receive, send)
+
+
 class DataMutationLockMiddleware:
     """Coordinate API mutations with consistent cross-process snapshots."""
 
@@ -1669,18 +1703,14 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         app.mount("/", hosted_mcp_runtime.app, name="mcp")
 
     return RequestObservabilityMiddleware(
-        CORSMiddleware(
+        PathCorsMiddleware(
             app,
-            allow_origins=active_settings.cors_origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=[
-                REQUEST_ID_HEADER,
-                "Retry-After",
-                "X-RateLimit-Limit",
-                "X-RateLimit-Remaining",
-            ],
+            api_origins=active_settings.cors_origins,
+            mcp_origins=(
+                active_settings.mcp_allowed_origins
+                if active_settings.mcp_enabled
+                else []
+            ),
         ),
         access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
     )

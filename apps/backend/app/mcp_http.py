@@ -190,6 +190,13 @@ class HostedMcpAuthMiddleware:
                 ],
             )
             return
+        usage_recorded = await run_in_threadpool(
+            self.principal_store.record_usage,
+            token,
+        )
+        if not usage_recorded:
+            await _send_unauthorized(send)
+            return
 
         context_token = MCP_PRINCIPAL_CONTEXT.set(principal)
 

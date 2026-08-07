@@ -180,7 +180,7 @@ class McpPrincipalStore:
             return None
         prefix = match.group(1)
         now = _now()
-        with self._locked(exclusive=True):
+        with self._locked(exclusive=False):
             payload = self._read()
             record = next(
                 (
@@ -201,15 +201,44 @@ class McpPrincipalStore:
                 scopes = _validate_scopes(record.scopes)
             except ValueError:
                 return None
-            record.last_used_at = now
-            record.updated_at = now
-            self._write(payload)
         return McpAuthenticatedPrincipal(
             id=record.id,
             name=record.name,
             environment=record.environment,
             scopes=scopes,
         )
+
+    def record_usage(self, token: str) -> bool:
+        match = MCP_TOKEN_PATTERN.fullmatch(token)
+        if match is None:
+            return False
+        prefix = match.group(1)
+        now = _now()
+        with self._locked(exclusive=True):
+            payload = self._read()
+            record = next(
+                (
+                    candidate
+                    for candidate in payload.principals
+                    if candidate.environment == self.environment
+                    and candidate.token_prefix == prefix
+                ),
+                None,
+            )
+            if (
+                record is None
+                or _summary(record, now).status != "active"
+                or not compare_digest(_hash_token(token), record.token_hash)
+            ):
+                return False
+            try:
+                _validate_scopes(record.scopes)
+            except ValueError:
+                return False
+            record.last_used_at = now
+            record.updated_at = now
+            self._write(payload)
+        return True
 
     def _find(
         self,

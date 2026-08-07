@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import create_app
@@ -18,6 +19,9 @@ def test_principal_store_issues_once_rotates_and_revokes(tmp_path: Path) -> None
 
     assert issued.token.startswith("phmcp_")
     assert store.authenticate(issued.token) is not None
+    assert store.list()[0].last_used_at is None
+    assert store.record_usage(issued.token) is True
+    assert store.list()[0].last_used_at is not None
     serialized = (tmp_path / "mcp" / "principals.json").read_text(encoding="utf-8")
     assert issued.token not in serialized
     assert issued.principal.token_prefix in serialized
@@ -206,7 +210,18 @@ def test_hosted_mcp_requires_scope_and_omits_local_upload(tmp_path: Path) -> Non
         assert "does not grant write access" in denied.json()["result"]["content"][0]["text"]
 
 
-def test_hosted_mcp_rate_limits_each_principal(tmp_path: Path) -> None:
+def test_hosted_mcp_rate_limits_each_principal_before_recording_usage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded_tokens: list[str] = []
+    original_record_usage = McpPrincipalStore.record_usage
+
+    def record_usage(store: McpPrincipalStore, token: str) -> bool:
+        recorded_tokens.append(token)
+        return original_record_usage(store, token)
+
+    monkeypatch.setattr(McpPrincipalStore, "record_usage", record_usage)
     settings = Settings(
         data_dir=tmp_path,
         deployment_environment="staging",
@@ -232,6 +247,7 @@ def test_hosted_mcp_rate_limits_each_principal(tmp_path: Path) -> None:
         )
         assert limited.status_code == 429
         assert limited.headers["retry-after"]
+        assert recorded_tokens == [token]
 
 
 def _initialize_request() -> dict[str, object]:

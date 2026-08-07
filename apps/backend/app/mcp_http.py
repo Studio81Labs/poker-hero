@@ -129,6 +129,7 @@ class HostedMcpAuthMiddleware:
             read_calls_per_minute=read_calls_per_minute,
             write_calls_per_minute=write_calls_per_minute,
         )
+        self.body_read_limiter = _McpBodyReadLimiter()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -171,11 +172,26 @@ class HostedMcpAuthMiddleware:
             await _send_unauthorized(send)
             return
 
-        try:
-            body, replay_receive = await _buffer_request_body(receive)
-        except _McpRequestTooLarge:
-            await _send_json(send, 413, {"detail": "MCP request body is too large"})
+        if not self.body_read_limiter.acquire(principal.id):
+            await _send_json(
+                send,
+                429,
+                {"detail": "MCP concurrent request limit exceeded"},
+                extra_headers=[(b"retry-after", b"1")],
+            )
             return
+        try:
+            try:
+                body, replay_receive = await _buffer_request_body(receive)
+            except _McpRequestTooLarge:
+                await _send_json(
+                    send,
+                    413,
+                    {"detail": "MCP request body is too large"},
+                )
+                return
+        finally:
+            self.body_read_limiter.release(principal.id)
         rate_category = _request_rate_category(body)
         allowed, retry_after = self.rate_limiter.check(
             principal.id,
@@ -255,10 +271,37 @@ MCP_WRITE_TOOLS = frozenset(
     }
 )
 MCP_MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+MCP_MAX_CONCURRENT_BODY_READS_PER_PRINCIPAL = 4
 
 
 class _McpRequestTooLarge(ValueError):
     pass
+
+
+class _McpBodyReadLimiter:
+    def __init__(
+        self,
+        maximum_per_principal: int = MCP_MAX_CONCURRENT_BODY_READS_PER_PRINCIPAL,
+    ) -> None:
+        self.maximum_per_principal = maximum_per_principal
+        self.active: dict[str, int] = {}
+        self.lock = Lock()
+
+    def acquire(self, principal_id: str) -> bool:
+        with self.lock:
+            active = self.active.get(principal_id, 0)
+            if active >= self.maximum_per_principal:
+                return False
+            self.active[principal_id] = active + 1
+            return True
+
+    def release(self, principal_id: str) -> None:
+        with self.lock:
+            active = self.active.get(principal_id, 0)
+            if active <= 1:
+                self.active.pop(principal_id, None)
+            else:
+                self.active[principal_id] = active - 1
 
 
 def _request_rate_category(body: bytes) -> str:

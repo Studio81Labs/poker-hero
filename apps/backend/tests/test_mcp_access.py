@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.api import create_app
 from app.config import Settings
 from app.mcp_access import McpPrincipalStore
+from app.mcp_http import HostedMcpAuthMiddleware, _McpBodyReadLimiter
 
 
 def test_principal_store_issues_once_rotates_and_revokes(tmp_path: Path) -> None:
@@ -366,6 +368,76 @@ def test_hosted_mcp_rate_limits_each_principal_before_recording_usage(
         assert limited.status_code == 429
         assert limited.headers["retry-after"]
         assert recorded_tokens == [token]
+
+
+def test_hosted_mcp_limits_concurrent_body_reads_before_buffering(
+    tmp_path: Path,
+) -> None:
+    store = McpPrincipalStore(tmp_path, "staging")
+    issued = store.create(name="Concurrent Codex", scopes=["read"], expires_at=None)
+    first_body_started = asyncio.Event()
+    release_first_body = asyncio.Event()
+    second_receive_called = False
+    second_messages: list[dict[str, object]] = []
+
+    async def app(scope, receive, send) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = HostedMcpAuthMiddleware(
+        app,
+        principal_store=store,
+        expected_host="poker.test",
+        allowed_origins=frozenset(),
+        proxy_shared_secret=None,
+        read_calls_per_minute=60,
+        write_calls_per_minute=10,
+    )
+    middleware.body_read_limiter = _McpBodyReadLimiter(maximum_per_principal=1)
+    scope = {
+        "type": "http",
+        "path": "/mcp",
+        "headers": [
+            (b"host", b"poker.test"),
+            (b"authorization", f"Bearer {issued.token}".encode("ascii")),
+        ],
+    }
+
+    async def first_receive() -> dict[str, object]:
+        first_body_started.set()
+        await release_first_body.wait()
+        return {
+            "type": "http.request",
+            "body": json.dumps(_initialize_request()).encode("utf-8"),
+            "more_body": False,
+        }
+
+    async def second_receive() -> dict[str, object]:
+        nonlocal second_receive_called
+        second_receive_called = True
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def discard_send(message) -> None:
+        pass
+
+    async def record_second_send(message) -> None:
+        second_messages.append(message)
+
+    async def exercise() -> None:
+        first_request = asyncio.create_task(
+            middleware(scope, first_receive, discard_send)
+        )
+        await first_body_started.wait()
+        await middleware(scope, second_receive, record_second_send)
+        release_first_body.set()
+        await first_request
+
+    asyncio.run(exercise())
+
+    assert second_receive_called is False
+    assert second_messages[0]["status"] == 429
+    assert middleware.body_read_limiter.active == {}
+    assert store.list()[0].last_used_at is not None
 
 
 def _initialize_request() -> dict[str, object]:

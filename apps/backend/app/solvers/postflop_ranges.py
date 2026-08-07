@@ -19,6 +19,7 @@ from app.solvers.preflop_context import (
 
 RangeSource = Literal[
     "configured",
+    "preflop_chart_limped_pot",
     "preflop_chart_single_raised_pot",
     "preflop_chart_three_bet_pot",
     "preflop_chart_cold_three_bet_pot",
@@ -56,6 +57,19 @@ def select_postflop_ranges(
         or state.street not in {"flop", "turn", "river"}
     ):
         return configured
+
+    limped_context = _limped_pot_context(
+        state,
+        hero_relative_position,
+    )
+    if limped_context is not None:
+        selection = _limped_pot_selection(
+            state,
+            hero_relative_position,
+            limped_context,
+        )
+        if selection is not None:
+            return selection
 
     single_raised_context = _single_raised_pot_context(
         state,
@@ -139,6 +153,93 @@ def resolve_squeeze_pot_relative_position(
     if _squeeze_pot_context(state, hero_relative_position) is None:
         return None
     return hero_relative_position
+
+
+def resolve_limped_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve a six-max blind pair from an exact limp/check preflop line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _limped_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
+
+
+def _limped_pot_selection(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    context: tuple[Position, float],
+) -> PostflopRangeSelection | None:
+    limper, limp_size = context
+    from app.solvers.preflop_chart import (
+        LIMP_RESPONSE_POLICIES,
+        LIMP_RESPONSE_POLICY_NAME,
+        POSITION_POLICIES,
+        adjusted_limp_raise_fraction,
+        adjusted_open_fraction,
+        policy_for_stack_depth,
+    )
+
+    limper_policy = POSITION_POLICIES.get(limper)
+    big_blind_policy = LIMP_RESPONSE_POLICIES.get(limper)
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=limp_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
+    if (
+        limper_policy is None
+        or limper_policy.open_fraction <= 0
+        or big_blind_policy is None
+        or stack_policy is None
+    ):
+        return None
+
+    limper_fraction = adjusted_open_fraction(limper_policy, stack_policy)
+    big_blind_raise_fraction = adjusted_limp_raise_fraction(
+        big_blind_policy,
+        stack_policy,
+    )
+    limper_range = _range_for_policy_band(limper_fraction)
+    big_blind_check_range = _range_for_policy_band(
+        1.0,
+        minimum_exclusive=big_blind_raise_fraction,
+    )
+    if not limper_range or not big_blind_check_range:
+        return None
+
+    return _selection_for_ranges(
+        state,
+        hero_relative_position,
+        ranges_by_position={
+            limper: limper_range,
+            "big_blind": big_blind_check_range,
+        },
+        source="preflop_chart_limped_pot",
+        context={
+            "scenario": "limped_pot",
+            "limper_position": limper,
+            "big_blind_position": "big_blind",
+            "limp_size_bb": limp_size,
+            "limper_range_model": "stack_adjusted_first_in_proxy",
+            "limp_response_policy": LIMP_RESPONSE_POLICY_NAME,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
+            "limper_base_fraction": limper_policy.open_fraction,
+            "limper_fraction": limper_fraction,
+            "big_blind_base_raise_fraction": big_blind_policy.raise_fraction,
+            "big_blind_raise_fraction": big_blind_raise_fraction,
+        },
+    )
 
 
 def _single_raised_pot_selection(
@@ -648,6 +749,44 @@ def _selection_for_ranges(
         source=source,
         context=resolved_context,
     )
+
+
+def _limped_pot_context(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> tuple[Position, float] | None:
+    if state.players_in_hand != 2 or len(state.preflop_action_history) != 1:
+        return None
+    limp_action = state.preflop_action_history[0]
+    if (
+        limp_action.action != "call"
+        or abs(limp_action.amount - 1.0) > MONEY_TOLERANCE_BB
+        or state.preflop_opener_position is not None
+        or state.preflop_open_size is not None
+    ):
+        return None
+
+    limper = normalize_position(limp_action.actor)
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if (
+        limper is None
+        or limper == "big_blind"
+        or POSITION_ACTION_ORDER[limper]
+        >= POSITION_ACTION_ORDER["big_blind"]
+        or hero_position is None
+        or opponent_position is None
+        or hero_position == opponent_position
+        or {limper, "big_blind"} != {hero_position, opponent_position}
+    ):
+        return None
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
+    if not pot_matches_preflop_actions(
+        flop_root_pot,
+        ((limper, limp_action.amount),),
+    ):
+        return None
+    return limper, limp_action.amount
 
 
 def _single_raised_pot_context(

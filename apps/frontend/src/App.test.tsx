@@ -10200,6 +10200,75 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("shows contextual limped-pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "limped-postflop-job",
+      original_filename: "limped-postflop.png",
+      image_filename: "limped-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "oop",
+          range_source: "preflop_chart_limped_pot",
+          range_context: {
+            scenario: "limped_pot",
+            limper_position: "button",
+            big_blind_position: "big_blind",
+            limp_size_bb: 1,
+            limper_range_model: "stack_adjusted_first_in_proxy",
+            limp_response_policy: "heads_up_single_limper",
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
+            decision_street: "turn",
+            completed_street_count: 1,
+            limper_fraction: 0.45,
+            big_blind_raise_fraction: 0.36,
+          },
+          ranges: {
+            oop: "72o-32o",
+            ip: "AA-77,AKs-AJs",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Preflop chart · limped pot",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Standard · 100 BB starting")).toBeInTheDocument();
+    expect(within(decisionContext).getByText("Turn · 1 completed street")).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Button limps 1 BB · Big blind checks",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Limper uses stack-adjusted first-in proxy",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Entry 45% · BB check 36%-100%",
+    )).toBeInTheDocument();
+  });
+
   it("shows contextual three-bet pot range assumptions", async () => {
     const postflopJob: JobRecord = {
       ...recommendedJob(),

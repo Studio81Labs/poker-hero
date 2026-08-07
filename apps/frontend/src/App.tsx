@@ -375,6 +375,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   rule_based_training_v2: "Rule-based trainer",
 };
 const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
+  preflop_chart_limped_pot: "Preflop chart · limped pot",
   preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
   preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
   preflop_chart_cold_three_bet_pot: "Preflop chart · cold-call 3-bet pot",
@@ -1024,7 +1025,8 @@ function recommendationEvidenceFromRaw(
     details.push(...rangeConditioningEvidence(raw.range_conditioning));
 
     const contextualRangeSource = (
-      rawRangeSource === "preflop_chart_single_raised_pot"
+      rawRangeSource === "preflop_chart_limped_pot"
+      || rawRangeSource === "preflop_chart_single_raised_pot"
       || rawRangeSource === "preflop_chart_three_bet_pot"
       || rawRangeSource === "preflop_chart_cold_three_bet_pot"
       || rawRangeSource === "preflop_chart_squeeze_pot"
@@ -1077,7 +1079,54 @@ function recommendationEvidenceFromRaw(
         }`,
       });
     }
-    if (rawRangeSource === "preflop_chart_single_raised_pot") {
+    if (rawRangeSource === "preflop_chart_limped_pot") {
+      const rangeLimperPosition = metadataLabel(rangeContext?.limper_position);
+      const rangeBigBlindPosition = metadataLabel(rangeContext?.big_blind_position);
+      const rangeLimpSize = metadataNumber(rangeContext?.limp_size_bb);
+      if (rangeLimperPosition && rangeBigBlindPosition) {
+        details.push({
+          label: "Range actors",
+          value: rangeLimperPosition
+            + " limps"
+            + (
+              rangeLimpSize !== null && rangeLimpSize > 0
+                ? " " + formatEvidenceBb(rangeLimpSize)
+                : ""
+            )
+            + " · "
+            + rangeBigBlindPosition
+            + " checks",
+        });
+      }
+      const rangeLimperFraction = metadataRatio(rangeContext?.limper_fraction);
+      const rangeBigBlindRaise = metadataRatio(
+        rangeContext?.big_blind_raise_fraction,
+      );
+      const rangeLimperModel = metadataString(
+        rangeContext?.limper_range_model,
+        80,
+      );
+      if (rangeLimperModel === "stack_adjusted_first_in_proxy") {
+        details.push({
+          label: "Range model",
+          value: "Limper uses stack-adjusted first-in proxy",
+        });
+      }
+      if (
+        rangeLimperFraction !== null
+        && rangeBigBlindRaise !== null
+        && rangeBigBlindRaise < 1
+      ) {
+        details.push({
+          label: "Range bands",
+          value: "Entry "
+            + formatEvidenceRatio(rangeLimperFraction)
+            + " · BB check "
+            + formatEvidenceRatio(rangeBigBlindRaise)
+            + "-100%",
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_single_raised_pot") {
       const rangeOpenerPosition = metadataLabel(rangeContext?.opener_position);
       const rangeCallerPosition = metadataLabel(rangeContext?.caller_position);
       const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);

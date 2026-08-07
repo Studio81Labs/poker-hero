@@ -158,9 +158,9 @@ def resolve_squeeze_pot_relative_position(
 def _limped_pot_selection(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],
-    context: tuple[Position, float],
+    context: tuple[Position, float, tuple[Position, Position]],
 ) -> PostflopRangeSelection | None:
-    limper, limp_size = context
+    limper, limp_size, participant_positions = context
     from app.solvers.preflop_chart import (
         LIMP_RESPONSE_POLICIES,
         LIMP_RESPONSE_POLICY_NAME,
@@ -207,6 +207,7 @@ def _limped_pot_selection(
             "big_blind": big_blind_check_range,
         },
         source="preflop_chart_limped_pot",
+        participant_positions=participant_positions,
         context={
             "scenario": "limped_pot",
             "limper_position": limper,
@@ -702,9 +703,13 @@ def _selection_for_ranges(
     ranges_by_position: dict[Position, str],
     source: RangeSource,
     context: dict[str, str | float],
+    participant_positions: tuple[Position, Position] | None = None,
 ) -> PostflopRangeSelection | None:
-    hero_position = normalize_position(state.hero_position)
-    opponent_position = normalize_position(state.opponent_position)
+    if participant_positions is None:
+        hero_position = normalize_position(state.hero_position)
+        opponent_position = normalize_position(state.opponent_position)
+    else:
+        hero_position, opponent_position = participant_positions
     if (
         hero_position not in ranges_by_position
         or opponent_position not in ranges_by_position
@@ -737,7 +742,7 @@ def _selection_for_ranges(
 def _limped_pot_context(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],
-) -> tuple[Position, float] | None:
+) -> tuple[Position, float, tuple[Position, Position]] | None:
     if state.players_in_hand != 2 or len(state.preflop_action_history) != 1:
         return None
     limp_action = state.preflop_action_history[0]
@@ -750,18 +755,19 @@ def _limped_pot_context(
         return None
 
     limper = normalize_position(limp_action.actor)
-    hero_position = normalize_position(state.hero_position)
-    opponent_position = normalize_position(state.opponent_position)
     if (
         limper is None
         or limper == "big_blind"
         or POSITION_ACTION_ORDER[limper]
         >= POSITION_ACTION_ORDER["big_blind"]
-        or hero_position is None
-        or opponent_position is None
-        or hero_position == opponent_position
-        or {limper, "big_blind"} != {hero_position, opponent_position}
     ):
+        return None
+    participant_positions = _limped_pot_participant_positions(
+        state,
+        hero_relative_position,
+        limper,
+    )
+    if participant_positions is None:
         return None
     flop_root_pot = _flop_root_pot(state, hero_relative_position)
     if not pot_matches_preflop_actions(
@@ -769,7 +775,51 @@ def _limped_pot_context(
         ((limper, limp_action.amount),),
     ):
         return None
-    return limper, limp_action.amount
+    return limper, limp_action.amount, participant_positions
+
+
+def _limped_pot_participant_positions(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    limper: Position,
+) -> tuple[Position, Position] | None:
+    expected_positions = {limper, "big_blind"}
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if (
+        hero_position in expected_positions
+        and opponent_position in expected_positions
+        and hero_position != opponent_position
+    ):
+        return hero_position, opponent_position
+
+    hero_relative_label = _relative_position_label(state.hero_position)
+    opponent_relative_label = _relative_position_label(state.opponent_position)
+    if hero_position in expected_positions and opponent_relative_label is not None:
+        inferred_hero_relative = (
+            "oop" if opponent_relative_label == "ip" else "ip"
+        )
+        if inferred_hero_relative == hero_relative_position:
+            opponent = limper if hero_position == "big_blind" else "big_blind"
+            return hero_position, opponent
+    if opponent_position in expected_positions and hero_relative_label is not None:
+        if hero_relative_label == hero_relative_position:
+            hero = limper if opponent_position == "big_blind" else "big_blind"
+            return hero, opponent_position
+    return None
+
+
+def _relative_position_label(value: str | None) -> Literal["ip", "oop"] | None:
+    if value is None:
+        return None
+    normalized = " ".join(
+        value.lower().replace("_", " ").replace("-", " ").split()
+    )
+    if normalized in {"ip", "in position"}:
+        return "ip"
+    if normalized in {"oop", "out of position"}:
+        return "oop"
+    return None
 
 
 def _single_raised_pot_context(

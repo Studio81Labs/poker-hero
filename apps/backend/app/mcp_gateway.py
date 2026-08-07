@@ -24,6 +24,7 @@ from app.models import (
     TrainingProgress,
     TrainingReviewRequest,
 )
+from app.mcp_access import MCP_PRINCIPAL_CONTEXT
 
 McpEnvironment = Literal["staging", "production"]
 RequestId = Annotated[
@@ -621,6 +622,9 @@ def build_mcp_server(
     settings: McpGatewaySettings,
     *,
     gateway: PokerMcpGateway | None = None,
+    require_auth: bool = False,
+    include_screenshot_tool: bool = True,
+    http_host: str = "127.0.0.1",
 ) -> FastMCP:
     active_gateway = gateway or PokerMcpGateway(settings)
     server = FastMCP(
@@ -631,6 +635,8 @@ def build_mcp_server(
             "Never describe recommendations as guaranteed optimal play."
         ),
         json_response=True,
+        stateless_http=require_auth,
+        host=http_host,
     )
     read_only = ToolAnnotations(
         readOnlyHint=True,
@@ -643,6 +649,7 @@ def build_mcp_server(
     async def get_environment_status() -> EnvironmentStatus:
         """Verify the bound environment and report its active parser and solver."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.get_environment_status()
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -654,6 +661,7 @@ def build_mcp_server(
     ) -> JobQueueResult:
         """List active post-hand analysis jobs in stable queue order."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.list_processing_jobs(limit, offset)
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -662,6 +670,7 @@ def build_mcp_server(
     async def get_job(job_id: JobId) -> JobResult:
         """Read one persisted analysis job, including reviewable parser evidence."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.get_job(job_id)
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -674,6 +683,7 @@ def build_mcp_server(
     ) -> JobHistoryResult:
         """Search or page persisted post-hand review history."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.search_history(query, limit, offset)
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -682,6 +692,7 @@ def build_mcp_server(
     async def get_training_progress() -> TrainingProgressResult:
         """Read aggregate training results, review queues, and solver coverage."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.get_training_progress()
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -690,6 +701,7 @@ def build_mcp_server(
     async def list_benchmarks() -> BenchmarkOverviewResult:
         """Read parser benchmark coverage and recent report summaries."""
         try:
+            _require_hosted_scope("read", require_auth=require_auth)
             return await active_gateway.list_benchmarks()
         except Exception as exc:
             raise _tool_error(exc, settings.environment) from exc
@@ -708,19 +720,21 @@ def build_mcp_server(
             openWorldHint=True,
         )
 
-        @server.tool(annotations=create_annotation)
-        async def submit_screenshot(
-            image_path: str,
-            upload_request_id: RequestId | None = None,
-        ) -> JobResult:
-            """Submit a completed-hand screenshot under the configured safe image root."""
-            try:
-                return await active_gateway.submit_screenshot(
-                    image_path,
-                    upload_request_id,
-                )
-            except Exception as exc:
-                raise _tool_error(exc, settings.environment) from exc
+        if include_screenshot_tool:
+            @server.tool(annotations=create_annotation)
+            async def submit_screenshot(
+                image_path: str,
+                upload_request_id: RequestId | None = None,
+            ) -> JobResult:
+                """Submit a completed-hand screenshot under the configured safe image root."""
+                try:
+                    _require_hosted_scope("write", require_auth=require_auth)
+                    return await active_gateway.submit_screenshot(
+                        image_path,
+                        upload_request_id,
+                    )
+                except Exception as exc:
+                    raise _tool_error(exc, settings.environment) from exc
 
         @server.tool(annotations=replace_annotation)
         async def approve_hand_state(
@@ -729,6 +743,7 @@ def build_mcp_server(
         ) -> JobResult:
             """Save explicitly reviewed corrections; this clears prior advice for the job."""
             try:
+                _require_hosted_scope("write", require_auth=require_auth)
                 return await active_gateway.approve_hand_state(job_id, state)
             except Exception as exc:
                 raise _tool_error(exc, settings.environment) from exc
@@ -740,6 +755,7 @@ def build_mcp_server(
         ) -> JobResult:
             """Lock the player's decision and certainty before revealing advice."""
             try:
+                _require_hosted_scope("write", require_auth=require_auth)
                 return await active_gateway.record_training_decision(job_id, decision)
             except Exception as exc:
                 raise _tool_error(exc, settings.environment) from exc
@@ -751,6 +767,7 @@ def build_mcp_server(
         ) -> JobResult:
             """Request educational guidance for an explicitly approved hand."""
             try:
+                _require_hosted_scope("write", require_auth=require_auth)
                 return await active_gateway.request_recommendation(
                     job_id,
                     recommendation_request_id,
@@ -765,11 +782,24 @@ def build_mcp_server(
         ) -> JobResult:
             """Mark a decision difference reviewed and optionally save a lesson note."""
             try:
+                _require_hosted_scope("write", require_auth=require_auth)
                 return await active_gateway.save_training_review(job_id, note)
             except Exception as exc:
                 raise _tool_error(exc, settings.environment) from exc
 
     return server
+
+
+def _require_hosted_scope(
+    scope: Literal["read", "write"],
+    *,
+    require_auth: bool,
+) -> None:
+    if not require_auth:
+        return
+    principal = MCP_PRINCIPAL_CONTEXT.get()
+    if principal is None or scope not in principal.scopes:
+        raise PermissionError(f"The MCP credential does not grant {scope} access")
 
 
 def main() -> None:

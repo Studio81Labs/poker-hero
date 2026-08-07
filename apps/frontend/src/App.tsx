@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { McpAccessPanel } from "./McpAccessPanel";
 import {
   ApiResponseError,
   applicationBackupUrl,
@@ -4543,6 +4544,7 @@ export default function App() {
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  const [mcpTokenPending, setMcpTokenPending] = useState(false);
   const [backupRestoring, setBackupRestoring] = useState(false);
   const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const [trainingProgress, setTrainingProgress] = useState<TrainingProgress | null>(null);
@@ -7608,6 +7610,13 @@ export default function App() {
       .finally(() => setSystemInfoLoading(false));
   }
 
+  function closeInfoDialog() {
+    if (backupRestoring || mcpTokenPending) {
+      return;
+    }
+    setInfoDialogOpen(false);
+  }
+
   async function onApplicationBackupRestore(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -9652,8 +9661,8 @@ export default function App() {
               <button
                 type="button"
                 className="dialog-icon-button"
-                onClick={() => setInfoDialogOpen(false)}
-                disabled={backupRestoring}
+                onClick={closeInfoDialog}
+                disabled={backupRestoring || mcpTokenPending}
                 aria-label="Close app information"
               >
                 <X size={16} aria-hidden="true" />
@@ -9689,6 +9698,11 @@ export default function App() {
               <section className="info-dialog-section">
                 <h3>Training scope</h3>
                 <p>Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
+              </section>
+              <section className="info-dialog-section">
+                <h3>Agent access</h3>
+                <p>Create environment-bound bearer credentials for trusted developer agents. Store each token when it is shown; only its hash remains on the server.</p>
+                <McpAccessPanel onPendingTokenChange={setMcpTokenPending} />
               </section>
               <section className="info-dialog-section data-recovery-section">
                 <h3>Data and recovery</h3>
@@ -9737,8 +9751,8 @@ export default function App() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => setInfoDialogOpen(false)}
-                disabled={backupRestoring}
+                onClick={closeInfoDialog}
+                disabled={backupRestoring || mcpTokenPending}
               >
                 Done
               </button>

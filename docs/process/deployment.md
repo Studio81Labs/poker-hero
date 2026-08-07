@@ -106,6 +106,25 @@ than the workspace or a home-directory root. The gateway deliberately does not
 expose backup restore, dataset import, benchmark execution, or bulk archive
 operations.
 
+## Hosted Agent MCP Access
+
+The backend can expose the same curated gateway as stateless Streamable HTTP at
+`/mcp`. It is disabled by default. Follow
+[`mcp-agent-access.md`](../reference/mcp-agent-access.md) to configure the exact
+public staging URL, create a one-time bearer credential from the protected app
+surface, and add the URL plus `bearer_token_env_var` to Codex.
+
+For the current rollout, configure staging only. Keep production
+`POKER_MCP_ENABLED=false` until production read access is explicitly approved.
+Staging writes require `POKER_MCP_ALLOW_WRITES=true` as well as a credential
+with write scope. Production configuration rejects that write flag.
+
+The Cloudflare Worker proxies the exact `/mcp` path as well as `/api/*` and
+preserves the caller's bearer header. If the MCP public URL is the Worker URL,
+the existing `API_PROXY_SECRET`/`POKER_PROXY_SHARED_SECRET` pair also signs the
+forwarded public host. If Codex connects to the public backend origin directly,
+set `POKER_MCP_PUBLIC_URL` to that exact origin instead.
+
 ## Runtime Error Monitoring
 
 Error reporting is optional and disabled when its DSN is blank. To enable

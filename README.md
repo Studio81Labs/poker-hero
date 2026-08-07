@@ -104,6 +104,12 @@ The main provider switches are:
 - `POKER_CORS_ORIGINS`: JSON list of direct browser origins
 - `POKER_PROXY_SHARED_SECRET`: optional Worker-to-backend credential, at least
   32 characters; leave empty for local development
+- `POKER_MCP_ENABLED` and `POKER_MCP_PUBLIC_URL`: hosted MCP kill switch and
+  exact public HTTPS `/mcp` endpoint; hosted access defaults off
+- `POKER_MCP_ALLOW_WRITES`: staging-only server write gate, independent of
+  credential scope and Codex client approval
+- `POKER_MCP_ALLOWED_ORIGINS` and `POKER_MCP_*_CALLS_PER_MINUTE`: exact browser
+  origins and per-principal hosted read/write limits
 - `POKER_SENTRY_DSN`: optional HTTPS Sentry DSN for scrubbed unhandled backend
   exception reports; leave empty to disable
 - `POKER_SENTRY_ENVIRONMENT`, `POKER_SENTRY_RELEASE`, and
@@ -120,11 +126,12 @@ use HTTPS. Keep deployed token values in Coolify secrets.
 
 ### Agent MCP Gateway
 
-Poker Hero includes a curated local MCP gateway for post-hand training agents.
-It calls the same FastAPI contract as the browser, so parser evidence, explicit
-approval, provider routing, rate limits, request IDs, and persisted job state
-remain authoritative. The gateway runs over `stdio`; it never reads providers
-or the data directory directly.
+Poker Hero includes a curated MCP gateway for post-hand training agents. It can
+run locally over stdio or be hosted by the deployed backend over authenticated
+Streamable HTTP. It calls the same FastAPI contract as the browser, so parser
+evidence, explicit approval, provider routing, rate limits, request IDs, and
+persisted job state remain authoritative. It never reads providers or poker
+stores directly.
 
 Create a separate client configuration for each environment using
 [apps/backend/mcp.env.example](./apps/backend/mcp.env.example). Every process
@@ -152,6 +159,24 @@ Cloudflare Access service credentials are the preferred authentication path
 through a protected Worker. `POKER_MCP_API_PROXY_SECRET` exists only for a
 trusted gateway deployment that calls the backend directly; do not give the
 Worker-to-backend shared secret to an untrusted agent.
+
+For the Nexcue-style hosted workflow, enable the staging route with
+`POKER_MCP_ENABLED=true` and an exact HTTPS `POKER_MCP_PUBLIC_URL` ending in
+`/mcp`. Create an environment-bound credential from **About → Agent access**,
+store the one-time token in an environment variable, and configure Codex:
+
+```toml
+[mcp_servers.poker_staging]
+url = "https://<staging-agent-origin>/mcp"
+bearer_token_env_var = "POKER_MCP_STAGING_TOKEN"
+default_tools_approval_mode = "writes"
+```
+
+Hosted credentials are stored only as hashes and can be rotated or revoked.
+The hosted endpoint omits local screenshot submission; upload the hand in the
+app first. See
+[`docs/reference/mcp-agent-access.md`](./docs/reference/mcp-agent-access.md)
+for rollout and incident steps.
 
 ### Local Solver Engines
 

@@ -8,6 +8,10 @@ import type {
   JobHistory,
   JobQueue,
   JobRecord,
+  McpAccessConfig,
+  McpIssuedPrincipal,
+  McpPrincipal,
+  McpScope,
   RecommendationAction,
   SystemInfo,
   TrainingCertainty,
@@ -107,6 +111,55 @@ export async function getSystemInfo(): Promise<SystemInfo> {
     credentials: "include",
   });
   return readJson<SystemInfo>(response);
+}
+
+export async function getMcpAccessConfig(): Promise<McpAccessConfig> {
+  const response = await fetch(`${API_BASE_URL}/api/mcp/config`, {
+    credentials: "include",
+  });
+  return readJson<McpAccessConfig>(response);
+}
+
+export async function listMcpPrincipals(): Promise<McpPrincipal[]> {
+  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+    credentials: "include",
+  });
+  const payload = await readJson<{ principals: McpPrincipal[] }>(response);
+  return payload.principals;
+}
+
+export async function createMcpPrincipal(input: {
+  name: string;
+  scopes: McpScope[];
+  expires_at: string | null;
+}): Promise<McpIssuedPrincipal> {
+  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+    credentials: "include",
+  });
+  return readJson<McpIssuedPrincipal>(response);
+}
+
+export async function rotateMcpPrincipal(
+  principalId: string,
+): Promise<McpIssuedPrincipal> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}/rotate`,
+    { method: "POST", credentials: "include" },
+  );
+  return readJson<McpIssuedPrincipal>(response);
+}
+
+export async function revokeMcpPrincipal(
+  principalId: string,
+): Promise<McpPrincipal> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  return readJson<McpPrincipal>(response);
 }
 
 export async function getJob(jobId: string): Promise<JobRecord> {

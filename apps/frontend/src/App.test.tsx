@@ -4026,6 +4026,13 @@ describe("App", () => {
       name: "About Poker Training Analyzer",
     });
     await user.type(
+      await within(dialog).findByLabelText("Agent access admin token"),
+      "admin-secret",
+    );
+    await user.click(within(dialog).getByRole("button", {
+      name: "Unlock credential management",
+    }));
+    await user.type(
       await within(dialog).findByLabelText("Credential name"),
       "Codex staging",
     );

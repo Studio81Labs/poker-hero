@@ -162,8 +162,9 @@ Worker-to-backend shared secret to an untrusted agent.
 
 For the Nexcue-style hosted workflow, enable the staging route with
 `POKER_MCP_ENABLED=true` and an exact HTTPS `POKER_MCP_PUBLIC_URL` ending in
-`/mcp`. Create an environment-bound credential from **About → Agent access**,
-store the one-time token in an environment variable, and configure Codex:
+`/mcp`. Configure the deployment's separate `MCP_ADMIN_TOKEN`, unlock
+**About → Agent access** with it, create an environment-bound credential, store
+the one-time token in an environment variable, and configure Codex:
 
 ```toml
 [mcp_servers.poker_staging]
@@ -538,6 +539,9 @@ Each `staging` and `production` GitHub environment requires:
 - `COOLIFY_BACKEND_UUID`, the environment's Coolify application
 - `APP_WORKER_NAME`, distinct between environments
 - `API_PROXY_SECRET`, matching that backend's `POKER_PROXY_SHARED_SECRET`
+
+Staging, and any other environment before enabling hosted MCP, also requires
+`MCP_ADMIN_TOKEN`, the separate operator bearer for principal management.
 
 For a deployed backend, set the same random value in the Cloudflare
 `API_PROXY_SECRET` secret and Coolify `POKER_PROXY_SHARED_SECRET` environment

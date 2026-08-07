@@ -6,6 +6,7 @@ import {
   archiveJobs,
   getBenchmarkDatasetImport,
   getHistory,
+  listMcpPrincipals,
   getProcessingJobs,
   requestRecommendation,
   restoreApplicationBackup,
@@ -81,6 +82,22 @@ describe("application backups", () => {
     const request = fetchMock.mock.calls[0][1];
     expect(request.body).toBeInstanceOf(FormData);
     expect((request.body as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("MCP administration", () => {
+  it("always sends the operator bearer to the same-origin Worker", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      principals: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listMcpPrincipals("admin-secret");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/mcp/principals", {
+      headers: { Authorization: "Bearer admin-secret" },
+      credentials: "include",
+    });
   });
 });
 

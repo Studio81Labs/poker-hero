@@ -1,4 +1,5 @@
 from functools import lru_cache
+from ipaddress import AddressValueError, IPv6Address
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import SplitResult, urlsplit
@@ -24,7 +25,10 @@ def normalize_https_authority(parsed_url: SplitResult) -> str:
         raise ValueError("URL port is invalid") from exc
     hostname = parsed_url.hostname
     if ":" in hostname:
-        authority = f"[{hostname.casefold()}]"
+        try:
+            authority = f"[{IPv6Address(hostname).compressed}]"
+        except AddressValueError as exc:
+            raise ValueError("URL hostname is invalid") from exc
     else:
         try:
             authority = idna.encode(

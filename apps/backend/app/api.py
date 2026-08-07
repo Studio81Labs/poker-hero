@@ -474,6 +474,9 @@ class DataMutationLockMiddleware:
 
         method = scope.get("method", "").upper()
         path = scope.get("path", "")
+        if path == "/mcp":
+            await self.app(scope, receive, send)
+            return
         mutating_get = method == "GET" and path.startswith(
             self.MUTATING_GET_PATH_PREFIXES
         )

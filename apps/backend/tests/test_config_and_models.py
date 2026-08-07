@@ -251,6 +251,15 @@ def test_settings_validate_hosted_mcp_configuration() -> None:
     assert settings.mcp_public_url == "https://xn--fa-hia.example/mcp"
     assert settings.mcp_allowed_origins == ["https://xn--fa-hia.example"]
 
+    ipv6 = Settings(
+        deployment_environment="staging",
+        mcp_enabled=True,
+        mcp_public_url="https://[2001:0db8:0:0:0:0:0:1]:443/mcp",
+        mcp_allowed_origins=["https://[2001:0db8:0:0:0:0:0:1]:443"],
+    )
+    assert ipv6.mcp_public_url == "https://[2001:db8::1]/mcp"
+    assert ipv6.mcp_allowed_origins == ["https://[2001:db8::1]"]
+
     non_default_port = Settings(
         deployment_environment="staging",
         mcp_enabled=True,

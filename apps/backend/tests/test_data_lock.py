@@ -117,6 +117,32 @@ def test_get_triggered_import_resume_joins_active_mutations(
     assert snapshot_acquired.is_set()
 
 
+def test_mcp_transport_does_not_join_data_mutations(tmp_path: Path) -> None:
+    request_entered = False
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        nonlocal request_entered
+        request_entered = True
+
+    data_lock = InterprocessDataLock(tmp_path)
+    middleware = DataMutationLockMiddleware(app, data_lock)
+
+    async def unexpected_acquire(*, exclusive: bool) -> int:
+        raise AssertionError("MCP transport must not acquire the data lock")
+
+    data_lock.acquire_async = unexpected_acquire  # type: ignore[method-assign]
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        pass
+
+    asyncio.run(middleware(_request_scope("POST", "/mcp"), receive, send))
+
+    assert request_entered is True
+
+
 def test_cancelled_async_wait_releases_eventual_lock(tmp_path: Path) -> None:
     blocker = InterprocessDataLock(tmp_path)
     waiter = InterprocessDataLock(tmp_path)

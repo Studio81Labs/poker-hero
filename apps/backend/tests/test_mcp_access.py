@@ -196,6 +196,38 @@ def test_hosted_mcp_requires_an_environment_token(tmp_path: Path) -> None:
         assert denied.status_code == 401
 
 
+def test_hosted_mcp_accepts_worker_canonical_ipv6_authority(
+    tmp_path: Path,
+) -> None:
+    proxy_secret = "worker-to-backend-secret-value-123"
+    settings = Settings(
+        data_dir=tmp_path,
+        deployment_environment="staging",
+        mcp_enabled=True,
+        mcp_public_url="https://[2001:0db8:0:0:0:0:0:1]/mcp",
+        proxy_shared_secret=proxy_secret,
+        api_rate_limit_enabled=False,
+    )
+    with TestClient(create_app(settings), base_url="https://backend.test") as client:
+        token = client.post(
+            "/api/mcp/principals",
+            headers={"X-Poker-Proxy-Secret": proxy_secret},
+            json={"name": "IPv6 Codex", "scopes": ["read"], "expires_at": None},
+        ).json()["token"]
+        initialized = client.post(
+            "/mcp",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json, text/event-stream",
+                "X-Poker-MCP-Public-Host": "[2001:db8::1]",
+                "X-Poker-Proxy-Secret": proxy_secret,
+            },
+            json=_initialize_request(),
+        )
+
+        assert initialized.status_code == 200
+
+
 def test_hosted_mcp_requires_scope_and_omits_local_upload(tmp_path: Path) -> None:
     settings = Settings(
         data_dir=tmp_path,

@@ -24,6 +24,7 @@ export function McpAccessPanel() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tokenPending = issued !== null;
 
   useEffect(() => {
     let active = true;
@@ -198,7 +199,7 @@ export function McpAccessPanel() {
         <button
           type="button"
           className="secondary-button"
-          disabled={busyId !== null}
+          disabled={busyId !== null || tokenPending}
           onClick={() => void createPrincipal()}
         >
           {busyId === "create" ? "Creating..." : "Create credential"}
@@ -232,7 +233,7 @@ export function McpAccessPanel() {
                   <button
                     type="button"
                     className="secondary-button"
-                    disabled={busyId !== null}
+                    disabled={busyId !== null || tokenPending}
                     onClick={() => void rotate(principal)}
                   >
                     Rotate

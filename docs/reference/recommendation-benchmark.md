@@ -16,6 +16,8 @@ pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --minimum-line-coverage 0.90 \
   --minimum-policy-coverage 0.90 \
   --minimum-ev-coverage 0.90 \
+  --minimum-conditioning-accuracy 1.00 \
+  --minimum-conditioning-coverage 1.00 \
   --maximum-policy-distance 0.15 \
   --maximum-ev-loss 0.05 \
   --maximum-fallback-rate 0.20
@@ -30,8 +32,8 @@ status `2` when the corpus or provider configuration is invalid.
 ```json
 {
   "schema": "poker-hero-recommendation-benchmark",
-  "schema_version": 2,
-  "name": "Reviewed heads-up flop sample",
+  "schema_version": 3,
+  "name": "Reviewed heads-up turn sample",
   "reference_source": {
     "name": "Independent solver export",
     "version": "2026.08",
@@ -41,9 +43,10 @@ status `2` when the corpus or provider configuration is invalid.
   "minimum_policy_frequency": 0.05,
   "cases": [
     {
-      "id": "btn-vs-bb-flop-001",
-      "description": "Button checks or bets half pot on a dry flop",
-      "tags": ["single-raised-pot", "in-position", "checked-to"],
+      "id": "btn-vs-bb-turn-001",
+      "description": "Button checks or bets half pot after a checked flop",
+      "tags": ["single-raised-pot", "in-position", "range-conditioning"],
+      "expected_range_conditioning": "applied",
       "state": {
         "hero_cards": [
           { "rank": "A", "suit": "hearts" },
@@ -52,19 +55,34 @@ status `2` when the corpus or provider configuration is invalid.
         "board_cards": [
           { "rank": "Q", "suit": "spades" },
           { "rank": "7", "suit": "clubs" },
-          { "rank": "2", "suit": "hearts" }
+          { "rank": "2", "suit": "hearts" },
+          { "rank": "4", "suit": "diamonds" }
         ],
-        "pot_size": 10.0,
+        "pot_size": 5.5,
         "current_bet": 0.0,
-        "hero_stack": 95.0,
-        "effective_stack": 95.0,
+        "hero_stack": 97.5,
+        "opponent_stack": 97.5,
+        "effective_stack": 97.5,
         "players_in_hand": 2,
         "hero_position": "button",
         "opponent_position": "big_blind",
-        "preflop_opener_position": null,
-        "preflop_open_size": null,
-        "street": "flop",
+        "preflop_opener_position": "button",
+        "preflop_open_size": 2.5,
+        "preflop_action_history": [
+          { "actor": "button", "action": "raise", "amount": 2.5 },
+          { "actor": "big_blind", "action": "call", "amount": 2.5 }
+        ],
+        "street": "turn",
         "facing_action": null,
+        "completed_postflop_streets": [
+          {
+            "street": "flop",
+            "actions": [
+              { "actor": "oop", "action": "check", "amount": null },
+              { "actor": "ip", "action": "check", "amount": null }
+            ]
+          }
+        ],
         "action_context": "Checked to hero",
         "user_approved": true
       },
@@ -93,8 +111,9 @@ The values above illustrate the file shape and are not strategy claims.
 
 - Reference frequencies are strict finite JSON numbers and sum to `1.0` per case.
 - `reference_source` records the independent solver or reviewed strategy source.
-  Version-1 corpora without provenance or tags remain readable; new corpora use
-  version 2. Use `--require-reference-source` for trusted regression runs.
+  Version-1 corpora without provenance or tags and version-2 corpora without
+  range-conditioning expectations remain readable; new corpora use version 3.
+  Use `--require-reference-source` for trusted regression runs.
 - Lowercase case tags classify scenarios such as `single-raised-pot` and
   `facing-bet`. Reports include deterministic street and tag breakdowns; a case
   may contribute to more than one tag.
@@ -114,6 +133,11 @@ The values above illustrate the file shape and are not strategy claims.
 - A provider exception or missing required canonical field fails only that case.
 - A non-empty `raw.fallback_reason` counts toward fallback rate;
   `routing_reason` does not.
+- Turn and river cases may declare `expected_range_conditioning` as `applied` or
+  `skipped`. The benchmark compares it with
+  `raw.range_conditioning.status`; an absent or malformed status lowers evidence
+  coverage, while a recognized wrong status lowers agreement. The conditioning
+  accuracy and coverage thresholds make both regressions fail explicitly.
 - Line, policy, and EV coverage report how many completed cases supplied enough
   evidence for each optional metric. Their minimum thresholds prevent missing
   sizes, frequencies, or EV labels from making a partial result look healthy.

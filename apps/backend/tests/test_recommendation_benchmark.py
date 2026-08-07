@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
@@ -87,6 +88,7 @@ def benchmark_case(
     lines: list[RecommendationReferenceLine],
     *,
     tags: list[str] | None = None,
+    expected_range_conditioning: Literal["applied", "skipped"] | None = None,
     **state_overrides: object,
 ) -> RecommendationBenchmarkCase:
     return RecommendationBenchmarkCase(
@@ -94,6 +96,7 @@ def benchmark_case(
         description=f"Reference case {case_id}",
         tags=tags or [],
         state=benchmark_state(**state_overrides),
+        expected_range_conditioning=expected_range_conditioning,
         reference_lines=lines,
     )
 
@@ -120,12 +123,15 @@ def recommendation(
     sizing: float | None = None,
     candidates: list[dict[str, object]] | None = None,
     fallback_reason: str | None = None,
+    range_conditioning: object | None = None,
 ) -> RecommendationResult:
     raw: dict[str, object] = {"engine": "reference_test_v1"}
     if candidates is not None:
         raw["candidates"] = candidates
     if fallback_reason is not None:
         raw["fallback_reason"] = fallback_reason
+    if range_conditioning is not None:
+        raw["range_conditioning"] = range_conditioning
     return RecommendationResult.model_validate(
         {
             "action": action,
@@ -777,6 +783,137 @@ def test_report_exposes_provenance_coverage_and_scenario_breakdowns() -> None:
     assert "Tag breakdown:" in formatted
 
 
+def test_report_scores_expected_range_conditioning_evidence() -> None:
+    turn_state = {
+        "street": "turn",
+        "board_cards": [
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+            Card.from_code("4d"),
+        ],
+    }
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "conditioning-applied",
+                [reference_line("check")],
+                tags=["range-conditioning"],
+                expected_range_conditioning="applied",
+                **turn_state,
+            ),
+            benchmark_case(
+                "conditioning-wrong-status",
+                [reference_line("check")],
+                tags=["range-conditioning"],
+                expected_range_conditioning="applied",
+                **turn_state,
+            ),
+            benchmark_case(
+                "conditioning-missing",
+                [reference_line("check")],
+                tags=["range-conditioning"],
+                expected_range_conditioning="skipped",
+                **turn_state,
+            ),
+            benchmark_case(
+                "conditioning-padded-status",
+                [reference_line("check")],
+                tags=["range-conditioning"],
+                expected_range_conditioning="applied",
+                **turn_state,
+            ),
+            benchmark_case(
+                "conditioning-not-expected",
+                [reference_line("check")],
+                **turn_state,
+            ),
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation(
+                "check",
+                range_conditioning={"status": "applied"},
+            ),
+            recommendation(
+                "check",
+                range_conditioning={"status": "skipped"},
+            ),
+            recommendation("check"),
+            recommendation(
+                "check",
+                range_conditioning={"status": " applied "},
+            ),
+            recommendation(
+                "check",
+                range_conditioning={"status": "pending"},
+            ),
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.conditioning_expected_cases == 4
+    assert report.conditioning_evaluated_cases == 2
+    assert report.conditioning_correct_cases == 1
+    assert report.conditioning_accuracy == 0.5
+    assert report.conditioning_coverage == 0.5
+    assert report.cases[0].range_conditioning_status == "applied"
+    assert report.cases[0].range_conditioning_match is True
+    assert report.cases[1].range_conditioning_status == "skipped"
+    assert report.cases[1].range_conditioning_match is False
+    assert report.cases[2].range_conditioning_status is None
+    assert report.cases[2].range_conditioning_match is None
+    assert report.cases[3].range_conditioning_status is None
+    assert report.cases[3].range_conditioning_match is None
+    assert report.cases[4].range_conditioning_status is None
+    assert report.street_metrics[0].conditioning_accuracy == 0.5
+    assert report.tag_metrics[0].conditioning_coverage == 0.5
+    formatted = format_recommendation_benchmark_report(report)
+    assert "Range conditioning agreement: 1/2 (50.0%)" in formatted
+    assert "Range conditioning evidence coverage: 2/4 (50.0%)" in formatted
+    assert "conditioning-wrong-status: mismatched range conditioning" in formatted
+    assert (
+        "conditioning-missing: mismatched range conditioning"
+        " (expected skipped, not reported)"
+    ) in formatted
+    assert (
+        "conditioning-padded-status: mismatched range conditioning"
+        " (expected applied, not reported)"
+    ) in formatted
+
+
+def test_conditioning_coverage_includes_failed_expected_cases() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "conditioning-provider-failure",
+                [reference_line("check")],
+                expected_range_conditioning="applied",
+                street="turn",
+                board_cards=[
+                    Card.from_code("Qs"),
+                    Card.from_code("Jc"),
+                    Card.from_code("2h"),
+                    Card.from_code("4d"),
+                ],
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(
+        dataset,
+        SequenceProvider([RuntimeError("solver unavailable")]),
+    )
+
+    assert report.failed_cases == 1
+    assert report.conditioning_expected_cases == 1
+    assert report.conditioning_evaluated_cases == 0
+    assert report.conditioning_accuracy is None
+    assert report.conditioning_coverage == 0
+
+
 def test_action_only_wager_reference_skips_line_accuracy() -> None:
     dataset = benchmark_dataset(
         [
@@ -994,6 +1131,8 @@ def test_missing_street_is_visible_in_unknown_breakdown() -> None:
         "ambiguous_sizing",
         "duplicate_tag",
         "invalid_tag",
+        "invalid_conditioning_status",
+        "flop_conditioning_expectation",
         "extra_reference_source_field",
         "extra_state_field",
     ],
@@ -1042,6 +1181,10 @@ def test_recommendation_benchmark_dataset_rejects_invalid_schema(
         payload["cases"][0]["tags"] = ["facing-bet", "facing-bet"]
     elif mutation == "invalid_tag":
         payload["cases"][0]["tags"] = ["Facing bet"]
+    elif mutation == "invalid_conditioning_status":
+        payload["cases"][0]["expected_range_conditioning"] = "pending"
+    elif mutation == "flop_conditioning_expectation":
+        payload["cases"][0]["expected_range_conditioning"] = "applied"
     elif mutation == "extra_reference_source_field":
         payload["reference_source"] = {
             "name": "Independent Solver",
@@ -1082,6 +1225,49 @@ def test_loader_accepts_legacy_version_one_corpus(tmp_path: Path) -> None:
     assert dataset.schema_version == 1
     assert dataset.reference_source is None
     assert dataset.cases[0].tags == []
+
+
+def test_loader_accepts_version_two_corpus_without_conditioning(
+    tmp_path: Path,
+) -> None:
+    payload = benchmark_dataset(
+        [benchmark_case("version-two-check", [reference_line("check")])]
+    ).model_dump(mode="json", by_alias=True)
+    payload["schema_version"] = 2
+    path = tmp_path / "version-two.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    dataset = load_recommendation_benchmark_dataset(path)
+
+    assert dataset.schema_version == 2
+    assert dataset.cases[0].expected_range_conditioning is None
+
+
+def test_loader_rejects_conditioning_expectation_in_version_two(
+    tmp_path: Path,
+) -> None:
+    payload = benchmark_dataset(
+        [
+            benchmark_case(
+                "version-two-turn",
+                [reference_line("check")],
+                expected_range_conditioning="applied",
+                street="turn",
+                board_cards=[
+                    Card.from_code("Qs"),
+                    Card.from_code("Jc"),
+                    Card.from_code("2h"),
+                    Card.from_code("4d"),
+                ],
+            )
+        ]
+    ).model_dump(mode="json", by_alias=True)
+    payload["schema_version"] = 2
+    path = tmp_path / "invalid-version-two.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RecommendationBenchmarkError, match="schema version 3"):
+        load_recommendation_benchmark_dataset(path)
 
 
 def test_recommendation_benchmark_cli_emits_json_and_enforces_thresholds(
@@ -1219,6 +1405,75 @@ def test_cli_enforces_reference_source_and_evaluation_coverage(
     assert "EV evaluation coverage 0.0% is below the minimum 100.0%" in captured.err
 
 
+def test_cli_enforces_range_conditioning_accuracy_and_coverage(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    turn_state = {
+        "street": "turn",
+        "board_cards": [
+            Card.from_code("Qs"),
+            Card.from_code("Jc"),
+            Card.from_code("2h"),
+            Card.from_code("4d"),
+        ],
+    }
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [
+                benchmark_case(
+                    "conditioning-applied",
+                    [reference_line("check")],
+                    expected_range_conditioning="applied",
+                    **turn_state,
+                ),
+                benchmark_case(
+                    "conditioning-wrong",
+                    [reference_line("check")],
+                    expected_range_conditioning="applied",
+                    **turn_state,
+                ),
+                benchmark_case(
+                    "conditioning-missing",
+                    [reference_line("check")],
+                    expected_range_conditioning="skipped",
+                    **turn_state,
+                ),
+            ]
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--minimum-conditioning-accuracy",
+            "1",
+            "--minimum-conditioning-coverage",
+            "1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider(
+            [
+                recommendation("check", range_conditioning={"status": "applied"}),
+                recommendation("check", range_conditioning={"status": "skipped"}),
+                recommendation("check"),
+            ]
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert (
+        "Range conditioning agreement 50.0% is below the minimum 100.0%"
+        in captured.err
+    )
+    assert (
+        "Range conditioning evidence coverage 66.7% is below the minimum 100.0%"
+        in captured.err
+    )
+
+
 def test_cli_fails_when_a_required_optional_metric_is_unavailable(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1244,6 +1499,37 @@ def test_cli_fails_when_a_required_optional_metric_is_unavailable(
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "Line accuracy was not evaluated" in captured.err
+
+
+def test_cli_fails_when_range_conditioning_is_not_expected(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("action-only", [reference_line("check")])]
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--minimum-conditioning-accuracy",
+            "0",
+            "--minimum-conditioning-coverage",
+            "0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Range conditioning agreement was not evaluated" in captured.err
+    assert (
+        "Range conditioning evidence coverage was not evaluated" in captured.err
+    )
 
 
 def test_cli_reports_unknown_provider_as_configuration_error(

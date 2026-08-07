@@ -13,6 +13,7 @@ from app.models import (
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import select_postflop_ranges
 from app.solvers.preflop_chart import (
+    COLD_THREE_BET_DEFENSE_POLICIES,
     FOUR_BET_DEFENSE_POLICIES,
     THREE_BET_DEFENSE_POLICIES,
     hand_classes_in_policy_band,
@@ -49,6 +50,27 @@ def three_bet_pot_state(*, hero_position: str = "button") -> CanonicalState:
         preflop_action_history=[
             PreflopAction(actor="button", action="raise", amount=2.5),
             PreflopAction(actor="big_blind", action="raise", amount=8.0),
+            PreflopAction(actor="button", action="call", amount=8.0),
+        ],
+    )
+
+
+def cold_three_bet_pot_state(
+    *,
+    hero_position: str = "button",
+) -> CanonicalState:
+    opponent_position = "cutoff" if hero_position == "button" else "button"
+    return CanonicalState(
+        players_in_hand=2,
+        hero_position=hero_position,
+        opponent_position=opponent_position,
+        street="flop",
+        pot_size=20.0,
+        current_bet=0,
+        effective_stack=92.0,
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="cutoff", action="raise", amount=8.0),
             PreflopAction(actor="button", action="call", amount=8.0),
         ],
     )
@@ -376,6 +398,159 @@ def test_supports_every_charted_three_bet_matchup(
     assert select(state).source == "preflop_chart_three_bet_pot"
 
 
+def test_selects_chart_ranges_for_heads_up_cold_three_bet_pot() -> None:
+    selection = select(cold_three_bet_pot_state())
+
+    assert selection.source == "preflop_chart_cold_three_bet_pot"
+    assert selection.context == {
+        "scenario": "cold_three_bet_pot",
+        "folded_opener_position": "utg",
+        "folded_opener_commitment_bb": 2.5,
+        "three_bettor_position": "cutoff",
+        "cold_caller_position": "button",
+        "opening_size_bb": 2.5,
+        "three_bet_size_bb": 8.0,
+        "open_size_policy": "standard",
+        "three_bet_size_policy": "standard",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
+        "three_bettor_base_fraction": 0.05,
+        "three_bettor_fraction": 0.05,
+        "cold_caller_base_continue_fraction": 0.05,
+        "cold_caller_base_four_bet_fraction": 0.02,
+        "cold_caller_continue_fraction": 0.05,
+        "cold_caller_four_bet_fraction": 0.02,
+        "cold_three_bet_policy": "conservative_three_player",
+    }
+    assert "AA" in selection.oop_range.split(",")
+    assert "AA" not in selection.ip_range.split(",")
+    assert selection.ip_range != DEFAULT_POSTFLOP_IP_RANGE
+    assert selection.oop_range != DEFAULT_POSTFLOP_OOP_RANGE
+
+
+def test_assigns_cold_three_bet_ranges_by_relative_position() -> None:
+    caller_hero = select(cold_three_bet_pot_state(hero_position="button"))
+    three_bettor_hero = select_postflop_ranges(
+        cold_three_bet_pot_state(hero_position="cutoff"),
+        hero_relative_position="oop",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert caller_hero.ip_range == three_bettor_hero.ip_range
+    assert caller_hero.oop_range == three_bettor_hero.oop_range
+
+
+@pytest.mark.parametrize(
+    ("folded_opener", "three_bettor", "cold_caller"),
+    sorted(COLD_THREE_BET_DEFENSE_POLICIES),
+)
+def test_supports_every_charted_cold_three_bet_matchup(
+    folded_opener: Position,
+    three_bettor: Position,
+    cold_caller: Position,
+) -> None:
+    opening_size = 2.5
+    final_commitment = 8.0
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position=cold_caller,
+        opponent_position=three_bettor,
+        street="flop",
+        pot_size=(
+            1.5
+            + opening_size
+            - POSTED_BLIND_BB[folded_opener]
+            + final_commitment
+            - POSTED_BLIND_BB[three_bettor]
+            + final_commitment
+            - POSTED_BLIND_BB[cold_caller]
+        ),
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(
+                actor=folded_opener,
+                action="raise",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=three_bettor,
+                action="raise",
+                amount=final_commitment,
+            ),
+            PreflopAction(
+                actor=cold_caller,
+                action="call",
+                amount=final_commitment,
+            ),
+        ],
+    )
+
+    assert select(state).source == "preflop_chart_cold_three_bet_pot"
+
+
+def test_selects_cold_three_bet_ranges_on_turn_after_completed_flop() -> None:
+    state = cold_three_bet_pot_state()
+    state.street = "turn"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_cold_three_bet_pot"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_keeps_configured_ranges_for_contradictory_cold_three_bet_history() -> None:
+    state = cold_three_bet_pot_state()
+    state.players_in_hand = 3
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.opponent_position = "utg"
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_action_history[2].amount = 7.5
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_action_history[2].actor = "cutoff"
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_action_history[0].actor = "button"
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_action_history[1].amount = 13.0
+    state.preflop_action_history[2].amount = 13.0
+    state.pot_size = 30.0
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.pot_size = 17.5
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_opener_position = "hijack"
+    assert select(state).source == "configured"
+
+    state = cold_three_bet_pot_state()
+    state.preflop_open_size = 3.0
+    assert select(state).source == "configured"
+
+
 def test_selects_chart_ranges_for_heads_up_four_bet_pot() -> None:
     selection = select(four_bet_pot_state())
 
@@ -546,6 +721,30 @@ def test_three_bet_size_adjusts_the_opener_call_band() -> None:
     assert large_selection.context["three_bet_size_policy"] == "very_large"
     assert large_selection.context["opener_continue_fraction"] == 0.144
     assert large_selection.context["opener_four_bet_fraction"] == 0.0585
+    assert len(small_selection.ip_range.split(",")) > len(
+        large_selection.ip_range.split(",")
+    )
+
+
+def test_three_bet_size_adjusts_the_cold_caller_band() -> None:
+    small_three_bet = cold_three_bet_pot_state()
+    small_three_bet.preflop_action_history[1].amount = 6.5
+    small_three_bet.preflop_action_history[2].amount = 6.5
+    small_three_bet.pot_size = 17.0
+    large_three_bet = cold_three_bet_pot_state()
+    large_three_bet.preflop_action_history[1].amount = 12.0
+    large_three_bet.preflop_action_history[2].amount = 12.0
+    large_three_bet.pot_size = 28.0
+
+    small_selection = select(small_three_bet)
+    large_selection = select(large_three_bet)
+
+    assert small_selection.context["three_bet_size_policy"] == "small"
+    assert small_selection.context["cold_caller_continue_fraction"] == 0.0525
+    assert small_selection.context["cold_caller_four_bet_fraction"] == 0.021
+    assert large_selection.context["three_bet_size_policy"] == "very_large"
+    assert large_selection.context["cold_caller_continue_fraction"] == 0.04
+    assert large_selection.context["cold_caller_four_bet_fraction"] == 0.018
     assert len(small_selection.ip_range.split(",")) > len(
         large_selection.ip_range.split(",")
     )
@@ -786,6 +985,14 @@ def test_reconstructs_flop_root_from_current_street_wagers() -> None:
     three_bet_facing_bet.facing_action = "bet"
     assert select(three_bet_facing_bet).source == (
         "preflop_chart_three_bet_pot"
+    )
+
+    cold_three_bet_facing_bet = cold_three_bet_pot_state()
+    cold_three_bet_facing_bet.pot_size = 22.0
+    cold_three_bet_facing_bet.current_bet = 2.0
+    cold_three_bet_facing_bet.facing_action = "bet"
+    assert select(cold_three_bet_facing_bet).source == (
+        "preflop_chart_cold_three_bet_pot"
     )
 
     four_bet_facing_bet = four_bet_pot_state()

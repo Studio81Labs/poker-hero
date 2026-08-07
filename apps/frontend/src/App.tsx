@@ -377,6 +377,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
   preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
   preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
+  preflop_chart_cold_three_bet_pot: "Preflop chart · cold-call 3-bet pot",
   preflop_chart_four_bet_pot: "Preflop chart · 4-bet pot",
 };
 
@@ -1024,6 +1025,7 @@ function recommendationEvidenceFromRaw(
     const contextualRangeSource = (
       rawRangeSource === "preflop_chart_single_raised_pot"
       || rawRangeSource === "preflop_chart_three_bet_pot"
+      || rawRangeSource === "preflop_chart_cold_three_bet_pot"
       || rawRangeSource === "preflop_chart_four_bet_pot"
     );
     const rangeContext = contextualRangeSource
@@ -1136,6 +1138,59 @@ function recommendationEvidenceFromRaw(
           value: `3-bet ${formatEvidenceRatio(rangeThreeBettorFraction)} · flat ${
             formatEvidenceRatio(rangeOpenerFourBet)
           }-${formatEvidenceRatio(rangeOpenerContinue)}`,
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_cold_three_bet_pot") {
+      const rangeFoldedOpenerPosition = metadataLabel(
+        rangeContext?.folded_opener_position,
+      );
+      const rangeThreeBettorPosition = metadataLabel(rangeContext?.three_bettor_position);
+      const rangeColdCallerPosition = metadataLabel(rangeContext?.cold_caller_position);
+      const rangeOpeningSize = metadataNumber(rangeContext?.opening_size_bb);
+      const rangeThreeBetSize = metadataNumber(rangeContext?.three_bet_size_bb);
+      const rangeFoldedOpenerCommitment = metadataNumber(
+        rangeContext?.folded_opener_commitment_bb,
+      );
+      if (
+        rangeFoldedOpenerPosition
+        && rangeThreeBettorPosition
+        && rangeColdCallerPosition
+      ) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeFoldedOpenerPosition} opens${
+            rangeOpeningSize !== null && rangeOpeningSize > 0
+              ? ` ${formatEvidenceBb(rangeOpeningSize)}`
+              : ""
+          } · ${rangeThreeBettorPosition} 3-bets${
+            rangeThreeBetSize !== null && rangeThreeBetSize > 0
+              ? ` ${formatEvidenceBb(rangeThreeBetSize)}`
+              : ""
+          } · ${rangeColdCallerPosition} cold-calls · ${rangeFoldedOpenerPosition} folds${
+            rangeFoldedOpenerCommitment !== null && rangeFoldedOpenerCommitment > 0
+              ? ` ${formatEvidenceBb(rangeFoldedOpenerCommitment)} dead`
+              : ""
+          }`,
+        });
+      }
+      const rangeThreeBettorFraction = metadataRatio(rangeContext?.three_bettor_fraction);
+      const rangeColdCallerContinue = metadataRatio(
+        rangeContext?.cold_caller_continue_fraction,
+      );
+      const rangeColdCallerFourBet = metadataRatio(
+        rangeContext?.cold_caller_four_bet_fraction,
+      );
+      if (
+        rangeThreeBettorFraction !== null
+        && rangeColdCallerContinue !== null
+        && rangeColdCallerFourBet !== null
+        && rangeColdCallerFourBet < rangeColdCallerContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `3-bet ${formatEvidenceRatio(rangeThreeBettorFraction)} · cold-call ${
+            formatEvidenceRatio(rangeColdCallerFourBet)
+          }-${formatEvidenceRatio(rangeColdCallerContinue)}`,
         });
       }
     } else if (rawRangeSource === "preflop_chart_four_bet_pot") {

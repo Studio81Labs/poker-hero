@@ -258,6 +258,21 @@ def test_rejects_blind_limp_with_contradictory_relative_label() -> None:
     assert selection.source == "configured"
 
 
+def test_rejects_relative_label_that_contradicts_nonblind_limper() -> None:
+    state = limped_pot_state(limper_position="button")
+    state.opponent_position = "OOP"
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position="ip",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
+
+
 def test_selects_limped_ranges_on_turn_after_completed_flop() -> None:
     state = limped_pot_state()
     state.street = "turn"

@@ -786,27 +786,46 @@ def _limped_pot_participant_positions(
     expected_positions = {limper, "big_blind"}
     hero_position = normalize_position(state.hero_position)
     opponent_position = normalize_position(state.opponent_position)
+    participant_positions: tuple[Position, Position] | None = None
     if (
         hero_position in expected_positions
         and opponent_position in expected_positions
         and hero_position != opponent_position
     ):
-        return hero_position, opponent_position
+        participant_positions = hero_position, opponent_position
 
     hero_relative_label = _relative_position_label(state.hero_position)
     opponent_relative_label = _relative_position_label(state.opponent_position)
-    if hero_position in expected_positions and opponent_relative_label is not None:
+    if (
+        participant_positions is None
+        and hero_position in expected_positions
+        and opponent_relative_label is not None
+    ):
         inferred_hero_relative = (
             "oop" if opponent_relative_label == "ip" else "ip"
         )
         if inferred_hero_relative == hero_relative_position:
             opponent = limper if hero_position == "big_blind" else "big_blind"
-            return hero_position, opponent
-    if opponent_position in expected_positions and hero_relative_label is not None:
+            participant_positions = hero_position, opponent
+    if (
+        participant_positions is None
+        and opponent_position in expected_positions
+        and hero_relative_label is not None
+    ):
         if hero_relative_label == hero_relative_position:
             hero = limper if opponent_position == "big_blind" else "big_blind"
-            return hero, opponent_position
-    return None
+            participant_positions = hero, opponent_position
+    if participant_positions is None:
+        return None
+
+    resolved_hero_position, _ = participant_positions
+    if limper != "small_blind":
+        expected_hero_relative = (
+            "oop" if resolved_hero_position == "big_blind" else "ip"
+        )
+        if hero_relative_position != expected_hero_relative:
+            return None
+    return participant_positions
 
 
 def _relative_position_label(value: str | None) -> Literal["ip", "oop"] | None:

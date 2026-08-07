@@ -22,7 +22,13 @@ def normalize_https_authority(parsed_url: SplitResult) -> str:
     except ValueError as exc:
         raise ValueError("URL port is invalid") from exc
     hostname = parsed_url.hostname.casefold()
-    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if ":" in hostname:
+        authority = f"[{hostname}]"
+    else:
+        try:
+            authority = hostname.encode("idna").decode("ascii").casefold()
+        except UnicodeError as exc:
+            raise ValueError("URL hostname is invalid") from exc
     if port not in {None, 443}:
         authority = f"{authority}:{port}"
     return authority

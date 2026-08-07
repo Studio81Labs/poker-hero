@@ -657,8 +657,11 @@ policy, and EV evaluation coverage and groups the same metrics by street and
 optional scenario tags. The corpus may identify its independent reference
 source, version, and configuration. Human-readable and JSON output support
 optional regression thresholds for every aggregate and can require source
-provenance. The same provider registry and canonical request contract used by
-the application must be used by the benchmark.
+provenance. Version-3 turn and river cases may require `applied` or `skipped`
+range-conditioning evidence; the report measures both status agreement and
+evidence coverage so missing provider metadata cannot pass unnoticed. The same
+provider registry and canonical request contract used by the application must
+be used by the benchmark.
 
 ## Application Backup And Restore
 

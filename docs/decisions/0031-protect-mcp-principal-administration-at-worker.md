@@ -21,13 +21,17 @@ Each deployed Worker receives a high-entropy, environment-specific
 `MCP_ADMIN_TOKEN` secret. The Worker requires that bearer token on
 `/api/mcp/principals` and every descendant route. It compares SHA-256 digests,
 returns non-cacheable `401` responses for invalid credentials, and fails closed
-with `503` when the binding is missing.
+with `503` when the binding is missing or malformed. Deployment and runtime
+validation require at least 32 characters without whitespace or control
+characters, and deployment rejects reuse of `API_PROXY_SECRET`.
 
 After authorization, the Worker removes the operator `Authorization` header
 before proxying. The backend request is authenticated only by the existing
 `API_PROXY_SECRET`/`POKER_PROXY_SHARED_SECRET` pair. The frontend stores the
 admin token only in component memory after an explicit unlock; it is not
-persisted in browser storage or application state outside that control.
+persisted in browser storage or application state outside that control. Admin
+requests always use the same-origin Worker and ignore the general API base URL
+override so the bearer cannot be sent directly to FastAPI.
 
 The exact `/mcp` route remains distinct: it preserves the agent principal's
 bearer token and is explicitly included in Worker Static Assets routing. The

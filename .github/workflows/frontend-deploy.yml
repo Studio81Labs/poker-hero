@@ -136,6 +136,11 @@ jobs:
               console.error("::error::BACKEND_URL must use HTTPS when API_PROXY_SECRET is configured");
               process.exit(1);
             }
+            const adminToken = process.env.MCP_ADMIN_TOKEN;
+            if (adminToken && (adminToken.length < 32 || /[\s\x00-\x1f\x7f]/u.test(adminToken))) {
+              console.error("::error::MCP_ADMIN_TOKEN must contain at least 32 characters without whitespace or control characters");
+              process.exit(1);
+            }
           '
 
           SECRETS_FILE="${RUNNER_TEMP}/poker-worker-secrets.json"

@@ -8,7 +8,7 @@ export default {
       }
       const mcpAdminRequest = isMcpAdminRequest(url.pathname);
       if (mcpAdminRequest) {
-        if (!env.MCP_ADMIN_TOKEN) {
+        if (!isStrongMcpAdminToken(env.MCP_ADMIN_TOKEN)) {
           return privateJsonResponse(
             503,
             "Agent access administration is unavailable",
@@ -48,6 +48,14 @@ function isMcpAdminRequest(pathname) {
   return (
     pathname === "/api/mcp/principals" ||
     pathname.startsWith("/api/mcp/principals/")
+  );
+}
+
+function isStrongMcpAdminToken(token) {
+  return (
+    typeof token === "string" &&
+    token.length >= 32 &&
+    !/[\s\x00-\x1f\x7f]/u.test(token)
   );
 }
 

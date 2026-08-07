@@ -250,12 +250,14 @@ deployment concern and is excluded from portable application backups.
 The Worker protects `/api/mcp/principals` and all descendants with a dedicated
 per-environment `MCP_ADMIN_TOKEN`. The frontend asks an operator to unlock the
 credential-management controls and retains that secret only in component
-memory. After a constant-time digest comparison, the Worker strips the
-operator `Authorization` header and forwards the request using only its
-Worker-to-backend credential. This secret is separate from both the individual
-agent bearer credentials and `API_PROXY_SECRET`. Percent-encoded proxied paths
-are rejected before route classification so backend decoding cannot reinterpret
-an unprotected path as a principal-management route.
+memory. Those calls always use the same-origin Worker rather than the general
+API base URL override. After minimum-length and character validation plus a
+constant-time digest comparison, the Worker strips the operator `Authorization`
+header and forwards the request using only its Worker-to-backend credential.
+This secret is separate from both the individual agent bearer credentials and
+`API_PROXY_SECRET`; deployment rejects equal values. Percent-encoded proxied
+paths are rejected before route classification so backend decoding cannot
+reinterpret an unprotected path as a principal-management route.
 
 The local gateway may authenticate through Cloudflare Access service headers
 or—in a trusted server deployment only—the private Worker-to-backend shared

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import worker from "./worker.js";
 
+const MCP_ADMIN_TOKEN = "admin-secret-with-at-least-32-characters";
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -23,7 +25,7 @@ describe("API Worker proxy", () => {
           ASSETS: { fetch: vi.fn() },
           API_PROXY_SECRET: "trusted-worker-value",
           BACKEND_URL: "https://backend.example",
-          MCP_ADMIN_TOKEN: "admin-secret",
+          MCP_ADMIN_TOKEN,
         },
       );
 
@@ -43,7 +45,7 @@ describe("API Worker proxy", () => {
         ASSETS: { fetch: vi.fn() },
         API_PROXY_SECRET: "trusted-worker-value",
         BACKEND_URL: "https://backend.example",
-        MCP_ADMIN_TOKEN: "admin-secret",
+        MCP_ADMIN_TOKEN,
       },
     );
 
@@ -65,7 +67,7 @@ describe("API Worker proxy", () => {
         ASSETS: { fetch: vi.fn() },
         API_PROXY_SECRET: "trusted-worker-value",
         BACKEND_URL: "https://backend.example",
-        MCP_ADMIN_TOKEN: "admin-secret",
+        MCP_ADMIN_TOKEN,
       },
     );
 
@@ -91,6 +93,26 @@ describe("API Worker proxy", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("fails closed when the MCP administration secret is weak or malformed", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const token of ["short", `${"a".repeat(32)}\n`]) {
+      const response = await worker.fetch(
+        new Request("https://poker.example/api/mcp/principals"),
+        {
+          ASSETS: { fetch: vi.fn() },
+          API_PROXY_SECRET: "trusted-worker-value",
+          BACKEND_URL: "https://backend.example",
+          MCP_ADMIN_TOKEN: token,
+        },
+      );
+
+      expect(response.status).toBe(503);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("authorizes MCP administration without forwarding the admin token", async () => {
     let forwardedRequest;
     vi.stubGlobal(
@@ -103,13 +125,13 @@ describe("API Worker proxy", () => {
 
     const response = await worker.fetch(
       new Request("https://poker.example/api/mcp/principals", {
-        headers: { Authorization: "Bearer admin-secret" },
+        headers: { Authorization: `Bearer ${MCP_ADMIN_TOKEN}` },
       }),
       {
         ASSETS: { fetch: vi.fn() },
         API_PROXY_SECRET: "trusted-worker-value",
         BACKEND_URL: "https://backend.example",
-        MCP_ADMIN_TOKEN: "admin-secret",
+        MCP_ADMIN_TOKEN,
       },
     );
 

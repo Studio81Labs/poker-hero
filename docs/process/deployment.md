@@ -131,7 +131,9 @@ endpoint. The Worker requires it on `/api/mcp/principals` and descendant routes,
 compares it without forwarding it, and fails closed when the secret is missing.
 Enter it only into the **Agent access** unlock field; the frontend keeps it in
 memory until the dialog is closed, reloaded, or locked. Do not reuse an agent
-credential or `API_PROXY_SECRET` for this purpose.
+credential or `API_PROXY_SECRET` for this purpose. The value must contain at
+least 32 characters and no whitespace or control characters; deployment rejects
+weak, malformed, or reused values.
 
 ## Runtime Error Monitoring
 

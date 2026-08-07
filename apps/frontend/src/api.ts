@@ -127,7 +127,7 @@ function mcpAdminHeaders(adminToken: string): HeadersInit {
 export async function listMcpPrincipals(
   adminToken: string,
 ): Promise<McpPrincipal[]> {
-  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+  const response = await fetch("/api/mcp/principals", {
     headers: mcpAdminHeaders(adminToken),
     credentials: "include",
   });
@@ -143,7 +143,7 @@ export async function createMcpPrincipal(
     expires_at: string | null;
   },
 ): Promise<McpIssuedPrincipal> {
-  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+  const response = await fetch("/api/mcp/principals", {
     method: "POST",
     headers: {
       ...mcpAdminHeaders(adminToken),
@@ -160,7 +160,7 @@ export async function rotateMcpPrincipal(
   principalId: string,
 ): Promise<McpIssuedPrincipal> {
   const response = await fetch(
-    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}/rotate`,
+    `/api/mcp/principals/${encodeURIComponent(principalId)}/rotate`,
     {
       method: "POST",
       headers: mcpAdminHeaders(adminToken),
@@ -175,7 +175,7 @@ export async function revokeMcpPrincipal(
   principalId: string,
 ): Promise<McpPrincipal> {
   const response = await fetch(
-    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}`,
+    `/api/mcp/principals/${encodeURIComponent(principalId)}`,
     {
       method: "DELETE",
       headers: mcpAdminHeaders(adminToken),

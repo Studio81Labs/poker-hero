@@ -79,6 +79,35 @@ describe("API Worker proxy", () => {
     );
   });
 
+  it("forwards the browser-canonical legacy IPv4 public host", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return new Response(null, { status: 200 });
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://0177.0.0.1/mcp", {
+        body: "{}",
+        headers: { Authorization: "Bearer phmcp_test" },
+        method: "POST",
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example/api",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(forwardedRequest.headers.get("X-Poker-MCP-Public-Host")).toBe(
+      "127.0.0.1",
+    );
+  });
+
   it("does not follow MCP redirects outside the MCP route", async () => {
     vi.stubGlobal(
       "fetch",

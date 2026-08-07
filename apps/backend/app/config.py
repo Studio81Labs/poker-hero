@@ -1,5 +1,5 @@
 from functools import lru_cache
-from ipaddress import AddressValueError, IPv6Address
+from ipaddress import AddressValueError, IPv4Address, IPv6Address
 from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import SplitResult, urlsplit
@@ -14,6 +14,23 @@ DEFAULT_POSTFLOP_OOP_RANGE = "66+,A8s+,A5s-A4s,AJo+,K9s+,KQo,QTs+,JTs,96s+,85s+,
 DEFAULT_POSTFLOP_IP_RANGE = (
     "QQ-22,AQs-A2s,ATo+,K5s+,KJo+,Q8s+,J8s+,T7s+,96s+,86s+,75s+,64s+,53s+"
 )
+
+
+def _looks_like_browser_ipv4(hostname: str) -> bool:
+    parts = hostname.split(".")
+    if parts[-1] == "":
+        parts.pop()
+    if not parts:
+        return False
+    last_part = parts[-1].lower()
+    if last_part.isascii() and last_part.isdigit():
+        return True
+    if last_part.startswith("0x"):
+        digits = last_part[2:]
+        return not digits or all(
+            character in "0123456789abcdef" for character in digits
+        )
+    return False
 
 
 def normalize_https_authority(parsed_url: SplitResult) -> str:
@@ -31,13 +48,18 @@ def normalize_https_authority(parsed_url: SplitResult) -> str:
             raise ValueError("URL hostname is invalid") from exc
     else:
         try:
-            authority = idna.encode(
-                hostname,
-                uts46=True,
-                transitional=False,
-            ).decode("ascii")
-        except idna.IDNAError as exc:
-            raise ValueError("URL hostname is invalid") from exc
+            authority = str(IPv4Address(hostname))
+        except AddressValueError:
+            if _looks_like_browser_ipv4(hostname):
+                raise ValueError("URL hostname is invalid")
+            try:
+                authority = idna.encode(
+                    hostname,
+                    uts46=True,
+                    transitional=False,
+                ).decode("ascii")
+            except idna.IDNAError as exc:
+                raise ValueError("URL hostname is invalid") from exc
     if port not in {None, 443}:
         authority = f"{authority}:{port}"
     return authority

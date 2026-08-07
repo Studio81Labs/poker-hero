@@ -260,12 +260,40 @@ def test_settings_validate_hosted_mcp_configuration() -> None:
     assert ipv6.mcp_public_url == "https://[2001:db8::1]/mcp"
     assert ipv6.mcp_allowed_origins == ["https://[2001:db8::1]"]
 
+    ipv4 = Settings(
+        deployment_environment="staging",
+        mcp_enabled=True,
+        mcp_public_url="https://127.0.0.1:443/mcp",
+    )
+    assert ipv4.mcp_public_url == "https://127.0.0.1/mcp"
+
     non_default_port = Settings(
         deployment_environment="staging",
         mcp_enabled=True,
         mcp_public_url="https://poker.example:8443/mcp",
     )
     assert non_default_port.mcp_public_url == "https://poker.example:8443/mcp"
+
+
+@pytest.mark.parametrize(
+    "hostname",
+    ["127.1", "0177.0.0.1", "2130706433", "0x7f.1"],
+)
+def test_settings_reject_browser_ambiguous_ipv4_hosts(hostname: str) -> None:
+    with pytest.raises(ValidationError, match="POKER_MCP_PUBLIC_URL"):
+        Settings(
+            deployment_environment="staging",
+            mcp_enabled=True,
+            mcp_public_url=f"https://{hostname}/mcp",
+        )
+
+    with pytest.raises(ValidationError, match="POKER_MCP_ALLOWED_ORIGINS"):
+        Settings(
+            deployment_environment="staging",
+            mcp_enabled=True,
+            mcp_public_url="https://poker.example/mcp",
+            mcp_allowed_origins=[f"https://{hostname}"],
+        )
 
 
 def test_settings_validates_data_volume_identity() -> None:

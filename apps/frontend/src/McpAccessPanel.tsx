@@ -27,8 +27,9 @@ export function McpAccessPanel({
   const [issued, setIssued] = useState<McpIssuedPrincipal | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [tokenRequestPending, setTokenRequestPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const tokenPending = issued !== null;
+  const tokenPending = issued !== null || tokenRequestPending;
 
   useEffect(() => {
     onPendingTokenChange?.(tokenPending);
@@ -59,6 +60,7 @@ export function McpAccessPanel({
       setError("Use a name of at least 3 characters.");
       return;
     }
+    setTokenRequestPending(true);
     setBusyId("create");
     setError(null);
     try {
@@ -80,6 +82,7 @@ export function McpAccessPanel({
       setError(messageFrom(reason));
     } finally {
       setBusyId(null);
+      setTokenRequestPending(false);
     }
   }
 
@@ -91,6 +94,7 @@ export function McpAccessPanel({
     ) {
       return;
     }
+    setTokenRequestPending(true);
     setBusyId(principal.id);
     setError(null);
     try {
@@ -101,6 +105,7 @@ export function McpAccessPanel({
       setError(messageFrom(reason));
     } finally {
       setBusyId(null);
+      setTokenRequestPending(false);
     }
   }
 

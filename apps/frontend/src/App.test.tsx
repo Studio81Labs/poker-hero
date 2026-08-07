@@ -3988,6 +3988,7 @@ describe("App", () => {
   });
 
   it("keeps the information dialog open until a one-time MCP token is stored", async () => {
+    const issuance = deferredResponse();
     fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/api/health")) {
@@ -4008,22 +4009,7 @@ describe("App", () => {
         }));
       }
       if (url.endsWith("/api/mcp/principals") && init?.method === "POST") {
-        return Promise.resolve(jsonResponse({
-          principal: {
-            id: "mcp_00000000000000000000000000000001",
-            name: "Codex staging",
-            environment: "staging",
-            token_prefix: "abcdefghijkl",
-            scopes: ["read"],
-            status: "active",
-            created_at: "2026-08-07T10:00:00Z",
-            updated_at: "2026-08-07T10:00:00Z",
-            expires_at: null,
-            revoked_at: null,
-            last_used_at: null,
-          },
-          token: "phmcp_one-time-token",
-        }));
+        return issuance.promise;
       }
       if (url.endsWith("/api/mcp/principals")) {
         return Promise.resolve(jsonResponse({ principals: [] }));
@@ -4045,6 +4031,28 @@ describe("App", () => {
     );
     await user.click(within(dialog).getByRole("button", {
       name: "Create credential",
+    }));
+
+    expect(within(dialog).getByRole("button", {
+      name: "Close app information",
+    })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+
+    issuance.resolve(jsonResponse({
+      principal: {
+        id: "mcp_00000000000000000000000000000001",
+        name: "Codex staging",
+        environment: "staging",
+        token_prefix: "abcdefghijkl",
+        scopes: ["read"],
+        status: "active",
+        created_at: "2026-08-07T10:00:00Z",
+        updated_at: "2026-08-07T10:00:00Z",
+        expires_at: null,
+        revoked_at: null,
+        last_used_at: null,
+      },
+      token: "phmcp_one-time-token",
     }));
 
     expect(await within(dialog).findByText("phmcp_one-time-token")).toBeInTheDocument();

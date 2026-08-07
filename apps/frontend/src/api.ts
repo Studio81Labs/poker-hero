@@ -120,22 +120,35 @@ export async function getMcpAccessConfig(): Promise<McpAccessConfig> {
   return readJson<McpAccessConfig>(response);
 }
 
-export async function listMcpPrincipals(): Promise<McpPrincipal[]> {
-  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+function mcpAdminHeaders(adminToken: string): HeadersInit {
+  return { Authorization: `Bearer ${adminToken}` };
+}
+
+export async function listMcpPrincipals(
+  adminToken: string,
+): Promise<McpPrincipal[]> {
+  const response = await fetch("/api/mcp/principals", {
+    headers: mcpAdminHeaders(adminToken),
     credentials: "include",
   });
   const payload = await readJson<{ principals: McpPrincipal[] }>(response);
   return payload.principals;
 }
 
-export async function createMcpPrincipal(input: {
-  name: string;
-  scopes: McpScope[];
-  expires_at: string | null;
-}): Promise<McpIssuedPrincipal> {
-  const response = await fetch(`${API_BASE_URL}/api/mcp/principals`, {
+export async function createMcpPrincipal(
+  adminToken: string,
+  input: {
+    name: string;
+    scopes: McpScope[];
+    expires_at: string | null;
+  },
+): Promise<McpIssuedPrincipal> {
+  const response = await fetch("/api/mcp/principals", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      ...mcpAdminHeaders(adminToken),
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(input),
     credentials: "include",
   });
@@ -143,21 +156,31 @@ export async function createMcpPrincipal(input: {
 }
 
 export async function rotateMcpPrincipal(
+  adminToken: string,
   principalId: string,
 ): Promise<McpIssuedPrincipal> {
   const response = await fetch(
-    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}/rotate`,
-    { method: "POST", credentials: "include" },
+    `/api/mcp/principals/${encodeURIComponent(principalId)}/rotate`,
+    {
+      method: "POST",
+      headers: mcpAdminHeaders(adminToken),
+      credentials: "include",
+    },
   );
   return readJson<McpIssuedPrincipal>(response);
 }
 
 export async function revokeMcpPrincipal(
+  adminToken: string,
   principalId: string,
 ): Promise<McpPrincipal> {
   const response = await fetch(
-    `${API_BASE_URL}/api/mcp/principals/${encodeURIComponent(principalId)}`,
-    { method: "DELETE", credentials: "include" },
+    `/api/mcp/principals/${encodeURIComponent(principalId)}`,
+    {
+      method: "DELETE",
+      headers: mcpAdminHeaders(adminToken),
+      credentials: "include",
+    },
   );
   return readJson<McpPrincipal>(response);
 }

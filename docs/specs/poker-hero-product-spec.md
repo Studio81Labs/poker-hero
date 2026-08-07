@@ -201,7 +201,10 @@ surface creates, rotates, and revokes named credentials; plaintext is displayed
 once and only a hash and lookup prefix are persisted. Read and write scopes are
 server authorization, independent of client approval settings. Hosted writes
 also require the staging-only deployment write opt-in. Production remains
-read-only. MCP credentials never enter tool results or portable backups.
+read-only. On deployed Workers, principal-management routes require a separate
+operator bearer secret that is never forwarded to the backend and is held only
+in browser memory after explicit unlock. MCP credentials never enter tool
+results or portable backups.
 
 ### Parser Registry
 
@@ -829,6 +832,8 @@ Example configuration concepts:
   timeout, and optional Cloudflare Access or trusted downstream credentials.
 - Hosted MCP enablement, exact public URL and origin allowlist, staging write
   opt-in, and separate positive per-principal read/write request limits.
+- A per-environment Worker MCP administration secret, distinct from agent
+  credentials and the Worker-to-backend proxy secret.
 
 Configuration must allow local/private testing with local services and later public testing with external services without changing the frontend flow.
 
@@ -907,6 +912,9 @@ MCP gateway tests:
   invalidate access.
 - Enforce hosted read/write scopes, the staging-only write gate, separate rate
   limits, exact host/origin checks, and non-cacheable protocol responses.
+- Reject unauthenticated principal-management requests at the public Worker,
+  fail closed when its administration secret is missing, and never forward
+  that operator credential to the backend.
 - Complete MCP initialization and tool discovery through Streamable HTTP while
   omitting the local screenshot-path tool.
 

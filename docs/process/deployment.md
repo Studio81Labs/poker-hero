@@ -125,6 +125,16 @@ the existing `API_PROXY_SECRET`/`POKER_PROXY_SHARED_SECRET` pair also signs the
 forwarded public host. If Codex connects to the public backend origin directly,
 set `POKER_MCP_PUBLIC_URL` to that exact origin instead.
 
+Create a separate high-entropy `MCP_ADMIN_TOKEN` in the staging GitHub
+deployment environment and in any other environment before enabling its MCP
+endpoint. The Worker requires it on `/api/mcp/principals` and descendant routes,
+compares it without forwarding it, and fails closed when the secret is missing.
+Enter it only into the **Agent access** unlock field; the frontend keeps it in
+memory until the dialog is closed, reloaded, or locked. Do not reuse an agent
+credential or `API_PROXY_SECRET` for this purpose. The value must contain at
+least 32 printable ASCII characters without spaces; deployment rejects weak,
+malformed, or reused values.
+
 ## Runtime Error Monitoring
 
 Error reporting is optional and disabled when its DSN is blank. To enable
@@ -278,13 +288,19 @@ Required per-environment Worker-to-backend secret:
 
 - `API_PROXY_SECRET`, matching Coolify `POKER_PROXY_SHARED_SECRET`
 
+Required for staging and before enabling MCP in another environment:
+
+- `MCP_ADMIN_TOKEN`, a separate high-entropy operator credential
+
 The workflow smoke-tests both the SPA and `/api/health`. A frontend success with
 an API `502` means the Worker deployed but its configured backend origin is not
 healthy or reachable. It also reads one bounded processing-queue page so a
 mismatched proxy credential fails deployment validation. The workflow also
 calls the matching backend queue URL without that credential and requires a
 `401`, proving the Coolify setting is active rather than merely accepting an
-unused Worker header.
+unused Worker header. It also requires unauthenticated MCP principal management
+to return `401` and verifies that the Worker routes `/mcp` to the backend rather
+than Static Assets.
 
 ## Uptime Monitoring And Alerts
 

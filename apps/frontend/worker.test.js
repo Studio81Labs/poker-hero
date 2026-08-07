@@ -7,6 +7,93 @@ afterEach(() => {
 });
 
 describe("API Worker proxy", () => {
+  it("rejects MCP credential administration without its bearer token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/api/mcp/principals"),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+        MCP_ADMIN_TOKEN: "admin-secret",
+      },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("WWW-Authenticate")).toBe("Bearer");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incorrect MCP administration bearer token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/api/mcp/principals", {
+        headers: { Authorization: "Bearer wrong-secret" },
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+        MCP_ADMIN_TOKEN: "admin-secret",
+      },
+    );
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the MCP administration secret is not configured", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/api/mcp/principals"),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+      },
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("authorizes MCP administration without forwarding the admin token", async () => {
+    let forwardedRequest;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request) => {
+        forwardedRequest = request;
+        return Response.json({ principals: [] });
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/api/mcp/principals", {
+        headers: { Authorization: "Bearer admin-secret" },
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example",
+        MCP_ADMIN_TOKEN: "admin-secret",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(forwardedRequest.headers.has("Authorization")).toBe(false);
+    expect(forwardedRequest.headers.get("X-Poker-Proxy-Secret")).toBe(
+      "trusted-worker-value",
+    );
+  });
+
   it("proxies MCP with bearer auth and a Worker-signed public host", async () => {
     let forwardedRequest;
     vi.stubGlobal(

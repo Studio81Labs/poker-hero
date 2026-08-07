@@ -14,6 +14,10 @@ Access has three independent gates:
 3. Every write needs both a credential with `write` scope and
    `POKER_MCP_ALLOW_WRITES=true`. The latter is valid only in staging.
 
+Credential administration has an additional operator boundary: the public
+Worker requires its per-environment `MCP_ADMIN_TOKEN` on
+`/api/mcp/principals` and all descendant routes. This is not an MCP agent token.
+
 The server stores a token hash and short display prefix, never the plaintext
 token. Rotation immediately invalidates the previous token. Revocation is
 immediate and safe to repeat. MCP and issuance responses use `Cache-Control:
@@ -40,10 +44,19 @@ Leave production unconfigured for now. When production read access is later
 approved, configure its own URL and enable the route while keeping
 `POKER_MCP_ALLOW_WRITES=false`.
 
+In the GitHub `staging` environment, configure a separate high-entropy
+`MCP_ADMIN_TOKEN` secret. The frontend deployment publishes it only as an
+encrypted Worker binding. Never reuse `API_PROXY_SECRET` or an agent principal
+token. The Worker rejects administration when this binding is absent and strips
+the operator bearer header before proxying an authorized request to FastAPI.
+
 ## Principal lifecycle
 
 Open the app information dialog and find **Agent access**.
 
+- Enter the staging `MCP_ADMIN_TOKEN` and unlock credential management. The
+  value stays only in browser component memory and is cleared by locking,
+  closing, or reloading the page.
 - Create a descriptive credential and select the least privilege needed.
 - Copy the token from the one-time display into approved secret storage.
 - Rotate an active credential to replace a lost or exposed token.

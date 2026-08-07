@@ -21,6 +21,8 @@ export function McpAccessPanel({
 }) {
   const [config, setConfig] = useState<McpAccessConfig | null>(null);
   const [principals, setPrincipals] = useState<McpPrincipal[]>([]);
+  const [adminToken, setAdminToken] = useState("");
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [name, setName] = useState("");
   const [access, setAccess] = useState<"read" | "write">("read");
   const [expiry, setExpiry] = useState("");
@@ -37,11 +39,10 @@ export function McpAccessPanel({
 
   useEffect(() => {
     let active = true;
-    void Promise.all([getMcpAccessConfig(), listMcpPrincipals()])
-      .then(([nextConfig, nextPrincipals]) => {
+    void getMcpAccessConfig()
+      .then((nextConfig) => {
         if (!active) return;
         setConfig(nextConfig);
-        setPrincipals(nextPrincipals);
       })
       .catch((reason: unknown) => {
         if (active) setError(messageFrom(reason));
@@ -53,6 +54,35 @@ export function McpAccessPanel({
       active = false;
     };
   }, []);
+
+  async function unlockAdmin() {
+    const normalizedToken = adminToken.trim();
+    if (!normalizedToken) {
+      setError("Enter the agent access admin token.");
+      return;
+    }
+    setBusyId("unlock");
+    setError(null);
+    try {
+      setPrincipals(await listMcpPrincipals(normalizedToken));
+      setAdminToken(normalizedToken);
+      setAdminUnlocked(true);
+    } catch (reason) {
+      setAdminUnlocked(false);
+      setPrincipals([]);
+      setError(messageFrom(reason));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function lockAdmin() {
+    if (tokenPending) return;
+    setAdminToken("");
+    setAdminUnlocked(false);
+    setPrincipals([]);
+    setError(null);
+  }
 
   async function createPrincipal() {
     const normalizedName = name.trim();
@@ -66,7 +96,7 @@ export function McpAccessPanel({
     try {
       const scopes: McpScope[] =
         access === "write" ? ["read", "write"] : ["read"];
-      const result = await createMcpPrincipal({
+      const result = await createMcpPrincipal(adminToken, {
         name: normalizedName,
         scopes,
         expires_at: expiry ? new Date(expiry).toISOString() : null,
@@ -98,7 +128,7 @@ export function McpAccessPanel({
     setBusyId(principal.id);
     setError(null);
     try {
-      const result = await rotateMcpPrincipal(principal.id);
+      const result = await rotateMcpPrincipal(adminToken, principal.id);
       setIssued(result);
       replacePrincipal(result.principal);
     } catch (reason) {
@@ -116,7 +146,7 @@ export function McpAccessPanel({
     setBusyId(principal.id);
     setError(null);
     try {
-      replacePrincipal(await revokeMcpPrincipal(principal.id));
+      replacePrincipal(await revokeMcpPrincipal(adminToken, principal.id));
     } catch (reason) {
       setError(messageFrom(reason));
     } finally {
@@ -160,71 +190,46 @@ export function McpAccessPanel({
         {config.writes_enabled ? "staging writes enabled" : "read-only server"}
       </p>
 
-      {issued ? (
-        <div className="mcp-issued-token" role="status">
-          <strong>Copy this token now</strong>
-          <p>It is shown once and cannot be retrieved later.</p>
-          <code>{issued.token}</code>
-          <div className="mcp-inline-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => void navigator.clipboard.writeText(issued.token)}
-            >
-              Copy token
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setIssued(null)}
-            >
-              I stored it
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mcp-create-grid">
-        <label>
-          Credential name
-          <input
-            value={name}
-            maxLength={100}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Developer or agent purpose"
-          />
-        </label>
-        <label>
-          Access
-          <select
-            value={access}
-            onChange={(event) =>
-              setAccess(event.target.value as "read" | "write")
-            }
+      {!config.enabled ? (
+        <p>
+          Credential management is unavailable while the MCP endpoint is
+          disabled.
+        </p>
+      ) : !adminUnlocked ? (
+        <div className="mcp-create-grid">
+          <label>
+            Agent access admin token
+            <input
+              type="password"
+              autoComplete="off"
+              value={adminToken}
+              onChange={(event) => setAdminToken(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busyId !== null}
+            onClick={() => void unlockAdmin()}
           >
-            <option value="read">Read only</option>
-            <option value="write" disabled={!config.writes_enabled}>
-              Read and write
-            </option>
-          </select>
-        </label>
-        <label>
-          Expires (optional)
-          <input
-            type="datetime-local"
-            value={expiry}
-            onChange={(event) => setExpiry(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={busyId !== null || tokenPending}
-          onClick={() => void createPrincipal()}
-        >
-          {busyId === "create" ? "Creating..." : "Create credential"}
-        </button>
-      </div>
+            {busyId === "unlock"
+              ? "Unlocking..."
+              : "Unlock credential management"}
+          </button>
+        </div>
+      ) : (
+        <div className="mcp-inline-actions">
+          <span>Credential management unlocked for this browser session.</span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busyId !== null || tokenPending}
+            onClick={lockAdmin}
+          >
+            Lock
+          </button>
+        </div>
+      )}
 
       {error ? (
         <p className="mcp-access-error" role="alert">
@@ -232,46 +237,119 @@ export function McpAccessPanel({
         </p>
       ) : null}
 
-      <div className="mcp-principal-list">
-        {principals.length === 0 ? (
-          <p>No credentials have been created for this environment.</p>
-        ) : (
-          principals.map((principal) => (
-            <div className="mcp-principal-row" key={principal.id}>
-              <div>
-                <strong>{principal.name}</strong>
-                <small>
-                  {principal.status} · {principal.scopes.join(" + ")} · phmcp_
-                  {principal.token_prefix}…
-                  {principal.last_used_at
-                    ? ` · used ${formatDate(principal.last_used_at)}`
-                    : " · unused"}
-                </small>
+      {!adminUnlocked ? null : (
+        <>
+          {issued ? (
+            <div className="mcp-issued-token" role="status">
+              <strong>Copy this token now</strong>
+              <p>It is shown once and cannot be retrieved later.</p>
+              <code>{issued.token}</code>
+              <div className="mcp-inline-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() =>
+                    void navigator.clipboard.writeText(issued.token)
+                  }
+                >
+                  Copy token
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setIssued(null)}
+                >
+                  I stored it
+                </button>
               </div>
-              {principal.status === "active" ? (
-                <div className="mcp-inline-actions">
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={busyId !== null || tokenPending}
-                    onClick={() => void rotate(principal)}
-                  >
-                    Rotate
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={busyId !== null}
-                    onClick={() => void revoke(principal)}
-                  >
-                    Revoke
-                  </button>
-                </div>
-              ) : null}
             </div>
-          ))
-        )}
-      </div>
+          ) : null}
+
+          <div className="mcp-create-grid">
+            <label>
+              Credential name
+              <input
+                value={name}
+                maxLength={100}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Developer or agent purpose"
+              />
+            </label>
+            <label>
+              Access
+              <select
+                value={access}
+                onChange={(event) =>
+                  setAccess(event.target.value as "read" | "write")
+                }
+              >
+                <option value="read">Read only</option>
+                <option value="write" disabled={!config.writes_enabled}>
+                  Read and write
+                </option>
+              </select>
+            </label>
+            <label>
+              Expires (optional)
+              <input
+                type="datetime-local"
+                value={expiry}
+                onChange={(event) => setExpiry(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={busyId !== null || tokenPending}
+              onClick={() => void createPrincipal()}
+            >
+              {busyId === "create" ? "Creating..." : "Create credential"}
+            </button>
+          </div>
+
+          <div className="mcp-principal-list">
+            {principals.length === 0 ? (
+              <p>No credentials have been created for this environment.</p>
+            ) : (
+              principals.map((principal) => (
+                <div className="mcp-principal-row" key={principal.id}>
+                  <div>
+                    <strong>{principal.name}</strong>
+                    <small>
+                      {principal.status} · {principal.scopes.join(" + ")} ·
+                      phmcp_
+                      {principal.token_prefix}…
+                      {principal.last_used_at
+                        ? ` · used ${formatDate(principal.last_used_at)}`
+                        : " · unused"}
+                    </small>
+                  </div>
+                  {principal.status === "active" ? (
+                    <div className="mcp-inline-actions">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={busyId !== null || tokenPending}
+                        onClick={() => void rotate(principal)}
+                      >
+                        Rotate
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={busyId !== null}
+                        onClick={() => void revoke(principal)}
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

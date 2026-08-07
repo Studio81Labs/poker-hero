@@ -60,6 +60,13 @@ describe("McpAccessPanel", () => {
     render(<McpAccessPanel onPendingTokenChange={onPendingTokenChange} />);
 
     await user.type(
+      await screen.findByLabelText("Agent access admin token"),
+      "admin-secret",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Unlock credential management" }),
+    );
+    await user.type(
       await screen.findByLabelText("Credential name"),
       "Codex staging",
     );
@@ -83,6 +90,12 @@ describe("McpAccessPanel", () => {
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rotate" })).toBeEnabled();
     expect(onPendingTokenChange).toHaveBeenLastCalledWith(false);
+    expect(listMcpPrincipals).toHaveBeenCalledWith("admin-secret");
+    expect(createMcpPrincipal).toHaveBeenCalledWith("admin-secret", {
+      name: "Codex staging",
+      scopes: ["read"],
+      expires_at: null,
+    });
   });
 
   it("surfaces initial credential-loading failures", async () => {
@@ -100,5 +113,28 @@ describe("McpAccessPanel", () => {
         "Hosted agent access is available in staging and production deployments.",
       ),
     ).not.toBeInTheDocument();
+    expect(listMcpPrincipals).not.toHaveBeenCalled();
+  });
+
+  it("keeps credential management locked when the admin token is rejected", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listMcpPrincipals).mockRejectedValue(
+      new Error("Agent access admin token is invalid"),
+    );
+
+    render(<McpAccessPanel />);
+
+    await user.type(
+      await screen.findByLabelText("Agent access admin token"),
+      "wrong-secret",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Unlock credential management" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Agent access admin token is invalid",
+    );
+    expect(screen.queryByLabelText("Credential name")).not.toBeInTheDocument();
   });
 });

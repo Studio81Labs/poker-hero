@@ -3,7 +3,30 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
-      return proxyApiRequest(request, env.BACKEND_URL, env.API_PROXY_SECRET);
+      const mcpAdminRequest = isMcpAdminRequest(url.pathname);
+      if (mcpAdminRequest) {
+        if (!env.MCP_ADMIN_TOKEN) {
+          return privateJsonResponse(
+            503,
+            "Agent access administration is unavailable",
+          );
+        }
+        if (!(await bearerTokenMatches(request, env.MCP_ADMIN_TOKEN))) {
+          return privateJsonResponse(
+            401,
+            "Agent access administrator authentication required",
+            {
+              "WWW-Authenticate": "Bearer",
+            },
+          );
+        }
+      }
+      return proxyApiRequest(
+        request,
+        env.BACKEND_URL,
+        env.API_PROXY_SECRET,
+        mcpAdminRequest,
+      );
     }
 
     return env.ASSETS.fetch(request);
@@ -18,7 +41,47 @@ const REQUEST_BODY_TOO_LARGE = Symbol("request-body-too-large");
 const MAX_BACKEND_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
+function isMcpAdminRequest(pathname) {
+  return (
+    pathname === "/api/mcp/principals" ||
+    pathname.startsWith("/api/mcp/principals/")
+  );
+}
+
+async function bearerTokenMatches(request, expectedToken) {
+  const authorization = request.headers.get("authorization") ?? "";
+  const match = authorization.match(/^Bearer ([^\s]+)$/i);
+  const suppliedToken = match?.[1] ?? "";
+  const encoder = new TextEncoder();
+  const [suppliedDigest, expectedDigest] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(suppliedToken)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expectedToken)),
+  ]);
+  const suppliedBytes = new Uint8Array(suppliedDigest);
+  const expectedBytes = new Uint8Array(expectedDigest);
+  let difference = suppliedBytes.byteLength ^ expectedBytes.byteLength;
+  for (let index = 0; index < suppliedBytes.byteLength; index += 1) {
+    difference |= suppliedBytes[index] ^ expectedBytes[index];
+  }
+  return difference === 0;
+}
+
+function privateJsonResponse(status, detail, extraHeaders = {}) {
+  return Response.json(
+    { detail },
+    {
+      status,
+      headers: { "Cache-Control": "no-store", ...extraHeaders },
+    },
+  );
+}
+
+async function proxyApiRequest(
+  request,
+  backendUrl,
+  proxySharedSecret,
+  stripAuthorization = false,
+) {
   if (!backendUrl) {
     return new Response("BACKEND_URL is not configured", { status: 500 });
   }
@@ -54,6 +117,9 @@ async function proxyApiRequest(request, backendUrl, proxySharedSecret) {
   headers.delete("content-length");
   headers.delete(PROXY_SHARED_SECRET_HEADER);
   headers.delete(MCP_PUBLIC_HOST_HEADER);
+  if (stripAuthorization) {
+    headers.delete("authorization");
+  }
   // Access email is not independently verified by the backend and must not
   // become a caller-controlled rate-limit identity.
   headers.delete(ACCESS_USER_HEADER);

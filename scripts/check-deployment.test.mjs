@@ -24,7 +24,7 @@ async function withServer(handler, exercise) {
   }
 }
 
-test("checks the frontend, health route, and protected proxy", async () => {
+test("checks the app, proxy, and MCP security boundaries", async () => {
   const requestedPaths = [];
   await withServer((request, response) => {
     requestedPaths.push(request.url);
@@ -39,11 +39,18 @@ test("checks the frontend, health route, and protected proxy", async () => {
       response.end("<title>Poker Training Analyzer</title>");
       return;
     }
+    if (request.url === "/api/mcp/principals" || request.url === "/mcp") {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ detail: "Authentication required" }));
+      return;
+    }
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       request.url === "/api/health"
         ? JSON.stringify({ status: "ok" })
-        : JSON.stringify({ jobs: [], total: 0 }),
+        : request.url === "/api/mcp/config"
+          ? JSON.stringify({ enabled: true })
+          : JSON.stringify({ jobs: [], total: 0 }),
     );
   }, async (baseUrl) => {
     const result = await checkDeployment(baseUrl, {
@@ -61,7 +68,69 @@ test("checks the frontend, health route, and protected proxy", async () => {
     "/app",
     "/api/health",
     "/api/jobs?limit=1",
+    "/api/mcp/config",
+    "/api/mcp/principals",
+    "/mcp",
   ]);
+});
+
+test("rejects a publicly exposed MCP administration route", async () => {
+  await withServer((request, response) => {
+    if (request.url === "/") {
+      response.writeHead(200).end("Poker Training Analyzer");
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      request.url === "/api/health"
+        ? JSON.stringify({ status: "ok" })
+        : request.url === "/api/mcp/config"
+          ? JSON.stringify({ enabled: true })
+          : request.url === "/api/jobs?limit=1"
+            ? JSON.stringify({ jobs: [] })
+            : JSON.stringify({ principals: [] }),
+    );
+  }, async (baseUrl) => {
+    await assert.rejects(
+      checkDeployment(baseUrl, {
+        allowHttp: true,
+        attempts: 1,
+        timeoutMs: 1_000,
+      }),
+      /MCP administration boundary returned HTTP 200; expected 401/,
+    );
+  });
+});
+
+test("accepts an absent MCP endpoint when hosted access is disabled", async () => {
+  await withServer((request, response) => {
+    if (request.url === "/") {
+      response.writeHead(200).end("Poker Training Analyzer");
+      return;
+    }
+    if (request.url === "/api/mcp/principals") {
+      response.writeHead(401).end();
+      return;
+    }
+    if (request.url === "/mcp") {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      request.url === "/api/health"
+        ? JSON.stringify({ status: "ok" })
+        : request.url === "/api/mcp/config"
+          ? JSON.stringify({ enabled: false })
+          : JSON.stringify({ jobs: [] }),
+    );
+  }, async (baseUrl) => {
+    await checkDeployment(baseUrl, {
+      allowHttp: true,
+      attempts: 1,
+      timeoutMs: 1_000,
+    });
+  });
 });
 
 test("retries transient failures and reports only the failed check", async () => {

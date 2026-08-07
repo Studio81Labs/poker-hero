@@ -247,6 +247,14 @@ Separate per-principal read/write limits protect the protocol surface.
 Token-issuance and MCP responses are non-cacheable. Credential state is a
 deployment concern and is excluded from portable application backups.
 
+The Worker protects `/api/mcp/principals` and all descendants with a dedicated
+per-environment `MCP_ADMIN_TOKEN`. The frontend asks an operator to unlock the
+credential-management controls and retains that secret only in component
+memory. After a constant-time digest comparison, the Worker strips the
+operator `Authorization` header and forwards the request using only its
+Worker-to-backend credential. This secret is separate from both the individual
+agent bearer credentials and `API_PROXY_SECRET`.
+
 The local gateway may authenticate through Cloudflare Access service headers
 or—in a trusted server deployment only—the private Worker-to-backend shared
 secret. Hosted callers authenticate with their MCP principal bearer token;
@@ -270,9 +278,10 @@ combinations, memory, and exploitability, while keeping exact configured OOP/IP
 ranges behind a collapsed disclosure; providers remain free to omit those
 fields. In production it uses same-origin `/api/*`;
 `worker.js` forwards those requests and the exact `/mcp` route to `BACKEND_URL`,
-replaces any
-browser-supplied proxy credential with its private `API_PROXY_SECRET` binding,
-and serves all other routes from Worker Static Assets. When
+replaces any browser-supplied proxy credential with its private
+`API_PROXY_SECRET` binding, enforces the separate administration bearer on MCP
+principal-management routes, and serves all other routes from Worker Static
+Assets. When
 `POKER_PROXY_SHARED_SECRET` is configured, FastAPI uses a constant-time
 comparison to reject application API traffic that bypasses or misconfigures the
 Worker. The Worker requires an HTTPS backend before attaching the secret,

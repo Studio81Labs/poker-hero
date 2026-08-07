@@ -148,6 +148,45 @@ async function fetchText(baseUrl, endpoint, label, headers, timeoutMs) {
   }
 }
 
+async function expectStatus(
+  baseUrl,
+  endpoint,
+  label,
+  headers,
+  timeoutMs,
+  expectedStatus,
+  method = "GET",
+) {
+  const target = endpointUrl(baseUrl, endpoint);
+  let response;
+  try {
+    response = await fetch(target, {
+      body: method === "POST" ? "{}" : undefined,
+      headers: {
+        Accept: "application/json",
+        ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+        "User-Agent": "poker-hero-uptime-monitor/1.0",
+        ...headers,
+      },
+      method,
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error(`${label} timed out after ${timeoutMs} ms`);
+    }
+    throw new Error(`${label} request failed`);
+  }
+  const status = response.status;
+  await response.body?.cancel();
+  if (status !== expectedStatus) {
+    throw new Error(
+      `${label} returned HTTP ${status}; expected ${expectedStatus}`,
+    );
+  }
+}
+
 function parseJson(body, label) {
   try {
     return JSON.parse(body);
@@ -195,6 +234,38 @@ async function checkOnce(baseUrl, headers, timeoutMs) {
   if (!Array.isArray(queue?.jobs)) {
     throw new Error("Protected API proxy response did not contain a jobs array");
   }
+
+  const mcpConfig = parseJson(
+    await fetchText(
+      baseUrl,
+      "/api/mcp/config",
+      "MCP configuration",
+      headers,
+      timeoutMs,
+    ),
+    "MCP configuration",
+  );
+  if (typeof mcpConfig?.enabled !== "boolean") {
+    throw new Error("MCP configuration response did not report enabled state");
+  }
+
+  await expectStatus(
+    baseUrl,
+    "/api/mcp/principals",
+    "MCP administration boundary",
+    headers,
+    timeoutMs,
+    401,
+  );
+  await expectStatus(
+    baseUrl,
+    "/mcp",
+    "MCP endpoint boundary",
+    headers,
+    timeoutMs,
+    mcpConfig.enabled ? 401 : 404,
+    "POST",
+  );
 }
 
 function delay(milliseconds) {

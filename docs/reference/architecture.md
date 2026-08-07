@@ -132,9 +132,18 @@ otherwise verified range. Turn states require one exact terminal completed-flop
 line; river states require exact completed-flop and completed-turn lines. Their
 final OOP/IP commitments plus current-street contributions reconstruct the
 original flop pot and, with visible stacks, starting depth. Partial or
-contradictory completed histories retain configured ranges. Range source, depth
-source, decision street, completed-street count, and boundaries are retained as
-solver evidence. Raised
+contradictory completed histories retain configured ranges. For exact later-
+street histories with both visible stacks, the adapter first solves a bounded
+flop-root conditioning tree, replays the reviewed actions and actual dealt
+cards, and carries each player's resulting reach weights into the normal
+current-street decision tree. The conditioning tree preserves reviewed bet and
+raise sizes, limits unobserved downstream branches, and is released before the
+decision tree is allocated. If the conditioning tree exceeds the configured
+memory ceiling or either reviewed line has zero reach, the adapter keeps the
+selected starting ranges and records why conditioning was skipped. Range
+source, depth source, decision street, completed-street count, boundaries, and
+conditioning status, replayed line, reach, memory, and exploitability are
+retained as solver evidence. Raised
 decisions additionally carry both visible stacks and ordered current-street
 OOP/IP actions; the adapter validates and replays that line before reading the
 hero strategy. `local_ev` remains available directly and is used as a

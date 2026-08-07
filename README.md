@@ -178,8 +178,17 @@ When current-street money cannot be reconciled to the reviewed visible stacks,
 the range context retains a labeled 100 BB stack assumption. Unsupported,
 incomplete, contradictory, and other preflop trees retain the configured OOP/IP
 ranges. Recommendation evidence records the selected source, policy context,
-decision street, and completed-street verification. Set the mode to `configured`
-to disable contextual selection.
+decision street, and completed-street verification. When terminal prior-street
+histories and both visible stacks reconstruct the flop root, the adapter first
+solves a memory-bounded flop-root tree, replays the reviewed actions and actual
+turn/river cards, and uses the resulting posterior hand weights in the normal
+current-street solve. The conditioning tree preserves observed prior-street
+wagers, allows one configured bet size downstream, and omits unobserved raises;
+the decision tree retains the configured bet and raise sizes. Evidence reports
+whether conditioning was applied, its simplified tree profile, line reach,
+active combinations, memory, and exploitability. Set the mode to `configured`
+to disable contextual preflop selection; reviewed prior-street conditioning can
+still refine those configured ranges.
 Facing-bet trees also require the visible hero stack so the adapter can
 reconstruct whether hero or the bettor was covered before the wager. The
 facing action must identify the outstanding wager. Raised heads-up decisions
@@ -187,8 +196,10 @@ also require the opponent's visible stack and ordered current-street action
 history. Each history wager is the player's total BB committed on that street;
 the adapter validates the actors, pot, call amount, stacks, and final hero turn
 before replaying the line. Incomplete or contradictory histories use fallback.
-Completed-street history is separate from that replayed current-street list and
-is used only to verify later-street range and stack assumptions.
+Completed-street history is separate from the replayed current-street list. It
+both verifies later-street range and stack assumptions and, when the exact root
+can be reconstructed within the memory limit, conditions each player's range
+through the reviewed prior-street line.
 
 `pnpm bootstrap` builds the adapter into
 `solver-plugins/postflop/target/release/poker-postflop-solver`; the local backend

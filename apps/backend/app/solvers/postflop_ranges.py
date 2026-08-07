@@ -155,23 +155,6 @@ def resolve_squeeze_pot_relative_position(
     return hero_relative_position
 
 
-def resolve_limped_pot_relative_position(
-    state: CanonicalState,
-) -> Literal["ip", "oop"] | None:
-    """Resolve a six-max blind pair from an exact limp/check preflop line."""
-    hero_position = normalize_position(state.hero_position)
-    opponent_position = normalize_position(state.opponent_position)
-    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
-        return None
-
-    hero_relative_position: Literal["ip", "oop"] = (
-        "ip" if hero_position == "big_blind" else "oop"
-    )
-    if _limped_pot_context(state, hero_relative_position) is None:
-        return None
-    return hero_relative_position
-
-
 def _limped_pot_selection(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],

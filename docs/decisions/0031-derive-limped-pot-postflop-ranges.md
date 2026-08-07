@@ -27,14 +27,16 @@ isolation-raise band as the big blind's checked range. Record both policy
 boundaries, the proxy model, actors, limp size, stack source, and a distinct
 `preflop_chart_limped_pot` source.
 
-An exact small-blind limp with the big blind as the other survivor also resolves
-their otherwise ambiguous relative position according to the reviewed six-max
-line. Apply the same completed-history verification and later-street range
+A small-blind versus big-blind survivor pair remains ambiguous unless separate
+relative-position evidence is reviewed. The same limp/check line is legal on a
+heads-up table, where the small blind is also the dealer and acts last
+postflop. Apply the same completed-history verification and later-street range
 conditioning contract as the other contextual ranges.
 
 ## Consequences
 
 - Exact heads-up limped pots no longer start from unrelated generic ranges.
 - Evidence distinguishes the modeled limper proxy from an observed raise range.
+- Blind-only survivor pairs retain fallback without explicit IP/OOP evidence.
 - Multiple limpers, raised limp trees, missing survivor seats, stale opener
   metadata, and contradictory root pots retain configured ranges or fallback.

@@ -184,10 +184,10 @@ With `POKER_RECOMMENDATION_PROVIDER=local_solver`, the default
 `postflop_solver` engine runs the pinned Rust Discounted CFR adapter. It accepts
 heads-up flop, turn, and river states when `hero_position` identifies `IP`,
 `OOP`, or button, or when reviewed hero and opponent seats establish an
-unambiguous postflop order. A bare small-blind versus big-blind pair still
-requires explicit IP/OOP review because the order depends on whether the small
-blind is also the heads-up dealer; an exact supported six-max limp or squeeze
-history can resolve that order. Its ranges, bet tree,
+unambiguous postflop order. A small-blind versus big-blind pair still requires
+explicit IP/OOP review because the order depends on whether the small blind is
+also the heads-up dealer; an exact supported squeeze history can resolve that
+order because it proves a multi-seat preflop line. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player state with a

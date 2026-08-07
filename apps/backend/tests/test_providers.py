@@ -2230,37 +2230,13 @@ def test_local_solver_derives_ranges_from_squeeze_pot(
     assert result.raw["engine"] == "postflop_solver"
 
 
-def test_local_solver_derives_ranges_from_blind_limped_pot(
+def test_local_solver_keeps_fallback_for_ambiguous_blind_limped_pot(
     tmp_path: Path,
 ) -> None:
-    solver_script = tmp_path / "postflop.py"
-    solver_script.write_text(
-        "import json, os\n"
-        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
-        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
-        "'preflop_chart_limped_pot'\n"
-        "assert context['scenario'] == 'limped_pot'\n"
-        "assert context['limper_position'] == 'small_blind'\n"
-        "assert context['big_blind_position'] == 'big_blind'\n"
-        "assert context['limp_size_bb'] == 1\n"
-        "assert context['limper_range_model'] == "
-        "'stack_adjusted_first_in_proxy'\n"
-        "assert context['limp_response_policy'] == 'heads_up_single_limper'\n"
-        "assert context['starting_effective_stack_bb'] == 100\n"
-        "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
-        "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
-        "print(json.dumps({"
-        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
-        "'explanation': 'Contextual limped-pot response', "
-        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
-        "}))\n"
-    )
     provider = build_provider(
         Settings(
             data_dir=tmp_path,
             recommendation_provider="local_solver",
-            postflop_solver_command=f"{sys.executable} {solver_script}",
-            postflop_solver_fallback_enabled=False,
         )
     )
     state = heads_up_postflop_state()
@@ -2281,8 +2257,9 @@ def test_local_solver_derives_ranges_from_blind_limped_pot(
         RecommendationRequest(state=state, provider=provider.name)
     )
 
-    assert result.action == "check"
-    assert result.raw["engine"] == "postflop_solver"
+    assert result.raw["engine"] == "local_ev_solver_v1"
+    assert result.raw["requested_engine"] == "postflop_solver"
+    assert "position must identify IP or OOP" in result.raw["fallback_reason"]
 
 
 def test_local_solver_derives_ranges_for_blind_squeeze_survivors(

@@ -23,7 +23,6 @@ from app.solvers.preflop_context import (
     supports_preflop_chart,
 )
 from app.solvers.postflop_ranges import (
-    resolve_limped_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -399,10 +398,7 @@ def _postflop_position_for_state(
     )
     if position is not None:
         return position
-    return (
-        resolve_limped_pot_relative_position(state)
-        or resolve_squeeze_pot_relative_position(state)
-    )
+    return resolve_squeeze_pot_relative_position(state)
 
 
 _SOLVER_MAX_CENTS = 2_147_483_647

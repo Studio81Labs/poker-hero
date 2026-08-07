@@ -12,7 +12,6 @@ from app.models import (
 )
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import (
-    resolve_limped_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -286,22 +285,6 @@ def test_keeps_configured_ranges_for_inexact_limped_pot() -> None:
     state = limped_pot_state()
     state.pot_size = 4.0
     assert select(state).source == "configured"
-
-
-def test_resolves_blind_limp_survivors_from_reviewed_history() -> None:
-    state = limped_pot_state(limper_position="small_blind")
-
-    assert resolve_limped_pot_relative_position(state) == "ip"
-    state.hero_position = "small_blind"
-    state.opponent_position = "big_blind"
-    assert resolve_limped_pot_relative_position(state) == "oop"
-
-
-def test_keeps_blind_limp_pair_ambiguous_without_exact_history() -> None:
-    state = limped_pot_state(limper_position="small_blind")
-    state.preflop_action_history = []
-
-    assert resolve_limped_pot_relative_position(state) is None
 
 
 def test_selects_chart_ranges_for_heads_up_single_raised_pot() -> None:

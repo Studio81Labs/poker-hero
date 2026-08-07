@@ -109,10 +109,11 @@ resolved effective cap is retained for review.
 postflop decisions with explicit relative position. Canonical `dealer` labels
 map to button/IP. When both reviewed seats are available, distinct normalized
 six-max seats establish their postflop order; explicit relative labels take
-precedence. Contradictory labels, duplicate seats, and a bare small-blind versus
-big-blind pair remain ambiguous and use fallback. An exact reviewed single-limp
-or squeeze history resolves a surviving blind pair because the six-max line
-establishes their postflop order. First-bet decisions retain the compact
+precedence. Contradictory labels, duplicate seats, and a small-blind versus
+big-blind pair remain ambiguous and use fallback. A limp/check line cannot
+resolve that pair because it is also valid heads-up; an exact reviewed squeeze
+history can resolve it because the additional seats prove the preflop order.
+First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
 stack-adjusted first-in range as an explicit proxy and the complement of the

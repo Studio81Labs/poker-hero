@@ -84,4 +84,21 @@ describe("McpAccessPanel", () => {
     expect(screen.getByRole("button", { name: "Rotate" })).toBeEnabled();
     expect(onPendingTokenChange).toHaveBeenLastCalledWith(false);
   });
+
+  it("surfaces initial credential-loading failures", async () => {
+    vi.mocked(getMcpAccessConfig).mockRejectedValue(
+      new Error("Could not read staging MCP configuration"),
+    );
+
+    render(<McpAccessPanel />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not read staging MCP configuration",
+    );
+    expect(
+      screen.queryByText(
+        "Hosted agent access is available in staging and production deployments.",
+      ),
+    ).not.toBeInTheDocument();
+  });
 });

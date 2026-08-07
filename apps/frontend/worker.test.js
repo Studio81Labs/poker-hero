@@ -108,13 +108,39 @@ describe("API Worker proxy", () => {
     );
   });
 
+  it("rejects oversized MCP bodies before proxying them", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const oversizedBody = new Uint8Array(4 * 1024 * 1024 + 1);
+
+    const response = await worker.fetch(
+      new Request("https://poker.example/mcp", {
+        body: oversizedBody,
+        headers: { Authorization: "Bearer phmcp_test" },
+        method: "POST",
+      }),
+      {
+        ASSETS: { fetch: vi.fn() },
+        API_PROXY_SECRET: "trusted-worker-value",
+        BACKEND_URL: "https://backend.example/api",
+      },
+    );
+
+    expect(response.status).toBe(413);
+    expect(await response.text()).toBe("MCP request body is too large");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("does not follow MCP redirects outside the MCP route", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(null, {
-        headers: { Location: "/api/jobs" },
-        status: 307,
-      })),
+      vi.fn(
+        async () =>
+          new Response(null, {
+            headers: { Location: "/api/jobs" },
+            status: 307,
+          }),
+      ),
     );
 
     const response = await worker.fetch(
@@ -270,11 +296,12 @@ describe("API Worker proxy", () => {
   });
 
   it("blocks cross-origin backend redirects", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(null, {
-        headers: { Location: "https://other.example/collect" },
-        status: 302,
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          headers: { Location: "https://other.example/collect" },
+          status: 302,
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -293,11 +320,12 @@ describe("API Worker proxy", () => {
   });
 
   it("blocks redirects outside a configured backend base path", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(null, {
-        headers: { Location: "/admin" },
-        status: 307,
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          headers: { Location: "/admin" },
+          status: 307,
+        }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -370,11 +398,16 @@ describe("API Worker proxy", () => {
       `--${boundary}--`,
       "",
     ].join("\r\n");
-    const request = new Request("https://poker.example/api/jobs?source=upload", {
-      body: multipartBody,
-      headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
-      method: "POST",
-    });
+    const request = new Request(
+      "https://poker.example/api/jobs?source=upload",
+      {
+        body: multipartBody,
+        headers: {
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        method: "POST",
+      },
+    );
 
     const response = await worker.fetch(request, {
       ASSETS: { fetch: vi.fn() },
@@ -382,8 +415,12 @@ describe("API Worker proxy", () => {
     });
 
     expect(response.status).toBe(201);
-    expect(forwardedRequest.url).toBe("https://backend.example/api/jobs?source=upload");
-    expect(forwardedRequest.headers.get("content-type")).toContain("multipart/form-data; boundary=");
+    expect(forwardedRequest.url).toBe(
+      "https://backend.example/api/jobs?source=upload",
+    );
+    expect(forwardedRequest.headers.get("content-type")).toContain(
+      "multipart/form-data; boundary=",
+    );
 
     const forwardedBody = await forwardedRequest.text();
     expect(forwardedBody).toContain('name="file"; filename="table.png"');

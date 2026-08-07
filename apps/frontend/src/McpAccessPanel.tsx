@@ -135,6 +135,13 @@ export function McpAccessPanel({
   if (loading) {
     return <p>Reading agent access configuration...</p>;
   }
+  if (error && !config) {
+    return (
+      <p className="mcp-access-error" role="alert">
+        {error}
+      </p>
+    );
+  }
   if (!config || config.environment === "local") {
     return (
       <p>

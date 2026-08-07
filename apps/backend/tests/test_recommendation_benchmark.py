@@ -817,6 +817,13 @@ def test_report_scores_expected_range_conditioning_evidence() -> None:
                 **turn_state,
             ),
             benchmark_case(
+                "conditioning-padded-status",
+                [reference_line("check")],
+                tags=["range-conditioning"],
+                expected_range_conditioning="applied",
+                **turn_state,
+            ),
+            benchmark_case(
                 "conditioning-not-expected",
                 [reference_line("check")],
                 **turn_state,
@@ -836,6 +843,10 @@ def test_report_scores_expected_range_conditioning_evidence() -> None:
             recommendation("check"),
             recommendation(
                 "check",
+                range_conditioning={"status": " applied "},
+            ),
+            recommendation(
+                "check",
                 range_conditioning={"status": "pending"},
             ),
         ]
@@ -843,11 +854,11 @@ def test_report_scores_expected_range_conditioning_evidence() -> None:
 
     report = run_recommendation_benchmark(dataset, provider)
 
-    assert report.conditioning_expected_cases == 3
+    assert report.conditioning_expected_cases == 4
     assert report.conditioning_evaluated_cases == 2
     assert report.conditioning_correct_cases == 1
     assert report.conditioning_accuracy == 0.5
-    assert report.conditioning_coverage == pytest.approx(2 / 3)
+    assert report.conditioning_coverage == 0.5
     assert report.cases[0].range_conditioning_status == "applied"
     assert report.cases[0].range_conditioning_match is True
     assert report.cases[1].range_conditioning_status == "skipped"
@@ -855,15 +866,21 @@ def test_report_scores_expected_range_conditioning_evidence() -> None:
     assert report.cases[2].range_conditioning_status is None
     assert report.cases[2].range_conditioning_match is None
     assert report.cases[3].range_conditioning_status is None
+    assert report.cases[3].range_conditioning_match is None
+    assert report.cases[4].range_conditioning_status is None
     assert report.street_metrics[0].conditioning_accuracy == 0.5
-    assert report.tag_metrics[0].conditioning_coverage == pytest.approx(2 / 3)
+    assert report.tag_metrics[0].conditioning_coverage == 0.5
     formatted = format_recommendation_benchmark_report(report)
     assert "Range conditioning agreement: 1/2 (50.0%)" in formatted
-    assert "Range conditioning evidence coverage: 2/3 (66.7%)" in formatted
+    assert "Range conditioning evidence coverage: 2/4 (50.0%)" in formatted
     assert "conditioning-wrong-status: mismatched range conditioning" in formatted
     assert (
         "conditioning-missing: mismatched range conditioning"
         " (expected skipped, not reported)"
+    ) in formatted
+    assert (
+        "conditioning-padded-status: mismatched range conditioning"
+        " (expected applied, not reported)"
     ) in formatted
 
 

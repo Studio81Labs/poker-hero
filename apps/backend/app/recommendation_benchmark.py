@@ -789,7 +789,9 @@ def _nonempty_string(value: object) -> str | None:
 def _range_conditioning_status(value: object) -> RangeConditioningStatus | None:
     if not isinstance(value, dict):
         return None
-    status = _nonempty_string(value.get("status"))
+    status = value.get("status")
+    if not isinstance(status, str):
+        return None
     if status == "applied":
         return "applied"
     if status == "skipped":

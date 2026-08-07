@@ -253,7 +253,9 @@ credential-management controls and retains that secret only in component
 memory. After a constant-time digest comparison, the Worker strips the
 operator `Authorization` header and forwards the request using only its
 Worker-to-backend credential. This secret is separate from both the individual
-agent bearer credentials and `API_PROXY_SECRET`.
+agent bearer credentials and `API_PROXY_SECRET`. Percent-encoded proxied paths
+are rejected before route classification so backend decoding cannot reinterpret
+an unprotected path as a principal-management route.
 
 The local gateway may authenticate through Cloudflare Access service headers
 or—in a trusted server deployment only—the private Worker-to-backend shared

@@ -7,6 +7,32 @@ afterEach(() => {
 });
 
 describe("API Worker proxy", () => {
+  it("rejects encoded API paths before they can bypass MCP administration", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    for (const path of [
+      "/api/mcp/%70rincipals",
+      "/api/mcp/principals%2Fmcp_123",
+    ]) {
+      const response = await worker.fetch(
+        new Request(`https://poker.example${path}`, {
+          headers: { Authorization: "Bearer agent-controlled-value" },
+        }),
+        {
+          ASSETS: { fetch: vi.fn() },
+          API_PROXY_SECRET: "trusted-worker-value",
+          BACKEND_URL: "https://backend.example",
+          MCP_ADMIN_TOKEN: "admin-secret",
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rejects MCP credential administration without its bearer token", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

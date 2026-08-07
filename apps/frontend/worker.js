@@ -3,6 +3,9 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname.startsWith("/api/") || url.pathname === "/mcp") {
+      if (url.pathname.includes("%")) {
+        return privateJsonResponse(400, "Encoded URL paths are not supported");
+      }
       const mcpAdminRequest = isMcpAdminRequest(url.pathname);
       if (mcpAdminRequest) {
         if (!env.MCP_ADMIN_TOKEN) {

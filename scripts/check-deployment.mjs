@@ -154,7 +154,7 @@ async function expectStatus(
   label,
   headers,
   timeoutMs,
-  expectedStatus,
+  expectedStatuses,
   method = "GET",
 ) {
   const target = endpointUrl(baseUrl, endpoint);
@@ -180,9 +180,12 @@ async function expectStatus(
   }
   const status = response.status;
   await response.body?.cancel();
-  if (status !== expectedStatus) {
+  const acceptedStatuses = Array.isArray(expectedStatuses)
+    ? expectedStatuses
+    : [expectedStatuses];
+  if (!acceptedStatuses.includes(status)) {
     throw new Error(
-      `${label} returned HTTP ${status}; expected ${expectedStatus}`,
+      `${label} returned HTTP ${status}; expected ${acceptedStatuses.join(" or ")}`,
     );
   }
 }
@@ -255,7 +258,7 @@ async function checkOnce(baseUrl, headers, timeoutMs) {
     "MCP administration boundary",
     headers,
     timeoutMs,
-    401,
+    mcpConfig.enabled ? 401 : [401, 503],
   );
   await expectStatus(
     baseUrl,

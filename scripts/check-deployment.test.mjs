@@ -109,7 +109,7 @@ test("accepts an absent MCP endpoint when hosted access is disabled", async () =
       return;
     }
     if (request.url === "/api/mcp/principals") {
-      response.writeHead(401).end();
+      response.writeHead(503).end();
       return;
     }
     if (request.url === "/mcp") {
@@ -130,6 +130,36 @@ test("accepts an absent MCP endpoint when hosted access is disabled", async () =
       attempts: 1,
       timeoutMs: 1_000,
     });
+  });
+});
+
+test("rejects an absent admin binding when hosted MCP is enabled", async () => {
+  await withServer((request, response) => {
+    if (request.url === "/") {
+      response.writeHead(200).end("Poker Training Analyzer");
+      return;
+    }
+    if (request.url === "/api/mcp/principals") {
+      response.writeHead(503).end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(
+      request.url === "/api/health"
+        ? JSON.stringify({ status: "ok" })
+        : request.url === "/api/mcp/config"
+          ? JSON.stringify({ enabled: true })
+          : JSON.stringify({ jobs: [] }),
+    );
+  }, async (baseUrl) => {
+    await assert.rejects(
+      checkDeployment(baseUrl, {
+        allowHttp: true,
+        attempts: 1,
+        timeoutMs: 1_000,
+      }),
+      /MCP administration boundary returned HTTP 503; expected 401/,
+    );
   });
 });
 

@@ -30,10 +30,13 @@ admin token only in component memory after an explicit unlock; it is not
 persisted in browser storage or application state outside that control.
 
 The exact `/mcp` route remains distinct: it preserves the agent principal's
-bearer token and is explicitly included in Worker Static Assets routing.
-Deployment smoke checks require the administration boundary to return `401`
-without a token and verify the enabled MCP endpoint returns its authentication
-challenge instead of a Static Assets method response.
+bearer token and is explicitly included in Worker Static Assets routing. The
+Worker rejects percent-encoded proxied pathnames before classifying the route,
+so backend path decoding cannot bypass the administration boundary. Deployment
+smoke checks require the administration boundary to return `401` when MCP is
+enabled, accept the fail-closed `503` only while MCP is disabled, and verify the
+enabled MCP endpoint returns its authentication challenge instead of a Static
+Assets method response.
 
 ## Consequences
 

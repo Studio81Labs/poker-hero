@@ -784,8 +784,11 @@ def _limped_pot_participant_positions(
     limper: Position,
 ) -> tuple[Position, Position] | None:
     expected_positions = {limper, "big_blind"}
-    hero_position = normalize_position(state.hero_position)
-    opponent_position = normalize_position(state.opponent_position)
+    hero_position = _limped_pot_participant_position(state.hero_position, limper)
+    opponent_position = _limped_pot_participant_position(
+        state.opponent_position,
+        limper,
+    )
     participant_positions: tuple[Position, Position] | None = None
     if (
         hero_position in expected_positions
@@ -826,6 +829,16 @@ def _limped_pot_participant_positions(
         if hero_relative_position != expected_hero_relative:
             return None
     return participant_positions
+
+
+def _limped_pot_participant_position(
+    value: str | None,
+    limper: Position,
+) -> Position | None:
+    position = normalize_position(value)
+    if limper == "small_blind" and position == "button":
+        return "small_blind"
+    return position
 
 
 def _relative_position_label(value: str | None) -> Literal["ip", "oop"] | None:

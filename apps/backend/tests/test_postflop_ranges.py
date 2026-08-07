@@ -243,6 +243,35 @@ def test_assigns_blind_limp_ranges_with_explicit_relative_label(
     assert "AA" not in selection.ip_range.split(",")
 
 
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("dealer", "big_blind", "ip"),
+        ("big_blind", "dealer", "oop"),
+    ),
+)
+def test_assigns_heads_up_dealer_as_small_blind_limper(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: str,
+) -> None:
+    state = limped_pot_state(limper_position="small_blind")
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limped_pot"
+    assert "AA" in selection.ip_range.split(",")
+    assert "AA" not in selection.oop_range.split(",")
+
+
 def test_rejects_blind_limp_with_contradictory_relative_label() -> None:
     state = limped_pot_state(limper_position="small_blind")
     state.opponent_position = "OOP"

@@ -3987,6 +3987,84 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("keeps the information dialog open until a one-time MCP token is stored", async () => {
+    fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/health")) {
+        return Promise.resolve(jsonResponse({
+          status: "ok",
+          environment: "staging",
+          parser_provider: "ocr_cv",
+          recommendation_provider: "local_solver",
+          recommendation_engine: "postflop_solver",
+        }));
+      }
+      if (url.endsWith("/api/mcp/config")) {
+        return Promise.resolve(jsonResponse({
+          enabled: true,
+          environment: "staging",
+          endpoint: "https://poker-staging.example/mcp",
+          writes_enabled: true,
+        }));
+      }
+      if (url.endsWith("/api/mcp/principals") && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({
+          principal: {
+            id: "mcp_00000000000000000000000000000001",
+            name: "Codex staging",
+            environment: "staging",
+            token_prefix: "abcdefghijkl",
+            scopes: ["read"],
+            status: "active",
+            created_at: "2026-08-07T10:00:00Z",
+            updated_at: "2026-08-07T10:00:00Z",
+            expires_at: null,
+            revoked_at: null,
+            last_used_at: null,
+          },
+          token: "phmcp_one-time-token",
+        }));
+      }
+      if (url.endsWith("/api/mcp/principals")) {
+        return Promise.resolve(jsonResponse({ principals: [] }));
+      }
+      return Promise.reject(new Error(
+        `Unexpected request: ${url} ${init?.method ?? "GET"}`,
+      ));
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "About this app" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "About Poker Training Analyzer",
+    });
+    await user.type(
+      await within(dialog).findByLabelText("Credential name"),
+      "Codex staging",
+    );
+    await user.click(within(dialog).getByRole("button", {
+      name: "Create credential",
+    }));
+
+    expect(await within(dialog).findByText("phmcp_one-time-token")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Close app information",
+    })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("button", { name: "I stored it" }));
+
+    expect(within(dialog).getByRole("button", {
+      name: "Close app information",
+    })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeEnabled();
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", {
+      name: "About Poker Training Analyzer",
+    })).not.toBeInTheDocument();
+  });
+
   it("downloads and restores full application backups from the info dialog", async () => {
     const restoredJob = approvedJob();
     fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {

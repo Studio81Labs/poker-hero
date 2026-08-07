@@ -56,7 +56,8 @@ describe("McpAccessPanel", () => {
 
   it("blocks token-producing actions until the one-time token is dismissed", async () => {
     const user = userEvent.setup();
-    render(<McpAccessPanel />);
+    const onPendingTokenChange = vi.fn();
+    render(<McpAccessPanel onPendingTokenChange={onPendingTokenChange} />);
 
     await user.type(
       await screen.findByLabelText("Credential name"),
@@ -71,6 +72,7 @@ describe("McpAccessPanel", () => {
       screen.getByRole("button", { name: "Create credential" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Rotate" })).toBeDisabled();
+    expect(onPendingTokenChange).toHaveBeenLastCalledWith(true);
     expect(rotateMcpPrincipal).not.toHaveBeenCalled();
     expect(revokeMcpPrincipal).not.toHaveBeenCalled();
 
@@ -80,5 +82,6 @@ describe("McpAccessPanel", () => {
       screen.getByRole("button", { name: "Create credential" }),
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: "Rotate" })).toBeEnabled();
+    expect(onPendingTokenChange).toHaveBeenLastCalledWith(false);
   });
 });

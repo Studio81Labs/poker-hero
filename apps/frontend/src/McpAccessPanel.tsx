@@ -14,7 +14,11 @@ import type {
   McpScope,
 } from "./types";
 
-export function McpAccessPanel() {
+export function McpAccessPanel({
+  onPendingTokenChange,
+}: {
+  onPendingTokenChange?: (pending: boolean) => void;
+}) {
   const [config, setConfig] = useState<McpAccessConfig | null>(null);
   const [principals, setPrincipals] = useState<McpPrincipal[]>([]);
   const [name, setName] = useState("");
@@ -25,6 +29,10 @@ export function McpAccessPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const tokenPending = issued !== null;
+
+  useEffect(() => {
+    onPendingTokenChange?.(tokenPending);
+  }, [onPendingTokenChange, tokenPending]);
 
   useEffect(() => {
     let active = true;

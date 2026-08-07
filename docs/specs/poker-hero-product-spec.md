@@ -179,20 +179,29 @@ The backend API:
 
 ### Agent MCP Gateway
 
-The local MCP gateway exposes a curated subset of the backend API for agents
-performing post-hand training and review. Each process is permanently bound to
+The MCP gateway exposes a curated subset of the backend API for agents
+performing post-hand training and review. It supports a local stdio process and
+an optional hosted Streamable HTTP route. Each gateway is permanently bound to
 staging or production and verifies the backend's declared deployment identity
 before data access. It must use the same API job transitions as the browser,
-preserve parser and recommendation evidence, and never call providers or stores
-directly.
+preserve parser and recommendation evidence, and never call providers or poker
+stores directly.
 
 Production MCP access is read-only. Staging mutations require explicit operator
 enablement and cover only screenshot submission, reviewed canonical approval,
 pre-reveal decision recording, recommendation requests, and lesson review.
 Administrative backup, dataset import, benchmark execution, and bulk archival
 remain unavailable. Local image tools may read only files resolved below a
-configured screenshot root. MCP credentials stay in process configuration and
-never enter tool results.
+configured screenshot root. The hosted route omits local screenshot submission
+and operates on jobs uploaded through the app.
+
+Hosted access is disabled by default and requires an exact public HTTPS `/mcp`
+URL plus an active environment-bound bearer principal. The protected app
+surface creates, rotates, and revokes named credentials; plaintext is displayed
+once and only a hash and lookup prefix are persisted. Read and write scopes are
+server authorization, independent of client approval settings. Hosted writes
+also require the staging-only deployment write opt-in. Production remains
+read-only. MCP credentials never enter tool results or portable backups.
 
 ### Parser Registry
 
@@ -816,8 +825,10 @@ Example configuration concepts:
   never receive or forward this credential itself.
 - A required deployment environment identity (`local`, `staging`, or
   `production`) that environment-fixed MCP gateways verify before data access.
-- MCP target URL, fixed environment, write opt-in, screenshot root, timeout,
-  and optional Cloudflare Access or trusted downstream service credentials.
+- Local MCP target URL, fixed environment, write opt-in, screenshot root,
+  timeout, and optional Cloudflare Access or trusted downstream credentials.
+- Hosted MCP enablement, exact public URL and origin allowlist, staging write
+  opt-in, and separate positive per-principal read/write request limits.
 
 Configuration must allow local/private testing with local services and later public testing with external services without changing the frontend flow.
 
@@ -890,6 +901,14 @@ MCP gateway tests:
   and lesson-review lifecycle through the HTTP API.
 - Reject screenshot paths outside the configured root.
 - Preserve bounded API status, request-ID, and retry metadata in tool failures.
+- Keep the hosted route absent by default; require a valid environment-bound
+  bearer credential when enabled.
+- Store only credential hashes, and prove rotation, expiry, and revocation
+  invalidate access.
+- Enforce hosted read/write scopes, the staging-only write gate, separate rate
+  limits, exact host/origin checks, and non-cacheable protocol responses.
+- Complete MCP initialization and tool discovery through Streamable HTTP while
+  omitting the local screenshot-path tool.
 
 The Playwright browser suite runs the real Vite app against an isolated
 FastAPI process with deterministic local HTTP parser and recommendation
@@ -1101,6 +1120,6 @@ Poker Hero is successful when:
 - A deployed backend can reject application API traffic that does not pass
   through the configured frontend Worker while retaining a platform health
   endpoint.
-- An agent can inspect either environment through a fixed-target MCP process,
-  while production remains read-only and staging writes preserve the explicit
-  post-hand approval workflow.
+- An agent can inspect either environment through a fixed-target local process
+  or authenticated hosted endpoint, while production remains read-only and
+  staging writes preserve the explicit post-hand approval workflow.

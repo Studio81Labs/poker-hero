@@ -18,7 +18,7 @@ Browser
         -> preflop chart, postflop-solver plugin, or bundled range/EV fallback
 
 Post-hand agent
-  -> environment-fixed local MCP gateway (stdio)
+  -> environment-fixed MCP gateway (local stdio or authenticated hosted HTTP)
   -> environment Worker or trusted backend API
   -> the same FastAPI state flow
 ```
@@ -220,30 +220,40 @@ contract. It does not open the file-backed stores or call parser/provider
 registries directly. This preserves the same validation, locking, rate limits,
 request correlation, and persisted review evidence used by the browser.
 
-Each stdio process is configured for exactly one `staging` or `production`
-target. The backend advertises `POKER_DEPLOYMENT_ENVIRONMENT` on its public
-health response, and the gateway verifies that identity before data access.
-Production configuration rejects write enablement and omits every mutation
-from tool discovery. Staging remains read-only unless an operator explicitly
-sets `POKER_MCP_ALLOW_WRITES=true`.
+Each stdio process or hosted endpoint is configured for exactly one `staging`
+or `production` target. The backend advertises
+`POKER_DEPLOYMENT_ENVIRONMENT` on its public health response, and the gateway
+verifies that identity before data access. Production configuration rejects
+write enablement and omits every mutation from tool discovery. Staging remains
+read-only unless an operator explicitly sets `POKER_MCP_ALLOW_WRITES=true`.
 
 The read surface exposes environment health, processing jobs, individual jobs,
 history search, training progress, and parser benchmark summaries. The staging
-write surface follows the ordinary post-hand lifecycle: upload a screenshot
-from a configured filesystem root, approve a user-reviewed canonical state,
-record a pre-reveal decision, request educational guidance, and save a review
-lesson. Administrative backup, dataset, benchmark-run, and bulk-archive APIs
-remain outside the gateway.
+write surface follows the ordinary post-hand lifecycle: the local transport may
+upload a screenshot from a configured filesystem root, then either transport
+can approve a user-reviewed canonical state, record a pre-reveal decision,
+request educational guidance, and save a review lesson. Administrative backup,
+dataset, benchmark-run, and bulk-archive APIs remain outside the gateway.
 
-The gateway may authenticate through Cloudflare Access service headers, a
-future API bearer token, or—in a trusted server deployment only—the private
-Worker-to-backend shared secret. Inbound agent identity is never treated as the
-Worker credential. Secrets are masked settings, require HTTPS, and never enter
-tool results. Backend API credentials are withheld from the unauthenticated
-environment identity probe; Cloudflare Access service headers remain available
-to cross the protected edge. API failures retain bounded status, request-ID,
-and retry metadata for agent recovery without logging request bodies or poker
-evidence.
+Hosted MCP is mounted on the existing backend at `/mcp`, disabled by default,
+and uses stateless Streamable HTTP. Opaque `phmcp_` credentials are bound to
+the deployment environment and persisted as one-way hashes under
+`POKER_DATA_DIR/mcp`. The protected application surface creates, rotates, and
+revokes principals with read or read/write scopes. Production cannot enable
+writes; staging writes require both credential scope and the deployment gate.
+Separate per-principal read/write limits protect the protocol surface.
+Token-issuance and MCP responses are non-cacheable. Credential state is a
+deployment concern and is excluded from portable application backups.
+
+The local gateway may authenticate through Cloudflare Access service headers
+or—in a trusted server deployment only—the private Worker-to-backend shared
+secret. Hosted callers authenticate with their MCP principal bearer token;
+inbound agent identity is never treated as the Worker credential. Secrets are
+masked settings, require HTTPS, and never enter tool results. Backend API
+credentials are withheld from the unauthenticated environment identity probe;
+Cloudflare Access service headers remain available to cross the protected edge.
+API failures retain bounded status, request-ID, and retry metadata for agent
+recovery without logging request bodies or poker evidence.
 
 ### Frontend
 
@@ -257,7 +267,8 @@ later-street conditioning status, replayed line, posterior reach, active
 combinations, memory, and exploitability, while keeping exact configured OOP/IP
 ranges behind a collapsed disclosure; providers remain free to omit those
 fields. In production it uses same-origin `/api/*`;
-`worker.js` forwards those requests to `BACKEND_URL`, replaces any
+`worker.js` forwards those requests and the exact `/mcp` route to `BACKEND_URL`,
+replaces any
 browser-supplied proxy credential with its private `API_PROXY_SECRET` binding,
 and serves all other routes from Worker Static Assets. When
 `POKER_PROXY_SHARED_SECRET` is configured, FastAPI uses a constant-time
@@ -661,13 +672,14 @@ user.
 
 - Environments: pushes to `main` promote to `staging`; `v*` tags promote to
   `production`; manual deployment workflows select either target explicitly.
-- Frontend: one Cloudflare Worker Static Assets deployment plus `/api/*` proxy
-  per environment.
+- Frontend: one Cloudflare Worker Static Assets deployment plus `/api/*` and
+  `/mcp` proxy routes per environment.
 - Backend: one Coolify Docker application per environment, built from the
   repository root with `apps/backend/Dockerfile`.
-- MCP: local stdio gateway processes use separate environment-specific client
-  configurations. A future shared Streamable HTTP deployment requires its own
-  MCP-compatible authorization boundary and is not implied by this adapter.
+- MCP: local stdio processes and optional hosted `/mcp` routes use separate
+  environment-specific client configurations. Hosted routes use revocable
+  environment-bound bearer principals and remain dark unless explicitly
+  configured.
 - Access control: Cloudflare Access can allowlist users at the public
   frontend boundary. A shared Worker-to-backend secret protects the public
   Coolify application API from direct access.

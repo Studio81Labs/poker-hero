@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack, asynccontextmanager, suppress
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
@@ -88,6 +88,15 @@ from app.models import (
     TrainingReviewOrder,
     TrainingReviewRequest,
 )
+from app.mcp_access import (
+    CreateMcpPrincipalRequest,
+    McpAccessConfig,
+    McpIssuedPrincipal,
+    McpPrincipalList,
+    McpPrincipalStore,
+    McpPrincipalSummary,
+)
+from app.mcp_http import HostedMcpRuntime, build_hosted_mcp_runtime
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
 from app.providers.base import (
@@ -408,6 +417,41 @@ class RequestObservabilityMiddleware:
         )
 
 
+class PathCorsMiddleware:
+    """Keep browser MCP origins from gaining CORS access to the admin API."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        api_origins: list[str],
+        mcp_origins: list[str],
+    ) -> None:
+        self.app = app
+        options: dict[str, Any] = {
+            "allow_credentials": True,
+            "allow_methods": ["*"],
+            "allow_headers": ["*"],
+            "expose_headers": [
+                REQUEST_ID_HEADER,
+                "Retry-After",
+                "X-RateLimit-Limit",
+                "X-RateLimit-Remaining",
+            ],
+        }
+        self.api_app = CORSMiddleware(app, allow_origins=api_origins, **options)
+        self.mcp_app = CORSMiddleware(app, allow_origins=mcp_origins, **options)
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        target = self.mcp_app if scope.get("path") == "/mcp" else self.api_app
+        await target(scope, receive, send)
+
+
 class DataMutationLockMiddleware:
     """Coordinate API mutations with consistent cross-process snapshots."""
 
@@ -430,6 +474,9 @@ class DataMutationLockMiddleware:
 
         method = scope.get("method", "").upper()
         path = scope.get("path", "")
+        if path == "/mcp":
+            await self.app(scope, receive, send)
+            return
         mutating_get = method == "GET" and path.startswith(
             self.MUTATING_GET_PATH_PREFIXES
         )
@@ -502,6 +549,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ),
         }
     )
+    mcp_principal_store = (
+        McpPrincipalStore(
+            active_settings.data_dir,
+            active_settings.deployment_environment,
+        )
+        if active_settings.deployment_environment in {"staging", "production"}
+        else None
+    )
+    hosted_mcp_runtime: HostedMcpRuntime | None = None
 
     def job_lock_index(job_id: str) -> int:
         return hash(job_id) % len(job_locks)
@@ -687,7 +743,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 detail=str(exc),
             ) from exc
 
-    app = FastAPI(title="Poker Training Analyzer API")
+    @asynccontextmanager
+    async def app_lifespan(_app: FastAPI):
+        if hosted_mcp_runtime is None:
+            yield
+            return
+        async with hosted_mcp_runtime.lifespan():
+            yield
+
+    app = FastAPI(title="Poker Training Analyzer API", lifespan=app_lifespan)
     app.add_middleware(DataMutationLockMiddleware, data_lock=data_lock)
 
     @app.exception_handler(Exception)
@@ -787,6 +851,90 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 else active_settings.recommendation_provider
             ),
         }
+
+    @app.get("/api/mcp/config", response_model=McpAccessConfig)
+    def get_mcp_access_config() -> McpAccessConfig:
+        return McpAccessConfig(
+            enabled=active_settings.mcp_enabled,
+            environment=active_settings.deployment_environment,
+            endpoint=(
+                active_settings.mcp_public_url
+                if active_settings.mcp_enabled
+                else None
+            ),
+            writes_enabled=active_settings.mcp_allow_writes,
+        )
+
+    @app.get("/api/mcp/principals", response_model=McpPrincipalList)
+    async def list_mcp_principals() -> McpPrincipalList:
+        if mcp_principal_store is None:
+            return McpPrincipalList(principals=[])
+        principals = await run_in_threadpool(mcp_principal_store.list)
+        return McpPrincipalList(principals=principals)
+
+    @app.post(
+        "/api/mcp/principals",
+        response_model=McpIssuedPrincipal,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_mcp_principal(
+        request: CreateMcpPrincipalRequest,
+    ) -> JSONResponse:
+        store_for_mcp = require_mcp_principal_store(mcp_principal_store)
+        if (
+            active_settings.deployment_environment != "staging"
+            and "write" in request.scopes
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="MCP write credentials can only be issued in staging",
+            )
+        try:
+            issued = await run_in_threadpool(
+                store_for_mcp.create,
+                name=request.name,
+                scopes=request.scopes,
+                expires_at=request.expires_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=201,
+            content=issued.model_dump(mode="json"),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post(
+        "/api/mcp/principals/{principal_id}/rotate",
+        response_model=McpIssuedPrincipal,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def rotate_mcp_principal(principal_id: str) -> JSONResponse:
+        store_for_mcp = require_mcp_principal_store(mcp_principal_store)
+        try:
+            issued = await run_in_threadpool(store_for_mcp.rotate, principal_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(
+            status_code=201,
+            content=issued.model_dump(mode="json"),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.delete(
+        "/api/mcp/principals/{principal_id}",
+        response_model=McpPrincipalSummary,
+    )
+    async def revoke_mcp_principal(principal_id: str) -> McpPrincipalSummary:
+        store_for_mcp = require_mcp_principal_store(mcp_principal_store)
+        try:
+            return await run_in_threadpool(store_for_mcp.revoke, principal_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
     async def create_job(
@@ -1549,19 +1697,29 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 ) from exc
             return benchmark_store.save(report)
 
+    if active_settings.mcp_enabled:
+        assert mcp_principal_store is not None
+        hosted_mcp_runtime = build_hosted_mcp_runtime(
+            active_settings,
+            api_app=RequestObservabilityMiddleware(
+                app,
+                access_log_level=ACCESS_LOG_LEVELS[
+                    active_settings.access_log_level
+                ],
+            ),
+            principal_store=mcp_principal_store,
+        )
+        app.mount("/", hosted_mcp_runtime.app, name="mcp")
+
     return RequestObservabilityMiddleware(
-        CORSMiddleware(
+        PathCorsMiddleware(
             app,
-            allow_origins=active_settings.cors_origins,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=[
-                REQUEST_ID_HEADER,
-                "Retry-After",
-                "X-RateLimit-Limit",
-                "X-RateLimit-Remaining",
-            ],
+            api_origins=active_settings.cors_origins,
+            mcp_origins=(
+                active_settings.mcp_allowed_origins
+                if active_settings.mcp_enabled
+                else []
+            ),
         ),
         access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
     )
@@ -1572,6 +1730,17 @@ def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:
         return store.get(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Job not found") from exc
+
+
+def require_mcp_principal_store(
+    store: McpPrincipalStore | None,
+) -> McpPrincipalStore:
+    if store is None:
+        raise HTTPException(
+            status_code=409,
+            detail="MCP principals are available only in staging or production",
+        )
+    return store
 
 
 def is_history_ready(job: JobRecord) -> bool:

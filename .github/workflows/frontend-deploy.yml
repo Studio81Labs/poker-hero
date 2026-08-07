@@ -126,6 +126,10 @@ jobs:
           if [ "$ENV_NAME" = "staging" ]; then
             test -n "$MCP_ADMIN_TOKEN" || { echo "::error::MCP_ADMIN_TOKEN secret is not set in env ${ENV_NAME}"; exit 1; }
           fi
+          if [ -n "$MCP_ADMIN_TOKEN" ] && [ "$MCP_ADMIN_TOKEN" = "$API_PROXY_SECRET" ]; then
+            echo "::error::MCP_ADMIN_TOKEN must be different from API_PROXY_SECRET in env ${ENV_NAME}"
+            exit 1
+          fi
           node -e '
             const backend = new URL(process.env.BACKEND_URL);
             if (process.env.API_PROXY_SECRET && backend.protocol !== "https:") {

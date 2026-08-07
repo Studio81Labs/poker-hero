@@ -22,7 +22,10 @@ from app.solvers.preflop_context import (
     requires_hero_stack_for_preflop_chart,
     supports_preflop_chart,
 )
-from app.solvers.postflop_ranges import select_postflop_ranges
+from app.solvers.postflop_ranges import (
+    resolve_squeeze_pot_relative_position,
+    select_postflop_ranges,
+)
 from app.solvers.wager_context import (
     resolve_hero_wager,
     resolve_opponent_commitment_total,
@@ -108,10 +111,7 @@ class LocalSolverProvider:
             return required_fields
 
         required_fields.append("board_cards")
-        if _postflop_position(
-            state.hero_position,
-            state.opponent_position,
-        ) is None:
+        if _postflop_position_for_state(state) is None:
             if state.hero_position is None or not state.hero_position.strip():
                 required_fields.append("hero_position")
             elif state.opponent_position is None or not state.opponent_position.strip():
@@ -261,10 +261,7 @@ class LocalSolverProvider:
             return f"the {state.street} requires {expected_board_cards[state.street]} board cards"
         if state.players_in_hand != 2:
             return "the open-source engine supports heads-up postflop spots only"
-        if _postflop_position(
-            state.hero_position,
-            state.opponent_position,
-        ) is None:
+        if _postflop_position_for_state(state) is None:
             return (
                 "hero position must identify IP or OOP, or hero and opponent "
                 "seats must establish relative position"
@@ -297,10 +294,7 @@ class LocalSolverProvider:
         environment = os.environ.copy()
         range_selection = select_postflop_ranges(
             request.state,
-            hero_relative_position=_postflop_position(
-                request.state.hero_position,
-                request.state.opponent_position,
-            ),
+            hero_relative_position=_postflop_position_for_state(request.state),
             configured_oop_range=self.settings.postflop_solver_oop_range,
             configured_ip_range=self.settings.postflop_solver_ip_range,
             contextual_enabled=(
@@ -395,6 +389,18 @@ def _postflop_position(
     )
 
 
+def _postflop_position_for_state(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    position = _postflop_position(
+        state.hero_position,
+        state.opponent_position,
+    )
+    if position is not None:
+        return position
+    return resolve_squeeze_pot_relative_position(state)
+
+
 _SOLVER_MAX_CENTS = 2_147_483_647
 
 
@@ -420,10 +426,7 @@ def _postflop_history_unsupported_reason(state: CanonicalState) -> str | None:
             return "facing action must identify the outstanding wager"
         return None
 
-    hero_actor = _postflop_position(
-        state.hero_position,
-        state.opponent_position,
-    )
+    hero_actor = _postflop_position_for_state(state)
     if hero_actor is None:
         return "hero position must identify IP or OOP"
     if state.hero_stack is None or state.hero_stack <= 0:

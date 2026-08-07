@@ -110,8 +110,10 @@ postflop decisions with explicit relative position. Canonical `dealer` labels
 map to button/IP. When both reviewed seats are available, distinct normalized
 six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a bare small-blind versus
-big-blind pair remain ambiguous and use fallback. First-bet decisions retain
-the compact reconstruction path. In `contextual` range mode, an exact reviewed
+big-blind pair remain ambiguous and use fallback. An exact reviewed squeeze
+history resolves a surviving blind pair because it establishes their postflop
+order. First-bet decisions retain the compact reconstruction path. In
+`contextual` range mode, an exact reviewed
 heads-up state with an open-and-call preflop history whose actors match the
 reviewed seats replaces the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.
@@ -120,9 +122,13 @@ range and the opener's continue band after excluding its 4-bet segment. The
 same three-action shape with a distinct later cold-caller and a folded opener
 uses the chart's three-seat cold-3-bet continue band against the adjusted
 3-bettor range. The folded opener receives no postflop range, but its final
-opening commitment remains mandatory dead money in the reconstructed root
-pot. The exact continuation through a 4-bet by the opener and matching call by
-the original 3-bettor can use the opener's adjusted 4-bet band and the
+opening commitment remains mandatory dead money in the reconstructed root pot.
+An exact open/call/squeeze/call line with that opener folded uses the
+one-caller-adjusted reraise band for the squeezer and the named squeeze-response
+continue band for the caller after excluding its 4-bet segment. The caller's
+initial call is not counted twice; its matching squeeze call is the final
+commitment. The exact continuation through a 4-bet by the opener and matching
+call by the original 3-bettor can use the opener's adjusted 4-bet band and the
 3-bettor's continue band after excluding its 5-bet segment. The supported 2-4
 BB open, matching final commitments, legal seat order, optional legacy opener
 metadata, both reviewed survivor seats, and reconstructed flop-root pot must

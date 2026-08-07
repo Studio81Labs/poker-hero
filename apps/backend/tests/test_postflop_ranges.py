@@ -11,10 +11,14 @@ from app.models import (
     PreflopAction,
 )
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
-from app.solvers.postflop_ranges import select_postflop_ranges
+from app.solvers.postflop_ranges import (
+    resolve_squeeze_pot_relative_position,
+    select_postflop_ranges,
+)
 from app.solvers.preflop_chart import (
     COLD_THREE_BET_DEFENSE_POLICIES,
     FOUR_BET_DEFENSE_POLICIES,
+    SQUEEZE_DEFENSE_POLICIES,
     THREE_BET_DEFENSE_POLICIES,
     hand_classes_in_policy_band,
 )
@@ -72,6 +76,31 @@ def cold_three_bet_pot_state(
             PreflopAction(actor="utg", action="raise", amount=2.5),
             PreflopAction(actor="cutoff", action="raise", amount=8.0),
             PreflopAction(actor="button", action="call", amount=8.0),
+        ],
+    )
+
+
+def squeeze_pot_state(*, hero_position: str = "button") -> CanonicalState:
+    opponent_position = (
+        "small_blind" if hero_position == "button" else "button"
+    )
+    return CanonicalState(
+        players_in_hand=2,
+        hero_position=hero_position,
+        opponent_position=opponent_position,
+        street="flop",
+        pot_size=23.5,
+        current_bet=0,
+        effective_stack=90.0,
+        preflop_action_history=[
+            PreflopAction(actor="utg", action="raise", amount=2.5),
+            PreflopAction(actor="button", action="call", amount=2.5),
+            PreflopAction(
+                actor="small_blind",
+                action="raise",
+                amount=10.0,
+            ),
+            PreflopAction(actor="button", action="call", amount=10.0),
         ],
     )
 
@@ -551,6 +580,215 @@ def test_keeps_configured_ranges_for_contradictory_cold_three_bet_history() -> N
     assert select(state).source == "configured"
 
 
+def test_selects_chart_ranges_for_heads_up_squeeze_pot() -> None:
+    selection = select(squeeze_pot_state())
+
+    assert selection.source == "preflop_chart_squeeze_pot"
+    assert selection.context == {
+        "scenario": "squeeze_pot",
+        "folded_opener_position": "utg",
+        "folded_opener_commitment_bb": 2.5,
+        "caller_position": "button",
+        "squeezer_position": "small_blind",
+        "opening_size_bb": 2.5,
+        "squeeze_size_bb": 10.0,
+        "open_size_policy": "standard",
+        "squeeze_size_policy": "large",
+        "caller_adjustment_policy": "single_caller_conservative",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
+        "squeezer_base_fraction": 0.05,
+        "squeezer_fraction": 0.045,
+        "caller_base_continue_fraction": 0.045,
+        "caller_base_four_bet_fraction": 0.02,
+        "caller_continue_fraction": 0.0405,
+        "caller_four_bet_fraction": 0.019,
+        "squeeze_response_policy": "conservative_heads_up_squeeze",
+    }
+    assert "AA" in selection.oop_range.split(",")
+    assert "AA" not in selection.ip_range.split(",")
+    assert selection.ip_range != DEFAULT_POSTFLOP_IP_RANGE
+    assert selection.oop_range != DEFAULT_POSTFLOP_OOP_RANGE
+
+
+def test_assigns_squeeze_ranges_by_relative_position() -> None:
+    caller_hero = select(squeeze_pot_state(hero_position="button"))
+    squeezer_hero = select_postflop_ranges(
+        squeeze_pot_state(hero_position="small_blind"),
+        hero_relative_position="oop",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert caller_hero.ip_range == squeezer_hero.ip_range
+    assert caller_hero.oop_range == squeezer_hero.oop_range
+
+
+@pytest.mark.parametrize(
+    ("folded_opener", "caller", "squeezer"),
+    sorted(SQUEEZE_DEFENSE_POLICIES),
+)
+def test_supports_every_charted_squeeze_matchup(
+    folded_opener: Position,
+    caller: Position,
+    squeezer: Position,
+) -> None:
+    opening_size = 2.5
+    final_commitment = 10.0
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position=caller,
+        opponent_position=squeezer,
+        street="flop",
+        pot_size=(
+            1.5
+            + opening_size
+            - POSTED_BLIND_BB[folded_opener]
+            + final_commitment
+            - POSTED_BLIND_BB[caller]
+            + final_commitment
+            - POSTED_BLIND_BB[squeezer]
+        ),
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(
+                actor=folded_opener,
+                action="raise",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=caller,
+                action="call",
+                amount=opening_size,
+            ),
+            PreflopAction(
+                actor=squeezer,
+                action="raise",
+                amount=final_commitment,
+            ),
+            PreflopAction(
+                actor=caller,
+                action="call",
+                amount=final_commitment,
+            ),
+        ],
+    )
+
+    assert select(state).source == "preflop_chart_squeeze_pot"
+
+
+def test_resolves_blind_squeeze_survivors_from_reviewed_history() -> None:
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position="small_blind",
+        opponent_position="big_blind",
+        street="flop",
+        pot_size=22.5,
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=2.5),
+            PreflopAction(actor="small_blind", action="call", amount=2.5),
+            PreflopAction(actor="big_blind", action="raise", amount=10.0),
+            PreflopAction(actor="small_blind", action="call", amount=10.0),
+        ],
+    )
+
+    assert resolve_squeeze_pot_relative_position(state) == "oop"
+    state.hero_position = "big_blind"
+    state.opponent_position = "small_blind"
+    assert resolve_squeeze_pot_relative_position(state) == "ip"
+
+
+def test_keeps_blind_pair_ambiguous_without_exact_squeeze_history() -> None:
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position="small_blind",
+        opponent_position="big_blind",
+        street="flop",
+        pot_size=22.5,
+        current_bet=0,
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=2.5),
+            PreflopAction(actor="small_blind", action="call", amount=2.5),
+            PreflopAction(actor="big_blind", action="raise", amount=10.0),
+        ],
+    )
+
+    assert resolve_squeeze_pot_relative_position(state) is None
+
+
+def test_selects_squeeze_ranges_on_turn_after_completed_flop() -> None:
+    state = squeeze_pot_state()
+    state.street = "turn"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_squeeze_pot"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_keeps_configured_ranges_for_contradictory_squeeze_history() -> None:
+    state = squeeze_pot_state()
+    state.players_in_hand = 3
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.opponent_position = "utg"
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[1].amount = 3.0
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[3].amount = 9.5
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[3].actor = "small_blind"
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[0].actor = "button"
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[2].amount = 3.5
+    state.preflop_action_history[3].amount = 3.5
+    state.pot_size = 10.5
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_action_history[2].amount = 13.0
+    state.preflop_action_history[3].amount = 13.0
+    state.pot_size = 29.5
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.pot_size = 21.0
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_opener_position = "hijack"
+    assert select(state).source == "configured"
+
+    state = squeeze_pot_state()
+    state.preflop_open_size = 3.0
+    assert select(state).source == "configured"
+
+
 def test_selects_chart_ranges_for_heads_up_four_bet_pot() -> None:
     selection = select(four_bet_pot_state())
 
@@ -747,6 +985,58 @@ def test_three_bet_size_adjusts_the_cold_caller_band() -> None:
     assert large_selection.context["cold_caller_four_bet_fraction"] == 0.018
     assert len(small_selection.ip_range.split(",")) > len(
         large_selection.ip_range.split(",")
+    )
+
+
+def test_squeeze_size_adjusts_the_caller_band() -> None:
+    small_squeeze = squeeze_pot_state()
+    small_squeeze.preflop_action_history[2].amount = 6.5
+    small_squeeze.preflop_action_history[3].amount = 6.5
+    small_squeeze.pot_size = 16.5
+    large_squeeze = squeeze_pot_state()
+    large_squeeze.preflop_action_history[2].amount = 12.0
+    large_squeeze.preflop_action_history[3].amount = 12.0
+    large_squeeze.pot_size = 27.5
+
+    small_selection = select(small_squeeze)
+    large_selection = select(large_squeeze)
+
+    assert small_selection.context["squeeze_size_policy"] == "small"
+    assert small_selection.context["caller_continue_fraction"] == 0.0473
+    assert small_selection.context["caller_four_bet_fraction"] == 0.021
+    assert large_selection.context["squeeze_size_policy"] == "very_large"
+    assert large_selection.context["caller_continue_fraction"] == 0.036
+    assert large_selection.context["caller_four_bet_fraction"] == 0.018
+    assert len(small_selection.ip_range.split(",")) > len(
+        large_selection.ip_range.split(",")
+    )
+
+
+def test_open_size_adjusts_the_squeezer_band() -> None:
+    small_open = squeeze_pot_state()
+    small_open.preflop_action_history[0].amount = 2.0
+    small_open.preflop_action_history[1].amount = 2.0
+    small_open.preflop_action_history[2].amount = 6.0
+    small_open.preflop_action_history[3].amount = 6.0
+    small_open.pot_size = 15.0
+    large_open = squeeze_pot_state()
+    large_open.preflop_action_history[0].amount = 4.0
+    large_open.preflop_action_history[1].amount = 4.0
+    large_open.preflop_action_history[2].amount = 12.0
+    large_open.preflop_action_history[3].amount = 12.0
+    large_open.pot_size = 29.0
+
+    small_selection = select(small_open)
+    large_selection = select(large_open)
+
+    assert small_selection.context["open_size_policy"] == "small"
+    assert small_selection.context["squeeze_size_policy"] == "standard"
+    assert small_selection.context["squeezer_fraction"] == 0.0473
+    assert large_selection.context["open_size_policy"] == "very_large"
+    assert large_selection.context["squeeze_size_policy"] == "standard"
+    assert large_selection.context["squeezer_fraction"] == 0.0405
+    assert len(small_selection.oop_range.split(",")) > len(
+        large_selection.oop_range.split(",")
     )
 
 
@@ -993,6 +1283,14 @@ def test_reconstructs_flop_root_from_current_street_wagers() -> None:
     cold_three_bet_facing_bet.facing_action = "bet"
     assert select(cold_three_bet_facing_bet).source == (
         "preflop_chart_cold_three_bet_pot"
+    )
+
+    squeeze_facing_bet = squeeze_pot_state()
+    squeeze_facing_bet.pot_size = 25.5
+    squeeze_facing_bet.current_bet = 2.0
+    squeeze_facing_bet.facing_action = "bet"
+    assert select(squeeze_facing_bet).source == (
+        "preflop_chart_squeeze_pot"
     )
 
     four_bet_facing_bet = four_bet_pot_state()

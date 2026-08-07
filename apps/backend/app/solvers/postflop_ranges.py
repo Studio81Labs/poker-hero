@@ -22,6 +22,7 @@ RangeSource = Literal[
     "preflop_chart_single_raised_pot",
     "preflop_chart_three_bet_pot",
     "preflop_chart_cold_three_bet_pot",
+    "preflop_chart_squeeze_pot",
     "preflop_chart_four_bet_pot",
 ]
 StackDepthSource = Literal["reconstructed", "standard_assumption"]
@@ -95,6 +96,19 @@ def select_postflop_ranges(
         if selection is not None:
             return selection
 
+    squeeze_context = _squeeze_pot_context(
+        state,
+        hero_relative_position,
+    )
+    if squeeze_context is not None:
+        selection = _squeeze_pot_selection(
+            state,
+            hero_relative_position,
+            squeeze_context,
+        )
+        if selection is not None:
+            return selection
+
     four_bet_context = _four_bet_pot_context(
         state,
         hero_relative_position,
@@ -108,6 +122,23 @@ def select_postflop_ranges(
         if selection is not None:
             return selection
     return configured
+
+
+def resolve_squeeze_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve an otherwise ambiguous blind pair from an exact squeeze line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _squeeze_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
 
 
 def _single_raised_pot_selection(
@@ -476,6 +507,110 @@ def _cold_three_bet_pot_selection(
     )
 
 
+def _squeeze_pot_selection(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    context: tuple[Position, Position, Position, float, float],
+) -> PostflopRangeSelection | None:
+    (
+        folded_opener,
+        caller,
+        squeezer,
+        opening_size,
+        squeeze_size,
+    ) = context
+    from app.solvers.preflop_chart import (
+        DEFENSE_POLICIES,
+        SINGLE_CALLER_POLICY,
+        SQUEEZE_DEFENSE_POLICIES,
+        SQUEEZE_RESPONSE_POLICY_NAME,
+        adjusted_caller_defense_policy,
+        adjusted_defense_policy,
+        adjusted_three_bet_defense_policy,
+        policy_for_open_size,
+        policy_for_stack_depth,
+        policy_for_three_bet_size,
+    )
+
+    base_squeezer = DEFENSE_POLICIES.get((folded_opener, squeezer))
+    base_caller = SQUEEZE_DEFENSE_POLICIES.get(
+        (folded_opener, caller, squeezer)
+    )
+    open_size_policy = policy_for_open_size(opening_size)
+    squeeze_size_policy = policy_for_three_bet_size(
+        squeeze_size / opening_size
+    )
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=squeeze_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
+    if (
+        base_squeezer is None
+        or base_caller is None
+        or open_size_policy is None
+        or squeeze_size_policy is None
+        or stack_policy is None
+    ):
+        return None
+
+    squeezer_policy = adjusted_caller_defense_policy(
+        adjusted_defense_policy(
+            base_squeezer,
+            open_size_policy,
+            stack_policy,
+        ),
+        SINGLE_CALLER_POLICY,
+    )
+    caller_policy = adjusted_three_bet_defense_policy(
+        base_caller,
+        squeeze_size_policy,
+        stack_policy,
+    )
+    squeezer_range = _range_for_policy_band(
+        squeezer_policy.reraise_fraction
+    )
+    caller_range = _range_for_policy_band(
+        caller_policy.continue_fraction,
+        minimum_exclusive=caller_policy.four_bet_fraction,
+    )
+    if not squeezer_range or not caller_range:
+        return None
+
+    return _selection_for_ranges(
+        state,
+        hero_relative_position,
+        ranges_by_position={
+            caller: caller_range,
+            squeezer: squeezer_range,
+        },
+        source="preflop_chart_squeeze_pot",
+        context={
+            "scenario": "squeeze_pot",
+            "folded_opener_position": folded_opener,
+            "folded_opener_commitment_bb": opening_size,
+            "caller_position": caller,
+            "squeezer_position": squeezer,
+            "opening_size_bb": opening_size,
+            "squeeze_size_bb": squeeze_size,
+            "open_size_policy": open_size_policy.name,
+            "squeeze_size_policy": squeeze_size_policy.name,
+            "caller_adjustment_policy": SINGLE_CALLER_POLICY.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
+            "squeezer_base_fraction": base_squeezer.reraise_fraction,
+            "squeezer_fraction": squeezer_policy.reraise_fraction,
+            "caller_base_continue_fraction": base_caller.continue_fraction,
+            "caller_base_four_bet_fraction": base_caller.four_bet_fraction,
+            "caller_continue_fraction": caller_policy.continue_fraction,
+            "caller_four_bet_fraction": caller_policy.four_bet_fraction,
+            "squeeze_response_policy": SQUEEZE_RESPONSE_POLICY_NAME,
+        },
+    )
+
+
 def _selection_for_ranges(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],
@@ -724,6 +859,89 @@ def _cold_three_bet_pot_context(
         cold_caller,
         opening_action.amount,
         three_bet_action.amount,
+    )
+
+
+def _squeeze_pot_context(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> tuple[Position, Position, Position, float, float] | None:
+    if state.players_in_hand != 2 or len(state.preflop_action_history) != 4:
+        return None
+    opening_action, first_call, squeeze_action, final_call = (
+        state.preflop_action_history
+    )
+    if (
+        opening_action.action != "raise"
+        or first_call.action != "call"
+        or squeeze_action.action != "raise"
+        or final_call.action != "call"
+        or final_call.actor != first_call.actor
+        or abs(first_call.amount - opening_action.amount)
+        > MONEY_TOLERANCE_BB
+        or abs(final_call.amount - squeeze_action.amount)
+        > MONEY_TOLERANCE_BB
+        or not MIN_SINGLE_OPEN_SIZE_BB
+        <= opening_action.amount
+        <= MAX_SINGLE_OPEN_SIZE_BB
+    ):
+        return None
+
+    folded_opener = normalize_position(opening_action.actor)
+    caller = normalize_position(first_call.actor)
+    squeezer = normalize_position(squeeze_action.actor)
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    minimum_squeeze = opening_action.amount + max(
+        1.0,
+        opening_action.amount - 1.0,
+    )
+    if (
+        folded_opener is None
+        or caller is None
+        or squeezer is None
+        or len({folded_opener, caller, squeezer}) != 3
+        or hero_position is None
+        or opponent_position is None
+        or hero_position == opponent_position
+        or {caller, squeezer} != {hero_position, opponent_position}
+        or not POSITION_ACTION_ORDER[folded_opener]
+        < POSITION_ACTION_ORDER[caller]
+        < POSITION_ACTION_ORDER[squeezer]
+        or squeeze_action.amount + MONEY_TOLERANCE_BB < minimum_squeeze
+        or squeeze_action.amount
+        > opening_action.amount * MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO
+        + MONEY_TOLERANCE_BB
+    ):
+        return None
+    if (
+        state.preflop_opener_position is not None
+        and normalize_position(state.preflop_opener_position)
+        != folded_opener
+    ):
+        return None
+    if (
+        state.preflop_open_size is not None
+        and abs(state.preflop_open_size - opening_action.amount)
+        > MONEY_TOLERANCE_BB
+    ):
+        return None
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
+    if not pot_matches_preflop_actions(
+        flop_root_pot,
+        (
+            (folded_opener, opening_action.amount),
+            (caller, final_call.amount),
+            (squeezer, squeeze_action.amount),
+        ),
+    ):
+        return None
+    return (
+        folded_opener,
+        caller,
+        squeezer,
+        opening_action.amount,
+        squeeze_action.amount,
     )
 
 

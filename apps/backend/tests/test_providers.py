@@ -2170,6 +2170,119 @@ def test_local_solver_derives_ranges_from_cold_three_bet_pot(
     assert result.raw["engine"] == "postflop_solver"
 
 
+def test_local_solver_derives_ranges_from_squeeze_pot(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
+        "'preflop_chart_squeeze_pot'\n"
+        "assert context['scenario'] == 'squeeze_pot'\n"
+        "assert context['folded_opener_position'] == 'utg'\n"
+        "assert context['folded_opener_commitment_bb'] == 2.5\n"
+        "assert context['caller_position'] == 'button'\n"
+        "assert context['squeezer_position'] == 'small_blind'\n"
+        "assert context['squeeze_response_policy'] == "
+        "'conservative_heads_up_squeeze'\n"
+        "assert context['caller_adjustment_policy'] == "
+        "'single_caller_conservative'\n"
+        "assert context['starting_effective_stack_bb'] == 100\n"
+        "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
+        "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual squeeze range response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    state.pot_size = 23.5
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.effective_stack = 90.0
+    state.hero_position = "button"
+    state.opponent_position = "small_blind"
+    state.preflop_action_history = [
+        PreflopAction(actor="utg", action="raise", amount=2.5),
+        PreflopAction(actor="button", action="call", amount=2.5),
+        PreflopAction(actor="small_blind", action="raise", amount=10.0),
+        PreflopAction(actor="button", action="call", amount=10.0),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
+def test_local_solver_derives_ranges_for_blind_squeeze_survivors(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
+        "'preflop_chart_squeeze_pot'\n"
+        "assert context['folded_opener_position'] == 'button'\n"
+        "assert context['caller_position'] == 'small_blind'\n"
+        "assert context['squeezer_position'] == 'big_blind'\n"
+        "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
+        "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual blind squeeze response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    state.pot_size = 22.5
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.effective_stack = 90.0
+    state.hero_position = "small_blind"
+    state.opponent_position = "big_blind"
+    state.preflop_action_history = [
+        PreflopAction(actor="button", action="raise", amount=2.5),
+        PreflopAction(actor="small_blind", action="call", amount=2.5),
+        PreflopAction(actor="big_blind", action="raise", amount=10.0),
+        PreflopAction(actor="small_blind", action="call", amount=10.0),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_local_solver_derives_ranges_from_complete_four_bet_pot(
     tmp_path: Path,
 ) -> None:

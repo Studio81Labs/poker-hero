@@ -37,10 +37,25 @@ struct CanonicalState {
     facing_action: Option<String>,
     #[serde(default)]
     postflop_action_history: Vec<PostflopActionInput>,
+    #[serde(default)]
+    completed_postflop_streets: Vec<CompletedPostflopStreetInput>,
 }
 
 #[derive(Deserialize)]
 struct PostflopActionInput {
+    actor: String,
+    action: String,
+    amount: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct CompletedPostflopStreetInput {
+    street: String,
+    actions: Vec<CompletedPostflopActionInput>,
+}
+
+#[derive(Deserialize)]
+struct CompletedPostflopActionInput {
     actor: String,
     action: String,
     amount: Option<f64>,
@@ -82,6 +97,7 @@ enum ModeledActionKind {
     Check,
     Bet,
     Raise,
+    Call,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,6 +113,34 @@ struct PreparedHistory {
     contributions: [i32; 2],
     observed_bet: Option<i32>,
     observed_raise_adders: Vec<i32>,
+}
+
+#[derive(Debug)]
+struct PreparedStreetHistory {
+    street: String,
+    history: PreparedHistory,
+}
+
+#[derive(Debug)]
+struct ConditioningPlan {
+    completed: Vec<PreparedStreetHistory>,
+    starting_pot: i32,
+    effective_stack: i32,
+}
+
+struct ConditionedRanges {
+    ranges: [Range; 2],
+    evidence: Value,
+    applied: bool,
+}
+
+#[derive(Clone, Copy)]
+struct SolverOptions {
+    max_memory_mb: f64,
+    max_iterations: u32,
+    target_ratio: f64,
+    rake_rate: f64,
+    rake_cap: f64,
 }
 
 struct StreetBetSizes {
@@ -140,12 +184,17 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let current_bet = non_negative_value(state.current_bet, "current_bet")?;
     let effective_stack = effective_stack_value(state.effective_stack, current_bet)?;
     let prepared_history = prepare_action_history(&state, hero_player, current_bet)?;
-
-    let TreeAmounts {
-        starting_pot,
-        current_bet: scaled_bet,
-        effective_stack: tree_stack,
-    } = tree_amounts(
+    let completed_histories = prepare_completed_histories(&state)?;
+    let conditioning = conditioning_plan(
+        &state,
+        hero_player,
+        pot_size,
+        current_bet,
+        effective_stack,
+        &prepared_history,
+        completed_histories,
+    )?;
+    let current_amounts = tree_amounts(
         pot_size,
         current_bet,
         effective_stack,
@@ -154,6 +203,9 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         hero_player,
         &prepared_history,
     )?;
+    let starting_pot = current_amounts.starting_pot;
+    let tree_stack = current_amounts.effective_stack;
+    let scaled_bet = current_amounts.current_bet;
 
     let hero_hand = hero_hand_code(&state.hero_cards)?;
     let mut oop_range = env_string("POKER_POSTFLOP_SOLVER_OOP_RANGE", DEFAULT_OOP_RANGE);
@@ -168,14 +220,40 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         ip_range = include_hand(&ip_range, &hero_hand);
     }
 
+    let solver_options = SolverOptions {
+        max_memory_mb: positive_env_number("POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB", 768.0)?,
+        max_iterations: env_integer("POKER_POSTFLOP_SOLVER_MAX_ITERATIONS", 400)?,
+        target_ratio: positive_env_number("POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY", 0.01)?,
+        rake_rate: env_number("POKER_POSTFLOP_SOLVER_RAKE_RATE", 0.0)?,
+        rake_cap: env_number("POKER_POSTFLOP_SOLVER_RAKE_CAP", 0.0)? * CHIP_SCALE,
+    };
+    let conditioned = conditioning
+        .as_ref()
+        .map(|plan| {
+            condition_ranges(
+                &state,
+                hero_player,
+                &oop_range,
+                &ip_range,
+                plan,
+                solver_options,
+            )
+        })
+        .transpose()?;
+    let game_ranges = if let Some(result) = &conditioned {
+        result.ranges
+    } else {
+        [oop_range.parse::<Range>()?, ip_range.parse::<Range>()?]
+    };
+
     let bet_sizes = configured_bet_sizes(&board_state, scaled_bet, &prepared_history)?;
-    let card_config = card_config(&state, &oop_range, &ip_range)?;
+    let card_config = card_config_from_ranges(&state, game_ranges, &board_state)?;
     let tree_config = TreeConfig {
         initial_state: board_state,
         starting_pot,
         effective_stack: tree_stack,
-        rake_rate: env_number("POKER_POSTFLOP_SOLVER_RAKE_RATE", 0.0)?,
-        rake_cap: env_number("POKER_POSTFLOP_SOLVER_RAKE_CAP", 0.0)? * CHIP_SCALE,
+        rake_rate: solver_options.rake_rate,
+        rake_cap: solver_options.rake_cap,
         flop_bet_sizes: bet_sizes.flop,
         turn_bet_sizes: bet_sizes.turn,
         river_bet_sizes: bet_sizes.river,
@@ -193,12 +271,11 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         .map_err(|error| format!("Could not initialize postflop game: {error}"))?;
 
     let (_, compressed_memory) = game.memory_usage();
-    let max_memory_mb = positive_env_number("POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB", 768.0)?;
-    if compressed_memory as f64 > max_memory_mb * 1024.0 * 1024.0 {
+    if compressed_memory as f64 > solver_options.max_memory_mb * 1024.0 * 1024.0 {
         return Err(format!(
             "estimated compressed game tree is {:.0} MB, above the configured {:.0} MB limit",
             compressed_memory as f64 / (1024.0 * 1024.0),
-            max_memory_mb
+            solver_options.max_memory_mb
         ));
     }
 
@@ -211,10 +288,13 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
     let action_history = game.history().to_vec();
     game.back_to_root();
 
-    let max_iterations = env_integer("POKER_POSTFLOP_SOLVER_MAX_ITERATIONS", 400)?;
-    let target_ratio = positive_env_number("POKER_POSTFLOP_SOLVER_TARGET_EXPLOITABILITY", 0.01)?;
-    let target_exploitability = starting_pot as f32 * target_ratio as f32;
-    let exploitability = solve(&mut game, max_iterations, target_exploitability, false);
+    let target_exploitability = starting_pot as f32 * solver_options.target_ratio as f32;
+    let exploitability = solve(
+        &mut game,
+        solver_options.max_iterations,
+        target_exploitability,
+        false,
+    );
     game.apply_history(&action_history);
     if game.current_player() != hero_player {
         return Err("solved action history did not return to the hero decision".to_string());
@@ -270,7 +350,9 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
         .sizing
         .map(|size| format!(" to {} BB", display_amount(size)))
         .unwrap_or_default();
-    let range_description = if range_source == "configured" {
+    let range_description = if conditioned.as_ref().is_some_and(|result| result.applied) {
+        "ranges conditioned through the reviewed prior-street actions"
+    } else if range_source == "configured" {
         "configured ranges"
     } else {
         "preflop-history-derived ranges"
@@ -299,6 +381,7 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
             "ranges": {"oop": oop_range, "ip": ip_range},
             "range_source": range_source,
             "range_context": range_context,
+            "range_conditioning": conditioned.as_ref().map(|result| &result.evidence),
             "tree": {
                 "starting_pot": starting_pot as f64 / CHIP_SCALE,
                 "effective_stack": tree_stack as f64 / CHIP_SCALE,
@@ -306,8 +389,8 @@ fn solve_request(request: RecommendationRequest) -> Result<RecommendationResult,
                 "hero_stack": state.hero_stack,
                 "opponent_stack": state.opponent_stack,
                 "compressed_memory_mb": round(compressed_memory as f64 / (1024.0 * 1024.0), 1),
-                "max_iterations": max_iterations,
-                "target_exploitability_ratio": target_ratio,
+                "max_iterations": solver_options.max_iterations,
+                "target_exploitability_ratio": solver_options.target_ratio,
             },
             "exploitability": {
                 "bb": round(exploitability_bb, 4),
@@ -355,10 +438,24 @@ fn validate_state(state: &CanonicalState) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
 fn card_config(
     state: &CanonicalState,
     oop_range: &str,
     ip_range: &str,
+    initial_state: &BoardState,
+) -> Result<CardConfig, String> {
+    card_config_from_ranges(
+        state,
+        [oop_range.parse::<Range>()?, ip_range.parse::<Range>()?],
+        initial_state,
+    )
+}
+
+fn card_config_from_ranges(
+    state: &CanonicalState,
+    ranges: [Range; 2],
+    initial_state: &BoardState,
 ) -> Result<CardConfig, String> {
     let board = state
         .board_cards
@@ -366,24 +463,178 @@ fn card_config(
         .map(card_code)
         .collect::<Result<Vec<_>, _>>()?;
     let flop = flop_from_str(&board[..3].join(""))?;
-    let turn = if board.len() >= 4 {
+    let turn = if !matches!(initial_state, BoardState::Flop) && board.len() >= 4 {
         card_from_str(&board[3])?
     } else {
         NOT_DEALT
     };
-    let river = if board.len() == 5 {
+    let river = if matches!(initial_state, BoardState::River) && board.len() == 5 {
         card_from_str(&board[4])?
     } else {
         NOT_DEALT
     };
-    let oop = oop_range.parse::<Range>()?;
-    let ip = ip_range.parse::<Range>()?;
     Ok(CardConfig {
-        range: [oop, ip],
+        range: ranges,
         flop,
         turn,
         river,
     })
+}
+
+fn condition_ranges(
+    state: &CanonicalState,
+    hero_player: usize,
+    oop_range: &str,
+    ip_range: &str,
+    plan: &ConditioningPlan,
+    options: SolverOptions,
+) -> Result<ConditionedRanges, String> {
+    let initial_ranges = [oop_range.parse::<Range>()?, ip_range.parse::<Range>()?];
+    let bet_sizes = conditioning_bet_sizes(plan)?;
+    let card_config = card_config_from_ranges(state, initial_ranges, &BoardState::Flop)?;
+    let tree_config = TreeConfig {
+        initial_state: BoardState::Flop,
+        starting_pot: plan.starting_pot,
+        effective_stack: plan.effective_stack,
+        rake_rate: options.rake_rate,
+        rake_cap: options.rake_cap,
+        flop_bet_sizes: bet_sizes.flop,
+        turn_bet_sizes: bet_sizes.turn,
+        river_bet_sizes: bet_sizes.river,
+        turn_donk_sizes: None,
+        river_donk_sizes: None,
+        add_allin_threshold: 0.0,
+        force_allin_threshold: 0.0,
+        merging_threshold: 0.0,
+    };
+    let action_tree = ActionTree::new(tree_config)
+        .map_err(|error| format!("Could not build conditioning action tree: {error}"))?;
+    let mut game = PostFlopGame::with_config(card_config, action_tree)
+        .map_err(|error| format!("Could not initialize conditioning game: {error}"))?;
+    let (_, compressed_memory) = game.memory_usage();
+    let compressed_memory_mb = compressed_memory as f64 / (1024.0 * 1024.0);
+    if compressed_memory_mb > options.max_memory_mb {
+        return Ok(ConditionedRanges {
+            ranges: initial_ranges,
+            evidence: json!({
+                "status": "skipped",
+                "reason": "conditioning tree exceeds the configured memory limit",
+                "estimated_compressed_memory_mb": round(compressed_memory_mb, 1),
+                "max_memory_mb": options.max_memory_mb,
+            }),
+            applied: false,
+        });
+    }
+
+    game.allocate_memory(true);
+    let modeled_history = move_through_completed(&mut game, state, plan)?;
+    let action_history = game.history().to_vec();
+    game.back_to_root();
+    let target_exploitability = plan.starting_pot as f32 * options.target_ratio as f32;
+    let exploitability = solve(
+        &mut game,
+        options.max_iterations,
+        target_exploitability,
+        false,
+    );
+    game.apply_history(&action_history);
+
+    let hero_cards = hero_card_ids(&state.hero_cards)?;
+    let mut posterior_ranges = [Range::default(); 2];
+    let mut active_hands = [0; 2];
+    let mut hero_reach = 0.0;
+    for player in 0..2 {
+        let hands = game.private_cards(player);
+        let mut weights = game.weights(player).to_vec();
+        if player == hero_player {
+            let hero_index = hands
+                .iter()
+                .position(|cards| *cards == hero_cards)
+                .ok_or_else(|| {
+                    "hero cards are not present in the conditioning range".to_string()
+                })?;
+            hero_reach = weights[hero_index] as f64;
+            if weights[hero_index] <= 0.0 {
+                weights[hero_index] = f32::EPSILON;
+            }
+        }
+        active_hands[player] = weights.iter().filter(|weight| **weight > 0.0).count();
+        if active_hands[player] == 0 {
+            return Ok(ConditionedRanges {
+                ranges: initial_ranges,
+                evidence: json!({
+                    "status": "skipped",
+                    "reason": "reviewed line has zero reach for one player",
+                }),
+                applied: false,
+            });
+        }
+        posterior_ranges[player] = Range::from_hands_weights(hands, &weights)?;
+    }
+
+    let exploitability_bb = exploitability as f64 / CHIP_SCALE;
+    let exploitability_ratio = exploitability as f64 / plan.starting_pot as f64;
+    Ok(ConditionedRanges {
+        ranges: posterior_ranges,
+        evidence: json!({
+            "status": "applied",
+            "mode": "flop_root_posterior",
+            "decision_street": state.street,
+            "completed_streets": plan.completed.iter().map(|item| item.street.as_str()).collect::<Vec<_>>(),
+            "modeled_history": modeled_history,
+            "downstream_tree": "single_bet_no_raises",
+            "active_hands": {"oop": active_hands[0], "ip": active_hands[1]},
+            "hero_line_reach": round(hero_reach, 6),
+            "compressed_memory_mb": round(compressed_memory_mb, 1),
+            "exploitability": {
+                "bb": round(exploitability_bb, 4),
+                "pot_ratio": round(exploitability_ratio, 5),
+            },
+        }),
+        applied: true,
+    })
+}
+
+fn conditioning_bet_sizes(plan: &ConditioningPlan) -> Result<StreetBetSizes, String> {
+    let configured_bets =
+        conditioning_bet_size(&env_string("POKER_POSTFLOP_SOLVER_BET_SIZES", "70%"))?;
+    let mut flop_history = None;
+    let mut turn_history = None;
+    for item in &plan.completed {
+        match item.street.as_str() {
+            "flop" => flop_history = Some(&item.history),
+            "turn" => turn_history = Some(&item.history),
+            _ => {}
+        }
+    }
+    let flop = paired_sizes(&configured_sizes_for_street(
+        flop_history,
+        None,
+        &configured_bets,
+        "",
+    )?);
+    let turn = paired_sizes(&configured_sizes_for_street(
+        turn_history,
+        None,
+        &configured_bets,
+        "",
+    )?);
+    let river = paired_sizes(&configured_sizes_for_street(
+        None,
+        None,
+        &configured_bets,
+        "",
+    )?);
+    Ok(StreetBetSizes { flop, turn, river })
+}
+
+fn conditioning_bet_size(configured: &str) -> Result<String, String> {
+    configured
+        .split(',')
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "POKER_POSTFLOP_SOLVER_BET_SIZES must contain a bet size".to_string())
 }
 
 fn configured_bet_sizes(
@@ -393,25 +644,14 @@ fn configured_bet_sizes(
 ) -> Result<StreetBetSizes, String> {
     let configured_bets = env_string("POKER_POSTFLOP_SOLVER_BET_SIZES", "70%");
     let configured_raises = env_string("POKER_POSTFLOP_SOLVER_RAISE_SIZES", "2.5x");
-    let base = BetSizeOptions::try_from((configured_bets.as_str(), configured_raises.as_str()))?;
-    let observed_bet = history
-        .observed_bet
-        .or((current_bet > 0).then_some(current_bet));
-    let bet_sizes = observed_bet
-        .map(|amount| format!("{amount}c,{configured_bets}"))
-        .unwrap_or_else(|| configured_bets.clone());
-    let raise_sizes = if history.observed_raise_adders.is_empty() {
-        configured_raises.clone()
-    } else {
-        let observed = history
-            .observed_raise_adders
-            .iter()
-            .map(|amount| format!("{amount}c"))
-            .collect::<Vec<_>>()
-            .join(",");
-        format!("{observed},{configured_raises}")
-    };
-    let current = BetSizeOptions::try_from((bet_sizes.as_str(), raise_sizes.as_str()))?;
+    let base = configured_sizes_for_street(None, None, &configured_bets, &configured_raises)?;
+    let current_fallback = (current_bet > 0).then_some(current_bet);
+    let current = configured_sizes_for_street(
+        Some(history),
+        current_fallback,
+        &configured_bets,
+        &configured_raises,
+    )?;
     let (flop, turn, river) = match current_street {
         BoardState::Flop => (
             paired_sizes(&current),
@@ -430,6 +670,36 @@ fn configured_bet_sizes(
         ),
     };
     Ok(StreetBetSizes { flop, turn, river })
+}
+
+fn configured_sizes_for_street(
+    history: Option<&PreparedHistory>,
+    fallback_bet: Option<i32>,
+    configured_bets: &str,
+    configured_raises: &str,
+) -> Result<BetSizeOptions, String> {
+    let observed_bet = history.and_then(|item| item.observed_bet).or(fallback_bet);
+    let bet_sizes = observed_bet
+        .map(|amount| format!("{amount}c,{configured_bets}"))
+        .unwrap_or_else(|| configured_bets.to_string());
+    let observed_raises = history
+        .map(|item| item.observed_raise_adders.as_slice())
+        .unwrap_or_default();
+    let raise_sizes = if observed_raises.is_empty() {
+        configured_raises.to_string()
+    } else {
+        let observed = observed_raises
+            .iter()
+            .map(|amount| format!("{amount}c"))
+            .collect::<Vec<_>>()
+            .join(",");
+        if configured_raises.is_empty() {
+            observed
+        } else {
+            format!("{observed},{configured_raises}")
+        }
+    };
+    BetSizeOptions::try_from((bet_sizes.as_str(), raise_sizes.as_str()))
 }
 
 fn paired_sizes(options: &BetSizeOptions) -> [BetSizeOptions; 2] {
@@ -458,36 +728,7 @@ fn move_to_hero_decision(
 ) -> Result<Vec<String>, String> {
     if !prepared.actions.is_empty() {
         let mut history = Vec::with_capacity(prepared.actions.len());
-        for action in &prepared.actions {
-            if game.current_player() != action.actor {
-                return Err("structured action history does not match the action tree".to_string());
-            }
-            let actor = if action.actor == 0 { "OOP" } else { "IP" };
-            match action.kind {
-                ModeledActionKind::Check => {
-                    play_action(
-                        game,
-                        |candidate| matches!(candidate, Action::Check),
-                        "check",
-                    )?;
-                    history.push(format!("{actor} check"));
-                }
-                ModeledActionKind::Bet => {
-                    play_wager(game, ModeledActionKind::Bet, action.amount)?;
-                    history.push(format!(
-                        "{actor} bet {:.2} BB",
-                        action.amount as f64 / CHIP_SCALE
-                    ));
-                }
-                ModeledActionKind::Raise => {
-                    play_wager(game, ModeledActionKind::Raise, action.amount)?;
-                    history.push(format!(
-                        "{actor} raise to {:.2} BB",
-                        action.amount as f64 / CHIP_SCALE
-                    ));
-                }
-            }
-        }
+        replay_actions(game, prepared, &mut history)?;
         return Ok(history);
     }
 
@@ -509,6 +750,87 @@ fn move_to_hero_decision(
     Ok(history)
 }
 
+fn move_through_completed(
+    game: &mut PostFlopGame,
+    state: &CanonicalState,
+    plan: &ConditioningPlan,
+) -> Result<Vec<String>, String> {
+    let mut modeled = Vec::new();
+    for item in &plan.completed {
+        replay_actions(game, &item.history, &mut modeled)?;
+        if !game.is_chance_node() {
+            return Err(format!(
+                "completed {} history did not reach the next board card",
+                item.street
+            ));
+        }
+        let board_index = match item.street.as_str() {
+            "flop" => 3,
+            "turn" => 4,
+            _ => return Err(format!("unsupported completed street: {}", item.street)),
+        };
+        let card = state
+            .board_cards
+            .get(board_index)
+            .ok_or_else(|| format!("{} board card is missing", item.street))?;
+        let code = card_code(card)?;
+        let card_id = card_from_str(&code)?;
+        if game.possible_cards() & (1_u64 << card_id) == 0 {
+            return Err(format!(
+                "reviewed {code} card is incompatible with the conditioning ranges"
+            ));
+        }
+        game.play(card_id as usize);
+        modeled.push(format!("deal {code}"));
+    }
+    Ok(modeled)
+}
+
+fn replay_actions(
+    game: &mut PostFlopGame,
+    prepared: &PreparedHistory,
+    modeled: &mut Vec<String>,
+) -> Result<(), String> {
+    for action in &prepared.actions {
+        if game.current_player() != action.actor {
+            return Err("structured action history does not match the action tree".to_string());
+        }
+        let actor = if action.actor == 0 { "OOP" } else { "IP" };
+        match action.kind {
+            ModeledActionKind::Check => {
+                play_action(
+                    game,
+                    |candidate| matches!(candidate, Action::Check),
+                    "check",
+                )?;
+                modeled.push(format!("{actor} check"));
+            }
+            ModeledActionKind::Bet => {
+                play_wager(game, ModeledActionKind::Bet, action.amount)?;
+                modeled.push(format!(
+                    "{actor} bet {:.2} BB",
+                    action.amount as f64 / CHIP_SCALE
+                ));
+            }
+            ModeledActionKind::Raise => {
+                play_wager(game, ModeledActionKind::Raise, action.amount)?;
+                modeled.push(format!(
+                    "{actor} raise to {:.2} BB",
+                    action.amount as f64 / CHIP_SCALE
+                ));
+            }
+            ModeledActionKind::Call => {
+                play_action(game, |candidate| matches!(candidate, Action::Call), "call")?;
+                modeled.push(format!(
+                    "{actor} call to {:.2} BB",
+                    action.amount as f64 / CHIP_SCALE
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn play_bet(game: &mut PostFlopGame, amount: i32) -> Result<(), String> {
     play_wager(game, ModeledActionKind::Bet, amount)
 }
@@ -517,7 +839,9 @@ fn play_wager(game: &mut PostFlopGame, kind: ModeledActionKind, amount: i32) -> 
     let label = match kind {
         ModeledActionKind::Bet => "bet",
         ModeledActionKind::Raise => "raise",
-        ModeledActionKind::Check => return Err("check is not a wager".to_string()),
+        ModeledActionKind::Check | ModeledActionKind::Call => {
+            return Err("action is not a wager".to_string())
+        }
     };
     play_action(
         game,
@@ -527,7 +851,7 @@ fn play_wager(game: &mut PostFlopGame, kind: ModeledActionKind, amount: i32) -> 
                 ModeledActionKind::Raise => {
                     matches!(action, Action::Raise(_) | Action::AllIn(_))
                 }
-                ModeledActionKind::Check => false,
+                ModeledActionKind::Check | ModeledActionKind::Call => false,
             };
             let matching_amount = match action {
                 Action::Bet(value) | Action::Raise(value) | Action::AllIn(value) => value == amount,
@@ -847,6 +1171,263 @@ fn prepare_action_history(
     Ok(prepared)
 }
 
+fn prepare_completed_histories(
+    state: &CanonicalState,
+) -> Result<Vec<PreparedStreetHistory>, String> {
+    state
+        .completed_postflop_streets
+        .iter()
+        .map(prepare_completed_history)
+        .collect()
+}
+
+fn prepare_completed_history(
+    input: &CompletedPostflopStreetInput,
+) -> Result<PreparedStreetHistory, String> {
+    if !matches!(input.street.as_str(), "flop" | "turn") {
+        return Err(format!("unsupported completed street: {}", input.street));
+    }
+    if input.actions.len() < 2 || input.actions.len() > 8 {
+        return Err(format!(
+            "completed {} history must contain between 2 and 8 actions",
+            input.street
+        ));
+    }
+
+    let mut prepared = PreparedHistory::default();
+    let mut next_actor = 0;
+    let mut previous_was_check = false;
+    let mut terminal = false;
+    for (index, action) in input.actions.iter().enumerate() {
+        let action_number = index + 1;
+        if terminal {
+            return Err(format!(
+                "completed {} history continues after its terminal action",
+                input.street
+            ));
+        }
+        let actor = match action.actor.to_lowercase().as_str() {
+            "oop" => 0,
+            "ip" => 1,
+            _ => {
+                return Err(format!(
+                    "completed {} action {action_number} has an unknown actor",
+                    input.street
+                ))
+            }
+        };
+        if actor != next_actor {
+            let expected = if next_actor == 0 { "OOP" } else { "IP" };
+            return Err(format!(
+                "completed {} action {action_number} must be by {expected}",
+                input.street
+            ));
+        }
+        let opponent = 1 - actor;
+        let actor_total = prepared.contributions[actor];
+        let opponent_total = prepared.contributions[opponent];
+        let (kind, amount) = match action.action.to_lowercase().as_str() {
+            "check" => {
+                if action.amount.is_some() {
+                    return Err(format!(
+                        "completed {} action {action_number} check cannot have an amount",
+                        input.street
+                    ));
+                }
+                if actor_total != opponent_total {
+                    return Err(format!(
+                        "completed {} action {action_number} cannot check while facing a wager",
+                        input.street
+                    ));
+                }
+                terminal = previous_was_check;
+                previous_was_check = true;
+                (ModeledActionKind::Check, actor_total)
+            }
+            "bet" => {
+                if actor_total != opponent_total || actor_total != 0 {
+                    return Err(format!(
+                        "completed {} action {action_number} bet requires an unopened street",
+                        input.street
+                    ));
+                }
+                let amount = scale_amount(
+                    action.amount.ok_or_else(|| {
+                        format!(
+                            "completed {} action {action_number} bet requires an amount",
+                            input.street
+                        )
+                    })?,
+                    "completed postflop bet",
+                )?;
+                prepared.contributions[actor] = amount;
+                prepared.observed_bet = Some(amount);
+                previous_was_check = false;
+                (ModeledActionKind::Bet, amount)
+            }
+            "raise" => {
+                if actor_total >= opponent_total {
+                    return Err(format!(
+                        "completed {} action {action_number} cannot raise without facing a wager",
+                        input.street
+                    ));
+                }
+                let amount = scale_amount(
+                    action.amount.ok_or_else(|| {
+                        format!(
+                            "completed {} action {action_number} raise requires an amount",
+                            input.street
+                        )
+                    })?,
+                    "completed postflop raise",
+                )?;
+                if amount <= opponent_total {
+                    return Err(format!(
+                        "completed {} action {action_number} raise-to amount must exceed the previous wager",
+                        input.street
+                    ));
+                }
+                prepared.observed_raise_adders.push(amount - opponent_total);
+                prepared.contributions[actor] = amount;
+                previous_was_check = false;
+                (ModeledActionKind::Raise, amount)
+            }
+            "call" => {
+                if actor_total >= opponent_total {
+                    return Err(format!(
+                        "completed {} action {action_number} cannot call without facing a wager",
+                        input.street
+                    ));
+                }
+                let amount = scale_amount(
+                    action.amount.ok_or_else(|| {
+                        format!(
+                            "completed {} action {action_number} call requires an amount",
+                            input.street
+                        )
+                    })?,
+                    "completed postflop call",
+                )?;
+                if amount != opponent_total {
+                    return Err(format!(
+                        "completed {} action {action_number} call must match the faced total",
+                        input.street
+                    ));
+                }
+                prepared.contributions[actor] = amount;
+                terminal = true;
+                previous_was_check = false;
+                (ModeledActionKind::Call, amount)
+            }
+            _ => {
+                return Err(format!(
+                    "completed {} action {action_number} has an unknown action",
+                    input.street
+                ))
+            }
+        };
+        prepared.actions.push(ModeledAction {
+            actor,
+            kind,
+            amount,
+        });
+        next_actor = opponent;
+    }
+    if !terminal {
+        return Err(format!(
+            "completed {} history must end with check-check or a call",
+            input.street
+        ));
+    }
+    Ok(PreparedStreetHistory {
+        street: input.street.clone(),
+        history: prepared,
+    })
+}
+
+fn conditioning_plan(
+    state: &CanonicalState,
+    hero_player: usize,
+    pot_size: f64,
+    current_bet: f64,
+    effective_stack: f64,
+    current_history: &PreparedHistory,
+    completed: Vec<PreparedStreetHistory>,
+) -> Result<Option<ConditioningPlan>, String> {
+    let expected: &[&str] = match state.street.as_deref() {
+        Some("turn") => &["flop"],
+        Some("river") => &["flop", "turn"],
+        _ => &[],
+    };
+    if expected.is_empty()
+        || completed
+            .iter()
+            .map(|item| item.street.as_str())
+            .ne(expected.iter().copied())
+    {
+        return Ok(None);
+    }
+    let (Some(hero_stack), Some(opponent_stack)) = (state.hero_stack, state.opponent_stack) else {
+        return Ok(None);
+    };
+    if !hero_stack.is_finite()
+        || hero_stack <= 0.0
+        || !opponent_stack.is_finite()
+        || opponent_stack < 0.0
+        || (hero_stack.min(opponent_stack) - effective_stack).abs() > 0.01
+    {
+        return Ok(None);
+    }
+
+    let scaled_bet = scale_amount(current_bet, "current_bet")?;
+    let mut contributions = current_street_contributions(hero_player, scaled_bet, current_history);
+    for item in &completed {
+        for (player, amount) in item.history.contributions.iter().enumerate() {
+            contributions[player] = contributions[player]
+                .checked_add(*amount)
+                .ok_or_else(|| "postflop contributions exceed the supported range".to_string())?;
+        }
+    }
+    let total_contributions = contributions.iter().try_fold(0_i32, |total, amount| {
+        total
+            .checked_add(*amount)
+            .ok_or_else(|| "postflop contributions exceed the supported range".to_string())
+    })?;
+    let starting_pot = scale_amount(pot_size, "pot_size")?
+        .checked_sub(total_contributions)
+        .ok_or_else(|| "pot_size is outside the supported range".to_string())?;
+    if starting_pot <= 0 {
+        return Ok(None);
+    }
+    let hero_start = hero_stack + contributions[hero_player] as f64 / CHIP_SCALE;
+    let opponent_start = opponent_stack + contributions[1 - hero_player] as f64 / CHIP_SCALE;
+    let effective_stack = scale_amount(hero_start.min(opponent_start), "effective_stack")?;
+    if contributions.iter().any(|amount| *amount > effective_stack) {
+        return Ok(None);
+    }
+    Ok(Some(ConditioningPlan {
+        completed,
+        starting_pot,
+        effective_stack,
+    }))
+}
+
+fn current_street_contributions(
+    hero_player: usize,
+    current_bet: i32,
+    history: &PreparedHistory,
+) -> [i32; 2] {
+    if !history.actions.is_empty() {
+        history.contributions
+    } else if current_bet > 0 {
+        let mut contributions = [0, 0];
+        contributions[1 - hero_player] = current_bet;
+        contributions
+    } else {
+        [0, 0]
+    }
+}
+
 fn tree_amounts(
     pot_size: f64,
     current_bet: f64,
@@ -1013,6 +1594,7 @@ mod tests {
             street: Some("flop".to_string()),
             facing_action: facing_action.map(str::to_string),
             postflop_action_history: Vec::new(),
+            completed_postflop_streets: Vec::new(),
         }
     }
 
@@ -1046,6 +1628,38 @@ mod tests {
                 amount: Some(7.0),
             },
         ];
+        state
+    }
+
+    fn turn_state_with_completed_flop() -> CanonicalState {
+        let mut state = facing_bet_state(None);
+        state.board_cards.push(InputCard {
+            rank: "5".to_string(),
+            suit: "spades".to_string(),
+        });
+        state.pot_size = Some(9.5);
+        state.current_bet = Some(0.0);
+        state.hero_stack = Some(95.5);
+        state.opponent_stack = Some(95.5);
+        state.effective_stack = Some(95.5);
+        state.hero_position = Some("OOP".to_string());
+        state.opponent_position = Some("IP".to_string());
+        state.street = Some("turn".to_string());
+        state.completed_postflop_streets = vec![CompletedPostflopStreetInput {
+            street: "flop".to_string(),
+            actions: vec![
+                CompletedPostflopActionInput {
+                    actor: "oop".to_string(),
+                    action: "bet".to_string(),
+                    amount: Some(2.0),
+                },
+                CompletedPostflopActionInput {
+                    actor: "ip".to_string(),
+                    action: "call".to_string(),
+                    amount: Some(2.0),
+                },
+            ],
+        }];
         state
     }
 
@@ -1118,7 +1732,7 @@ mod tests {
             merging_threshold: 0.0,
         })
         .unwrap();
-        let cards = card_config(&state, "AhKd", "QsQc").unwrap();
+        let cards = card_config(&state, "AhKd", "QsQc", &BoardState::River).unwrap();
         let mut game = PostFlopGame::with_config(cards, tree).unwrap();
         game.allocate_memory(false);
 
@@ -1134,6 +1748,190 @@ mod tests {
         assert_eq!(game.history(), action_history);
         assert!(!expected_values.is_empty());
         assert_eq!(modeled, ["OOP bet 2.00 BB", "IP raise to 7.00 BB"]);
+    }
+
+    #[test]
+    fn completed_history_reconstructs_flop_root_amounts() {
+        let state = turn_state_with_completed_flop();
+        let completed = prepare_completed_histories(&state).unwrap();
+
+        assert_eq!(completed[0].history.contributions, [200, 200]);
+        assert_eq!(completed[0].history.observed_bet, Some(200));
+        let plan = conditioning_plan(
+            &state,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            completed,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.starting_pot, 550);
+        assert_eq!(plan.effective_stack, 9750);
+        assert_eq!(plan.completed[0].street, "flop");
+    }
+
+    #[test]
+    fn conditioning_requires_visible_stacks_and_every_prior_street() {
+        let mut missing_stack = turn_state_with_completed_flop();
+        missing_stack.opponent_stack = None;
+        assert!(conditioning_plan(
+            &missing_stack,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            prepare_completed_histories(&missing_stack).unwrap(),
+        )
+        .unwrap()
+        .is_none());
+
+        let mut partial_river = turn_state_with_completed_flop();
+        partial_river.board_cards.push(InputCard {
+            rank: "6".to_string(),
+            suit: "clubs".to_string(),
+        });
+        partial_river.street = Some("river".to_string());
+        assert!(conditioning_plan(
+            &partial_river,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            prepare_completed_histories(&partial_river).unwrap(),
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn completed_history_replays_actions_and_the_actual_turn() {
+        let state = turn_state_with_completed_flop();
+        let plan = conditioning_plan(
+            &state,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            prepare_completed_histories(&state).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        let sizes = conditioning_bet_sizes(&plan).unwrap();
+        let tree = ActionTree::new(TreeConfig {
+            initial_state: BoardState::Flop,
+            starting_pot: plan.starting_pot,
+            effective_stack: plan.effective_stack,
+            rake_rate: 0.0,
+            rake_cap: 0.0,
+            flop_bet_sizes: sizes.flop,
+            turn_bet_sizes: sizes.turn,
+            river_bet_sizes: sizes.river,
+            turn_donk_sizes: None,
+            river_donk_sizes: None,
+            add_allin_threshold: 1.2,
+            force_allin_threshold: 0.0,
+            merging_threshold: 0.0,
+        })
+        .unwrap();
+        let cards = card_config(&state, "AhKd", "9c9s", &BoardState::Flop).unwrap();
+        let mut game = PostFlopGame::with_config(cards, tree).unwrap();
+        game.allocate_memory(true);
+
+        let modeled = move_through_completed(&mut game, &state, &plan).unwrap();
+
+        assert_eq!(
+            modeled,
+            ["OOP bet 2.00 BB", "IP call to 2.00 BB", "deal 5s"]
+        );
+        assert_eq!(game.current_board().len(), 4);
+        assert_eq!(game.current_player(), 0);
+    }
+
+    #[test]
+    fn posterior_conditioning_returns_reachable_ranges() {
+        let state = turn_state_with_completed_flop();
+        let plan = conditioning_plan(
+            &state,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            prepare_completed_histories(&state).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+        let result = condition_ranges(
+            &state,
+            0,
+            "AhKd,AsKs",
+            "9c9s,8c8s",
+            &plan,
+            SolverOptions {
+                max_memory_mb: 768.0,
+                max_iterations: 1,
+                target_ratio: 0.01,
+                rake_rate: 0.0,
+                rake_cap: 0.0,
+            },
+        )
+        .unwrap();
+
+        assert!(result.applied);
+        assert_eq!(result.evidence["status"], "applied");
+        assert!(
+            result.ranges[0]
+                .get_weight_by_cards(card_from_str("Ah").unwrap(), card_from_str("Kd").unwrap())
+                > 0.0
+        );
+        assert!(!result.ranges[1].is_empty());
+    }
+
+    #[test]
+    fn posterior_conditioning_skips_trees_above_the_memory_limit() {
+        let state = turn_state_with_completed_flop();
+        let plan = conditioning_plan(
+            &state,
+            0,
+            9.5,
+            0.0,
+            95.5,
+            &PreparedHistory::default(),
+            prepare_completed_histories(&state).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+
+        let result = condition_ranges(
+            &state,
+            0,
+            "AhKd,AsKs",
+            "9c9s,8c8s",
+            &plan,
+            SolverOptions {
+                max_memory_mb: 0.000_001,
+                max_iterations: 1,
+                target_ratio: 0.01,
+                rake_rate: 0.0,
+                rake_cap: 0.0,
+            },
+        )
+        .unwrap();
+
+        assert!(!result.applied);
+        assert_eq!(result.evidence["status"], "skipped");
+        assert_eq!(
+            result.evidence["reason"],
+            "conditioning tree exceeds the configured memory limit"
+        );
     }
 
     #[test]
@@ -1278,6 +2076,12 @@ mod tests {
         assert!(!has_fixed_bet(&river.flop, 137));
         assert!(!has_fixed_bet(&river.turn, 137));
         assert!(has_fixed_bet(&river.river, 137));
+    }
+
+    #[test]
+    fn conditioning_uses_only_the_first_configured_bet_size() {
+        assert_eq!(conditioning_bet_size("50%, 70%, 100%").unwrap(), "50%");
+        assert!(conditioning_bet_size(" , ").is_err());
     }
 
     #[test]

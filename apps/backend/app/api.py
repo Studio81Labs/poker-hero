@@ -427,6 +427,7 @@ class PathCorsMiddleware:
         api_origins: list[str],
         mcp_origins: list[str],
     ) -> None:
+        self.app = app
         options: dict[str, Any] = {
             "allow_credentials": True,
             "allow_methods": ["*"],

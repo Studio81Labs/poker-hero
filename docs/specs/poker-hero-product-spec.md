@@ -616,7 +616,38 @@ frequencies.
     into retryable errors. An untouched benchmark-only hand opened for review
     remains visible as workspace-only state during processing refreshes; if it
     later becomes processing work, the queue record replaces it without a
-    duplicate.
+    duplicate. Parser completion and failure handling merge into the latest
+    persisted record; a late parser failure cannot replace a newer approved or
+    recommended status.
+    Every visible processing or history item can also open persisted screenshot
+    details. A user may assign a title, notes, and up to ten tags; archive search
+    includes all three metadata fields, including terms that look like card codes.
+    Permanent deletion removes the original image and complete job record from
+    either projection, including malformed or otherwise unarchivable jobs, after
+    explicit confirmation. Deleting a selected ground-truth hand also removes it
+    from the current benchmark corpus. Permanent deletion is blocked while a
+    durable benchmark import still requires recovery, and concurrent detail or
+    image reads complete before deletion removes their files. Details, metadata
+    saves, and permanent deletion remain available while a recommendation provider
+    is running; deletion cancels that browser request without restoring the
+    removed hand when a stale response arrives. Automated recommendations are
+    canceled per hand, so deleting one screenshot does not abort or stall the
+    remaining upload queue. Metadata and deletion for other hands in the same
+    projection compose with the active recommendation lease rather than waiting
+    for its provider. Successful deletion refreshes processing and history so a
+    concurrent archival cannot leave stale membership or totals behind. A local
+    failed-upload placeholder cannot be deleted while its durable upload lease
+    or an authoritative queue refresh could still reveal a persisted job; the
+    client first reconciles by upload request ID, then deletes the resolved job
+    or unlocks local-only removal after storage absence is confirmed. Recovery
+    requested by one queue or history mutation remains deferred until every
+    overlapping mutation in that projection has finished.
+    A metadata 404 is treated as authoritative cross-client deletion: stale
+    queue/history entries and dialogs are removed and both projections refresh.
+    If benchmark state is loaded or the stale job was labeled, deletion also
+    reloads the corpus overview instead of adjusting its count optimistically.
+    History card searches treat `T` and `10` as equivalent in screenshot title,
+    notes, and tags, matching canonical hand-card search behavior.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
@@ -907,6 +938,8 @@ End-to-end tests:
 - Surface parser/provider errors in a recoverable way.
 - Continue processing unaffected queue items after one item fails.
 - Clear completed processing items into history.
+- Edit screenshot titles, notes, and tags from processing or history.
+- Permanently delete an unarchivable queue item or a saved history item.
 
 MCP gateway tests:
 
@@ -1128,6 +1161,8 @@ Poker Hero is successful when:
   persisted backend.
 - A user can search the complete persisted archive and page matching hands
   without replacing the newest-history cache or global reviewed count.
+- A user can title and tag screenshots, keep general notes separate from lesson
+  notes, and permanently delete any processing or archived screenshot.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.

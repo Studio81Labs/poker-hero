@@ -4,12 +4,14 @@ import {
   ApiResponseError,
   applicationBackupUrl,
   archiveJobs,
+  deleteJob,
   getBenchmarkDatasetImport,
   getHistory,
   listMcpPrincipals,
   getProcessingJobs,
   requestRecommendation,
   restoreApplicationBackup,
+  updateJobMetadata,
   uploadScreenshot,
 } from "./api";
 
@@ -45,6 +47,42 @@ describe("archiveJobs", () => {
       jobIds.slice(100, 200),
       jobIds.slice(200),
     ]);
+  });
+});
+
+describe("screenshot management", () => {
+  it("updates title, notes and tags on a screenshot", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ id: "job/123" }));
+    vi.stubGlobal("fetch", fetchMock);
+    const metadata = {
+      title: "Turn bluff",
+      notes: "Review the sizing.",
+      tags: ["turn", "bluff"],
+    };
+
+    await updateJobMetadata("job/123", metadata);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs/job%2F123/metadata",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(metadata),
+        credentials: "include",
+      },
+    );
+  });
+
+  it("permanently deletes a screenshot without reading a 204 body", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteJob("job/123")).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs/job%2F123",
+      { method: "DELETE", credentials: "include" },
+    );
   });
 });
 

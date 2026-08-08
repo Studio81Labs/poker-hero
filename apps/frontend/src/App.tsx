@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   archiveJobs,
   benchmarkDatasetUrl,
   completeTrainingReview,
+  deleteJob,
   getBenchmarkDatasetImport,
   getBenchmarkOverview,
   getBenchmarkReport,
@@ -29,6 +30,7 @@ import {
   runParserBenchmark,
   setBenchmarkInclusion,
   trainingLessonsExportUrl,
+  updateJobMetadata,
   uploadScreenshot,
 } from "./api";
 import type {
@@ -100,6 +102,10 @@ const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "hi
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const SIZING_MATCH_TOLERANCE = 0.01;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
+const MAX_SCREENSHOT_TITLE_LENGTH = 120;
+const MAX_SCREENSHOT_NOTES_LENGTH = 1000;
+const MAX_SCREENSHOT_TAGS = 10;
+const MAX_SCREENSHOT_TAG_LENGTH = 32;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
@@ -140,6 +146,11 @@ type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type PersistedJobMutationScope = "processing" | "history";
+type ActiveRecommendationRequest = {
+  mutationScope: PersistedJobMutationScope;
+  controller: AbortController;
+  ownsMutationLease: boolean;
+};
 type MutationLeaseBase = {
   ownerId: string;
   expiresAt: number;
@@ -163,6 +174,12 @@ type JobMutationExpectation =
   | {
     kind: "benchmark-inclusion";
     included: boolean;
+  }
+  | {
+    kind: "metadata";
+    title: string | null;
+    notes: string | null;
+    tags: string[];
   };
 type JobMutationLease = MutationLeaseBase & {
   kind: "job";
@@ -3211,6 +3228,14 @@ function jobMutationExpectationReached(
       )
       : job.training_reviewed_at === null;
   }
+  if (expectation.kind === "metadata") {
+    return (job.title ?? null) === expectation.title
+      && (job.notes ?? null) === expectation.notes
+      && screenshotTags(job).length === expectation.tags.length
+      && screenshotTags(job).every(
+        (tag, index) => tag === expectation.tags[index],
+      );
+  }
   return job.benchmark_included === expectation.included;
 }
 
@@ -3311,6 +3336,12 @@ function isJobMutationExpectation(
         expectation.note === null
         || typeof expectation.note === "string"
       );
+  }
+  if (expectation.kind === "metadata") {
+    return (expectation.title === null || typeof expectation.title === "string")
+      && (expectation.notes === null || typeof expectation.notes === "string")
+      && Array.isArray(expectation.tags)
+      && expectation.tags.every((tag) => typeof tag === "string");
   }
   return expectation.kind === "benchmark-inclusion"
     && typeof expectation.included === "boolean";
@@ -4685,6 +4716,42 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
   return job.parser_result?.state.street ?? "No street";
 }
 
+function screenshotLabel(job: JobRecord): string {
+  return typeof job.title === "string" && job.title.trim()
+    ? job.title.trim()
+    : job.original_filename;
+}
+
+function screenshotTags(job: JobRecord): string[] {
+  return Array.isArray(job.tags)
+    ? job.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+}
+
+function parseScreenshotTags(value: string): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const rawTag of value.split(",")) {
+    const tag = rawTag.trim();
+    if (!tag) {
+      continue;
+    }
+    if (tag.length > MAX_SCREENSHOT_TAG_LENGTH) {
+      throw new Error(`Tags can be at most ${MAX_SCREENSHOT_TAG_LENGTH} characters`);
+    }
+    const key = tag.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    tags.push(tag);
+  }
+  if (tags.length > MAX_SCREENSHOT_TAGS) {
+    throw new Error(`Use no more than ${MAX_SCREENSHOT_TAGS} tags`);
+  }
+  return tags;
+}
+
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [jobs, setJobs] = useState<JobRecord[]>(
@@ -4707,6 +4774,13 @@ export default function App() {
     readAutomationSettings,
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [managedJobId, setManagedJobId] = useState<string | null>(null);
+  const [screenshotTitle, setScreenshotTitle] = useState("");
+  const [screenshotNotes, setScreenshotNotes] = useState("");
+  const [screenshotTagInput, setScreenshotTagInput] = useState("");
+  const [screenshotMetadataSaving, setScreenshotMetadataSaving] = useState(false);
+  const [screenshotDeleting, setScreenshotDeleting] = useState(false);
+  const [screenshotDeleteArmed, setScreenshotDeleteArmed] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [mcpTokenPending, setMcpTokenPending] = useState(false);
   const [backupRestoring, setBackupRestoring] = useState(false);
@@ -4770,6 +4844,9 @@ export default function App() {
   const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
+  const activeRecommendationRequestsRef = useRef(
+    new Map<string, ActiveRecommendationRequest>(),
+  );
   const historySearchRequestRef = useRef(0);
   const jobsRef = useRef(jobs);
   const activeJobIdRef = useRef(activeJobId);
@@ -5149,7 +5226,7 @@ export default function App() {
     [confidences, validation.state, warnings],
   );
   const filmstripCount = jobs.length > 0 ? jobs.length : files.length;
-  const frameLabel = job?.original_filename ?? (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
+  const frameLabel = job ? screenshotLabel(job) : (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
   const frameStreet = form.street === "" ? "No street" : form.street;
   const queueCount = jobs.length > 0 ? jobs.length : files.length;
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
@@ -5162,6 +5239,20 @@ export default function App() {
   const historySearchActive = historySearchResults !== null;
   const visibleHistory = historySearchResults ?? history;
   const visibleHistoryTotal = historySearchActive ? historySearchTotal : historyTotal;
+  const managedJob = managedJobId === null
+    ? null
+    : jobs.find((candidate) => candidate.id === managedJobId)
+      ?? history.find((item) => item.id === managedJobId)?.job
+      ?? historySearchResults?.find((item) => item.id === managedJobId)?.job
+      ?? null;
+  const managedJobPersisted = Boolean(
+    managedJob && PERSISTED_JOB_ID_PATTERN.test(managedJob.id),
+  );
+  const managedLocalUploadRecoveryPending = Boolean(
+    managedJob
+    && !managedJobPersisted
+    && localUploadDeletionRequiresRecovery(managedJob),
+  );
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
@@ -5366,6 +5457,45 @@ export default function App() {
     scheduleMutationLeaseRevalidation();
     setError("Finishing recovery from a previous action. Try again in a moment.");
     return true;
+  }
+
+  function mutationComposesWithActiveRecommendation(
+    scope: PersistedJobMutationScope,
+  ): boolean {
+    const lease = scope === "processing"
+      ? processingMutationLeaseRef.current
+      : historyMutationLeaseRef.current;
+    if (lease?.ownerId !== mutationOwnerId) {
+      return false;
+    }
+    const activeRequests = [
+      ...activeRecommendationRequestsRef.current.entries(),
+    ].filter(([, request]) => request.mutationScope === scope);
+    if (lease.kind === "job") {
+      return activeRequests.some(([jobId]) => jobId === lease.jobId);
+    }
+    return lease.kind === "projection"
+      && lease.benchmarkImportRequestId === null
+      && activeRequests.length > 0;
+  }
+
+  function localUploadDeletionRequiresRecovery(
+    localJob: JobRecord,
+  ): boolean {
+    if (!isLocalUploadError(localJob) || !localJob.upload_request_id) {
+      return false;
+    }
+    const lease = processingMutationLeaseRef.current;
+    const expectedUpload = lease?.kind === "projection"
+      ? lease.expectedUploads.find(
+          (candidate) => candidate.requestId === localJob.upload_request_id,
+        )
+      : undefined;
+    if (expectedUpload?.target === "failed") {
+      return false;
+    }
+    return expectedUpload !== undefined
+      || !processingQueueSessionSynced();
   }
 
   function trackExpectedUpload(
@@ -5728,12 +5858,12 @@ export default function App() {
       historyMutationCountRef.current - 1,
       0,
     );
+    if (restoreAfterMutation) {
+      historyRestoreRetryRequestedRef.current = true;
+    }
     if (
       historyMutationCountRef.current === 0
-      && (
-        restoreAfterMutation
-        || historyRestoreRetryRequestedRef.current
-      )
+      && historyRestoreRetryRequestedRef.current
     ) {
       historyRestoreRetryRequestedRef.current = false;
       requestDeferredHistoryRestore();
@@ -5760,12 +5890,12 @@ export default function App() {
       processingMutationCountRef.current - 1,
       0,
     );
+    if (restoreAfterMutation) {
+      processingRestoreRetryRequestedRef.current = true;
+    }
     if (
       processingMutationCountRef.current === 0
-      && (
-        restoreAfterMutation
-        || processingRestoreRetryRequestedRef.current
-      )
+      && processingRestoreRetryRequestedRef.current
     ) {
       scheduleProcessingQueueRestore();
     }
@@ -6771,10 +6901,30 @@ export default function App() {
     setApprovedStateKey(approvalKey(approvedState));
   }
 
+  function preserveNewerScreenshotMetadata(incoming: JobRecord): JobRecord {
+    const current = jobsRef.current.find(
+      (candidate) => candidate.id === incoming.id,
+    );
+    const currentUpdatedAt = current ? Date.parse(current.updated_at) : Number.NaN;
+    const incomingUpdatedAt = Date.parse(incoming.updated_at);
+    return current
+      && Number.isFinite(currentUpdatedAt)
+      && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+      ? {
+          ...incoming,
+          title: current.title ?? null,
+          notes: current.notes ?? null,
+          tags: screenshotTags(current),
+          updated_at: current.updated_at,
+        }
+      : incoming;
+  }
+
   function applyRecommendedJob(recommended: JobRecord) {
-    replaceJob(recommended);
-    if (recommended.approved_state) {
-      setApprovedStateKey(approvalKey(recommended.approved_state));
+    const reconciled = preserveNewerScreenshotMetadata(recommended);
+    replaceJob(reconciled);
+    if (reconciled.approved_state) {
+      setApprovedStateKey(approvalKey(reconciled.approved_state));
     }
   }
 
@@ -6802,17 +6952,41 @@ export default function App() {
       return approved;
     }
 
+    const recommendationController = new AbortController();
+    const abortRecommendation = () => recommendationController.abort();
+    if (signal?.aborted) {
+      abortRecommendation();
+    } else {
+      signal?.addEventListener("abort", abortRecommendation, { once: true });
+    }
+    activeRecommendationRequestsRef.current.set(approved.id, {
+      mutationScope: persistedJobMutationScope(approved),
+      controller: recommendationController,
+      ownsMutationLease: false,
+    });
     markPersistedJobSessionUnsynced(approved);
-    const recommended = preserveUploadRequestId(
-      await requestRecommendation(
-        approved.id,
-        recommendationRequestId ?? createMutationRequestId(),
-        signal,
-      ),
-      approved,
-    );
-    applyRecommendedJob(recommended);
-    return recommended;
+    try {
+      const recommended = preserveUploadRequestId(
+        await requestRecommendation(
+          approved.id,
+          recommendationRequestId ?? createMutationRequestId(),
+          recommendationController.signal,
+        ),
+        approved,
+      );
+      if (jobsRef.current.some((candidate) => candidate.id === approved.id)) {
+        applyRecommendedJob(recommended);
+      }
+      return recommended;
+    } finally {
+      signal?.removeEventListener("abort", abortRecommendation);
+      if (
+        activeRecommendationRequestsRef.current.get(approved.id)?.controller
+          === recommendationController
+      ) {
+        activeRecommendationRequestsRef.current.delete(approved.id);
+      }
+    }
   }
 
   async function uploadSelectedFiles(
@@ -6878,6 +7052,7 @@ export default function App() {
         );
         appendJob(created);
         let completed = created;
+        let includeCompletedJob = true;
         if (runAutomation) {
           try {
             completed = await runConfiguredAutomation(
@@ -6888,15 +7063,20 @@ export default function App() {
           } catch (automationError) {
             const confirmedJob = jobsRef.current.find(
               (candidate) => candidate.id === created.id,
-            ) ?? created;
-            if (isAbortError(automationError)) {
-              completedJobs.push(confirmedJob);
+            );
+            if (isAbortError(automationError) && controller.signal.aborted) {
+              if (confirmedJob) {
+                completedJobs.push(confirmedJob);
+              }
               completedCount += 1;
               skippedCount = selectedFiles.length - completedCount;
               discardUnstartedUploads(index + 1);
               break;
             }
-            if (!mutationFailureMayHavePersistedSideEffect(automationError)) {
+            if (!confirmedJob) {
+              updateExpectedUpload(expectedUploadIndex, "failed");
+              includeCompletedJob = false;
+            } else if (!mutationFailureMayHavePersistedSideEffect(automationError)) {
               updateExpectedUpload(
                 expectedUploadIndex,
                 confirmedJob.recommendation !== null
@@ -6906,17 +7086,21 @@ export default function App() {
                     : "parsed",
               );
             }
-            const message = messageFromError(automationError, "Automation stopped for this screenshot");
-            setJobAttention((current) => ({
-              ...current,
-              [created.id]: message,
-            }));
-            completed = confirmedJob;
-            attentionMessages.push(`${selectedFile.name}: ${message}`);
-            failedCount += 1;
+            if (confirmedJob) {
+              const message = messageFromError(automationError, "Automation stopped for this screenshot");
+              setJobAttention((current) => ({
+                ...current,
+                [created.id]: message,
+              }));
+              completed = confirmedJob;
+              attentionMessages.push(`${selectedFile.name}: ${message}`);
+              failedCount += 1;
+            }
           }
         }
-        completedJobs.push(completed);
+        if (includeCompletedJob) {
+          completedJobs.push(completed);
+        }
         completedCount += 1;
       } catch (uploadError) {
         if (isAbortError(uploadError)) {
@@ -7138,13 +7322,18 @@ export default function App() {
         scheduleMutationLeaseRevalidation();
       }
     } catch (captureError) {
-      if (
+      const confirmedJob = capturedJobId === null
+        ? null
+        : jobsRef.current.find((candidate) => candidate.id === capturedJobId) ?? null;
+      const deletedDuringAutomation = capturedJobId !== null
+        && confirmedJob === null;
+      if (deletedDuringAutomation) {
+        updateExpectedUpload(expectedUploadIndex, "failed");
+        settlePersistedMutationLease("processing", jobsRef.current, false);
+      } else if (
         !isAbortError(captureError)
         && !mutationFailureMayHavePersistedSideEffect(captureError)
       ) {
-        const confirmedJob = capturedJobId === null
-          ? null
-          : jobsRef.current.find((candidate) => candidate.id === capturedJobId) ?? null;
         updateExpectedUpload(
           expectedUploadIndex,
           confirmedJob === null
@@ -7159,7 +7348,9 @@ export default function App() {
       if (processingMutationLeaseRef.current !== null) {
         scheduleMutationLeaseRevalidation();
       }
-      setError(messageFromError(captureError, "Screen capture failed"));
+      if (!deletedDuringAutomation) {
+        setError(messageFromError(captureError, "Screen capture failed"));
+      }
     } finally {
       endProcessingMembershipMutation();
       setBusy(false);
@@ -7240,18 +7431,31 @@ export default function App() {
       job,
       decisionExpectation,
     );
+    const recommendationController = new AbortController();
+    activeRecommendationRequestsRef.current.set(job.id, {
+      mutationScope,
+      controller: recommendationController,
+      ownsMutationLease: true,
+    });
     let recommendationStarted = false;
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
     try {
       if (decisionExpectation?.kind === "training-decision") {
-        replaceJob(await recordTrainingDecision(
+        const decided = await recordTrainingDecision(
           job.id,
           decisionExpectation.action,
           decisionExpectation.sizing,
           decisionExpectation.certainty,
-        ));
+        );
+        if (
+          recommendationController.signal.aborted
+          || !jobsRef.current.some((candidate) => candidate.id === job.id)
+        ) {
+          return;
+        }
+        replaceJob(preserveNewerScreenshotMetadata(decided));
       }
       if (!armPersistedRecommendationLease(
         mutationScope,
@@ -7261,21 +7465,36 @@ export default function App() {
         return;
       }
       recommendationStarted = true;
-      applyRecommendedJob(await requestRecommendation(
+      const recommended = await requestRecommendation(
         job.id,
         recommendationRequestId,
-      ));
-    } catch (recommendError) {
-      if (
-        recommendationStarted
-          ? recommendationAttemptMayHavePersistedSideEffect(recommendError)
-          : mutationFailureMayHavePersistedSideEffect(recommendError)
-      ) {
-        markPersistedJobMutationUncertain(mutationScope, job.id);
+        recommendationController.signal,
+      );
+      if (jobsRef.current.some((candidate) => candidate.id === job.id)) {
+        applyRecommendedJob(recommended);
       }
-      restoreAfterMutation = restoreAfterMutation || recommendationStarted;
-      setError(messageFromError(recommendError, "Recommendation failed"));
+    } catch (recommendError) {
+      const jobStillPresent = jobsRef.current.some(
+        (candidate) => candidate.id === job.id,
+      );
+      if (jobStillPresent) {
+        if (
+          recommendationStarted
+            ? recommendationAttemptMayHavePersistedSideEffect(recommendError)
+            : mutationFailureMayHavePersistedSideEffect(recommendError)
+        ) {
+          markPersistedJobMutationUncertain(mutationScope, job.id);
+        }
+        restoreAfterMutation = restoreAfterMutation || recommendationStarted;
+        setError(messageFromError(recommendError, "Recommendation failed"));
+      }
     } finally {
+      if (
+        activeRecommendationRequestsRef.current.get(job.id)?.controller
+          === recommendationController
+      ) {
+        activeRecommendationRequestsRef.current.delete(job.id);
+      }
       endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
@@ -8526,6 +8745,277 @@ export default function App() {
     );
   }
 
+  function openScreenshotDetails(candidate: JobRecord) {
+    setManagedJobId(candidate.id);
+    setScreenshotTitle(typeof candidate.title === "string" ? candidate.title : "");
+    setScreenshotNotes(typeof candidate.notes === "string" ? candidate.notes : "");
+    setScreenshotTagInput(screenshotTags(candidate).join(", "));
+    setScreenshotDeleteArmed(false);
+    setError(null);
+  }
+
+  function closeScreenshotDetails() {
+    if (screenshotMetadataSaving || screenshotDeleting) {
+      return;
+    }
+    setManagedJobId(null);
+    setScreenshotDeleteArmed(false);
+  }
+
+  async function saveScreenshotMetadata(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !managedJob
+      || !managedJobPersisted
+      || screenshotMetadataSaving
+      || screenshotDeleting
+    ) {
+      return;
+    }
+    const mutationScope = persistedJobMutationScope(managedJob);
+    const savingAlongsideRecommendation = mutationComposesWithActiveRecommendation(
+      mutationScope,
+    );
+    if (
+      !savingAlongsideRecommendation
+      && mutationRecoveryPending([mutationScope])
+    ) {
+      return;
+    }
+
+    let tags: string[];
+    try {
+      tags = parseScreenshotTags(screenshotTagInput);
+    } catch (metadataError) {
+      setError(messageFromError(metadataError, "Check the screenshot tags"));
+      return;
+    }
+    const title = screenshotTitle.trim() || null;
+    const notes = screenshotNotes.trim() || null;
+    const expectation: JobMutationExpectation = {
+      kind: "metadata",
+      title,
+      notes,
+      tags,
+    };
+    if (savingAlongsideRecommendation) {
+      if (mutationScope === "processing") {
+        beginProcessingMembershipMutation();
+      } else {
+        beginHistoryMutation();
+      }
+    } else {
+      beginPersistedJobMutation(managedJob, expectation);
+    }
+    let restoreAfterMutation = false;
+    let deletedRemotely = false;
+    setScreenshotMetadataSaving(true);
+    setError(null);
+    try {
+      const updated = await updateJobMetadata(managedJob.id, {
+        title,
+        notes,
+        tags,
+      });
+      const movedToHistory = mutationScope === "processing"
+        && updated.archived_at !== null;
+      if (movedToHistory) {
+        removeJobFromProcessingProjection(updated.id);
+        setManagedJobId(null);
+        markHistorySessionUnsynced();
+      } else {
+        updateJobs((current) => current.map((candidate) =>
+          candidate.id === updated.id ? updated : candidate
+        ));
+      }
+      updateHistoryJob(updated);
+      if (!savingAlongsideRecommendation) {
+        settlePersistedMutationLease(
+          mutationScope,
+          [updated],
+          mutationScope === "processing",
+        );
+      }
+      if (movedToHistory) {
+        void requestHistoryRestore(null, true);
+      }
+      setScreenshotTitle(updated.title ?? "");
+      setScreenshotNotes(updated.notes ?? "");
+      setScreenshotTagInput(screenshotTags(updated).join(", "));
+      toast.success("Screenshot details saved");
+    } catch (metadataError) {
+      deletedRemotely = metadataError instanceof ApiResponseError
+        && metadataError.status === 404;
+      if (deletedRemotely) {
+        restoreAfterMutation = true;
+        reconcileAuthoritativeScreenshotRemoval(managedJob, mutationScope);
+        toast.warning("Screenshot was already deleted elsewhere");
+      } else if (mutationFailureMayHavePersistedSideEffect(metadataError)) {
+        markPersistedJobMutationUncertain(mutationScope, managedJob.id);
+        restoreAfterMutation = true;
+      }
+      if (!deletedRemotely) {
+        setError(messageFromError(metadataError, "Could not save screenshot details"));
+      }
+    } finally {
+      if (savingAlongsideRecommendation) {
+        if (mutationScope === "processing") {
+          endProcessingMembershipMutation(restoreAfterMutation);
+        } else {
+          endHistoryMutation(restoreAfterMutation);
+        }
+      } else {
+        endPersistedJobMutation(
+          mutationScope,
+          deletedRemotely,
+        );
+      }
+      setScreenshotMetadataSaving(false);
+    }
+  }
+
+  function removeJobFromProcessingProjection(jobId: string) {
+    const currentJobs = jobsRef.current;
+    const deletedIndex = currentJobs.findIndex(
+      (candidate) => candidate.id === jobId,
+    );
+    const nextJobs = currentJobs.filter((candidate) => candidate.id !== jobId);
+    updateJobs(() => nextJobs);
+    clearJobAttention(jobId);
+    if (activeJobIdRef.current === jobId) {
+      const fallbackIndex = Math.min(Math.max(deletedIndex, 0), nextJobs.length - 1);
+      alignWorkspaceToJob(nextJobs[fallbackIndex] ?? null);
+    }
+    if (writeProcessingQueue(nextJobs)) {
+      markProcessingQueueSessionSynced();
+    }
+  }
+
+  function removeScreenshotFromClient(deletedJob: JobRecord) {
+    removeJobFromProcessingProjection(deletedJob.id);
+
+    const removedFromSearch = historySearchResults?.some(
+      (item) => item.id === deletedJob.id,
+    ) ?? false;
+    setHistory((current) => {
+      const next = current.filter((item) => item.id !== deletedJob.id);
+      writeHistory(next);
+      return next;
+    });
+    setHistorySearchResults((current) =>
+      current?.filter((item) => item.id !== deletedJob.id) ?? null
+    );
+    if (deletedJob.archived_at) {
+      setHistoryTotal((current) => {
+        const next = Math.max(0, current - 1);
+        writeHistoryTotal(next);
+        return next;
+      });
+    }
+    if (removedFromSearch) {
+      setHistorySearchTotal((current) => Math.max(0, current - 1));
+    }
+  }
+
+  function reconcileAuthoritativeScreenshotRemoval(
+    deletedJob: JobRecord,
+    mutationScope: PersistedJobMutationScope,
+  ) {
+    const activeRecommendation = activeRecommendationRequestsRef.current.get(
+      deletedJob.id,
+    );
+    if (
+      activeRecommendation?.ownsMutationLease
+      && activeRecommendation.mutationScope === mutationScope
+    ) {
+      clearOwnedMutationLease(mutationScope);
+    }
+    if (mutationScope === "processing") {
+      processingRemovalCandidateIdsRef.current.delete(deletedJob.id);
+    }
+    removeScreenshotFromClient(deletedJob);
+    if (benchmarkOverview !== null || deletedJob.benchmark_included) {
+      void getBenchmarkOverview()
+        .then(setBenchmarkOverview)
+        .catch((benchmarkError) => setError(messageFromError(
+          benchmarkError,
+          "Screenshot removed, but the benchmark count could not refresh",
+        )));
+    }
+    setManagedJobId(null);
+    setScreenshotDeleteArmed(false);
+    if (mutationScope === "processing") {
+      markHistorySessionUnsynced();
+      void requestHistoryRestore(null, true);
+    } else {
+      markProcessingQueueSessionUnsynced();
+      scheduleProcessingQueueRestore();
+    }
+    if (activeRecommendation?.mutationScope === mutationScope) {
+      activeRecommendation.controller.abort();
+    }
+  }
+
+  async function permanentlyDeleteScreenshot() {
+    if (!managedJob || screenshotMetadataSaving || screenshotDeleting) {
+      return;
+    }
+    if (!managedJobPersisted) {
+      if (localUploadDeletionRequiresRecovery(managedJob)) {
+        markProcessingQueueSessionUnsynced();
+        if (processingMutationLeaseRef.current !== null) {
+          scheduleMutationLeaseRevalidation();
+        } else {
+          scheduleProcessingQueueRestore();
+        }
+        setError(
+          "Checking whether this upload reached storage. Delete it after recovery finishes.",
+        );
+        return;
+      }
+      removeScreenshotFromClient(managedJob);
+      setManagedJobId(null);
+      setScreenshotDeleteArmed(false);
+      toast.success("Failed upload removed from the queue");
+      return;
+    }
+
+    const mutationScope = persistedJobMutationScope(managedJob);
+    const deletingAlongsideRecommendation = mutationComposesWithActiveRecommendation(
+      mutationScope,
+    );
+    if (
+      !deletingAlongsideRecommendation
+      && mutationRecoveryPending([mutationScope])
+    ) {
+      return;
+    }
+    if (mutationScope === "processing") {
+      beginProcessingMembershipMutation([managedJob.id]);
+    } else {
+      beginHistoryMutation();
+    }
+    setScreenshotDeleting(true);
+    setError(null);
+    let restoreAfterMutation = false;
+    try {
+      await deleteJob(managedJob.id);
+      restoreAfterMutation = true;
+      reconcileAuthoritativeScreenshotRemoval(managedJob, mutationScope);
+      toast.success("Screenshot permanently deleted");
+    } catch (deleteError) {
+      restoreAfterMutation = true;
+      setError(messageFromError(deleteError, "Could not delete screenshot"));
+    } finally {
+      if (mutationScope === "processing") {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      } else {
+        endHistoryMutation(restoreAfterMutation);
+      }
+      setScreenshotDeleting(false);
+    }
+  }
+
   function openHistory(item: HistoryItem) {
     updateJobs((current) => {
       const existing = current.some((candidate) => candidate.id === item.job.id);
@@ -8809,21 +9299,35 @@ export default function App() {
                     attention ? "attention" : "",
                   ].filter(Boolean).join(" ");
                   return (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      className={className}
-                      onClick={() => activateJob(candidate)}
-                      disabled={busy}
-                      aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-                    >
-                      <span className="batch-number">{index + 1}</span>
-                      <span className="batch-text">
-                        <span>{candidate.original_filename}</span>
-                        <small>{queueDetail(candidate, attention)}</small>
-                      </span>
-                      <StatusPill status={candidate.status} />
-                    </button>
+                    <div key={candidate.id} className={className}>
+                      <button
+                        type="button"
+                        className={[
+                          "batch-item-open",
+                          candidate.id === job?.id ? "active" : "",
+                          attention ? "attention" : "",
+                        ].filter(Boolean).join(" ")}
+                        onClick={() => activateJob(candidate)}
+                        disabled={busy}
+                        aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
+                      >
+                        <span className="batch-number">{index + 1}</span>
+                        <span className="batch-text">
+                          <span>{screenshotLabel(candidate)}</span>
+                          <small>{queueDetail(candidate, attention)}</small>
+                        </span>
+                        <StatusPill status={candidate.status} />
+                      </button>
+                      <button
+                        type="button"
+                        className="screenshot-manage-button"
+                        onClick={() => openScreenshotDetails(candidate)}
+                        title="Edit details or delete screenshot"
+                        aria-label={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -8898,24 +9402,39 @@ export default function App() {
                 {visibleHistory.map((item, index) => {
                   const cards = historyCards(item.job);
                   return (
-                    <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
-                      <span className="history-cards">
-                        {cards.length > 0 ? (
-                          cards.map((card) => (
-                            <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
-                              {cardToDisplay(card)}
-                            </span>
-                          ))
-                        ) : (
-                          <small>No cards</small>
-                        )}
-                      </span>
-                      <span className="history-meta">
-                        <small>{relativeTimeLabel(item.savedAt)}</small>
-                        <strong>{historyAction(item.job)}</strong>
-                      </span>
-                      <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
-                    </button>
+                    <div key={`${item.id}-${item.savedAt}`} className="history-item">
+                      <button type="button" className="history-item-open" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
+                        <span className="history-cards">
+                          {cards.length > 0 ? (
+                            cards.map((card) => (
+                              <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
+                                {cardToDisplay(card)}
+                              </span>
+                            ))
+                          ) : (
+                            <small>No cards</small>
+                          )}
+                        </span>
+                        <span className="history-meta">
+                          <strong className={item.job.title ? "history-title" : ""}>{item.job.title ? screenshotLabel(item.job) : historyAction(item.job)}</strong>
+                          <small>
+                            {item.job.title
+                              ? `${relativeTimeLabel(item.savedAt)} · ${historyAction(item.job)}`
+                              : relativeTimeLabel(item.savedAt)}
+                          </small>
+                        </span>
+                        <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="screenshot-manage-button"
+                        onClick={() => openScreenshotDetails(item.job)}
+                        title="Edit details or delete screenshot"
+                        aria-label={`Manage history item ${index + 1}: ${item.job.original_filename}`}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
                 {visibleHistory.length < visibleHistoryTotal ? (
@@ -9756,6 +10275,143 @@ export default function App() {
               <Square size={13} aria-hidden="true" />
               Abort and discard unprocessed
             </button>
+          </div>
+        </section>
+      ) : null}
+
+      {managedJob ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog screenshot-details-dialog" role="dialog" aria-modal="true" aria-labelledby="screenshot-details-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="screenshot-details-title">Screenshot details</h2>
+                <p>{managedJob.archived_at ? "Saved history" : "Processing queue"}</p>
+              </div>
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={closeScreenshotDetails}
+                disabled={screenshotMetadataSaving || screenshotDeleting}
+                aria-label="Close screenshot details"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form className="screenshot-details-form" onSubmit={(event) => void saveScreenshotMetadata(event)}>
+              <div className="screenshot-file-summary">
+                <span className="screenshot-file-icon" aria-hidden="true">
+                  <Tag size={15} />
+                </span>
+                <span>
+                  <strong>{managedJob.original_filename}</strong>
+                  <small>{managedJob.archived_at ? "History" : "Queue"} · {managedJob.status}</small>
+                </span>
+                <StatusPill status={managedJob.status} />
+              </div>
+
+              {managedJobPersisted ? (
+                <div className="screenshot-metadata-fields">
+                  <label>
+                    <span>Title</span>
+                    <input
+                      type="text"
+                      value={screenshotTitle}
+                      onChange={(event) => setScreenshotTitle(event.target.value)}
+                      maxLength={MAX_SCREENSHOT_TITLE_LENGTH}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      placeholder={managedJob.original_filename}
+                      autoFocus
+                    />
+                  </label>
+                  <label>
+                    <span>Tags</span>
+                    <input
+                      type="text"
+                      value={screenshotTagInput}
+                      onChange={(event) => setScreenshotTagInput(event.target.value)}
+                      maxLength={(MAX_SCREENSHOT_TAG_LENGTH + 2) * MAX_SCREENSHOT_TAGS}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      placeholder="turn, review, bluff"
+                    />
+                  </label>
+                  <label className="screenshot-notes-field">
+                    <span>Notes</span>
+                    <textarea
+                      value={screenshotNotes}
+                      onChange={(event) => setScreenshotNotes(event.target.value)}
+                      maxLength={MAX_SCREENSHOT_NOTES_LENGTH}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      rows={4}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <p className="local-upload-note">
+                  {managedLocalUploadRecoveryPending
+                    ? "Checking whether this upload reached persistent storage before deletion."
+                    : "This upload did not reach persistent storage and can only be removed."}
+                </p>
+              )}
+
+              {screenshotDeleteArmed ? (
+                <div className="screenshot-delete-confirmation" role="alert">
+                  <AlertTriangle size={17} aria-hidden="true" />
+                  <span>
+                    <strong>Delete permanently?</strong>
+                    <small>
+                      The image and all analysis data will be removed
+                      {managedJob.benchmark_included ? " from the benchmark corpus too" : ""}.
+                    </small>
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setScreenshotDeleteArmed(false)}
+                    disabled={screenshotDeleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => void permanentlyDeleteScreenshot()}
+                    disabled={screenshotDeleting || managedLocalUploadRecoveryPending}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    {screenshotDeleting ? "Deleting..." : "Delete permanently"}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="screenshot-details-footer">
+                {!screenshotDeleteArmed ? (
+                  <button
+                    type="button"
+                    className="screenshot-delete-button"
+                    onClick={() => setScreenshotDeleteArmed(true)}
+                    disabled={
+                      screenshotMetadataSaving
+                      || screenshotDeleting
+                      || managedLocalUploadRecoveryPending
+                    }
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Delete screenshot
+                  </button>
+                ) : <span />}
+                <span className="screenshot-details-actions">
+                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotMetadataSaving || screenshotDeleting}>
+                    Close
+                  </button>
+                  {managedJobPersisted ? (
+                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting}>
+                      {screenshotMetadataSaving ? "Saving..." : "Save details"}
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+            </form>
           </div>
         </section>
       ) : null}

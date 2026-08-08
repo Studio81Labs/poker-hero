@@ -596,18 +596,35 @@ button:disabled {
   color: var(--text);
   display: grid;
   flex: 0 0 auto;
-  gap: 9px;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 30px;
   min-height: 48px;
-  padding: 7px 9px;
-  text-align: left;
+  padding: 0;
   width: 100%;
 }
 
-.batch-item:hover:not(:disabled),
+.batch-item:hover,
 .batch-item.active {
   background: var(--surface);
   border-color: var(--accent);
+  color: var(--text);
+}
+
+.batch-item-open {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  display: grid;
+  gap: 9px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  min-height: 46px;
+  min-width: 0;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.batch-item-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--text);
 }
 
@@ -798,17 +815,51 @@ button:disabled {
   color: var(--text);
   display: grid;
   flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.history-item:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.history-item-open {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  display: grid;
   gap: 8px;
   grid-template-columns: auto minmax(0, 1fr) 24px;
-  min-height: 44px;
+  min-height: 42px;
+  min-width: 0;
   padding: 6px 8px;
   text-align: left;
 }
 
-.history-item:hover:not(:disabled) {
-  background: var(--surface);
-  border-color: var(--accent);
+.history-item-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--text);
+}
+
+.screenshot-manage-button {
+  align-self: stretch;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  color: var(--muted);
+  min-height: 100%;
+  padding: 0;
+  width: 30px;
+}
+
+.screenshot-manage-button:hover:not(:disabled) {
+  background: rgba(32, 30, 29, 0.07);
+  border-color: var(--line-soft);
+  color: var(--accent-dark);
 }
 
 .history-load-older {
@@ -874,6 +925,10 @@ button:disabled {
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.history-meta strong.history-title {
+  text-transform: none;
 }
 
 .history-result {
@@ -3685,6 +3740,185 @@ button:disabled {
   color: var(--text);
 }
 
+.screenshot-details-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
+  max-width: 680px;
+}
+
+.screenshot-details-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.screenshot-file-summary {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  display: grid;
+  flex: 0 0 auto;
+  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  padding: 14px 22px;
+}
+
+.screenshot-file-icon {
+  align-items: center;
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.screenshot-file-summary > span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.screenshot-file-summary strong,
+.screenshot-file-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screenshot-file-summary strong {
+  font-size: 13px;
+}
+
+.screenshot-file-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 3px;
+  text-transform: capitalize;
+}
+
+.screenshot-metadata-fields {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 13px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-y: auto;
+  padding: 16px 22px;
+}
+
+.screenshot-metadata-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.screenshot-metadata-fields label > span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.screenshot-metadata-fields input,
+.screenshot-metadata-fields textarea {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 12px;
+  min-width: 0;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.screenshot-metadata-fields input {
+  height: 36px;
+}
+
+.screenshot-metadata-fields textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.screenshot-notes-field {
+  grid-column: 1 / -1;
+}
+
+.local-upload-note {
+  color: var(--muted);
+  font-size: 12px;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 18px 22px;
+}
+
+.screenshot-delete-confirmation {
+  align-items: center;
+  background: var(--accent-soft);
+  border-top: 1px solid var(--accent);
+  color: var(--accent-dark);
+  display: grid;
+  flex: 0 0 auto;
+  gap: 10px;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  padding: 12px 22px;
+}
+
+.screenshot-delete-confirmation > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.screenshot-delete-confirmation strong {
+  font-size: 12px;
+}
+
+.screenshot-delete-confirmation small {
+  color: var(--accent-dark);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.danger-button {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #fff;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #8c1300;
+  border-color: #8c1300;
+}
+
+.screenshot-details-footer {
+  align-items: center;
+  border-top: 2px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 14px 22px;
+}
+
+.screenshot-delete-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-dark);
+  padding-inline: 0;
+}
+
+.screenshot-delete-button:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.screenshot-details-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -3800,6 +4034,34 @@ button:disabled {
   }
 
   .automation-dialog-footer .secondary-button {
+    width: 100%;
+  }
+
+  .screenshot-metadata-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .screenshot-notes-field {
+    grid-column: 1;
+  }
+
+  .screenshot-delete-confirmation {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .screenshot-delete-confirmation > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .screenshot-details-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .screenshot-delete-button,
+  .screenshot-details-actions,
+  .screenshot-details-actions > button {
     width: 100%;
   }
 

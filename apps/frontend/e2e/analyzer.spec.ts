@@ -27,7 +27,7 @@ function attemptFilename(base: string, testInfo: TestInfo): string {
 
 function filenamePattern(filename: string): RegExp {
   return new RegExp(
-    filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$",
+    `^Open screenshot \\d+: ${filename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
   );
 }
 

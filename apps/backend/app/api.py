@@ -6,6 +6,7 @@ from io import BytesIO
 import json
 import logging
 import math
+from mimetypes import guess_type
 import re
 from secrets import compare_digest
 from threading import Lock, RLock
@@ -28,7 +29,7 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
@@ -80,6 +81,7 @@ from app.models import (
     JobRecord,
     RecommendationAction,
     RecommendationRequest,
+    ScreenshotMetadataRequest,
     Street,
     TrainingDecision,
     TrainingDecisionRequest,
@@ -149,6 +151,9 @@ HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
 )
 HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
+HISTORY_METADATA_CARD_CANDIDATE_PATTERN = re.compile(
+    r"(?<!\w)[0-9A-Za-z♣♦♥♠]+(?!\w)",
+)
 PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -669,35 +674,68 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 recommendation_provider=active_settings.recommendation_provider,
                 upload_request_id=upload_request_id,
             )
+        with job_lock_for(job.id):
+            try:
+                job = store.get(job.id)
+            except JobNotFoundError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Upload was deleted before parsing started",
+                ) from exc
+
+        def save_parser_failure(message: str) -> JobRecord:
+            with job_lock_for(job.id):
+                try:
+                    current = store.get(job.id)
+                except JobNotFoundError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Upload was deleted while parsing",
+                    ) from exc
+                if current.approved_state is not None:
+                    return current
+                current.status = "error"
+                current.error = message
+                return save_job(current)
+
         try:
             parser = build_parser(active_settings)
             parser_result = parser.parse(store.image_path(job))
         except ParserConfigurationError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            save_job(job)
+            save_parser_failure(str(exc))
             raise HTTPException(
                 status_code=500,
                 detail=f"Parser configuration error: {exc}",
             ) from exc
         except ParserError as exc:
-            job.status = "error"
-            job.error = str(exc)
-            save_job(job)
+            save_parser_failure(str(exc))
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except Exception as exc:
-            job.status = "error"
-            job.error = f"Unexpected parser error: {exc}"
-            save_job(job)
-            raise HTTPException(status_code=500, detail=job.error) from exc
+            error = f"Unexpected parser error: {exc}"
+            save_parser_failure(error)
+            raise HTTPException(status_code=500, detail=error) from exc
 
-        job.parser_result = parser_result
-        job.status = "parsed"
-        if should_auto_approve(parser_result.confidences, active_settings):
-            job.approved_state = CanonicalState.from_parser_result(parser_result)
-            job.approved_state.user_approved = True
-            job.status = "approved"
-        return save_job(job)
+        with job_lock_for(job.id):
+            try:
+                current = store.get(job.id)
+            except JobNotFoundError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Upload was deleted while parsing",
+                ) from exc
+            current.parser_result = parser_result
+            if current.approved_state is None:
+                current.status = "parsed"
+                if should_auto_approve(
+                    parser_result.confidences,
+                    active_settings,
+                ):
+                    current.approved_state = CanonicalState.from_parser_result(
+                        parser_result
+                    )
+                    current.approved_state.user_approved = True
+                    current.status = "approved"
+            return save_job(current)
 
     def restore_uploaded_application_backup(
         archive_bytes: bytes,
@@ -966,7 +1004,36 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
-        return load_job_or_404(store, job_id)
+        with job_lock_for(job_id):
+            return load_job_or_404(store, job_id)
+
+    @app.put("/api/jobs/{job_id}/metadata", response_model=JobRecord)
+    def update_job_metadata(
+        job_id: str,
+        metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            job.title = metadata.title
+            job.notes = metadata.notes
+            job.tags = metadata.tags
+            return save_job(job)
+
+    @app.delete(
+        "/api/jobs/{job_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_class=Response,
+    )
+    def delete_job(job_id: str) -> Response:
+        with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
+            with job_lock_for(job_id), history_lock:
+                load_job_or_404(store, job_id)
+                try:
+                    store.delete(job_id)
+                except JobNotFoundError as exc:
+                    raise HTTPException(status_code=404, detail="Job not found") from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/api/history", response_model=JobHistory)
     def get_history(
@@ -1006,15 +1073,22 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 return build_job_history(store, limit)
 
     @app.get("/api/jobs/{job_id}/image")
-    def get_job_image(job_id: str) -> FileResponse:
-        job = load_job_or_404(store, job_id)
-        try:
-            image_path = store.image_path(job)
-        except JobNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
-        if not image_path.is_file():
-            raise HTTPException(status_code=404, detail="Job image not found")
-        return FileResponse(image_path)
+    def get_job_image(job_id: str) -> Response:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            try:
+                image_path = store.image_path(job)
+            except JobNotFoundError as exc:
+                raise HTTPException(status_code=404, detail="Job not found") from exc
+            try:
+                image_bytes = image_path.read_bytes()
+            except FileNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Job image not found",
+                ) from exc
+            media_type = guess_type(image_path.name)[0] or "application/octet-stream"
+        return Response(content=image_bytes, media_type=media_type)
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
@@ -1893,8 +1967,9 @@ def history_matches_query(
 ) -> bool:
     search_text = history_search_text(job)
     card_tokens = history_card_tokens(job)
+    metadata_card_tokens = history_metadata_card_tokens(job)
     return all(
-        term in card_tokens
+        term in card_tokens or term in metadata_card_tokens
         if is_card
         else term in search_text
         for term, is_card in query_terms
@@ -1906,11 +1981,32 @@ def history_card_tokens(job: JobRecord) -> set[str]:
     if state is None:
         return set()
     tokens = {card.code.casefold() for card in [*state.hero_cards, *state.board_cards]}
-    tokens.update(
-        f"10{token[1:]}"
-        for token in tuple(tokens)
-        if token.startswith("t")
-    )
+    add_history_ten_aliases(tokens)
+    return tokens
+
+
+def add_history_ten_aliases(tokens: set[str]) -> None:
+    for token in tuple(tokens):
+        if token.startswith("t"):
+            tokens.add(f"10{token[1:]}")
+        elif token.startswith("10"):
+            tokens.add(f"t{token[2:]}")
+
+
+def history_metadata_card_tokens(job: JobRecord) -> set[str]:
+    tokens: set[str] = set()
+    values = [job.title or "", job.notes or "", *job.tags]
+    for value in values:
+        normalized_value = value.translate(
+            HISTORY_PRESENTATION_SELECTOR_TRANSLATION
+        )
+        for candidate in HISTORY_METADATA_CARD_CANDIDATE_PATTERN.findall(
+            normalized_value
+        ):
+            card_terms = compact_history_card_terms(candidate)
+            if card_terms is not None:
+                tokens.update(card_terms)
+    add_history_ten_aliases(tokens)
     return tokens
 
 
@@ -1918,6 +2014,9 @@ def history_search_text(job: JobRecord) -> str:
     state = job.approved_state or (job.parser_result.state if job.parser_result else None)
     values: list[str] = [
         job.original_filename,
+        job.title or "",
+        job.notes or "",
+        *job.tags,
         job.status,
         job.parser_provider,
         job.recommendation_provider,

@@ -260,13 +260,21 @@ class FileJobStore:
         path = self._job_path(job_id)
         if not path.exists():
             raise JobNotFoundError(job_id)
-        return load_persisted_job_record(path.read_bytes())
+        try:
+            payload = path.read_bytes()
+        except FileNotFoundError as exc:
+            raise JobNotFoundError(job_id) from exc
+        return load_persisted_job_record(payload)
 
     def list(self) -> list[JobRecord]:
-        jobs = [
-            load_persisted_job_record(path.read_bytes())
-            for path in self.jobs_dir.glob("*/job.json")
-        ]
+        jobs: list[JobRecord] = []
+        for path in self.jobs_dir.glob("*/job.json"):
+            try:
+                payload = path.read_bytes()
+            except FileNotFoundError:
+                # A concurrent delete may remove a job after the directory scan.
+                continue
+            jobs.append(load_persisted_job_record(payload))
         return sorted(jobs, key=lambda job: job.created_at)
 
     def save(self, job: JobRecord) -> JobRecord:
@@ -323,7 +331,14 @@ class FileJobStore:
         return job
 
     def delete(self, job_id: str) -> None:
-        shutil.rmtree(self._job_dir(job_id))
+        job_dir = self._job_dir(job_id)
+        if not self._job_path(job_id).is_file():
+            raise JobNotFoundError(job_id)
+        try:
+            shutil.rmtree(job_dir)
+            _fsync_directory(self.jobs_dir)
+        except FileNotFoundError as exc:
+            raise JobNotFoundError(job_id) from exc
 
     def _job_dir(self, job_id: str) -> Path:
         self._validate_job_id(job_id)

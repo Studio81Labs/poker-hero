@@ -660,6 +660,40 @@ class TrainingReviewRequest(BaseModel):
         return stripped or None
 
 
+class ScreenshotMetadataRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("title", "notes", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for tag in value:
+            stripped = tag.strip()
+            if not stripped:
+                continue
+            if len(stripped) > 32:
+                raise ValueError("tags must be at most 32 characters")
+            if "," in stripped:
+                raise ValueError("tags cannot contain commas")
+            key = stripped.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(stripped)
+        return normalized
+
+
 class TrainingTrend(BaseModel):
     window_hands: int = Field(ge=1)
     recent_action_accuracy: float = Field(ge=0, le=1)
@@ -841,6 +875,9 @@ class JobRecord(BaseModel):
         pattern=r"^[A-Za-z0-9._:-]+$",
     )
     original_filename: str
+    title: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=10)
     image_filename: str
     parser_provider: str
     recommendation_provider: str
@@ -868,6 +905,19 @@ class JobRecord(BaseModel):
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @field_validator("title", "notes", mode="before")
+    @classmethod
+    def normalize_optional_metadata_text(cls, value: str | None) -> str | None:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_metadata_tags(cls, value: list[str]) -> list[str]:
+        return ScreenshotMetadataRequest.normalize_tags(value)
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc)

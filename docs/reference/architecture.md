@@ -31,6 +31,10 @@ Post-hand agent
 state validation, automation-compatible job transitions, recommendation calls,
 persisted job/image data, and read-only parser benchmark runs. Integrations are selected by environment-driven
 registries so the frontend flow does not depend on a concrete engine.
+Per-job mutations use bounded lock stripes around short storage transitions.
+Screenshot parsing runs outside those stripes, then reloads and merges into the
+latest job record so slow OCR does not block unrelated jobs and deleted uploads
+cannot be recreated by parser completion.
 
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.

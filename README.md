@@ -400,7 +400,11 @@ can load older archived hands in bounded pages, and can be refreshed explicitly
 after another device archives work. Saving changes to a reopened archived hand
 updates its history card and bounded browser cache immediately. Server-backed
 search can find older hands by filename, cards, table context, recommendation,
-or lesson text without replacing that newest-page cache.
+lesson text, screenshot title, notes, or tags without replacing that newest-page
+cache. Every queue and history item exposes screenshot details where those
+metadata fields can be edited. The same dialog can permanently remove the job,
+original image, analysis, training record, and benchmark-corpus membership, so
+an incomplete parse never has to remain stuck in processing.
 Unarchived upload and capture jobs also survive reloads: the browser renders a
 bounded local queue cache immediately, then reconciles the complete oldest-first
 processing projection from the backend. Dataset-only benchmark imports stay out
@@ -417,9 +421,10 @@ benchmark-only cases that intentionally appear in neither operational
 projection.
 
 The app information dialog can export a versioned full-data backup containing
-every job record, original screenshot, training decision, review and lesson
-note, recommendation, history timestamp, benchmark selection, and benchmark
-report. Restore validates the complete ZIP, member paths, Pydantic records,
+every job record, original screenshot, screenshot title, notes and tags,
+training decision, review and lesson note, recommendation, history timestamp,
+benchmark selection, and benchmark report. Restore validates the complete ZIP,
+member paths, Pydantic records,
 image payloads, limits, and SHA-256 checksums before writing. Missing records
 are merged, exact records are reused, and a divergent existing job, image, or
 report rejects the restore without overwriting current data. Provider
@@ -584,6 +589,8 @@ for the runtime topology.
 - `GET /api/health`
 - `POST /api/jobs`
 - `GET /api/jobs/{job_id}`
+- `PUT /api/jobs/{job_id}/metadata`
+- `DELETE /api/jobs/{job_id}`
 - `GET /api/jobs/{job_id}/image`
 - `GET /api/history`
 - `PUT /api/history`

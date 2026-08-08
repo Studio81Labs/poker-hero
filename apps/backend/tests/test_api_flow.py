@@ -1328,6 +1328,104 @@ def test_processing_queue_keeps_correctable_benchmark_attempts(
     )
 
 
+def test_job_metadata_is_normalized_persisted_and_searchable(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="anonymous-table.png").json()["id"]
+
+    updated = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={
+            "title": "  Tricky turn decision  ",
+            "notes": "  Villain had been playing aggressively.  ",
+            "tags": [" Turn ", "Study", "turn", ""],
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "Tricky turn decision"
+    assert updated.json()["notes"] == "Villain had been playing aggressively."
+    assert updated.json()["tags"] == ["Turn", "Study"]
+    persisted = FileJobStore(tmp_path).get(job_id)
+    assert persisted.title == "Tricky turn decision"
+    assert persisted.notes == "Villain had been playing aggressively."
+    assert persisted.tags == ["Turn", "Study"]
+
+    approve_job(client, job_id)
+    client.put("/api/history", json={"job_ids": [job_id]})
+    for query in ("tricky decision", "aggressively", "study"):
+        result = client.get("/api/history", params={"query": query})
+        assert result.status_code == 200
+        assert [job["id"] for job in result.json()["jobs"]] == [job_id]
+
+    cleared = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": " ", "notes": "", "tags": []},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["title"] is None
+    assert cleared.json()["notes"] is None
+    assert cleared.json()["tags"] == []
+
+
+def test_job_metadata_rejects_oversized_excess_or_ambiguous_tags(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    oversized = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": None, "notes": None, "tags": ["x" * 33]},
+    )
+    excessive = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={
+            "title": None,
+            "notes": None,
+            "tags": [f"tag-{index}" for index in range(11)],
+        },
+    )
+    comma_separated = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": None, "notes": None, "tags": ["turn,river"]},
+    )
+
+    assert oversized.status_code == 422
+    assert excessive.status_code == 422
+    assert comma_separated.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).tags == []
+
+
+def test_delete_removes_unarchivable_job_and_image(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="incomplete-table.png").json()["id"]
+    job_dir = tmp_path / "jobs" / job_id
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+    assert not job_dir.exists()
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    assert client.get(f"/api/jobs/{job_id}/image").status_code == 404
+    assert client.get("/api/jobs").json()["total"] == 0
+    assert client.delete(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_delete_removes_archived_job_from_history(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put("/api/history", json={"job_ids": [job_id]})
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 204
+    assert client.get("/api/history").json()["total"] == 0
+
+
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     parsed_id = upload_job(client, filename="parsed.png").json()["id"]
@@ -1715,6 +1813,71 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     ]
     assert canonical_card_response.status_code == 200
     assert canonical_card_response.json()["total"] == 0
+
+
+def test_history_card_queries_match_screenshot_metadata_only(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    metadata_id = upload_job(
+        client,
+        filename="metadata-card-terms.png",
+    ).json()["id"]
+    prose_id = upload_job(
+        client,
+        filename="prose-card-terms.png",
+    ).json()["id"]
+    state_without_metadata_cards = {
+        **APPROVED_STATE,
+        "hero_cards": [
+            {"rank": "Q", "suit": "clubs"},
+            {"rank": "J", "suit": "spades"},
+        ],
+        "board_cards": [
+            {"rank": "2", "suit": "hearts"},
+            {"rank": "3", "suit": "diamonds"},
+            {"rank": "4", "suit": "clubs"},
+        ],
+    }
+    approve_job(client, metadata_id, state_without_metadata_cards)
+    approve_job(client, prose_id, state_without_metadata_cards)
+    metadata = client.put(
+        f"/api/jobs/{metadata_id}/metadata",
+        json={
+            "title": "Ah bluff Th",
+            "notes": "Review the Kd blocker with 10s",
+            "tags": ["Qs study"],
+        },
+    )
+    store = FileJobStore(tmp_path)
+    prose_job = store.get(prose_id)
+    prose_job.training_review_note = "Ah Kd Qs appeared only in review prose."
+    store.save(prose_job)
+    client.put(
+        "/api/history",
+        json={"job_ids": [metadata_id, prose_id]},
+    )
+
+    assert metadata.status_code == 200
+    for query in (
+        "Ah",
+        "Kd",
+        "Qs",
+        "Ah bluff",
+        "Kd blocker",
+        "Qs study",
+        "Th",
+        "10h",
+        "10h bluff",
+        "10s",
+        "Ts",
+        "Ts blocker",
+    ):
+        response = client.get("/api/history", params={"query": query})
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert [job["id"] for job in response.json()["jobs"]] == [metadata_id]
 
 
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
@@ -2579,6 +2742,131 @@ def test_job_image_endpoint_returns_upload(tmp_path: Path) -> None:
     assert image_response.content == VALID_PNG
 
 
+def test_job_read_completes_before_concurrent_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    record_path = tmp_path / "jobs" / job_id / "job.json"
+    read_started = Event()
+    release_read = Event()
+    delete_started = Event()
+    delete_finished = Event()
+    responses: dict[str, object] = {}
+    original_read_bytes = Path.read_bytes
+    paused = False
+
+    def pause_record_read(path: Path) -> bytes:
+        nonlocal paused
+        if path == record_path and not paused:
+            paused = True
+            read_started.set()
+            assert release_read.wait(timeout=5)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", pause_record_read)
+
+    read_thread = Thread(
+        target=lambda: responses.update(read=client.get(f"/api/jobs/{job_id}")),
+    )
+
+    def delete_job() -> None:
+        delete_started.set()
+        responses["delete"] = client.delete(f"/api/jobs/{job_id}")
+        delete_finished.set()
+
+    delete_thread = Thread(target=delete_job)
+    read_thread.start()
+    assert read_started.wait(timeout=2)
+    delete_thread.start()
+    try:
+        assert delete_started.wait(timeout=2)
+        assert not delete_finished.wait(timeout=0.1)
+    finally:
+        release_read.set()
+        read_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+    assert not read_thread.is_alive()
+    assert not delete_thread.is_alive()
+    assert responses["read"].status_code == 200
+    assert responses["read"].json()["id"] == job_id
+    assert responses["delete"].status_code == 204
+
+
+def test_job_image_read_completes_before_concurrent_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    store = FileJobStore(tmp_path)
+    image_path = store.image_path(store.get(job_id))
+    read_started = Event()
+    release_read = Event()
+    delete_started = Event()
+    delete_finished = Event()
+    responses: dict[str, object] = {}
+    original_read_bytes = Path.read_bytes
+    paused = False
+
+    def pause_image_read(path: Path) -> bytes:
+        nonlocal paused
+        if path == image_path and not paused:
+            paused = True
+            read_started.set()
+            assert release_read.wait(timeout=5)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", pause_image_read)
+
+    read_thread = Thread(
+        target=lambda: responses.update(
+            read=client.get(f"/api/jobs/{job_id}/image"),
+        ),
+    )
+
+    def delete_job() -> None:
+        delete_started.set()
+        responses["delete"] = client.delete(f"/api/jobs/{job_id}")
+        delete_finished.set()
+
+    delete_thread = Thread(target=delete_job)
+    read_thread.start()
+    assert read_started.wait(timeout=2)
+    delete_thread.start()
+    try:
+        assert delete_started.wait(timeout=2)
+        assert not delete_finished.wait(timeout=0.1)
+    finally:
+        release_read.set()
+        read_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+    assert not read_thread.is_alive()
+    assert not delete_thread.is_alive()
+    assert responses["read"].status_code == 200
+    assert responses["read"].content == VALID_PNG
+    assert responses["delete"].status_code == 204
+
+
+def test_delete_rejects_while_benchmark_import_is_pending(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    FileBenchmarkStore(tmp_path).begin_import(
+        "pending-import-before-delete",
+        b"pending archive",
+    )
+
+    response = client.delete(f"/api/jobs/{job_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A benchmark dataset import is still pending"
+    assert client.get(f"/api/jobs/{job_id}").status_code == 200
+    assert client.get(f"/api/jobs/{job_id}/image").content == VALID_PNG
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -2623,6 +2911,265 @@ def test_upload_accepts_valid_image_with_uppercase_content_type(tmp_path: Path) 
 
     assert response.status_code == 201
     assert response.json()["status"] == "parsed"
+
+
+def test_metadata_update_during_active_parser_is_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parse_started = Event()
+    release_parse = Event()
+    metadata_started = Event()
+    metadata_finished = Event()
+    responses: dict[str, object] = {}
+
+    class SlowParser(MockParser):
+        def parse(self, image_path: Path):
+            parse_started.set()
+            assert release_parse.wait(timeout=5)
+            return super().parse(image_path)
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: SlowParser())
+    client = make_client(tmp_path)
+    upload_thread = Thread(
+        target=lambda: responses.update(upload=upload_job(client)),
+    )
+    upload_thread.start()
+    assert parse_started.wait(timeout=2)
+    job_id = FileJobStore(tmp_path).list()[0].id
+
+    def update_metadata() -> None:
+        metadata_started.set()
+        responses["metadata"] = client.put(
+            f"/api/jobs/{job_id}/metadata",
+            json={
+                "title": "Turn bluff review",
+                "notes": "Check the smaller sizing.",
+                "tags": ["turn", "bluff"],
+            },
+        )
+        metadata_finished.set()
+
+    metadata_thread = Thread(target=update_metadata)
+    metadata_thread.start()
+    try:
+        assert metadata_started.wait(timeout=2)
+        assert metadata_finished.wait(timeout=2)
+    finally:
+        release_parse.set()
+        upload_thread.join(timeout=5)
+        metadata_thread.join(timeout=5)
+
+    assert not upload_thread.is_alive()
+    assert not metadata_thread.is_alive()
+    assert responses["upload"].status_code == 201
+    assert responses["metadata"].status_code == 200
+    persisted = FileJobStore(tmp_path).get(job_id)
+    assert persisted.status == "parsed"
+    assert persisted.title == "Turn bluff review"
+    assert persisted.notes == "Check the smaller sizing."
+    assert persisted.tags == ["turn", "bluff"]
+
+
+@pytest.mark.parametrize(
+    ("complete_recommendation", "expected_status"),
+    [(False, "approved"), (True, "recommended")],
+)
+def test_late_parser_failure_preserves_newer_approved_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    complete_recommendation: bool,
+    expected_status: str,
+) -> None:
+    parse_started = Event()
+    release_parse = Event()
+    responses: dict[str, object] = {}
+
+    class SlowFailingParser:
+        name = "slow_failing"
+
+        def parse(self, image_path: Path):
+            parse_started.set()
+            assert release_parse.wait(timeout=5)
+            raise ParserError("late parser failure")
+
+    monkeypatch.setattr(
+        "app.api.build_parser",
+        lambda settings: SlowFailingParser(),
+    )
+    client = make_client(tmp_path)
+    upload_thread = Thread(
+        target=lambda: responses.update(upload=upload_job(client)),
+    )
+    upload_thread.start()
+    assert parse_started.wait(timeout=2)
+    job_id = FileJobStore(tmp_path).list()[0].id
+
+    try:
+        approved = approve_job(client, job_id)
+        recommendation = (
+            client.post(f"/api/jobs/{job_id}/recommend")
+            if complete_recommendation
+            else None
+        )
+        assert approved.status_code == 200
+        if recommendation is not None:
+            assert recommendation.status_code == 200
+    finally:
+        release_parse.set()
+        upload_thread.join(timeout=5)
+
+    assert not upload_thread.is_alive()
+    assert responses["upload"].status_code == 502
+    persisted = FileJobStore(tmp_path).get(job_id)
+    assert persisted.status == expected_status
+    assert persisted.error is None
+    assert persisted.approved_state is not None
+    assert (persisted.recommendation is not None) is complete_recommendation
+
+
+def test_delete_during_active_parser_cancels_upload_without_resurrecting_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parse_started = Event()
+    release_parse = Event()
+    delete_started = Event()
+    delete_finished = Event()
+    responses: dict[str, object] = {}
+
+    class SlowParser(MockParser):
+        def parse(self, image_path: Path):
+            parse_started.set()
+            assert release_parse.wait(timeout=5)
+            return super().parse(image_path)
+
+    monkeypatch.setattr("app.api.build_parser", lambda settings: SlowParser())
+    client = make_client(tmp_path)
+    upload_thread = Thread(
+        target=lambda: responses.update(upload=upload_job(client)),
+    )
+    upload_thread.start()
+    assert parse_started.wait(timeout=2)
+    job_id = FileJobStore(tmp_path).list()[0].id
+
+    def delete_job() -> None:
+        delete_started.set()
+        responses["delete"] = client.delete(f"/api/jobs/{job_id}")
+        delete_finished.set()
+
+    delete_thread = Thread(target=delete_job)
+    delete_thread.start()
+    try:
+        assert delete_started.wait(timeout=2)
+        assert delete_finished.wait(timeout=2)
+    finally:
+        release_parse.set()
+        upload_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+    assert not upload_thread.is_alive()
+    assert not delete_thread.is_alive()
+    assert responses["upload"].status_code == 409
+    assert responses["upload"].json()["detail"] == (
+        "Upload was deleted while parsing"
+    )
+    assert responses["delete"].status_code == 204
+    with pytest.raises(JobNotFoundError):
+        FileJobStore(tmp_path).get(job_id)
+
+
+def test_colliding_job_stripe_does_not_block_unrelated_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_parse_started = Event()
+    second_parse_started = Event()
+    release_first_parse = Event()
+    parse_calls_lock = ThreadLock()
+    parse_calls = 0
+    responses: dict[str, object] = {}
+
+    class IndependentlySlowParser(MockParser):
+        def parse(self, image_path: Path):
+            nonlocal parse_calls
+            with parse_calls_lock:
+                parse_calls += 1
+                call_number = parse_calls
+            if call_number == 1:
+                first_parse_started.set()
+                assert release_first_parse.wait(timeout=5)
+            else:
+                second_parse_started.set()
+            return super().parse(image_path)
+
+    monkeypatch.setattr("app.api.JOB_LOCK_STRIPES", 1)
+    monkeypatch.setattr(
+        "app.api.build_parser",
+        lambda settings: IndependentlySlowParser(),
+    )
+    client = make_client(tmp_path)
+    first_upload = Thread(
+        target=lambda: responses.update(first=upload_job(client)),
+    )
+    second_upload = Thread(
+        target=lambda: responses.update(second=upload_job(client)),
+    )
+    first_upload.start()
+    assert first_parse_started.wait(timeout=2)
+    second_upload.start()
+    try:
+        assert second_parse_started.wait(timeout=2)
+    finally:
+        release_first_parse.set()
+        first_upload.join(timeout=5)
+        second_upload.join(timeout=5)
+
+    assert not first_upload.is_alive()
+    assert not second_upload.is_alive()
+    assert responses["first"].status_code == 201
+    assert responses["second"].status_code == 201
+
+
+def test_delete_before_parser_lock_cancels_upload_without_resurrecting_job(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job_created = Event()
+    release_create = Event()
+    created_job_ids: list[str] = []
+    responses: dict[str, object] = {}
+    original_create_job = FileJobStore.create_job
+
+    def paused_create_job(store: FileJobStore, *args: object, **kwargs: object):
+        job = original_create_job(store, *args, **kwargs)
+        created_job_ids.append(job.id)
+        job_created.set()
+        assert release_create.wait(timeout=5)
+        return job
+
+    monkeypatch.setattr(FileJobStore, "create_job", paused_create_job)
+    client = make_client(tmp_path)
+    upload_thread = Thread(
+        target=lambda: responses.update(upload=upload_job(client)),
+    )
+    upload_thread.start()
+    try:
+        assert job_created.wait(timeout=2)
+        job_id = created_job_ids[0]
+        delete_response = client.delete(f"/api/jobs/{job_id}")
+    finally:
+        release_create.set()
+        upload_thread.join(timeout=5)
+
+    assert not upload_thread.is_alive()
+    assert delete_response.status_code == 204
+    assert responses["upload"].status_code == 409
+    assert responses["upload"].json()["detail"] == (
+        "Upload was deleted before parsing started"
+    )
+    with pytest.raises(JobNotFoundError):
+        FileJobStore(tmp_path).get(job_id)
 
 
 def test_upload_rejects_oversized_image(tmp_path: Path) -> None:

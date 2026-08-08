@@ -296,6 +296,9 @@ export interface JobRecord {
   status: "created" | "parsed" | "approved" | "recommended" | "error";
   upload_request_id?: string | null;
   original_filename: string;
+  title?: string | null;
+  notes?: string | null;
+  tags?: string[];
   image_filename: string;
   parser_provider: string;
   recommendation_provider: string;

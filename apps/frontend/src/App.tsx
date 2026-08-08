@@ -5248,6 +5248,11 @@ export default function App() {
   const managedJobPersisted = Boolean(
     managedJob && PERSISTED_JOB_ID_PATTERN.test(managedJob.id),
   );
+  const managedLocalUploadRecoveryPending = Boolean(
+    managedJob
+    && !managedJobPersisted
+    && localUploadDeletionRequiresRecovery(managedJob),
+  );
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
@@ -5472,6 +5477,25 @@ export default function App() {
     return lease.kind === "projection"
       && lease.benchmarkImportRequestId === null
       && activeRequests.length > 0;
+  }
+
+  function localUploadDeletionRequiresRecovery(
+    localJob: JobRecord,
+  ): boolean {
+    if (!isLocalUploadError(localJob) || !localJob.upload_request_id) {
+      return false;
+    }
+    const lease = processingMutationLeaseRef.current;
+    const expectedUpload = lease?.kind === "projection"
+      ? lease.expectedUploads.find(
+          (candidate) => candidate.requestId === localJob.upload_request_id,
+        )
+      : undefined;
+    if (expectedUpload?.target === "failed") {
+      return false;
+    }
+    return expectedUpload !== undefined
+      || !processingQueueSessionSynced();
   }
 
   function trackExpectedUpload(
@@ -8895,6 +8919,18 @@ export default function App() {
       return;
     }
     if (!managedJobPersisted) {
+      if (localUploadDeletionRequiresRecovery(managedJob)) {
+        markProcessingQueueSessionUnsynced();
+        if (processingMutationLeaseRef.current !== null) {
+          scheduleMutationLeaseRevalidation();
+        } else {
+          scheduleProcessingQueueRestore();
+        }
+        setError(
+          "Checking whether this upload reached storage. Delete it after recovery finishes.",
+        );
+        return;
+      }
       removeScreenshotFromClient(managedJob);
       setManagedJobId(null);
       setScreenshotDeleteArmed(false);
@@ -10295,7 +10331,11 @@ export default function App() {
                   </label>
                 </div>
               ) : (
-                <p className="local-upload-note">This upload did not reach persistent storage and can only be removed.</p>
+                <p className="local-upload-note">
+                  {managedLocalUploadRecoveryPending
+                    ? "Checking whether this upload reached persistent storage before deletion."
+                    : "This upload did not reach persistent storage and can only be removed."}
+                </p>
               )}
 
               {screenshotDeleteArmed ? (
@@ -10320,7 +10360,7 @@ export default function App() {
                     type="button"
                     className="danger-button"
                     onClick={() => void permanentlyDeleteScreenshot()}
-                    disabled={screenshotDeleting}
+                    disabled={screenshotDeleting || managedLocalUploadRecoveryPending}
                   >
                     <Trash2 size={14} aria-hidden="true" />
                     {screenshotDeleting ? "Deleting..." : "Delete permanently"}
@@ -10334,7 +10374,11 @@ export default function App() {
                     type="button"
                     className="screenshot-delete-button"
                     onClick={() => setScreenshotDeleteArmed(true)}
-                    disabled={screenshotMetadataSaving || screenshotDeleting}
+                    disabled={
+                      screenshotMetadataSaving
+                      || screenshotDeleting
+                      || managedLocalUploadRecoveryPending
+                    }
                   >
                     <Trash2 size={14} aria-hidden="true" />
                     Delete screenshot

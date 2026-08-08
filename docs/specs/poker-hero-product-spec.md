@@ -635,7 +635,11 @@ frequencies.
     remaining upload queue. Metadata and deletion for other hands in the same
     projection compose with the active recommendation lease rather than waiting
     for its provider. Successful deletion refreshes processing and history so a
-    concurrent archival cannot leave stale membership or totals behind.
+    concurrent archival cannot leave stale membership or totals behind. A local
+    failed-upload placeholder cannot be deleted while its durable upload lease
+    or an authoritative queue refresh could still reveal a persisted job; the
+    client first reconciles by upload request ID, then deletes the resolved job
+    or unlocks local-only removal after storage absence is confirmed.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

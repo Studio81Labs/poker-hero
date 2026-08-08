@@ -709,6 +709,97 @@ describe("App", () => {
     )).not.toBeInTheDocument();
   });
 
+  it("reconciles an ambiguous upload before allowing permanent deletion", async () => {
+    const persistedJob = jobRecord({
+      id: "c".repeat(32),
+      original_filename: "lost-upload-delete.png",
+    });
+    const pendingQueue = deferredResponse();
+    let uploadRequestId = "";
+    let persistedDeleted = false;
+    fetchMock().mockImplementation((url, options) => {
+      if (
+        url === "http://localhost:8000/api/jobs"
+        && options?.method === "POST"
+      ) {
+        uploadRequestId = String(
+          (options.body as FormData).get("upload_request_id"),
+        );
+        return Promise.reject(new TypeError("Connection lost after upload"));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return persistedDeleted
+          ? Promise.resolve(processingQueueResponse([]))
+          : pendingQueue.promise;
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${persistedJob.id}`
+        && options?.method === "DELETE"
+      ) {
+        persistedDeleted = true;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-recovered-upload-delete",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await disableAutomation(user);
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["upload"], persistedJob.original_filename, { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    await user.click(await screen.findByRole("button", {
+      name: `Manage screenshot 1: ${persistedJob.original_filename}`,
+    }));
+    let dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    expect(within(dialog).getByText(
+      "Checking whether this upload reached persistent storage before deletion.",
+    )).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Delete screenshot",
+    })).toBeDisabled();
+    expect(fetchMock()).not.toHaveBeenCalledWith(
+      expect.stringContaining(persistedJob.id),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+
+    await act(async () => {
+      pendingQueue.resolve(processingQueueResponse(
+        [{ ...persistedJob, upload_request_id: uploadRequestId }],
+        "recovered-upload-before-delete",
+      ));
+      await pendingQueue.promise;
+    });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", {
+      name: "Screenshot details",
+    })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", {
+      name: `Manage screenshot 1: ${persistedJob.original_filename}`,
+    }));
+    dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    expect(within(dialog).getByLabelText("Title")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${persistedJob.id}`,
+      { method: "DELETE", credentials: "include" },
+    ));
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+  });
+
   it("reconciles history after deleting a queue record archived by another tab", async () => {
     const jobId = "d".repeat(32);
     const staleQueueJob = recommendedJob();

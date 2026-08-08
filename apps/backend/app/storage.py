@@ -260,7 +260,11 @@ class FileJobStore:
         path = self._job_path(job_id)
         if not path.exists():
             raise JobNotFoundError(job_id)
-        return load_persisted_job_record(path.read_bytes())
+        try:
+            payload = path.read_bytes()
+        except FileNotFoundError as exc:
+            raise JobNotFoundError(job_id) from exc
+        return load_persisted_job_record(payload)
 
     def list(self) -> list[JobRecord]:
         jobs: list[JobRecord] = []

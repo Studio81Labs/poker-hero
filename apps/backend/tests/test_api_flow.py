@@ -2677,6 +2677,131 @@ def test_job_image_endpoint_returns_upload(tmp_path: Path) -> None:
     assert image_response.content == VALID_PNG
 
 
+def test_job_read_completes_before_concurrent_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    record_path = tmp_path / "jobs" / job_id / "job.json"
+    read_started = Event()
+    release_read = Event()
+    delete_started = Event()
+    delete_finished = Event()
+    responses: dict[str, object] = {}
+    original_read_bytes = Path.read_bytes
+    paused = False
+
+    def pause_record_read(path: Path) -> bytes:
+        nonlocal paused
+        if path == record_path and not paused:
+            paused = True
+            read_started.set()
+            assert release_read.wait(timeout=5)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", pause_record_read)
+
+    read_thread = Thread(
+        target=lambda: responses.update(read=client.get(f"/api/jobs/{job_id}")),
+    )
+
+    def delete_job() -> None:
+        delete_started.set()
+        responses["delete"] = client.delete(f"/api/jobs/{job_id}")
+        delete_finished.set()
+
+    delete_thread = Thread(target=delete_job)
+    read_thread.start()
+    assert read_started.wait(timeout=2)
+    delete_thread.start()
+    try:
+        assert delete_started.wait(timeout=2)
+        assert not delete_finished.wait(timeout=0.1)
+    finally:
+        release_read.set()
+        read_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+    assert not read_thread.is_alive()
+    assert not delete_thread.is_alive()
+    assert responses["read"].status_code == 200
+    assert responses["read"].json()["id"] == job_id
+    assert responses["delete"].status_code == 204
+
+
+def test_job_image_read_completes_before_concurrent_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    store = FileJobStore(tmp_path)
+    image_path = store.image_path(store.get(job_id))
+    read_started = Event()
+    release_read = Event()
+    delete_started = Event()
+    delete_finished = Event()
+    responses: dict[str, object] = {}
+    original_read_bytes = Path.read_bytes
+    paused = False
+
+    def pause_image_read(path: Path) -> bytes:
+        nonlocal paused
+        if path == image_path and not paused:
+            paused = True
+            read_started.set()
+            assert release_read.wait(timeout=5)
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", pause_image_read)
+
+    read_thread = Thread(
+        target=lambda: responses.update(
+            read=client.get(f"/api/jobs/{job_id}/image"),
+        ),
+    )
+
+    def delete_job() -> None:
+        delete_started.set()
+        responses["delete"] = client.delete(f"/api/jobs/{job_id}")
+        delete_finished.set()
+
+    delete_thread = Thread(target=delete_job)
+    read_thread.start()
+    assert read_started.wait(timeout=2)
+    delete_thread.start()
+    try:
+        assert delete_started.wait(timeout=2)
+        assert not delete_finished.wait(timeout=0.1)
+    finally:
+        release_read.set()
+        read_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+    assert not read_thread.is_alive()
+    assert not delete_thread.is_alive()
+    assert responses["read"].status_code == 200
+    assert responses["read"].content == VALID_PNG
+    assert responses["delete"].status_code == 204
+
+
+def test_delete_rejects_while_benchmark_import_is_pending(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    FileBenchmarkStore(tmp_path).begin_import(
+        "pending-import-before-delete",
+        b"pending archive",
+    )
+
+    response = client.delete(f"/api/jobs/{job_id}")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A benchmark dataset import is still pending"
+    assert client.get(f"/api/jobs/{job_id}").status_code == 200
+    assert client.get(f"/api/jobs/{job_id}/image").content == VALID_PNG
+
+
 @pytest.mark.parametrize(
     "content",
     [

@@ -6,6 +6,7 @@ from io import BytesIO
 import json
 import logging
 import math
+from mimetypes import guess_type
 import re
 from secrets import compare_digest
 from threading import Lock, RLock
@@ -28,7 +29,7 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
@@ -998,7 +999,8 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
-        return load_job_or_404(store, job_id)
+        with job_lock_for(job_id):
+            return load_job_or_404(store, job_id)
 
     @app.put("/api/jobs/{job_id}/metadata", response_model=JobRecord)
     def update_job_metadata(
@@ -1018,8 +1020,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         response_class=Response,
     )
     def delete_job(job_id: str) -> Response:
-        with benchmark_corpus_lock, job_lock_for(job_id):
-            with history_lock:
+        with benchmark_corpus_lock:
+            ensure_benchmark_corpus_ready()
+            with job_lock_for(job_id), history_lock:
                 load_job_or_404(store, job_id)
                 try:
                     store.delete(job_id)
@@ -1065,15 +1068,22 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 return build_job_history(store, limit)
 
     @app.get("/api/jobs/{job_id}/image")
-    def get_job_image(job_id: str) -> FileResponse:
-        job = load_job_or_404(store, job_id)
-        try:
-            image_path = store.image_path(job)
-        except JobNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
-        if not image_path.is_file():
-            raise HTTPException(status_code=404, detail="Job image not found")
-        return FileResponse(image_path)
+    def get_job_image(job_id: str) -> Response:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            try:
+                image_path = store.image_path(job)
+            except JobNotFoundError as exc:
+                raise HTTPException(status_code=404, detail="Job not found") from exc
+            try:
+                image_bytes = image_path.read_bytes()
+            except FileNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Job image not found",
+                ) from exc
+            media_type = guess_type(image_path.name)[0] or "application/octet-stream"
+        return Response(content=image_bytes, media_type=media_type)
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:

@@ -3741,6 +3741,7 @@ button:disabled {
 }
 
 .screenshot-details-dialog {
+  --screenshot-details-footer-height: 64px;
   display: flex;
   flex-direction: column;
   max-height: calc(100dvh - 48px);
@@ -3864,6 +3865,7 @@ button:disabled {
   display: grid;
   gap: 10px;
   grid-template-columns: minmax(0, 1fr) auto auto;
+  height: var(--screenshot-details-footer-height);
   left: 0;
   padding: 12px 22px;
   position: absolute;
@@ -3916,6 +3918,7 @@ button:disabled {
   display: flex;
   flex: 0 0 auto;
   gap: 10px;
+  height: var(--screenshot-details-footer-height);
   justify-content: space-between;
   padding: 14px 22px;
 }
@@ -4064,9 +4067,12 @@ button:disabled {
     grid-column: 1;
   }
 
+  .screenshot-details-dialog {
+    --screenshot-details-footer-height: 124px;
+  }
+
   .screenshot-delete-confirmation {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    min-height: 116px;
     padding-block: 9px;
   }
 
@@ -4096,7 +4102,6 @@ button:disabled {
   .screenshot-details-footer {
     align-items: stretch;
     flex-direction: column;
-    min-height: 116px;
   }
 
   .screenshot-delete-button,

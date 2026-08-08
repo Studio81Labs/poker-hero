@@ -3745,6 +3745,8 @@ button:disabled {
   flex-direction: column;
   max-height: calc(100dvh - 48px);
   max-width: 680px;
+  overflow: hidden;
+  position: relative;
 }
 
 .screenshot-details-form {
@@ -3856,12 +3858,17 @@ button:disabled {
   align-items: center;
   background: var(--accent-soft);
   border-top: 1px solid var(--accent);
+  bottom: 0;
+  box-shadow: 0 -12px 28px rgba(32, 30, 29, 0.14);
   color: var(--accent-dark);
   display: grid;
-  flex: 0 0 auto;
   gap: 10px;
   grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  left: 0;
   padding: 12px 22px;
+  position: absolute;
+  right: 0;
+  z-index: 2;
 }
 
 .screenshot-delete-confirmation > span {

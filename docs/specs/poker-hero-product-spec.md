@@ -230,7 +230,9 @@ Provider types:
   2-5 BB big-blind raise, and matching original-limper call.
   It derives limp-reraiser and isolator-call ranges from the exact supported
   continuation where the original limper reraises within the bounded ratio and
-  the isolation raiser calls.
+  the isolation raiser calls. In that blind-only limp-reraise line, a reviewed
+  dealer/button alias represents the heads-up small blind and retains its
+  postflop IP assignment; canonical blind labels retain six-max seat order.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.

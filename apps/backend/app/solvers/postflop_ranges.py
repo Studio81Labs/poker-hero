@@ -1594,6 +1594,14 @@ def _reviewed_positions_for_exact_order(
     oop_position: Position,
     ip_position: Position,
 ) -> tuple[Position, Position, Literal["ip", "oop"]] | None:
+    blind_pair = {oop_position, ip_position} == {"small_blind", "big_blind"}
+    reviewed_dealer = blind_pair and any(
+        normalize_position(value) == "button"
+        for value in (state.hero_position, state.opponent_position)
+    )
+    if reviewed_dealer:
+        oop_position, ip_position = "big_blind", "small_blind"
+
     def reviewed_actor(value: str | None) -> Position | None:
         relative_label = _relative_position_label(value)
         if relative_label == "oop":
@@ -1601,6 +1609,8 @@ def _reviewed_positions_for_exact_order(
         if relative_label == "ip":
             return ip_position
         position = normalize_position(value)
+        if reviewed_dealer and position == "button":
+            position = "small_blind"
         if position in {oop_position, ip_position}:
             return position
         return None

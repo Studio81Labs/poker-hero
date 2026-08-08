@@ -36,7 +36,9 @@ amount, both named response policies, both sizing policies, stack source, and
 base and adjusted range boundaries. Apply the existing later-street history
 verification and range-conditioning contract. The exact six-max actor order
 may establish relative position when reviewed values use concrete, relative,
-or consistent mixed labels, including small blind OOP versus big blind IP.
+or consistent mixed labels, including small blind OOP versus big blind IP. A
+reviewed dealer/button alias instead identifies that action actor as the
+heads-up small blind and preserves its postflop IP assignment.
 
 ## Consequences
 

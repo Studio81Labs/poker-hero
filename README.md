@@ -188,8 +188,11 @@ heads-up flop, turn, and river states when `hero_position` identifies `IP`,
 unambiguous postflop order. A small-blind versus big-blind pair still requires
 explicit IP/OOP review unless an exact called big-blind isolation, called
 limp-reraise, squeeze, or cold 4-bet history resolves it. The called-isolation
-and limp-reraise routes use the six-max chart contract; the other routes prove
-a multi-seat preflop line. Its ranges, bet tree, iteration target, rake,
+and limp-reraise routes use the six-max chart contract when reviewed seats are
+canonical blinds. On the limp-reraise route, a reviewed dealer/button alias
+instead identifies the heads-up small blind and preserves its postflop IP
+order. The other routes prove a multi-seat preflop line. Its ranges, bet tree,
+iteration target, rake,
 timeout, and memory ceiling are configurable through the
 `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player state with a

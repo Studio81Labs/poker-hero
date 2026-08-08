@@ -146,6 +146,11 @@ type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
 type PersistedJobMutationScope = "processing" | "history";
+type ActiveRecommendationRequest = {
+  mutationScope: PersistedJobMutationScope;
+  controller: AbortController;
+  ownsMutationLease: boolean;
+};
 type MutationLeaseBase = {
   ownerId: string;
   expiresAt: number;
@@ -4839,11 +4844,9 @@ export default function App() {
   const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
-  const activeRecommendationRequestRef = useRef<{
-    jobId: string;
-    mutationScope: PersistedJobMutationScope;
-    controller: AbortController;
-  } | null>(null);
+  const activeRecommendationRequestsRef = useRef(
+    new Map<string, ActiveRecommendationRequest>(),
+  );
   const historySearchRequestRef = useRef(0);
   const jobsRef = useRef(jobs);
   const activeJobIdRef = useRef(activeJobId);
@@ -6905,17 +6908,41 @@ export default function App() {
       return approved;
     }
 
+    const recommendationController = new AbortController();
+    const abortRecommendation = () => recommendationController.abort();
+    if (signal?.aborted) {
+      abortRecommendation();
+    } else {
+      signal?.addEventListener("abort", abortRecommendation, { once: true });
+    }
+    activeRecommendationRequestsRef.current.set(approved.id, {
+      mutationScope: persistedJobMutationScope(approved),
+      controller: recommendationController,
+      ownsMutationLease: false,
+    });
     markPersistedJobSessionUnsynced(approved);
-    const recommended = preserveUploadRequestId(
-      await requestRecommendation(
-        approved.id,
-        recommendationRequestId ?? createMutationRequestId(),
-        signal,
-      ),
-      approved,
-    );
-    applyRecommendedJob(recommended);
-    return recommended;
+    try {
+      const recommended = preserveUploadRequestId(
+        await requestRecommendation(
+          approved.id,
+          recommendationRequestId ?? createMutationRequestId(),
+          recommendationController.signal,
+        ),
+        approved,
+      );
+      if (jobsRef.current.some((candidate) => candidate.id === approved.id)) {
+        applyRecommendedJob(recommended);
+      }
+      return recommended;
+    } finally {
+      signal?.removeEventListener("abort", abortRecommendation);
+      if (
+        activeRecommendationRequestsRef.current.get(approved.id)?.controller
+          === recommendationController
+      ) {
+        activeRecommendationRequestsRef.current.delete(approved.id);
+      }
+    }
   }
 
   async function uploadSelectedFiles(
@@ -6981,6 +7008,7 @@ export default function App() {
         );
         appendJob(created);
         let completed = created;
+        let includeCompletedJob = true;
         if (runAutomation) {
           try {
             completed = await runConfiguredAutomation(
@@ -6991,15 +7019,20 @@ export default function App() {
           } catch (automationError) {
             const confirmedJob = jobsRef.current.find(
               (candidate) => candidate.id === created.id,
-            ) ?? created;
-            if (isAbortError(automationError)) {
-              completedJobs.push(confirmedJob);
+            );
+            if (isAbortError(automationError) && controller.signal.aborted) {
+              if (confirmedJob) {
+                completedJobs.push(confirmedJob);
+              }
               completedCount += 1;
               skippedCount = selectedFiles.length - completedCount;
               discardUnstartedUploads(index + 1);
               break;
             }
-            if (!mutationFailureMayHavePersistedSideEffect(automationError)) {
+            if (!confirmedJob) {
+              updateExpectedUpload(expectedUploadIndex, "failed");
+              includeCompletedJob = false;
+            } else if (!mutationFailureMayHavePersistedSideEffect(automationError)) {
               updateExpectedUpload(
                 expectedUploadIndex,
                 confirmedJob.recommendation !== null
@@ -7009,17 +7042,21 @@ export default function App() {
                     : "parsed",
               );
             }
-            const message = messageFromError(automationError, "Automation stopped for this screenshot");
-            setJobAttention((current) => ({
-              ...current,
-              [created.id]: message,
-            }));
-            completed = confirmedJob;
-            attentionMessages.push(`${selectedFile.name}: ${message}`);
-            failedCount += 1;
+            if (confirmedJob) {
+              const message = messageFromError(automationError, "Automation stopped for this screenshot");
+              setJobAttention((current) => ({
+                ...current,
+                [created.id]: message,
+              }));
+              completed = confirmedJob;
+              attentionMessages.push(`${selectedFile.name}: ${message}`);
+              failedCount += 1;
+            }
           }
         }
-        completedJobs.push(completed);
+        if (includeCompletedJob) {
+          completedJobs.push(completed);
+        }
         completedCount += 1;
       } catch (uploadError) {
         if (isAbortError(uploadError)) {
@@ -7241,13 +7278,18 @@ export default function App() {
         scheduleMutationLeaseRevalidation();
       }
     } catch (captureError) {
-      if (
+      const confirmedJob = capturedJobId === null
+        ? null
+        : jobsRef.current.find((candidate) => candidate.id === capturedJobId) ?? null;
+      const deletedDuringAutomation = capturedJobId !== null
+        && confirmedJob === null;
+      if (deletedDuringAutomation) {
+        updateExpectedUpload(expectedUploadIndex, "failed");
+        settlePersistedMutationLease("processing", jobsRef.current, false);
+      } else if (
         !isAbortError(captureError)
         && !mutationFailureMayHavePersistedSideEffect(captureError)
       ) {
-        const confirmedJob = capturedJobId === null
-          ? null
-          : jobsRef.current.find((candidate) => candidate.id === capturedJobId) ?? null;
         updateExpectedUpload(
           expectedUploadIndex,
           confirmedJob === null
@@ -7262,7 +7304,9 @@ export default function App() {
       if (processingMutationLeaseRef.current !== null) {
         scheduleMutationLeaseRevalidation();
       }
-      setError(messageFromError(captureError, "Screen capture failed"));
+      if (!deletedDuringAutomation) {
+        setError(messageFromError(captureError, "Screen capture failed"));
+      }
     } finally {
       endProcessingMembershipMutation();
       setBusy(false);
@@ -7344,11 +7388,11 @@ export default function App() {
       decisionExpectation,
     );
     const recommendationController = new AbortController();
-    activeRecommendationRequestRef.current = {
-      jobId: job.id,
+    activeRecommendationRequestsRef.current.set(job.id, {
       mutationScope,
       controller: recommendationController,
-    };
+      ownsMutationLease: true,
+    });
     let recommendationStarted = false;
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
@@ -7402,10 +7446,10 @@ export default function App() {
       }
     } finally {
       if (
-        activeRecommendationRequestRef.current?.controller
+        activeRecommendationRequestsRef.current.get(job.id)?.controller
           === recommendationController
       ) {
-        activeRecommendationRequestRef.current = null;
+        activeRecommendationRequestsRef.current.delete(job.id);
       }
       endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
@@ -8685,10 +8729,11 @@ export default function App() {
       return;
     }
     const mutationScope = persistedJobMutationScope(managedJob);
-    const concurrentRecommendation = activeRecommendationRequestRef.current;
-    const savingDuringRecommendation = concurrentRecommendation?.jobId
-      === managedJob.id
-      && concurrentRecommendation.mutationScope === mutationScope;
+    const concurrentRecommendation = activeRecommendationRequestsRef.current.get(
+      managedJob.id,
+    );
+    const savingDuringRecommendation = concurrentRecommendation?.mutationScope
+      === mutationScope;
     if (
       !savingDuringRecommendation
       && mutationRecoveryPending([mutationScope])
@@ -8840,10 +8885,11 @@ export default function App() {
     }
 
     const mutationScope = persistedJobMutationScope(managedJob);
-    const concurrentRecommendation = activeRecommendationRequestRef.current;
-    const deletingDuringRecommendation = concurrentRecommendation?.jobId
-      === managedJob.id
-      && concurrentRecommendation.mutationScope === mutationScope;
+    const concurrentRecommendation = activeRecommendationRequestsRef.current.get(
+      managedJob.id,
+    );
+    const deletingDuringRecommendation = concurrentRecommendation?.mutationScope
+      === mutationScope;
     if (
       !deletingDuringRecommendation
       && mutationRecoveryPending([mutationScope])
@@ -8860,9 +8906,11 @@ export default function App() {
     let restoreAfterMutation = false;
     try {
       await deleteJob(managedJob.id);
-      if (deletingDuringRecommendation) {
+      if (
+        concurrentRecommendation?.ownsMutationLease
+        && deletingDuringRecommendation
+      ) {
         clearOwnedMutationLease(mutationScope);
-        concurrentRecommendation.controller.abort();
       }
       if (mutationScope === "processing") {
         processingRemovalCandidateIdsRef.current.delete(managedJob.id);
@@ -8871,6 +8919,9 @@ export default function App() {
       setManagedJobId(null);
       setScreenshotDeleteArmed(false);
       toast.success("Screenshot permanently deleted");
+      if (concurrentRecommendation && deletingDuringRecommendation) {
+        concurrentRecommendation.controller.abort();
+      }
     } catch (deleteError) {
       restoreAfterMutation = true;
       setError(messageFromError(deleteError, "Could not delete screenshot"));

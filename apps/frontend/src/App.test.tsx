@@ -5236,6 +5236,74 @@ describe("App", () => {
     expect(JSON.parse(String(fetchMock().mock.calls[1][1]?.body)).user_approved).toBe(true);
   });
 
+  it("deletes an automated capture and cancels only its recommendation", async () => {
+    stubDisplayMedia("window");
+    stubCanvasCapture();
+    const jobId = "c".repeat(32);
+    const created = jobRecord({
+      id: jobId,
+      original_filename: "delete-capture.png",
+    });
+    const approved = {
+      ...approvedJob(),
+      id: jobId,
+      original_filename: created.original_filename,
+    };
+    let recommendationAborted = false;
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/jobs") {
+        if (options?.method === "POST") {
+          return Promise.resolve(jsonResponse(created, 201));
+        }
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      if (url === `http://localhost:8000/api/jobs/${jobId}/approve`) {
+        return Promise.resolve(jsonResponse(approved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${jobId}/recommend`) {
+        const signal = options?.signal as AbortSignal | undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener("abort", () => {
+            recommendationAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${jobId}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Share window" }));
+    expect(await screen.findByText("Window sharing active")).toBeInTheDocument();
+    setSharedPreviewSize();
+    await user.click(screen.getByRole("button", { name: "Capture and parse" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${jobId}/recommend`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: delete-capture.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(recommendationAborted).toBe(true));
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    expect(screen.queryByText(/Screen capture failed/)).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+  });
+
   it("runs upload, approval, and recommendation through automation", async () => {
     const created = jobRecord({ original_filename: "uploaded.png" });
     const approved = { ...approvedJob(), original_filename: "uploaded.png" };
@@ -5275,6 +5343,116 @@ describe("App", () => {
     expect(fetchMock().mock.calls[3][0]).toBe("http://localhost:8000/api/jobs");
     expect(fetchMock().mock.calls[4][0]).toBe("http://localhost:8000/api/history");
     expect(fetchMock().mock.calls[5][0]).toBe("http://localhost:8000/api/jobs");
+  });
+
+  it("deletes an automated recommendation and continues the upload queue", async () => {
+    const firstJobId = "1".repeat(32);
+    const secondJobId = "2".repeat(32);
+    const firstCreated = jobRecord({
+      id: firstJobId,
+      original_filename: "delete-automated.png",
+    });
+    const firstApproved = {
+      ...approvedJob(),
+      id: firstJobId,
+      original_filename: firstCreated.original_filename,
+    };
+    const secondCreated = jobRecord({
+      id: secondJobId,
+      original_filename: "continue-automated.png",
+    });
+    const secondApproved = {
+      ...approvedJob(),
+      id: secondJobId,
+      original_filename: secondCreated.original_filename,
+    };
+    const secondRecommended = {
+      ...recommendedJob(),
+      id: secondJobId,
+      original_filename: secondCreated.original_filename,
+    };
+    let uploadCount = 0;
+    let firstRecommendationAborted = false;
+    let secondRecommendationCompleted = false;
+
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/jobs") {
+        if (options?.method === "POST") {
+          uploadCount += 1;
+          return Promise.resolve(jsonResponse(
+            uploadCount === 1 ? firstCreated : secondCreated,
+            201,
+          ));
+        }
+        return Promise.resolve(processingQueueResponse(
+          secondRecommendationCompleted ? [secondRecommended] : [],
+        ));
+      }
+      if (url === `http://localhost:8000/api/jobs/${firstJobId}/approve`) {
+        return Promise.resolve(jsonResponse(firstApproved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${firstJobId}/recommend`) {
+        const signal = options?.signal as AbortSignal | undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            firstRecommendationAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => {
+            firstRecommendationAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${firstJobId}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === `http://localhost:8000/api/jobs/${secondJobId}/approve`) {
+        return Promise.resolve(jsonResponse(secondApproved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${secondJobId}/recommend`) {
+        secondRecommendationCompleted = true;
+        return Promise.resolve(jsonResponse(secondRecommended));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(screen.getByLabelText("Choose screenshots"), [
+      new File(["first"], firstCreated.original_filename, { type: "image/png" }),
+      new File(["second"], secondCreated.original_filename, { type: "image/png" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${firstJobId}/recommend`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: delete-automated.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(firstRecommendationAborted).toBe(true));
+    const remainingItem = await screen.findByRole("button", {
+      name: "Open screenshot 1: continue-automated.png",
+    });
+    expect(await within(remainingItem).findByText("recommended")).toBeInTheDocument();
+    expect(screen.queryByText("delete-automated.png")).not.toBeInTheDocument();
+    expect(secondRecommendationCompleted).toBe(true);
+    expect(screen.queryByText(/Import aborted/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/need attention/)).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
   });
 
   it("restores the persisted provider error when upload automation fails", async () => {

@@ -627,7 +627,9 @@ frequencies.
     and concurrent detail or image reads complete before deletion removes their
     files. Details, metadata saves, and permanent deletion remain available while
     a recommendation provider is running; deletion cancels that browser request
-    without restoring the removed hand when a stale response arrives.
+    without restoring the removed hand when a stale response arrives. Automated
+    recommendations are canceled per hand, so deleting one screenshot does not
+    abort or stall the remaining upload queue.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

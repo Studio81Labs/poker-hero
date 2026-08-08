@@ -169,6 +169,23 @@ def resolve_squeeze_pot_relative_position(
     return hero_relative_position
 
 
+def resolve_cold_four_bet_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve an otherwise ambiguous blind pair from an exact cold 4-bet line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _cold_four_bet_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
+
+
 def _limped_pot_selection(
     state: CanonicalState,
     hero_relative_position: Literal["ip", "oop"],

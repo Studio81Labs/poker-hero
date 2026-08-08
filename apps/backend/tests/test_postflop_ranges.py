@@ -12,6 +12,7 @@ from app.models import (
 )
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import (
+    resolve_cold_four_bet_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -1138,6 +1139,32 @@ def test_selects_cold_four_bet_ranges_on_turn_after_completed_flop() -> None:
     assert selection.source == "preflop_chart_cold_four_bet_pot"
     assert selection.context["decision_street"] == "turn"
     assert selection.context["completed_street_count"] == 1.0
+
+
+def test_resolves_cold_four_bet_blind_pair_from_exact_history() -> None:
+    state = CanonicalState(
+        players_in_hand=2,
+        hero_position="small_blind",
+        opponent_position="big_blind",
+        street="flop",
+        pot_size=42.5,
+        current_bet=0,
+        effective_stack=80.0,
+        preflop_action_history=[
+            PreflopAction(actor="button", action="raise", amount=2.5),
+            PreflopAction(actor="small_blind", action="raise", amount=8.0),
+            PreflopAction(actor="big_blind", action="raise", amount=20.0),
+            PreflopAction(actor="small_blind", action="call", amount=20.0),
+        ],
+    )
+
+    assert resolve_cold_four_bet_pot_relative_position(state) == "oop"
+    state.hero_position = "big_blind"
+    state.opponent_position = "small_blind"
+    assert resolve_cold_four_bet_pot_relative_position(state) == "ip"
+
+    state.preflop_action_history.pop()
+    assert resolve_cold_four_bet_pot_relative_position(state) is None
 
 
 def test_assigns_cold_four_bet_ranges_by_relative_position() -> None:

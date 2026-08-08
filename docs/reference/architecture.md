@@ -112,7 +112,8 @@ six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a small-blind versus
 big-blind pair remain ambiguous and use fallback. A limp/check line cannot
 resolve that pair because it is also valid heads-up; an exact reviewed squeeze
-history can resolve it because the additional seats prove the preflop order.
+or cold 4-bet history can resolve it because the additional seats prove the
+preflop order.
 First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's

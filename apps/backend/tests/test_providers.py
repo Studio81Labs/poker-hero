@@ -2474,10 +2474,10 @@ def test_local_solver_derives_ranges_from_complete_cold_four_bet_pot(
         "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
         "'preflop_chart_cold_four_bet_pot'\n"
         "assert context['scenario'] == 'cold_four_bet_pot'\n"
-        "assert context['folded_opener_position'] == 'utg'\n"
+        "assert context['folded_opener_position'] == 'button'\n"
         "assert context['folded_opener_commitment_bb'] == 2.5\n"
-        "assert context['three_bettor_position'] == 'cutoff'\n"
-        "assert context['cold_four_bettor_position'] == 'button'\n"
+        "assert context['three_bettor_position'] == 'small_blind'\n"
+        "assert context['cold_four_bettor_position'] == 'big_blind'\n"
         "assert context['four_bet_size_bb'] == 20\n"
         "assert context['cold_four_bettor_range_policy'] == "
         "'conservative_three_player'\n"
@@ -2501,18 +2501,18 @@ def test_local_solver_derives_ranges_from_complete_cold_four_bet_pot(
     )
     state = heads_up_postflop_state()
     state.current_bet = 0
-    state.pot_size = 44.0
+    state.pot_size = 42.5
     state.opponents_at_current_bet = None
     state.opponent_wager = None
     state.opponent_commitment_total = None
     state.facing_action = None
-    state.hero_position = "button"
-    state.opponent_position = "cutoff"
+    state.hero_position = "small_blind"
+    state.opponent_position = "big_blind"
     state.preflop_action_history = [
-        PreflopAction(actor="utg", action="raise", amount=2.5),
-        PreflopAction(actor="cutoff", action="raise", amount=8.0),
-        PreflopAction(actor="button", action="raise", amount=20.0),
-        PreflopAction(actor="cutoff", action="call", amount=20.0),
+        PreflopAction(actor="button", action="raise", amount=2.5),
+        PreflopAction(actor="small_blind", action="raise", amount=8.0),
+        PreflopAction(actor="big_blind", action="raise", amount=20.0),
+        PreflopAction(actor="small_blind", action="call", amount=20.0),
     ]
 
     result = provider.recommend(

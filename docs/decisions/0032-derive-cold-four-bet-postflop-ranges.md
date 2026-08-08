@@ -37,6 +37,8 @@ The solver records a distinct `preflop_chart_cold_four_bet_pot` source plus the
 actors, sizes, folded-opener commitment, policies, and adjusted boundaries in
 recommendation evidence. The Rust plugin accepts that source explicitly, and
 the frontend presents its assumptions separately from an ordinary 4-bet pot.
+For the otherwise ambiguous surviving small-blind/big-blind pair, the same
+verified history establishes the small blind as OOP and the big blind as IP.
 
 ## Consequences
 

@@ -24,6 +24,7 @@ from app.solvers.preflop_context import (
 )
 from app.solvers.postflop_ranges import (
     resolve_cold_four_bet_pot_relative_position,
+    resolve_isolation_raised_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -397,6 +398,9 @@ def _postflop_position_for_state(
         state.hero_position,
         state.opponent_position,
     )
+    if position is not None:
+        return position
+    position = resolve_isolation_raised_pot_relative_position(state)
     if position is not None:
         return position
     position = resolve_squeeze_pot_relative_position(state)

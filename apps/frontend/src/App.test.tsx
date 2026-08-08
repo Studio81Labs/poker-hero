@@ -11355,6 +11355,74 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("shows contextual isolation-raised-pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "isolation-raised-postflop-job",
+      original_filename: "isolation-raised-postflop.png",
+      image_filename: "isolation-raised-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "oop",
+          range_source: "preflop_chart_isolation_raised_pot",
+          range_context: {
+            scenario: "isolation_raised_pot",
+            limper_position: "button",
+            isolation_raiser_position: "big_blind",
+            limp_size_bb: 1,
+            isolation_raise_size_bb: 4,
+            limp_response_policy: "heads_up_single_limper",
+            isolation_response_policy: "heads_up_after_hero_limp",
+            isolation_raise_size_policy: "standard",
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
+            isolation_raiser_fraction: 0.36,
+            limper_continue_fraction: 0.19,
+            limper_reraise_fraction: 0.06,
+          },
+          ranges: {
+            oop: "AA-22,AKs-A2s",
+            ip: "KJs-76s,AQo-ATo",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Preflop chart · isolation-raised pot",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Standard · 100 BB starting",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Button limps 1 BB · Big blind raises 4 BB · Button calls",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "BB isolate 36% · limper call 6%-19%",
+    )).toBeInTheDocument();
+  });
+
   it("shows contextual three-bet pot range assumptions", async () => {
     const postflopJob: JobRecord = {
       ...recommendedJob(),

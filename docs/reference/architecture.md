@@ -115,15 +115,29 @@ map to button/IP. When both reviewed seats are available, distinct normalized
 six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a small-blind versus
 big-blind pair remain ambiguous and use fallback. A limp/check line cannot
-resolve that pair because it is also valid heads-up; an exact reviewed squeeze
-or cold 4-bet history can resolve it because the additional seats prove the
-preflop order.
+resolve that pair because it is also valid heads-up. An exact called big-blind
+isolation line resolves the pair under its six-max chart contract, with the
+small blind OOP and big blind IP. An exact reviewed squeeze or cold 4-bet line
+can also resolve it because the additional seats prove the preflop order.
 First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
 stack-adjusted first-in range as an explicit proxy and the complement of the
 big blind's isolation-raise band as the checked range. Both reviewed survivor
-seats and the reconstructed flop-root pot must match that line. An
+seats and the reconstructed flop-root pot must match that line. The exact
+three-action continuation in which the big blind instead isolation-raises to
+2-5 BB and the original limper calls uses the adjusted big-blind isolation
+band for the raiser and the limper's matchup-, size-, and stack-adjusted
+continue band after excluding limp-reraises. The call-first structured history
+takes precedence over legacy opener metadata. Both final commitments, the
+survivor pair, and the reconstructed flop-root pot must agree. A consistent
+opposing OOP/IP label pair assigns the represented limper and big blind from
+their six-max postflop order when concrete seats are unavailable; duplicate or
+contradictory labels retain configured ranges. Other isolator
+positions keep the configured ranges because no initial isolation policy is
+charted for them. When those survivors are the small blind and big blind, this
+exact six-max chart route establishes the small blind as OOP and the big blind
+as IP. An
 open-and-call preflop history whose actors match the reviewed seats replaces
 the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.

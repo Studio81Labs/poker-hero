@@ -8808,6 +8808,7 @@ export default function App() {
       beginPersistedJobMutation(managedJob, expectation);
     }
     let restoreAfterMutation = false;
+    let deletedRemotely = false;
     setScreenshotMetadataSaving(true);
     setError(null);
     try {
@@ -8843,11 +8844,19 @@ export default function App() {
       setScreenshotTagInput(screenshotTags(updated).join(", "));
       toast.success("Screenshot details saved");
     } catch (metadataError) {
-      if (mutationFailureMayHavePersistedSideEffect(metadataError)) {
+      deletedRemotely = metadataError instanceof ApiResponseError
+        && metadataError.status === 404;
+      if (deletedRemotely) {
+        restoreAfterMutation = true;
+        reconcileAuthoritativeScreenshotRemoval(managedJob, mutationScope);
+        toast.warning("Screenshot was already deleted elsewhere");
+      } else if (mutationFailureMayHavePersistedSideEffect(metadataError)) {
         markPersistedJobMutationUncertain(mutationScope, managedJob.id);
         restoreAfterMutation = true;
       }
-      setError(messageFromError(metadataError, "Could not save screenshot details"));
+      if (!deletedRemotely) {
+        setError(messageFromError(metadataError, "Could not save screenshot details"));
+      }
     } finally {
       if (savingAlongsideRecommendation) {
         if (mutationScope === "processing") {
@@ -8856,7 +8865,10 @@ export default function App() {
           endHistoryMutation(restoreAfterMutation);
         }
       } else {
-        endPersistedJobMutation(mutationScope, false);
+        endPersistedJobMutation(
+          mutationScope,
+          deletedRemotely,
+        );
       }
       setScreenshotMetadataSaving(false);
     }
@@ -8914,6 +8926,37 @@ export default function App() {
     }
   }
 
+  function reconcileAuthoritativeScreenshotRemoval(
+    deletedJob: JobRecord,
+    mutationScope: PersistedJobMutationScope,
+  ) {
+    const activeRecommendation = activeRecommendationRequestsRef.current.get(
+      deletedJob.id,
+    );
+    if (
+      activeRecommendation?.ownsMutationLease
+      && activeRecommendation.mutationScope === mutationScope
+    ) {
+      clearOwnedMutationLease(mutationScope);
+    }
+    if (mutationScope === "processing") {
+      processingRemovalCandidateIdsRef.current.delete(deletedJob.id);
+    }
+    removeScreenshotFromClient(deletedJob);
+    setManagedJobId(null);
+    setScreenshotDeleteArmed(false);
+    if (mutationScope === "processing") {
+      markHistorySessionUnsynced();
+      void requestHistoryRestore(null, true);
+    } else {
+      markProcessingQueueSessionUnsynced();
+      scheduleProcessingQueueRestore();
+    }
+    if (activeRecommendation?.mutationScope === mutationScope) {
+      activeRecommendation.controller.abort();
+    }
+  }
+
   async function permanentlyDeleteScreenshot() {
     if (!managedJob || screenshotMetadataSaving || screenshotDeleting) {
       return;
@@ -8939,11 +8982,6 @@ export default function App() {
     }
 
     const mutationScope = persistedJobMutationScope(managedJob);
-    const concurrentRecommendation = activeRecommendationRequestsRef.current.get(
-      managedJob.id,
-    );
-    const deletingDuringRecommendation = concurrentRecommendation?.mutationScope
-      === mutationScope;
     const deletingAlongsideRecommendation = mutationComposesWithActiveRecommendation(
       mutationScope,
     );
@@ -8964,29 +9002,8 @@ export default function App() {
     try {
       await deleteJob(managedJob.id);
       restoreAfterMutation = true;
-      if (
-        concurrentRecommendation?.ownsMutationLease
-        && deletingDuringRecommendation
-      ) {
-        clearOwnedMutationLease(mutationScope);
-      }
-      if (mutationScope === "processing") {
-        processingRemovalCandidateIdsRef.current.delete(managedJob.id);
-      }
-      removeScreenshotFromClient(managedJob);
-      setManagedJobId(null);
-      setScreenshotDeleteArmed(false);
+      reconcileAuthoritativeScreenshotRemoval(managedJob, mutationScope);
       toast.success("Screenshot permanently deleted");
-      if (mutationScope === "processing") {
-        markHistorySessionUnsynced();
-        void requestHistoryRestore(null, true);
-      } else {
-        markProcessingQueueSessionUnsynced();
-        scheduleProcessingQueueRestore();
-      }
-      if (concurrentRecommendation && deletingDuringRecommendation) {
-        concurrentRecommendation.controller.abort();
-      }
     } catch (deleteError) {
       restoreAfterMutation = true;
       setError(messageFromError(deleteError, "Could not delete screenshot"));

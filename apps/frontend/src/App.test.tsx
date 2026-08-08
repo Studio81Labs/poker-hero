@@ -527,6 +527,79 @@ describe("App", () => {
     ));
   });
 
+  it.each([
+    { projection: "queue", archivedAt: null },
+    { projection: "history", archivedAt: "2026-07-10T00:02:00Z" },
+  ])("removes a stale $projection screenshot after metadata returns 404", async ({
+    archivedAt,
+  }) => {
+    const missingJob = approvedJob();
+    missingJob.id = "5".repeat(32);
+    missingJob.original_filename = "deleted-in-another-tab.png";
+    missingJob.archived_at = archivedAt;
+    if (archivedAt === null) {
+      window.localStorage.setItem(
+        "poker-training-processing-v1",
+        JSON.stringify([missingJob]),
+      );
+      window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    } else {
+      window.localStorage.setItem(
+        "poker-training-history-v1",
+        JSON.stringify([{
+          id: missingJob.id,
+          job: missingJob,
+          savedAt: archivedAt,
+        }]),
+      );
+      window.localStorage.setItem("poker-training-history-total-v1", "1");
+    }
+    fetchMock().mockImplementation((url, options) => {
+      if (url === `http://localhost:8000/api/jobs/${missingJob.id}/metadata`) {
+        return Promise.resolve(jsonResponse({ detail: "Job not found" }, 404));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-remote-delete",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)} ${String(options?.method)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: archivedAt === null
+        ? "Manage screenshot 1: deleted-in-another-tab.png"
+        : "Manage history item 1: deleted-in-another-tab.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Missing hand");
+    await user.click(within(dialog).getByRole("button", { name: "Save details" }));
+
+    expect(await screen.findByText(
+      "Screenshot was already deleted elsewhere",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", {
+      name: "Screenshot details",
+    })).not.toBeInTheDocument());
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    ));
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
+  });
+
   it("keeps queue and history management reachable during a recommendation request", async () => {
     const queueJob = approvedJob();
     queueJob.id = "7".repeat(32);

@@ -642,6 +642,8 @@ frequencies.
     or unlocks local-only removal after storage absence is confirmed. Recovery
     requested by one queue or history mutation remains deferred until every
     overlapping mutation in that projection has finished.
+    A metadata 404 is treated as authoritative cross-client deletion: stale
+    queue/history entries and dialogs are removed and both projections refresh.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

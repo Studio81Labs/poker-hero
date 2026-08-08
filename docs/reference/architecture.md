@@ -130,7 +130,10 @@ three-action continuation in which the big blind instead isolation-raises to
 band for the raiser and the limper's matchup-, size-, and stack-adjusted
 continue band after excluding limp-reraises. The call-first structured history
 takes precedence over legacy opener metadata. Both final commitments, the
-survivor pair, and the reconstructed flop-root pot must agree; other isolator
+survivor pair, and the reconstructed flop-root pot must agree. A consistent
+opposing OOP/IP label pair assigns the represented limper and big blind from
+their six-max postflop order when concrete seats are unavailable; duplicate or
+contradictory labels retain configured ranges. Other isolator
 positions keep the configured ranges because no initial isolation policy is
 charted for them. When those survivors are the small blind and big blind, this
 exact six-max chart route establishes the small blind as OOP and the big blind

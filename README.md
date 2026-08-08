@@ -203,7 +203,9 @@ uses the limper's stack-adjusted first-in range as an explicit proxy and the
 complement of the big blind's isolation-raise band as the checked range.
 The called-isolation route uses that big-blind isolation band as the raiser's
 range and the limper's adjusted continue band after excluding limp-reraises as
-the calling range. Non-big-blind isolation raises retain configured ranges
+the calling range. Concrete reviewed seats or a consistent opposing OOP/IP
+pair identify which represented actor owns each range. Non-big-blind isolation
+raises retain configured ranges
 because the bundled chart does not define their initial isolation band.
 Dead-money routes require the original opener to be absent
 from the two reviewed survivors and keep that player's opening contribution in

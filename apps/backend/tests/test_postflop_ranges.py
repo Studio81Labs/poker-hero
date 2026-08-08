@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 
 from app.config import DEFAULT_POSTFLOP_IP_RANGE, DEFAULT_POSTFLOP_OOP_RANGE
@@ -477,6 +479,51 @@ def test_assigns_isolation_raised_ranges_by_relative_position() -> None:
 
     assert limper_hero.ip_range == isolation_raiser_hero.ip_range
     assert limper_hero.oop_range == isolation_raiser_hero.oop_range
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("OOP", "IP", "oop"),
+        ("IP", "OOP", "ip"),
+    ),
+)
+def test_assigns_isolation_raised_ranges_from_relative_labels(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = isolation_raised_pot_state()
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_isolation_raised_pot"
+    assert "AA" in selection.oop_range.split(",")
+    assert "AA" not in selection.ip_range.split(",")
+
+
+def test_rejects_isolation_raised_pot_with_duplicate_relative_labels() -> None:
+    state = isolation_raised_pot_state()
+    state.hero_position = "OOP"
+    state.opponent_position = "OOP"
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position="oop",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
 
 
 def test_resolves_blind_isolation_raised_pot_relative_position() -> None:

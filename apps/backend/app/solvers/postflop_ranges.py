@@ -1215,7 +1215,7 @@ def _isolation_raised_pot_context(
         >= POSITION_ACTION_ORDER["big_blind"]
     ):
         return None
-    participant_positions = _limped_pot_participant_positions(
+    participant_positions = _isolation_raised_pot_participant_positions(
         state,
         hero_relative_position,
         limper,
@@ -1237,6 +1237,46 @@ def _isolation_raised_pot_context(
         isolation_raise_size,
         participant_positions,
     )
+
+
+def _isolation_raised_pot_participant_positions(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    limper: Position,
+) -> tuple[Position, Position] | None:
+    participant_positions = _limped_pot_participant_positions(
+        state,
+        hero_relative_position,
+        limper,
+    )
+    if participant_positions is not None:
+        return participant_positions
+
+    hero_relative_label = _relative_position_label(state.hero_position)
+    opponent_relative_label = _relative_position_label(
+        state.opponent_position
+    )
+    expected_opponent_relative: Literal["ip", "oop"] = (
+        "oop" if hero_relative_position == "ip" else "ip"
+    )
+    if (
+        hero_relative_label != hero_relative_position
+        or opponent_relative_label != expected_opponent_relative
+    ):
+        return None
+
+    big_blind_relative: Literal["ip", "oop"] = (
+        "ip" if limper == "small_blind" else "oop"
+    )
+    hero_position: Position = (
+        "big_blind"
+        if hero_relative_position == big_blind_relative
+        else limper
+    )
+    opponent_position = (
+        limper if hero_position == "big_blind" else "big_blind"
+    )
+    return hero_position, opponent_position
 
 
 def _three_bet_pot_context(

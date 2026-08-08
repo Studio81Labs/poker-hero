@@ -4839,6 +4839,11 @@ export default function App() {
   const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
+  const activeRecommendationRequestRef = useRef<{
+    jobId: string;
+    mutationScope: PersistedJobMutationScope;
+    controller: AbortController;
+  } | null>(null);
   const historySearchRequestRef = useRef(0);
   const jobsRef = useRef(jobs);
   const activeJobIdRef = useRef(activeJobId);
@@ -6849,10 +6854,30 @@ export default function App() {
     setApprovedStateKey(approvalKey(approvedState));
   }
 
+  function preserveNewerScreenshotMetadata(incoming: JobRecord): JobRecord {
+    const current = jobsRef.current.find(
+      (candidate) => candidate.id === incoming.id,
+    );
+    const currentUpdatedAt = current ? Date.parse(current.updated_at) : Number.NaN;
+    const incomingUpdatedAt = Date.parse(incoming.updated_at);
+    return current
+      && Number.isFinite(currentUpdatedAt)
+      && (!Number.isFinite(incomingUpdatedAt) || currentUpdatedAt > incomingUpdatedAt)
+      ? {
+          ...incoming,
+          title: current.title ?? null,
+          notes: current.notes ?? null,
+          tags: screenshotTags(current),
+          updated_at: current.updated_at,
+        }
+      : incoming;
+  }
+
   function applyRecommendedJob(recommended: JobRecord) {
-    replaceJob(recommended);
-    if (recommended.approved_state) {
-      setApprovedStateKey(approvalKey(recommended.approved_state));
+    const reconciled = preserveNewerScreenshotMetadata(recommended);
+    replaceJob(reconciled);
+    if (reconciled.approved_state) {
+      setApprovedStateKey(approvalKey(reconciled.approved_state));
     }
   }
 
@@ -7318,18 +7343,31 @@ export default function App() {
       job,
       decisionExpectation,
     );
+    const recommendationController = new AbortController();
+    activeRecommendationRequestRef.current = {
+      jobId: job.id,
+      mutationScope,
+      controller: recommendationController,
+    };
     let recommendationStarted = false;
     let restoreAfterMutation = changesProcessingMembership;
     setBusy(true);
     setError(null);
     try {
       if (decisionExpectation?.kind === "training-decision") {
-        replaceJob(await recordTrainingDecision(
+        const decided = await recordTrainingDecision(
           job.id,
           decisionExpectation.action,
           decisionExpectation.sizing,
           decisionExpectation.certainty,
-        ));
+        );
+        if (
+          recommendationController.signal.aborted
+          || !jobsRef.current.some((candidate) => candidate.id === job.id)
+        ) {
+          return;
+        }
+        replaceJob(preserveNewerScreenshotMetadata(decided));
       }
       if (!armPersistedRecommendationLease(
         mutationScope,
@@ -7339,21 +7377,36 @@ export default function App() {
         return;
       }
       recommendationStarted = true;
-      applyRecommendedJob(await requestRecommendation(
+      const recommended = await requestRecommendation(
         job.id,
         recommendationRequestId,
-      ));
-    } catch (recommendError) {
-      if (
-        recommendationStarted
-          ? recommendationAttemptMayHavePersistedSideEffect(recommendError)
-          : mutationFailureMayHavePersistedSideEffect(recommendError)
-      ) {
-        markPersistedJobMutationUncertain(mutationScope, job.id);
+        recommendationController.signal,
+      );
+      if (jobsRef.current.some((candidate) => candidate.id === job.id)) {
+        applyRecommendedJob(recommended);
       }
-      restoreAfterMutation = restoreAfterMutation || recommendationStarted;
-      setError(messageFromError(recommendError, "Recommendation failed"));
+    } catch (recommendError) {
+      const jobStillPresent = jobsRef.current.some(
+        (candidate) => candidate.id === job.id,
+      );
+      if (jobStillPresent) {
+        if (
+          recommendationStarted
+            ? recommendationAttemptMayHavePersistedSideEffect(recommendError)
+            : mutationFailureMayHavePersistedSideEffect(recommendError)
+        ) {
+          markPersistedJobMutationUncertain(mutationScope, job.id);
+        }
+        restoreAfterMutation = restoreAfterMutation || recommendationStarted;
+        setError(messageFromError(recommendError, "Recommendation failed"));
+      }
     } finally {
+      if (
+        activeRecommendationRequestRef.current?.controller
+          === recommendationController
+      ) {
+        activeRecommendationRequestRef.current = null;
+      }
       endPersistedJobMutation(mutationScope, restoreAfterMutation);
       setBusy(false);
     }
@@ -8628,7 +8681,17 @@ export default function App() {
       || !managedJobPersisted
       || screenshotMetadataSaving
       || screenshotDeleting
-      || mutationRecoveryPending([persistedJobMutationScope(managedJob)])
+    ) {
+      return;
+    }
+    const mutationScope = persistedJobMutationScope(managedJob);
+    const concurrentRecommendation = activeRecommendationRequestRef.current;
+    const savingDuringRecommendation = concurrentRecommendation?.jobId
+      === managedJob.id
+      && concurrentRecommendation.mutationScope === mutationScope;
+    if (
+      !savingDuringRecommendation
+      && mutationRecoveryPending([mutationScope])
     ) {
       return;
     }
@@ -8648,7 +8711,16 @@ export default function App() {
       notes,
       tags,
     };
-    const mutationScope = beginPersistedJobMutation(managedJob, expectation);
+    if (savingDuringRecommendation) {
+      if (mutationScope === "processing") {
+        beginProcessingMembershipMutation();
+      } else {
+        beginHistoryMutation();
+      }
+    } else {
+      beginPersistedJobMutation(managedJob, expectation);
+    }
+    let restoreAfterMutation = false;
     setScreenshotMetadataSaving(true);
     setError(null);
     try {
@@ -8669,11 +8741,13 @@ export default function App() {
         ));
       }
       updateHistoryJob(updated);
-      settlePersistedMutationLease(
-        mutationScope,
-        [updated],
-        mutationScope === "processing",
-      );
+      if (!savingDuringRecommendation) {
+        settlePersistedMutationLease(
+          mutationScope,
+          [updated],
+          mutationScope === "processing",
+        );
+      }
       if (movedToHistory) {
         void requestHistoryRestore(null, true);
       }
@@ -8684,10 +8758,19 @@ export default function App() {
     } catch (metadataError) {
       if (mutationFailureMayHavePersistedSideEffect(metadataError)) {
         markPersistedJobMutationUncertain(mutationScope, managedJob.id);
+        restoreAfterMutation = true;
       }
       setError(messageFromError(metadataError, "Could not save screenshot details"));
     } finally {
-      endPersistedJobMutation(mutationScope, false);
+      if (savingDuringRecommendation) {
+        if (mutationScope === "processing") {
+          endProcessingMembershipMutation(restoreAfterMutation);
+        } else {
+          endHistoryMutation(restoreAfterMutation);
+        }
+      } else {
+        endPersistedJobMutation(mutationScope, false);
+      }
       setScreenshotMetadataSaving(false);
     }
   }
@@ -8757,7 +8840,14 @@ export default function App() {
     }
 
     const mutationScope = persistedJobMutationScope(managedJob);
-    if (mutationRecoveryPending([mutationScope])) {
+    const concurrentRecommendation = activeRecommendationRequestRef.current;
+    const deletingDuringRecommendation = concurrentRecommendation?.jobId
+      === managedJob.id
+      && concurrentRecommendation.mutationScope === mutationScope;
+    if (
+      !deletingDuringRecommendation
+      && mutationRecoveryPending([mutationScope])
+    ) {
       return;
     }
     if (mutationScope === "processing") {
@@ -8770,6 +8860,10 @@ export default function App() {
     let restoreAfterMutation = false;
     try {
       await deleteJob(managedJob.id);
+      if (deletingDuringRecommendation) {
+        clearOwnedMutationLease(mutationScope);
+        concurrentRecommendation.controller.abort();
+      }
       if (mutationScope === "processing") {
         processingRemovalCandidateIdsRef.current.delete(managedJob.id);
       }

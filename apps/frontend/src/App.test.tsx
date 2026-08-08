@@ -585,6 +585,130 @@ describe("App", () => {
     });
   });
 
+  it("saves metadata during a same-tab recommendation without losing it to a stale response", async () => {
+    const queueJob = approvedJob();
+    queueJob.id = "9".repeat(32);
+    queueJob.original_filename = "edit-while-solving.png";
+    queueJob.updated_at = "2026-07-10T00:01:00Z";
+    const recommendationResponse = {
+      ...recommendedJob(),
+      id: queueJob.id,
+      original_filename: queueJob.original_filename,
+      title: null,
+      notes: null,
+      tags: [],
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    const metadataResponse = {
+      ...recommendationResponse,
+      title: "Edited while solving",
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([queueJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const pendingRecommendation = deferredResponse();
+    fetchMock()
+      .mockReturnValueOnce(pendingRecommendation.promise)
+      .mockResolvedValueOnce(jsonResponse(metadataResponse));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: edit-while-solving.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Edited while solving");
+    await user.click(within(dialog).getByRole("button", { name: "Save details" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${queueJob.id}/metadata`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          title: "Edited while solving",
+          notes: null,
+          tags: [],
+        }),
+      }),
+    ));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+
+    await act(async () => {
+      pendingRecommendation.resolve(jsonResponse(recommendationResponse));
+      await pendingRecommendation.promise;
+    });
+
+    const queueItem = screen.getByRole("button", {
+      name: "Open screenshot 1: edit-while-solving.png",
+    });
+    expect(within(queueItem).getByText("Edited while solving")).toBeInTheDocument();
+    expect(JSON.parse(String(
+      window.localStorage.getItem("poker-training-processing-v1"),
+    ))[0].title).toBe("Edited while solving");
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+  });
+
+  it("deletes a screenshot during a same-tab recommendation and cancels its response", async () => {
+    const queueJob = approvedJob();
+    queueJob.id = "a".repeat(32);
+    queueJob.original_filename = "delete-while-solving.png";
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([queueJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    let recommendationAborted = false;
+    fetchMock()
+      .mockImplementationOnce((_url, options) => {
+        const signal = options?.signal as AbortSignal | undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            recommendationAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => {
+            recommendationAborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        });
+      })
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: delete-while-solving.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(recommendationAborted).toBe(true));
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${queueJob.id}`,
+      { method: "DELETE", credentials: "include" },
+    );
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull();
+    expect(screen.queryByText(
+      "Finishing recovery from a previous action. Try again in a moment.",
+    )).not.toBeInTheDocument();
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);

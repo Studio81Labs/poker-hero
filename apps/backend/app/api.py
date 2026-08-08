@@ -678,35 +678,58 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     status_code=409,
                     detail="Upload was deleted before parsing started",
                 ) from exc
-            try:
-                parser = build_parser(active_settings)
-                parser_result = parser.parse(store.image_path(job))
-            except ParserConfigurationError as exc:
-                job.status = "error"
-                job.error = str(exc)
-                save_job(job)
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Parser configuration error: {exc}",
-                ) from exc
-            except ParserError as exc:
-                job.status = "error"
-                job.error = str(exc)
-                save_job(job)
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
-            except Exception as exc:
-                job.status = "error"
-                job.error = f"Unexpected parser error: {exc}"
-                save_job(job)
-                raise HTTPException(status_code=500, detail=job.error) from exc
 
-            job.parser_result = parser_result
-            job.status = "parsed"
-            if should_auto_approve(parser_result.confidences, active_settings):
-                job.approved_state = CanonicalState.from_parser_result(parser_result)
-                job.approved_state.user_approved = True
-                job.status = "approved"
-            return save_job(job)
+        def save_parser_failure(message: str) -> JobRecord:
+            with job_lock_for(job.id):
+                try:
+                    current = store.get(job.id)
+                except JobNotFoundError as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Upload was deleted while parsing",
+                    ) from exc
+                current.status = "error"
+                current.error = message
+                return save_job(current)
+
+        try:
+            parser = build_parser(active_settings)
+            parser_result = parser.parse(store.image_path(job))
+        except ParserConfigurationError as exc:
+            save_parser_failure(str(exc))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Parser configuration error: {exc}",
+            ) from exc
+        except ParserError as exc:
+            save_parser_failure(str(exc))
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:
+            error = f"Unexpected parser error: {exc}"
+            save_parser_failure(error)
+            raise HTTPException(status_code=500, detail=error) from exc
+
+        with job_lock_for(job.id):
+            try:
+                current = store.get(job.id)
+            except JobNotFoundError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Upload was deleted while parsing",
+                ) from exc
+            current.parser_result = parser_result
+            if current.approved_state is None:
+                current.status = "parsed"
+                if should_auto_approve(
+                    parser_result.confidences,
+                    active_settings,
+                ):
+                    current.approved_state = CanonicalState.from_parser_result(
+                        parser_result
+                    )
+                    current.approved_state.user_approved = True
+                    current.status = "approved"
+            return save_job(current)
 
     def restore_uploaded_application_backup(
         archive_bytes: bytes,

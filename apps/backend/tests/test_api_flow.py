@@ -2723,7 +2723,7 @@ def test_upload_accepts_valid_image_with_uppercase_content_type(tmp_path: Path) 
     assert response.json()["status"] == "parsed"
 
 
-def test_metadata_update_waits_for_active_parser_and_is_preserved(
+def test_metadata_update_during_active_parser_is_preserved(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2764,7 +2764,7 @@ def test_metadata_update_waits_for_active_parser_and_is_preserved(
     metadata_thread.start()
     try:
         assert metadata_started.wait(timeout=2)
-        assert not metadata_finished.wait(timeout=0.1)
+        assert metadata_finished.wait(timeout=2)
     finally:
         release_parse.set()
         upload_thread.join(timeout=5)
@@ -2781,7 +2781,7 @@ def test_metadata_update_waits_for_active_parser_and_is_preserved(
     assert persisted.tags == ["turn", "bluff"]
 
 
-def test_delete_waits_for_active_parser_without_resurrecting_job(
+def test_delete_during_active_parser_cancels_upload_without_resurrecting_job(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2815,7 +2815,7 @@ def test_delete_waits_for_active_parser_without_resurrecting_job(
     delete_thread.start()
     try:
         assert delete_started.wait(timeout=2)
-        assert not delete_finished.wait(timeout=0.1)
+        assert delete_finished.wait(timeout=2)
     finally:
         release_parse.set()
         upload_thread.join(timeout=5)
@@ -2823,10 +2823,65 @@ def test_delete_waits_for_active_parser_without_resurrecting_job(
 
     assert not upload_thread.is_alive()
     assert not delete_thread.is_alive()
-    assert responses["upload"].status_code == 201
+    assert responses["upload"].status_code == 409
+    assert responses["upload"].json()["detail"] == (
+        "Upload was deleted while parsing"
+    )
     assert responses["delete"].status_code == 204
     with pytest.raises(JobNotFoundError):
         FileJobStore(tmp_path).get(job_id)
+
+
+def test_colliding_job_stripe_does_not_block_unrelated_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_parse_started = Event()
+    second_parse_started = Event()
+    release_first_parse = Event()
+    parse_calls_lock = ThreadLock()
+    parse_calls = 0
+    responses: dict[str, object] = {}
+
+    class IndependentlySlowParser(MockParser):
+        def parse(self, image_path: Path):
+            nonlocal parse_calls
+            with parse_calls_lock:
+                parse_calls += 1
+                call_number = parse_calls
+            if call_number == 1:
+                first_parse_started.set()
+                assert release_first_parse.wait(timeout=5)
+            else:
+                second_parse_started.set()
+            return super().parse(image_path)
+
+    monkeypatch.setattr("app.api.JOB_LOCK_STRIPES", 1)
+    monkeypatch.setattr(
+        "app.api.build_parser",
+        lambda settings: IndependentlySlowParser(),
+    )
+    client = make_client(tmp_path)
+    first_upload = Thread(
+        target=lambda: responses.update(first=upload_job(client)),
+    )
+    second_upload = Thread(
+        target=lambda: responses.update(second=upload_job(client)),
+    )
+    first_upload.start()
+    assert first_parse_started.wait(timeout=2)
+    second_upload.start()
+    try:
+        assert second_parse_started.wait(timeout=2)
+    finally:
+        release_first_parse.set()
+        first_upload.join(timeout=5)
+        second_upload.join(timeout=5)
+
+    assert not first_upload.is_alive()
+    assert not second_upload.is_alive()
+    assert responses["first"].status_code == 201
+    assert responses["second"].status_code == 201
 
 
 def test_delete_before_parser_lock_cancels_upload_without_resurrecting_job(

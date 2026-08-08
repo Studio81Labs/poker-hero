@@ -877,7 +877,14 @@ test("overlays delete confirmation without resizing screenshot details", async (
   const filename = attemptFilename("delete-overlay", testInfo);
 
   await page.getByRole("button", { name: "Automation On" }).click();
-  await uploadValidScreenshot(page, filename);
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+  const includeResponse = await page.request.put(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}/benchmark`,
+    { data: { included: true } },
+  );
+  expect(includeResponse.ok()).toBe(true);
+  await page.reload();
   await page.getByRole("button", {
     name: `Manage screenshot 1: ${filename}`,
   }).click();
@@ -907,7 +914,7 @@ test("overlays delete confirmation without resizing screenshot details", async (
   ).toBeLessThanOrEqual(2);
 
   await confirmation.getByRole("button", { name: "Cancel" }).click();
-  await page.setViewportSize({ width: 360, height: 800 });
+  await page.setViewportSize({ width: 320, height: 800 });
   const mobileFooterBox = await coveredFooter.boundingBox();
   expect(mobileFooterBox).not.toBeNull();
   await dialog.getByRole("button", { name: "Delete screenshot" }).click();

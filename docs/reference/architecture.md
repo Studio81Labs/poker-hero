@@ -112,7 +112,8 @@ six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a small-blind versus
 big-blind pair remain ambiguous and use fallback. A limp/check line cannot
 resolve that pair because it is also valid heads-up; an exact reviewed squeeze
-history can resolve it because the additional seats prove the preflop order.
+or cold 4-bet history can resolve it because the additional seats prove the
+preflop order.
 First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
@@ -134,10 +135,13 @@ continue band for the caller after excluding its 4-bet segment. The caller's
 initial call is not counted twice; its matching squeeze call is the final
 commitment. The exact continuation through a 4-bet by the opener and matching
 call by the original 3-bettor can use the opener's adjusted 4-bet band and the
-3-bettor's continue band after excluding its 5-bet segment. The supported 2-4
-BB open, matching final commitments, legal seat order, optional legacy opener
-metadata, both reviewed survivor seats, and reconstructed flop-root pot must
-agree. With no current-street wager, the effective stack behind plus each
+3-bettor's continue band after excluding its 5-bet segment. When a distinct
+later player cold 4-bets and the opener folds, that player's cold 4-bet band is
+paired with the original 3-bettor's continue band after excluding 5-bets. The
+folded opener receives no range, but its opening commitment remains mandatory
+dead money. The supported 2-4 BB open, matching final commitments, legal seat
+order, optional legacy opener metadata, both reviewed survivor seats, and
+reconstructed flop-root pot must agree. With no current-street wager, the effective stack behind plus each
 player's matching final preflop commitment reconstructs the starting depth.
 Once money is wagered postflop, both visible stacks and either explicit
 first-bet context or ordered

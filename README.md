@@ -187,23 +187,25 @@ heads-up flop, turn, and river states when `hero_position` identifies `IP`,
 `OOP`, or button, or when reviewed hero and opponent seats establish an
 unambiguous postflop order. A small-blind versus big-blind pair still requires
 explicit IP/OOP review because the order depends on whether the small blind is
-also the heads-up dealer; an exact supported squeeze history can resolve that
-order because it proves a multi-seat preflop line. Its ranges, bet tree,
+also the heads-up dealer; an exact supported squeeze or cold 4-bet history can
+resolve that order because it proves a multi-seat preflop line. Its ranges, bet tree,
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player state with a
 single 1 BB limp checked by the big blind, an open-and-call, ordinary
 open/3-bet/call, cold-caller open/3-bet/call, open/call/squeeze/call, or
-open/3-bet/4-bet/call preflop history selects transparent ranges from the same
-position-aware chart boundaries used by the preflop trainer. The limped route
+open/3-bet/4-bet/call preflop history, including a later cold 4-bettor after the
+opener folds, selects transparent ranges from the same position-aware chart
+boundaries used by the preflop trainer. The limped route
 uses the limper's stack-adjusted first-in range as an explicit proxy and the
 complement of the big blind's isolation-raise band as the checked range.
 Dead-money routes require the original opener to be absent
 from the two reviewed survivors and keep that player's opening contribution in
 the reconstructed root pot. The squeeze route applies the chart's existing
 single-caller adjustment to the squeezer and its named squeeze-response policy
-to the caller. The reviewed sizes and a provable starting effective stack apply
-the remaining chart response adjustments, and the backend verifies that the
+to the caller. The cold 4-bet route uses the cold player's adjusted 4-bet band
+and the original 3-bettor's continue band after excluding 5-bets. The reviewed
+sizes and a provable starting effective stack apply the remaining chart response adjustments, and the backend verifies that the
 reconstructed flop-root pot agrees with every represented commitment. A turn
 additionally requires one terminal completed-flop history; a river requires
 terminal completed-flop and completed-turn histories in order. Each completed

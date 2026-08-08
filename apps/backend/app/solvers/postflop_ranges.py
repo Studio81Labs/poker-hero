@@ -25,6 +25,7 @@ RangeSource = Literal[
     "preflop_chart_cold_three_bet_pot",
     "preflop_chart_squeeze_pot",
     "preflop_chart_four_bet_pot",
+    "preflop_chart_cold_four_bet_pot",
 ]
 StackDepthSource = Literal["reconstructed", "standard_assumption"]
 
@@ -123,6 +124,19 @@ def select_postflop_ranges(
         if selection is not None:
             return selection
 
+    cold_four_bet_context = _cold_four_bet_pot_context(
+        state,
+        hero_relative_position,
+    )
+    if cold_four_bet_context is not None:
+        selection = _cold_four_bet_pot_selection(
+            state,
+            hero_relative_position,
+            cold_four_bet_context,
+        )
+        if selection is not None:
+            return selection
+
     four_bet_context = _four_bet_pot_context(
         state,
         hero_relative_position,
@@ -151,6 +165,23 @@ def resolve_squeeze_pot_relative_position(
         "ip" if hero_position == "big_blind" else "oop"
     )
     if _squeeze_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
+
+
+def resolve_cold_four_bet_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve an otherwise ambiguous blind pair from an exact cold 4-bet line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _cold_four_bet_pot_context(state, hero_relative_position) is None:
         return None
     return hero_relative_position
 
@@ -478,6 +509,124 @@ def _four_bet_pot_selection(
             "three_bettor_five_bet_fraction": (
                 three_bettor_policy.five_bet_fraction
             ),
+        },
+    )
+
+
+def _cold_four_bet_pot_selection(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    context: tuple[Position, Position, Position, float, float, float],
+) -> PostflopRangeSelection | None:
+    (
+        folded_opener,
+        three_bettor,
+        cold_four_bettor,
+        opening_size,
+        three_bet_size,
+        four_bet_size,
+    ) = context
+    from app.solvers.preflop_chart import (
+        COLD_FOUR_BET_DEFENSE_POLICIES,
+        COLD_FOUR_BET_POLICY_NAME,
+        COLD_THREE_BET_DEFENSE_POLICIES,
+        COLD_THREE_BET_POLICY_NAME,
+        adjusted_four_bet_defense_policy,
+        adjusted_three_bet_defense_policy,
+        policy_for_four_bet_size,
+        policy_for_stack_depth,
+        policy_for_three_bet_size,
+    )
+
+    base_cold_four_bettor = COLD_THREE_BET_DEFENSE_POLICIES.get(
+        (folded_opener, three_bettor, cold_four_bettor)
+    )
+    base_three_bettor = COLD_FOUR_BET_DEFENSE_POLICIES.get(
+        (folded_opener, three_bettor, cold_four_bettor)
+    )
+    three_bet_size_policy = policy_for_three_bet_size(
+        three_bet_size / opening_size
+    )
+    four_bet_size_policy = policy_for_four_bet_size(
+        four_bet_size / three_bet_size
+    )
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=four_bet_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
+    if (
+        base_cold_four_bettor is None
+        or base_three_bettor is None
+        or three_bet_size_policy is None
+        or four_bet_size_policy is None
+        or stack_policy is None
+    ):
+        return None
+
+    cold_four_bettor_policy = adjusted_three_bet_defense_policy(
+        base_cold_four_bettor,
+        three_bet_size_policy,
+        stack_policy,
+    )
+    three_bettor_policy = adjusted_four_bet_defense_policy(
+        base_three_bettor,
+        four_bet_size_policy,
+        stack_policy,
+    )
+    cold_four_bettor_range = _range_for_policy_band(
+        cold_four_bettor_policy.four_bet_fraction
+    )
+    three_bettor_call_range = _range_for_policy_band(
+        three_bettor_policy.continue_fraction,
+        minimum_exclusive=three_bettor_policy.five_bet_fraction,
+    )
+    if not cold_four_bettor_range or not three_bettor_call_range:
+        return None
+
+    return _selection_for_ranges(
+        state,
+        hero_relative_position,
+        ranges_by_position={
+            three_bettor: three_bettor_call_range,
+            cold_four_bettor: cold_four_bettor_range,
+        },
+        source="preflop_chart_cold_four_bet_pot",
+        context={
+            "scenario": "cold_four_bet_pot",
+            "folded_opener_position": folded_opener,
+            "folded_opener_commitment_bb": opening_size,
+            "three_bettor_position": three_bettor,
+            "cold_four_bettor_position": cold_four_bettor,
+            "opening_size_bb": opening_size,
+            "three_bet_size_bb": three_bet_size,
+            "four_bet_size_bb": four_bet_size,
+            "three_bet_size_policy": three_bet_size_policy.name,
+            "four_bet_size_policy": four_bet_size_policy.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
+            "cold_four_bettor_base_four_bet_fraction": (
+                base_cold_four_bettor.four_bet_fraction
+            ),
+            "cold_four_bettor_four_bet_fraction": (
+                cold_four_bettor_policy.four_bet_fraction
+            ),
+            "cold_four_bettor_range_policy": COLD_THREE_BET_POLICY_NAME,
+            "three_bettor_base_continue_fraction": (
+                base_three_bettor.continue_fraction
+            ),
+            "three_bettor_base_five_bet_fraction": (
+                base_three_bettor.five_bet_fraction
+            ),
+            "three_bettor_continue_fraction": (
+                three_bettor_policy.continue_fraction
+            ),
+            "three_bettor_five_bet_fraction": (
+                three_bettor_policy.five_bet_fraction
+            ),
+            "cold_four_bet_policy": COLD_FOUR_BET_POLICY_NAME,
         },
     )
 
@@ -1227,6 +1376,99 @@ def _four_bet_pot_context(
     return (
         opener,
         three_bettor,
+        opening_action.amount,
+        three_bet_action.amount,
+        four_bet_action.amount,
+    )
+
+
+def _cold_four_bet_pot_context(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> tuple[Position, Position, Position, float, float, float] | None:
+    if state.players_in_hand != 2 or len(state.preflop_action_history) != 4:
+        return None
+    opening_action, three_bet_action, four_bet_action, calling_action = (
+        state.preflop_action_history
+    )
+    if (
+        opening_action.action != "raise"
+        or three_bet_action.action != "raise"
+        or four_bet_action.action != "raise"
+        or calling_action.action != "call"
+        or four_bet_action.actor in {
+            opening_action.actor,
+            three_bet_action.actor,
+        }
+        or calling_action.actor != three_bet_action.actor
+        or abs(calling_action.amount - four_bet_action.amount)
+        > MONEY_TOLERANCE_BB
+        or not MIN_SINGLE_OPEN_SIZE_BB
+        <= opening_action.amount
+        <= MAX_SINGLE_OPEN_SIZE_BB
+    ):
+        return None
+
+    folded_opener = normalize_position(opening_action.actor)
+    three_bettor = normalize_position(three_bet_action.actor)
+    cold_four_bettor = normalize_position(four_bet_action.actor)
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    minimum_three_bet = opening_action.amount + max(
+        1.0,
+        opening_action.amount - 1.0,
+    )
+    minimum_four_bet = three_bet_action.amount + (
+        three_bet_action.amount - opening_action.amount
+    )
+    if (
+        folded_opener is None
+        or three_bettor is None
+        or cold_four_bettor is None
+        or len({folded_opener, three_bettor, cold_four_bettor}) != 3
+        or hero_position is None
+        or opponent_position is None
+        or hero_position == opponent_position
+        or {three_bettor, cold_four_bettor}
+        != {hero_position, opponent_position}
+        or not POSITION_ACTION_ORDER[folded_opener]
+        < POSITION_ACTION_ORDER[three_bettor]
+        < POSITION_ACTION_ORDER[cold_four_bettor]
+        or three_bet_action.amount + MONEY_TOLERANCE_BB < minimum_three_bet
+        or three_bet_action.amount
+        > opening_action.amount * MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO
+        + MONEY_TOLERANCE_BB
+        or four_bet_action.amount + MONEY_TOLERANCE_BB < minimum_four_bet
+        or four_bet_action.amount
+        > three_bet_action.amount * MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO
+        + MONEY_TOLERANCE_BB
+    ):
+        return None
+    if (
+        state.preflop_opener_position is not None
+        and normalize_position(state.preflop_opener_position) != folded_opener
+    ):
+        return None
+    if (
+        state.preflop_open_size is not None
+        and abs(state.preflop_open_size - opening_action.amount)
+        > MONEY_TOLERANCE_BB
+    ):
+        return None
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
+    if not pot_matches_preflop_actions(
+        flop_root_pot,
+        (
+            (folded_opener, opening_action.amount),
+            (three_bettor, calling_action.amount),
+            (cold_four_bettor, four_bet_action.amount),
+        ),
+    ):
+        return None
+    return (
+        folded_opener,
+        three_bettor,
+        cold_four_bettor,
         opening_action.amount,
         three_bet_action.amount,
         four_bet_action.amount,

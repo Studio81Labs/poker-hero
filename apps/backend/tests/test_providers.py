@@ -2464,6 +2464,65 @@ def test_local_solver_derives_ranges_from_complete_four_bet_pot(
     assert result.raw["engine"] == "postflop_solver"
 
 
+def test_local_solver_derives_ranges_from_complete_cold_four_bet_pot(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
+        "'preflop_chart_cold_four_bet_pot'\n"
+        "assert context['scenario'] == 'cold_four_bet_pot'\n"
+        "assert context['folded_opener_position'] == 'button'\n"
+        "assert context['folded_opener_commitment_bb'] == 2.5\n"
+        "assert context['three_bettor_position'] == 'small_blind'\n"
+        "assert context['cold_four_bettor_position'] == 'big_blind'\n"
+        "assert context['four_bet_size_bb'] == 20\n"
+        "assert context['cold_four_bettor_range_policy'] == "
+        "'conservative_three_player'\n"
+        "assert context['cold_four_bet_policy'] == "
+        "'conservative_heads_up_after_opener_folds'\n"
+        "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
+        "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual cold 4-bet range response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    state.pot_size = 42.5
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.hero_position = "small_blind"
+    state.opponent_position = "big_blind"
+    state.preflop_action_history = [
+        PreflopAction(actor="button", action="raise", amount=2.5),
+        PreflopAction(actor="small_blind", action="raise", amount=8.0),
+        PreflopAction(actor="big_blind", action="raise", amount=20.0),
+        PreflopAction(actor="small_blind", action="call", amount=20.0),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_postflop_solver_routes_dealer_as_ip(tmp_path: Path) -> None:
     solver_script = tmp_path / "postflop.py"
     solver_script.write_text(

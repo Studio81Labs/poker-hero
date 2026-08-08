@@ -527,6 +527,64 @@ describe("App", () => {
     ));
   });
 
+  it("keeps queue and history management reachable during a recommendation request", async () => {
+    const queueJob = approvedJob();
+    queueJob.id = "7".repeat(32);
+    queueJob.original_filename = "active-recommendation.png";
+    const archivedJob = recommendedJob();
+    archivedJob.id = "8".repeat(32);
+    archivedJob.original_filename = "saved-during-recommendation.png";
+    archivedJob.archived_at = "2026-07-10T00:02:00Z";
+    const completedJob = {
+      ...recommendedJob(),
+      id: queueJob.id,
+      original_filename: queueJob.original_filename,
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([queueJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: archivedJob.id,
+        job: archivedJob,
+        savedAt: archivedJob.archived_at,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    const pendingRecommendation = deferredResponse();
+    fetchMock().mockReturnValueOnce(pendingRecommendation.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${queueJob.id}/recommend`,
+      expect.objectContaining({ method: "POST" }),
+    ));
+    const manageQueue = screen.getByRole("button", {
+      name: "Manage screenshot 1: active-recommendation.png",
+    });
+    const manageHistory = screen.getByRole("button", {
+      name: "Manage history item 1: saved-during-recommendation.png",
+    });
+    expect(manageQueue).toBeEnabled();
+    expect(manageHistory).toBeEnabled();
+
+    await user.click(manageQueue);
+    expect(screen.getByRole("dialog", { name: "Screenshot details" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(manageHistory);
+    expect(screen.getByRole("dialog", { name: "Screenshot details" })).toBeInTheDocument();
+
+    await act(async () => {
+      pendingRecommendation.resolve(jsonResponse(completedJob));
+      await pendingRecommendation.promise;
+    });
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);

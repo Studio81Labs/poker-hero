@@ -9096,7 +9096,6 @@ export default function App() {
                         type="button"
                         className="screenshot-manage-button"
                         onClick={() => openScreenshotDetails(candidate)}
-                        disabled={busy}
                         title="Edit details or delete screenshot"
                         aria-label={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
                       >
@@ -9204,7 +9203,6 @@ export default function App() {
                         type="button"
                         className="screenshot-manage-button"
                         onClick={() => openScreenshotDetails(item.job)}
-                        disabled={busy}
                         title="Edit details or delete screenshot"
                         aria-label={`Manage history item ${index + 1}: ${item.job.original_filename}`}
                       >

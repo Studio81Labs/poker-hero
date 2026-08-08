@@ -196,7 +196,7 @@ export function McpAccessPanel({
           disabled.
         </p>
       ) : !adminUnlocked ? (
-        <div className="mcp-create-grid">
+        <div className="mcp-unlock-row">
           <label>
             Agent access admin token
             <input
@@ -218,7 +218,7 @@ export function McpAccessPanel({
           </button>
         </div>
       ) : (
-        <div className="mcp-inline-actions">
+        <div className="mcp-session-row">
           <span>Credential management unlocked for this browser session.</span>
           <button
             type="button"

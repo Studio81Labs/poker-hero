@@ -10173,7 +10173,7 @@ export default function App() {
                     Close
                   </button>
                   {managedJobPersisted ? (
-                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting || managedJob.recommendation_pending}>
+                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting}>
                       {screenshotMetadataSaving ? "Saving..." : "Save details"}
                     </button>
                   ) : null}

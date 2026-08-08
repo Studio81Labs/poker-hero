@@ -1369,7 +1369,9 @@ def test_job_metadata_is_normalized_persisted_and_searchable(
     assert cleared.json()["tags"] == []
 
 
-def test_job_metadata_rejects_oversized_or_excess_tags(tmp_path: Path) -> None:
+def test_job_metadata_rejects_oversized_excess_or_ambiguous_tags(
+    tmp_path: Path,
+) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
 
@@ -1385,9 +1387,14 @@ def test_job_metadata_rejects_oversized_or_excess_tags(tmp_path: Path) -> None:
             "tags": [f"tag-{index}" for index in range(11)],
         },
     )
+    comma_separated = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": None, "notes": None, "tags": ["turn,river"]},
+    )
 
     assert oversized.status_code == 422
     assert excessive.status_code == 422
+    assert comma_separated.status_code == 422
     assert FileJobStore(tmp_path).get(job_id).tags == []
 
 

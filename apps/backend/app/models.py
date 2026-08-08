@@ -684,6 +684,8 @@ class ScreenshotMetadataRequest(BaseModel):
                 continue
             if len(stripped) > 32:
                 raise ValueError("tags must be at most 32 characters")
+            if "," in stripped:
+                raise ValueError("tags cannot contain commas")
             key = stripped.casefold()
             if key in seen:
                 continue

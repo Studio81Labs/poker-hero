@@ -479,6 +479,54 @@ describe("App", () => {
     );
   });
 
+  it("allows saving screenshot details with an external recommendation pending", async () => {
+    const pendingJob = approvedJob();
+    pendingJob.id = "6".repeat(32);
+    pendingJob.original_filename = "pending-details.png";
+    pendingJob.recommendation_pending = true;
+    pendingJob.recommendation_request_id = "external-request";
+    const updatedJob = {
+      ...pendingJob,
+      title: "Provider still running",
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([pendingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse([pendingJob]))
+      .mockResolvedValueOnce(jsonResponse(updatedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: pending-details.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Provider still running");
+    const saveDetails = within(dialog).getByRole("button", { name: "Save details" });
+    expect(saveDetails).toBeEnabled();
+    await user.click(saveDetails);
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${pendingJob.id}/metadata`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          title: "Provider still running",
+          notes: null,
+          tags: [],
+        }),
+      }),
+    ));
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);

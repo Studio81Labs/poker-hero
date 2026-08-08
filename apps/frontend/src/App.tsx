@@ -10356,13 +10356,15 @@ export default function App() {
 
               {screenshotDeleteArmed ? (
                 <div className="screenshot-delete-confirmation" role="alert">
-                  <AlertTriangle size={17} aria-hidden="true" />
-                  <span>
-                    <strong>Delete permanently?</strong>
-                    <small>
-                      The image and all analysis data will be removed
-                      {managedJob.benchmark_included ? " from the benchmark corpus too" : ""}.
-                    </small>
+                  <span className="screenshot-delete-message">
+                    <AlertTriangle size={17} aria-hidden="true" />
+                    <span>
+                      <strong>Delete permanently?</strong>
+                      <small>
+                        The image and all analysis data will be removed
+                        {managedJob.benchmark_included ? " from the benchmark corpus too" : ""}.
+                      </small>
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -10377,14 +10379,23 @@ export default function App() {
                     className="danger-button"
                     onClick={() => void permanentlyDeleteScreenshot()}
                     disabled={screenshotDeleting || managedLocalUploadRecoveryPending}
+                    aria-label={screenshotDeleting ? "Deleting screenshot" : "Delete permanently"}
                   >
                     <Trash2 size={14} aria-hidden="true" />
-                    {screenshotDeleting ? "Deleting..." : "Delete permanently"}
+                    {screenshotDeleting ? "Deleting..." : (
+                      <>
+                        <span className="screenshot-delete-label-full">Delete permanently</span>
+                        <span className="screenshot-delete-label-compact">Delete</span>
+                      </>
+                    )}
                   </button>
                 </div>
               ) : null}
 
-              <div className="screenshot-details-footer">
+              <div
+                className="screenshot-details-footer"
+                aria-hidden={screenshotDeleteArmed || undefined}
+              >
                 {!screenshotDeleteArmed ? (
                   <button
                     type="button"
@@ -10401,11 +10412,11 @@ export default function App() {
                   </button>
                 ) : <span />}
                 <span className="screenshot-details-actions">
-                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotMetadataSaving || screenshotDeleting}>
+                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                     Close
                   </button>
                   {managedJobPersisted ? (
-                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting}>
+                    <button type="submit" disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                       {screenshotMetadataSaving ? "Saving..." : "Save details"}
                     </button>
                   ) : null}

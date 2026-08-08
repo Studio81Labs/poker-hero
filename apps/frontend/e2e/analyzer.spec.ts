@@ -870,6 +870,66 @@ test("reviews one screenshot from upload through persisted history", async ({
   expect(persistedJob.archived_at).not.toBeNull();
 });
 
+test("overlays delete confirmation without resizing screenshot details", async ({
+  page,
+}, testInfo) => {
+  await openUploadInput(page);
+  const filename = attemptFilename("delete-overlay", testInfo);
+
+  await page.getByRole("button", { name: "Automation On" }).click();
+  const uploadedJob = await uploadValidScreenshot(page, filename);
+  await page.getByRole("button", { name: "Approve state" }).click();
+  const includeResponse = await page.request.put(
+    `${BACKEND_URL}/api/jobs/${uploadedJob.id}/benchmark`,
+    { data: { included: true } },
+  );
+  expect(includeResponse.ok()).toBe(true);
+  await page.reload();
+  await page.getByRole("button", {
+    name: `Manage screenshot 1: ${filename}`,
+  }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Screenshot details" });
+  const before = await dialog.boundingBox();
+  expect(before).not.toBeNull();
+
+  await dialog.getByRole("button", { name: "Delete screenshot" }).click();
+  const confirmation = dialog.getByRole("alert");
+  await expect(confirmation).toBeVisible();
+
+  const coveredFooter = dialog.locator(".screenshot-details-footer");
+  await expect(coveredFooter).toHaveAttribute("aria-hidden", "true");
+  await expect(coveredFooter.locator("button").first()).toBeDisabled();
+  await expect(coveredFooter.locator("button").last()).toBeDisabled();
+
+  const after = await dialog.boundingBox();
+  const confirmationBox = await confirmation.boundingBox();
+  expect(after).not.toBeNull();
+  expect(confirmationBox).not.toBeNull();
+  expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(
+      confirmationBox!.y + confirmationBox!.height - (after!.y + after!.height),
+    ),
+  ).toBeLessThanOrEqual(2);
+
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await page.setViewportSize({ width: 320, height: 800 });
+  const mobileFooterBox = await coveredFooter.boundingBox();
+  expect(mobileFooterBox).not.toBeNull();
+  await dialog.getByRole("button", { name: "Delete screenshot" }).click();
+  const mobileConfirmationBox = await confirmation.boundingBox();
+  expect(mobileConfirmationBox).not.toBeNull();
+  expect(mobileConfirmationBox!.y).toBeGreaterThanOrEqual(
+    mobileFooterBox!.y - 1,
+  );
+
+  await confirmation.getByRole("button", {
+    name: "Delete permanently",
+  }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("completes and reopens a training review from persisted progress", async ({
   page,
 }, testInfo) => {

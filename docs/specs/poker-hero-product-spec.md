@@ -1162,7 +1162,9 @@ Poker Hero is successful when:
 - A user can search the complete persisted archive and page matching hands
   without replacing the newest-history cache or global reviewed count.
 - A user can title and tag screenshots, keep general notes separate from lesson
-  notes, and permanently delete any processing or archived screenshot.
+  notes, and permanently delete any processing or archived screenshot. The
+  destructive confirmation overlays the dialog footer so the details dialog
+  keeps a stable size during the two-step action.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.

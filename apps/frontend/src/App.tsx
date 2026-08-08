@@ -8915,15 +8915,6 @@ export default function App() {
     if (removedFromSearch) {
       setHistorySearchTotal((current) => Math.max(0, current - 1));
     }
-    if (deletedJob.benchmark_included) {
-      setBenchmarkOverview((current) => current
-        ? {
-            ...current,
-            included_cases: Math.max(0, current.included_cases - 1),
-          }
-        : current
-      );
-    }
   }
 
   function reconcileAuthoritativeScreenshotRemoval(
@@ -8943,6 +8934,14 @@ export default function App() {
       processingRemovalCandidateIdsRef.current.delete(deletedJob.id);
     }
     removeScreenshotFromClient(deletedJob);
+    if (benchmarkOverview !== null || deletedJob.benchmark_included) {
+      void getBenchmarkOverview()
+        .then(setBenchmarkOverview)
+        .catch((benchmarkError) => setError(messageFromError(
+          benchmarkError,
+          "Screenshot removed, but the benchmark count could not refresh",
+        )));
+    }
     setManagedJobId(null);
     setScreenshotDeleteArmed(false);
     if (mutationScope === "processing") {

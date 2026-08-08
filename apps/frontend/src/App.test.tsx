@@ -1006,6 +1006,70 @@ describe("App", () => {
     expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
   });
 
+  it("refreshes the benchmark count after deleting a stale labeled screenshot", async () => {
+    const staleBenchmarkJob = approvedJob();
+    staleBenchmarkJob.id = "e".repeat(32);
+    staleBenchmarkJob.original_filename = "stale-benchmark-label.png";
+    staleBenchmarkJob.benchmark_included = true;
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleBenchmarkJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    let benchmarkReads = 0;
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/benchmarks") {
+        benchmarkReads += 1;
+        return Promise.resolve(jsonResponse({
+          included_cases: 2,
+          latest_report: null,
+          recent_reports: [],
+        }));
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${staleBenchmarkJob.id}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-benchmark-delete",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const benchmarkDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    await waitFor(() => expect(benchmarkDialog).toHaveTextContent(
+      "2 ground-truth hands",
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: stale-benchmark-label.png",
+    }));
+    const detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete screenshot",
+    }));
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete permanently",
+    }));
+
+    await waitFor(() => expect(benchmarkReads).toBe(2));
+    expect(benchmarkDialog).toHaveTextContent("2 ground-truth hands");
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);

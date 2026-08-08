@@ -311,6 +311,119 @@ describe("App", () => {
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
+  it("edits screenshot details from the processing queue", async () => {
+    const cachedJob = jobRecord({
+      id: "1".repeat(32),
+      original_filename: "untitled-table.png",
+    });
+    const updatedJob = {
+      ...cachedJob,
+      title: "Turn bluff review",
+      notes: "Check the smaller sizing.",
+      tags: ["turn", "bluff"],
+      updated_at: "2026-07-10T00:01:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse(updatedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: untitled-table.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Turn bluff review");
+    await user.type(within(dialog).getByLabelText("Tags"), "turn, bluff, TURN");
+    await user.type(
+      within(dialog).getByLabelText("Notes"),
+      "Check the smaller sizing.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Save details" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${cachedJob.id}/metadata`,
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          title: "Turn bluff review",
+          notes: "Check the smaller sizing.",
+          tags: ["turn", "bluff"],
+        }),
+      }),
+    ));
+    expect(await screen.findAllByText("Turn bluff review")).toHaveLength(2);
+  });
+
+  it("permanently removes an unarchivable screenshot from the queue", async () => {
+    const failedJob = jobRecord({
+      id: "2".repeat(32),
+      status: "error",
+      original_filename: "wrong-table.png",
+      parser_result: null,
+      error: "Table cards are missing",
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([failedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: wrong-table.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: wrong-table.png",
+    })).not.toBeInTheDocument());
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${failedJob.id}`,
+      { method: "DELETE", credentials: "include" },
+    );
+  });
+
+  it("permanently removes a saved screenshot from history", async () => {
+    const archivedJob = recommendedJob();
+    archivedJob.id = "3".repeat(32);
+    archivedJob.original_filename = "saved-table.png";
+    archivedJob.archived_at = "2026-07-10T00:02:00Z";
+    archivedJob.updated_at = "2026-07-10T00:02:00Z";
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: archivedJob.id,
+        job: archivedJob,
+        savedAt: archivedJob.archived_at,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage history item 1: saved-table.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", {
+      name: "Reopen history item 1",
+    })).not.toBeInTheDocument());
+    expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
+  });
+
   it("restores structured preflop history from the browser cache", async () => {
     const preflopState: DetectedState = {
       ...detectedState,

@@ -28,7 +28,7 @@ from fastapi import (
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
@@ -80,6 +80,7 @@ from app.models import (
     JobRecord,
     RecommendationAction,
     RecommendationRequest,
+    ScreenshotMetadataRequest,
     Street,
     TrainingDecision,
     TrainingDecisionRequest,
@@ -967,6 +968,33 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     @app.get("/api/jobs/{job_id}", response_model=JobRecord)
     def get_job(job_id: str) -> JobRecord:
         return load_job_or_404(store, job_id)
+
+    @app.put("/api/jobs/{job_id}/metadata", response_model=JobRecord)
+    def update_job_metadata(
+        job_id: str,
+        metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            job = load_job_or_404(store, job_id)
+            job.title = metadata.title
+            job.notes = metadata.notes
+            job.tags = metadata.tags
+            return save_job(job)
+
+    @app.delete(
+        "/api/jobs/{job_id}",
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_class=Response,
+    )
+    def delete_job(job_id: str) -> Response:
+        with benchmark_corpus_lock, job_lock_for(job_id):
+            with history_lock:
+                load_job_or_404(store, job_id)
+                try:
+                    store.delete(job_id)
+                except JobNotFoundError as exc:
+                    raise HTTPException(status_code=404, detail="Job not found") from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/api/history", response_model=JobHistory)
     def get_history(
@@ -1918,6 +1946,9 @@ def history_search_text(job: JobRecord) -> str:
     state = job.approved_state or (job.parser_result.state if job.parser_result else None)
     values: list[str] = [
         job.original_filename,
+        job.title or "",
+        job.notes or "",
+        *job.tags,
         job.status,
         job.parser_provider,
         job.recommendation_provider,

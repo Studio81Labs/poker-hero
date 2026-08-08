@@ -83,6 +83,14 @@ def create_reviewed_job(client: TestClient) -> dict[str, object]:
         json={"note": "Review turn sizing next time."},
     ).status_code == 200
     assert client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={
+            "title": "Backup review hand",
+            "notes": "Imported from the weekly study session.",
+            "tags": ["backup", "turn"],
+        },
+    ).status_code == 200
+    assert client.put(
         f"/api/jobs/{job_id}/benchmark",
         json={"included": True},
     ).status_code == 200
@@ -158,6 +166,11 @@ def test_application_backup_round_trip_preserves_all_durable_state(
     assert history.json()["jobs"][0]["training_review_note"] == (
         "Review turn sizing next time."
     )
+    assert history.json()["jobs"][0]["title"] == "Backup review hand"
+    assert history.json()["jobs"][0]["notes"] == (
+        "Imported from the weekly study session."
+    )
+    assert history.json()["jobs"][0]["tags"] == ["backup", "turn"]
     source_report = FileBenchmarkStore(source_dir).get_latest()
     restored_report = FileBenchmarkStore(destination_dir).get_latest()
     assert source_report is not None

@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, Square, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   archiveJobs,
   benchmarkDatasetUrl,
   completeTrainingReview,
+  deleteJob,
   getBenchmarkDatasetImport,
   getBenchmarkOverview,
   getBenchmarkReport,
@@ -29,6 +30,7 @@ import {
   runParserBenchmark,
   setBenchmarkInclusion,
   trainingLessonsExportUrl,
+  updateJobMetadata,
   uploadScreenshot,
 } from "./api";
 import type {
@@ -100,6 +102,10 @@ const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "hi
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const SIZING_MATCH_TOLERANCE = 0.01;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
+const MAX_SCREENSHOT_TITLE_LENGTH = 120;
+const MAX_SCREENSHOT_NOTES_LENGTH = 1000;
+const MAX_SCREENSHOT_TAGS = 10;
+const MAX_SCREENSHOT_TAG_LENGTH = 32;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
@@ -163,6 +169,12 @@ type JobMutationExpectation =
   | {
     kind: "benchmark-inclusion";
     included: boolean;
+  }
+  | {
+    kind: "metadata";
+    title: string | null;
+    notes: string | null;
+    tags: string[];
   };
 type JobMutationLease = MutationLeaseBase & {
   kind: "job";
@@ -3211,6 +3223,14 @@ function jobMutationExpectationReached(
       )
       : job.training_reviewed_at === null;
   }
+  if (expectation.kind === "metadata") {
+    return (job.title ?? null) === expectation.title
+      && (job.notes ?? null) === expectation.notes
+      && screenshotTags(job).length === expectation.tags.length
+      && screenshotTags(job).every(
+        (tag, index) => tag === expectation.tags[index],
+      );
+  }
   return job.benchmark_included === expectation.included;
 }
 
@@ -3311,6 +3331,12 @@ function isJobMutationExpectation(
         expectation.note === null
         || typeof expectation.note === "string"
       );
+  }
+  if (expectation.kind === "metadata") {
+    return (expectation.title === null || typeof expectation.title === "string")
+      && (expectation.notes === null || typeof expectation.notes === "string")
+      && Array.isArray(expectation.tags)
+      && expectation.tags.every((tag) => typeof tag === "string");
   }
   return expectation.kind === "benchmark-inclusion"
     && typeof expectation.included === "boolean";
@@ -4685,6 +4711,42 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
   return job.parser_result?.state.street ?? "No street";
 }
 
+function screenshotLabel(job: JobRecord): string {
+  return typeof job.title === "string" && job.title.trim()
+    ? job.title.trim()
+    : job.original_filename;
+}
+
+function screenshotTags(job: JobRecord): string[] {
+  return Array.isArray(job.tags)
+    ? job.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+}
+
+function parseScreenshotTags(value: string): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const rawTag of value.split(",")) {
+    const tag = rawTag.trim();
+    if (!tag) {
+      continue;
+    }
+    if (tag.length > MAX_SCREENSHOT_TAG_LENGTH) {
+      throw new Error(`Tags can be at most ${MAX_SCREENSHOT_TAG_LENGTH} characters`);
+    }
+    const key = tag.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    tags.push(tag);
+  }
+  if (tags.length > MAX_SCREENSHOT_TAGS) {
+    throw new Error(`Use no more than ${MAX_SCREENSHOT_TAGS} tags`);
+  }
+  return tags;
+}
+
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [jobs, setJobs] = useState<JobRecord[]>(
@@ -4707,6 +4769,13 @@ export default function App() {
     readAutomationSettings,
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [managedJobId, setManagedJobId] = useState<string | null>(null);
+  const [screenshotTitle, setScreenshotTitle] = useState("");
+  const [screenshotNotes, setScreenshotNotes] = useState("");
+  const [screenshotTagInput, setScreenshotTagInput] = useState("");
+  const [screenshotMetadataSaving, setScreenshotMetadataSaving] = useState(false);
+  const [screenshotDeleting, setScreenshotDeleting] = useState(false);
+  const [screenshotDeleteArmed, setScreenshotDeleteArmed] = useState(false);
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   const [mcpTokenPending, setMcpTokenPending] = useState(false);
   const [backupRestoring, setBackupRestoring] = useState(false);
@@ -5149,7 +5218,7 @@ export default function App() {
     [confidences, validation.state, warnings],
   );
   const filmstripCount = jobs.length > 0 ? jobs.length : files.length;
-  const frameLabel = job?.original_filename ?? (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
+  const frameLabel = job ? screenshotLabel(job) : (screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} live preview` : "No table selected");
   const frameStreet = form.street === "" ? "No street" : form.street;
   const queueCount = jobs.length > 0 ? jobs.length : files.length;
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
@@ -5162,6 +5231,15 @@ export default function App() {
   const historySearchActive = historySearchResults !== null;
   const visibleHistory = historySearchResults ?? history;
   const visibleHistoryTotal = historySearchActive ? historySearchTotal : historyTotal;
+  const managedJob = managedJobId === null
+    ? null
+    : jobs.find((candidate) => candidate.id === managedJobId)
+      ?? history.find((item) => item.id === managedJobId)?.job
+      ?? historySearchResults?.find((item) => item.id === managedJobId)?.job
+      ?? null;
+  const managedJobPersisted = Boolean(
+    managedJob && PERSISTED_JOB_ID_PATTERN.test(managedJob.id),
+  );
   const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
@@ -8526,6 +8604,177 @@ export default function App() {
     );
   }
 
+  function openScreenshotDetails(candidate: JobRecord) {
+    setManagedJobId(candidate.id);
+    setScreenshotTitle(typeof candidate.title === "string" ? candidate.title : "");
+    setScreenshotNotes(typeof candidate.notes === "string" ? candidate.notes : "");
+    setScreenshotTagInput(screenshotTags(candidate).join(", "));
+    setScreenshotDeleteArmed(false);
+    setError(null);
+  }
+
+  function closeScreenshotDetails() {
+    if (screenshotMetadataSaving || screenshotDeleting) {
+      return;
+    }
+    setManagedJobId(null);
+    setScreenshotDeleteArmed(false);
+  }
+
+  async function saveScreenshotMetadata(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !managedJob
+      || !managedJobPersisted
+      || screenshotMetadataSaving
+      || screenshotDeleting
+      || mutationRecoveryPending([persistedJobMutationScope(managedJob)])
+    ) {
+      return;
+    }
+
+    let tags: string[];
+    try {
+      tags = parseScreenshotTags(screenshotTagInput);
+    } catch (metadataError) {
+      setError(messageFromError(metadataError, "Check the screenshot tags"));
+      return;
+    }
+    const title = screenshotTitle.trim() || null;
+    const notes = screenshotNotes.trim() || null;
+    const expectation: JobMutationExpectation = {
+      kind: "metadata",
+      title,
+      notes,
+      tags,
+    };
+    const mutationScope = beginPersistedJobMutation(managedJob, expectation);
+    setScreenshotMetadataSaving(true);
+    setError(null);
+    try {
+      const updated = await updateJobMetadata(managedJob.id, {
+        title,
+        notes,
+        tags,
+      });
+      updateJobs((current) => current.map((candidate) =>
+        candidate.id === updated.id ? updated : candidate
+      ));
+      updateHistoryJob(updated);
+      settlePersistedMutationLease(
+        mutationScope,
+        [updated],
+        mutationScope === "processing",
+      );
+      setScreenshotTitle(updated.title ?? "");
+      setScreenshotNotes(updated.notes ?? "");
+      setScreenshotTagInput(screenshotTags(updated).join(", "));
+      toast.success("Screenshot details saved");
+    } catch (metadataError) {
+      if (mutationFailureMayHavePersistedSideEffect(metadataError)) {
+        markPersistedJobMutationUncertain(mutationScope, managedJob.id);
+      }
+      setError(messageFromError(metadataError, "Could not save screenshot details"));
+    } finally {
+      endPersistedJobMutation(mutationScope, false);
+      setScreenshotMetadataSaving(false);
+    }
+  }
+
+  function removeScreenshotFromClient(deletedJob: JobRecord) {
+    const currentJobs = jobsRef.current;
+    const deletedIndex = currentJobs.findIndex(
+      (candidate) => candidate.id === deletedJob.id,
+    );
+    const nextJobs = currentJobs.filter((candidate) => candidate.id !== deletedJob.id);
+    updateJobs(() => nextJobs);
+    clearJobAttention(deletedJob.id);
+    if (activeJobIdRef.current === deletedJob.id) {
+      const fallbackIndex = Math.min(Math.max(deletedIndex, 0), nextJobs.length - 1);
+      alignWorkspaceToJob(nextJobs[fallbackIndex] ?? null);
+    }
+    if (writeProcessingQueue(nextJobs)) {
+      markProcessingQueueSessionSynced();
+    }
+
+    const removedFromSearch = historySearchResults?.some(
+      (item) => item.id === deletedJob.id,
+    ) ?? false;
+    setHistory((current) => {
+      const next = current.filter((item) => item.id !== deletedJob.id);
+      writeHistory(next);
+      return next;
+    });
+    setHistorySearchResults((current) =>
+      current?.filter((item) => item.id !== deletedJob.id) ?? null
+    );
+    if (deletedJob.archived_at) {
+      setHistoryTotal((current) => {
+        const next = Math.max(0, current - 1);
+        writeHistoryTotal(next);
+        return next;
+      });
+    }
+    if (removedFromSearch) {
+      setHistorySearchTotal((current) => Math.max(0, current - 1));
+    }
+    if (deletedJob.benchmark_included) {
+      setBenchmarkOverview((current) => current
+        ? {
+            ...current,
+            included_cases: Math.max(0, current.included_cases - 1),
+          }
+        : current
+      );
+    }
+  }
+
+  async function permanentlyDeleteScreenshot() {
+    if (!managedJob || screenshotMetadataSaving || screenshotDeleting) {
+      return;
+    }
+    if (!managedJobPersisted) {
+      removeScreenshotFromClient(managedJob);
+      setManagedJobId(null);
+      setScreenshotDeleteArmed(false);
+      toast.success("Failed upload removed from the queue");
+      return;
+    }
+
+    const mutationScope = persistedJobMutationScope(managedJob);
+    if (mutationRecoveryPending([mutationScope])) {
+      return;
+    }
+    if (mutationScope === "processing") {
+      beginProcessingMembershipMutation([managedJob.id]);
+    } else {
+      beginHistoryMutation();
+    }
+    setScreenshotDeleting(true);
+    setError(null);
+    let restoreAfterMutation = false;
+    try {
+      await deleteJob(managedJob.id);
+      if (mutationScope === "processing") {
+        processingRemovalCandidateIdsRef.current.delete(managedJob.id);
+      }
+      removeScreenshotFromClient(managedJob);
+      setManagedJobId(null);
+      setScreenshotDeleteArmed(false);
+      toast.success("Screenshot permanently deleted");
+    } catch (deleteError) {
+      restoreAfterMutation = true;
+      setError(messageFromError(deleteError, "Could not delete screenshot"));
+    } finally {
+      if (mutationScope === "processing") {
+        endProcessingMembershipMutation(restoreAfterMutation);
+      } else {
+        endHistoryMutation(restoreAfterMutation);
+      }
+      setScreenshotDeleting(false);
+    }
+  }
+
   function openHistory(item: HistoryItem) {
     updateJobs((current) => {
       const existing = current.some((candidate) => candidate.id === item.job.id);
@@ -8809,21 +9058,36 @@ export default function App() {
                     attention ? "attention" : "",
                   ].filter(Boolean).join(" ");
                   return (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      className={className}
-                      onClick={() => activateJob(candidate)}
-                      disabled={busy}
-                      aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-                    >
-                      <span className="batch-number">{index + 1}</span>
-                      <span className="batch-text">
-                        <span>{candidate.original_filename}</span>
-                        <small>{queueDetail(candidate, attention)}</small>
-                      </span>
-                      <StatusPill status={candidate.status} />
-                    </button>
+                    <div key={candidate.id} className={className}>
+                      <button
+                        type="button"
+                        className={[
+                          "batch-item-open",
+                          candidate.id === job?.id ? "active" : "",
+                          attention ? "attention" : "",
+                        ].filter(Boolean).join(" ")}
+                        onClick={() => activateJob(candidate)}
+                        disabled={busy}
+                        aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
+                      >
+                        <span className="batch-number">{index + 1}</span>
+                        <span className="batch-text">
+                          <span>{screenshotLabel(candidate)}</span>
+                          <small>{queueDetail(candidate, attention)}</small>
+                        </span>
+                        <StatusPill status={candidate.status} />
+                      </button>
+                      <button
+                        type="button"
+                        className="screenshot-manage-button"
+                        onClick={() => openScreenshotDetails(candidate)}
+                        disabled={busy}
+                        title="Edit details or delete screenshot"
+                        aria-label={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -8898,24 +9162,40 @@ export default function App() {
                 {visibleHistory.map((item, index) => {
                   const cards = historyCards(item.job);
                   return (
-                    <button key={`${item.id}-${item.savedAt}`} type="button" className="history-item" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
-                      <span className="history-cards">
-                        {cards.length > 0 ? (
-                          cards.map((card) => (
-                            <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
-                              {cardToDisplay(card)}
-                            </span>
-                          ))
-                        ) : (
-                          <small>No cards</small>
-                        )}
-                      </span>
-                      <span className="history-meta">
-                        <small>{relativeTimeLabel(item.savedAt)}</small>
-                        <strong>{historyAction(item.job)}</strong>
-                      </span>
-                      <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
-                    </button>
+                    <div key={`${item.id}-${item.savedAt}`} className="history-item">
+                      <button type="button" className="history-item-open" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
+                        <span className="history-cards">
+                          {cards.length > 0 ? (
+                            cards.map((card) => (
+                              <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
+                                {cardToDisplay(card)}
+                              </span>
+                            ))
+                          ) : (
+                            <small>No cards</small>
+                          )}
+                        </span>
+                        <span className="history-meta">
+                          <strong className={item.job.title ? "history-title" : ""}>{item.job.title ? screenshotLabel(item.job) : historyAction(item.job)}</strong>
+                          <small>
+                            {item.job.title
+                              ? `${relativeTimeLabel(item.savedAt)} · ${historyAction(item.job)}`
+                              : relativeTimeLabel(item.savedAt)}
+                          </small>
+                        </span>
+                        <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="screenshot-manage-button"
+                        onClick={() => openScreenshotDetails(item.job)}
+                        disabled={busy}
+                        title="Edit details or delete screenshot"
+                        aria-label={`Manage history item ${index + 1}: ${item.job.original_filename}`}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })}
                 {visibleHistory.length < visibleHistoryTotal ? (
@@ -9756,6 +10036,135 @@ export default function App() {
               <Square size={13} aria-hidden="true" />
               Abort and discard unprocessed
             </button>
+          </div>
+        </section>
+      ) : null}
+
+      {managedJob ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog screenshot-details-dialog" role="dialog" aria-modal="true" aria-labelledby="screenshot-details-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="screenshot-details-title">Screenshot details</h2>
+                <p>{managedJob.archived_at ? "Saved history" : "Processing queue"}</p>
+              </div>
+              <button
+                type="button"
+                className="dialog-icon-button"
+                onClick={closeScreenshotDetails}
+                disabled={screenshotMetadataSaving || screenshotDeleting}
+                aria-label="Close screenshot details"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <form className="screenshot-details-form" onSubmit={(event) => void saveScreenshotMetadata(event)}>
+              <div className="screenshot-file-summary">
+                <span className="screenshot-file-icon" aria-hidden="true">
+                  <Tag size={15} />
+                </span>
+                <span>
+                  <strong>{managedJob.original_filename}</strong>
+                  <small>{managedJob.archived_at ? "History" : "Queue"} · {managedJob.status}</small>
+                </span>
+                <StatusPill status={managedJob.status} />
+              </div>
+
+              {managedJobPersisted ? (
+                <div className="screenshot-metadata-fields">
+                  <label>
+                    <span>Title</span>
+                    <input
+                      type="text"
+                      value={screenshotTitle}
+                      onChange={(event) => setScreenshotTitle(event.target.value)}
+                      maxLength={MAX_SCREENSHOT_TITLE_LENGTH}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      placeholder={managedJob.original_filename}
+                      autoFocus
+                    />
+                  </label>
+                  <label>
+                    <span>Tags</span>
+                    <input
+                      type="text"
+                      value={screenshotTagInput}
+                      onChange={(event) => setScreenshotTagInput(event.target.value)}
+                      maxLength={(MAX_SCREENSHOT_TAG_LENGTH + 2) * MAX_SCREENSHOT_TAGS}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      placeholder="turn, review, bluff"
+                    />
+                  </label>
+                  <label className="screenshot-notes-field">
+                    <span>Notes</span>
+                    <textarea
+                      value={screenshotNotes}
+                      onChange={(event) => setScreenshotNotes(event.target.value)}
+                      maxLength={MAX_SCREENSHOT_NOTES_LENGTH}
+                      disabled={screenshotMetadataSaving || screenshotDeleting}
+                      rows={4}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <p className="local-upload-note">This upload did not reach persistent storage and can only be removed.</p>
+              )}
+
+              {screenshotDeleteArmed ? (
+                <div className="screenshot-delete-confirmation" role="alert">
+                  <AlertTriangle size={17} aria-hidden="true" />
+                  <span>
+                    <strong>Delete permanently?</strong>
+                    <small>
+                      The image and all analysis data will be removed
+                      {managedJob.benchmark_included ? " from the benchmark corpus too" : ""}.
+                    </small>
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setScreenshotDeleteArmed(false)}
+                    disabled={screenshotDeleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={() => void permanentlyDeleteScreenshot()}
+                    disabled={screenshotDeleting || managedJob.recommendation_pending}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    {screenshotDeleting ? "Deleting..." : "Delete permanently"}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="screenshot-details-footer">
+                {!screenshotDeleteArmed ? (
+                  <button
+                    type="button"
+                    className="screenshot-delete-button"
+                    onClick={() => setScreenshotDeleteArmed(true)}
+                    disabled={screenshotMetadataSaving || screenshotDeleting || managedJob.recommendation_pending}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                    Delete screenshot
+                  </button>
+                ) : <span />}
+                <span className="screenshot-details-actions">
+                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotMetadataSaving || screenshotDeleting}>
+                    Close
+                  </button>
+                  {managedJobPersisted ? (
+                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting || managedJob.recommendation_pending}>
+                      {screenshotMetadataSaving ? "Saving..." : "Save details"}
+                    </button>
+                  ) : null}
+                </span>
+              </div>
+            </form>
           </div>
         </section>
       ) : null}

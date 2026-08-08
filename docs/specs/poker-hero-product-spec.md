@@ -617,6 +617,12 @@ frequencies.
     remains visible as workspace-only state during processing refreshes; if it
     later becomes processing work, the queue record replaces it without a
     duplicate.
+    Every visible processing or history item can also open persisted screenshot
+    details. A user may assign a title, notes, and up to ten tags; archive search
+    includes all three metadata fields. Permanent deletion removes the original
+    image and complete job record from either projection, including malformed or
+    otherwise unarchivable jobs, after explicit confirmation. Deleting a selected
+    ground-truth hand also removes it from the current benchmark corpus.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated
@@ -907,6 +913,8 @@ End-to-end tests:
 - Surface parser/provider errors in a recoverable way.
 - Continue processing unaffected queue items after one item fails.
 - Clear completed processing items into history.
+- Edit screenshot titles, notes, and tags from processing or history.
+- Permanently delete an unarchivable queue item or a saved history item.
 
 MCP gateway tests:
 
@@ -1128,6 +1136,8 @@ Poker Hero is successful when:
   persisted backend.
 - A user can search the complete persisted archive and page matching hands
   without replacing the newest-history cache or global reviewed count.
+- A user can title and tag screenshots, keep general notes separate from lesson
+  notes, and permanently delete any processing or archived screenshot.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.

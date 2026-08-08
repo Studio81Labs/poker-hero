@@ -192,6 +192,35 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return readJson<JobRecord>(response);
 }
 
+export async function updateJobMetadata(
+  jobId: string,
+  metadata: { title: string | null; notes: string | null; tags: string[] },
+): Promise<JobRecord> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/jobs/${encodeURIComponent(jobId)}/metadata`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(metadata),
+      credentials: "include",
+    },
+  );
+  return readJson<JobRecord>(response);
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/jobs/${encodeURIComponent(jobId)}`,
+    {
+      method: "DELETE",
+      credentials: "include",
+    },
+  );
+  if (!response.ok && response.status !== 404) {
+    await readJson<never>(response);
+  }
+}
+
 export async function getProcessingJobs(offset = 0): Promise<JobQueue> {
   const query = offset > 0 ? `?offset=${offset}` : "";
   const response = await fetch(`${API_BASE_URL}/api/jobs${query}`, {

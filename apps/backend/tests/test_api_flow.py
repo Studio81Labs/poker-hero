@@ -1328,6 +1328,97 @@ def test_processing_queue_keeps_correctable_benchmark_attempts(
     )
 
 
+def test_job_metadata_is_normalized_persisted_and_searchable(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="anonymous-table.png").json()["id"]
+
+    updated = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={
+            "title": "  Tricky turn decision  ",
+            "notes": "  Villain had been playing aggressively.  ",
+            "tags": [" Turn ", "Study", "turn", ""],
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "Tricky turn decision"
+    assert updated.json()["notes"] == "Villain had been playing aggressively."
+    assert updated.json()["tags"] == ["Turn", "Study"]
+    persisted = FileJobStore(tmp_path).get(job_id)
+    assert persisted.title == "Tricky turn decision"
+    assert persisted.notes == "Villain had been playing aggressively."
+    assert persisted.tags == ["Turn", "Study"]
+
+    approve_job(client, job_id)
+    client.put("/api/history", json={"job_ids": [job_id]})
+    for query in ("tricky decision", "aggressively", "study"):
+        result = client.get("/api/history", params={"query": query})
+        assert result.status_code == 200
+        assert [job["id"] for job in result.json()["jobs"]] == [job_id]
+
+    cleared = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": " ", "notes": "", "tags": []},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["title"] is None
+    assert cleared.json()["notes"] is None
+    assert cleared.json()["tags"] == []
+
+
+def test_job_metadata_rejects_oversized_or_excess_tags(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+
+    oversized = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={"title": None, "notes": None, "tags": ["x" * 33]},
+    )
+    excessive = client.put(
+        f"/api/jobs/{job_id}/metadata",
+        json={
+            "title": None,
+            "notes": None,
+            "tags": [f"tag-{index}" for index in range(11)],
+        },
+    )
+
+    assert oversized.status_code == 422
+    assert excessive.status_code == 422
+    assert FileJobStore(tmp_path).get(job_id).tags == []
+
+
+def test_delete_removes_unarchivable_job_and_image(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="incomplete-table.png").json()["id"]
+    job_dir = tmp_path / "jobs" / job_id
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+    assert not job_dir.exists()
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    assert client.get(f"/api/jobs/{job_id}/image").status_code == 404
+    assert client.get("/api/jobs").json()["total"] == 0
+    assert client.delete(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_delete_removes_archived_job_from_history(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put("/api/history", json={"job_ids": [job_id]})
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 204
+    assert client.get("/api/history").json()["total"] == 0
+
+
 def test_history_persists_only_explicitly_archived_ready_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     parsed_id = upload_job(client, filename="parsed.png").json()["id"]

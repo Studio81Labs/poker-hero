@@ -3863,7 +3863,7 @@ button:disabled {
   color: var(--accent-dark);
   display: grid;
   gap: 10px;
-  grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   left: 0;
   padding: 12px 22px;
   position: absolute;
@@ -3871,7 +3871,15 @@ button:disabled {
   z-index: 2;
 }
 
-.screenshot-delete-confirmation > span {
+.screenshot-delete-message {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.screenshot-delete-message > span {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -3885,6 +3893,10 @@ button:disabled {
   color: var(--accent-dark);
   font-size: 10px;
   margin-top: 2px;
+}
+
+.screenshot-delete-label-compact {
+  display: none;
 }
 
 .danger-button {
@@ -4053,12 +4065,31 @@ button:disabled {
   }
 
   .screenshot-delete-confirmation {
-    grid-template-columns: 18px minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-block: 9px;
+  }
+
+  .screenshot-delete-message {
+    grid-column: 1 / -1;
   }
 
   .screenshot-delete-confirmation > button {
-    grid-column: 1 / -1;
+    font-size: 12px;
+    gap: 4px;
+    padding-inline: 8px;
     width: 100%;
+  }
+
+  .screenshot-delete-confirmation > .danger-button svg {
+    display: none;
+  }
+
+  .screenshot-delete-label-full {
+    display: none;
+  }
+
+  .screenshot-delete-label-compact {
+    display: inline;
   }
 
   .screenshot-details-footer {

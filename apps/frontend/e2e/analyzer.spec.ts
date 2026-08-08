@@ -906,6 +906,17 @@ test("overlays delete confirmation without resizing screenshot details", async (
     ),
   ).toBeLessThanOrEqual(2);
 
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await page.setViewportSize({ width: 360, height: 800 });
+  const mobileFooterBox = await coveredFooter.boundingBox();
+  expect(mobileFooterBox).not.toBeNull();
+  await dialog.getByRole("button", { name: "Delete screenshot" }).click();
+  const mobileConfirmationBox = await confirmation.boundingBox();
+  expect(mobileConfirmationBox).not.toBeNull();
+  expect(mobileConfirmationBox!.y).toBeGreaterThanOrEqual(
+    mobileFooterBox!.y - 1,
+  );
+
   await confirmation.getByRole("button", {
     name: "Delete permanently",
   }).click();

@@ -10384,7 +10384,10 @@ export default function App() {
                 </div>
               ) : null}
 
-              <div className="screenshot-details-footer">
+              <div
+                className="screenshot-details-footer"
+                aria-hidden={screenshotDeleteArmed || undefined}
+              >
                 {!screenshotDeleteArmed ? (
                   <button
                     type="button"
@@ -10401,11 +10404,11 @@ export default function App() {
                   </button>
                 ) : <span />}
                 <span className="screenshot-details-actions">
-                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotMetadataSaving || screenshotDeleting}>
+                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                     Close
                   </button>
                   {managedJobPersisted ? (
-                    <button type="submit" disabled={screenshotMetadataSaving || screenshotDeleting}>
+                    <button type="submit" disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                       {screenshotMetadataSaving ? "Saving..." : "Save details"}
                     </button>
                   ) : null}

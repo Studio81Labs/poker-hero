@@ -890,6 +890,11 @@ test("overlays delete confirmation without resizing screenshot details", async (
   const confirmation = dialog.getByRole("alert");
   await expect(confirmation).toBeVisible();
 
+  const coveredFooter = dialog.locator(".screenshot-details-footer");
+  await expect(coveredFooter).toHaveAttribute("aria-hidden", "true");
+  await expect(coveredFooter.locator("button").first()).toBeDisabled();
+  await expect(coveredFooter.locator("button").last()).toBeDisabled();
+
   const after = await dialog.boundingBox();
   const confirmationBox = await confirmation.boundingBox();
   expect(after).not.toBeNull();

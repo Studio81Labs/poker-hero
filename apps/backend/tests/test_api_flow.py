@@ -1844,8 +1844,8 @@ def test_history_card_queries_match_screenshot_metadata_only(
     metadata = client.put(
         f"/api/jobs/{metadata_id}/metadata",
         json={
-            "title": "Ah bluff",
-            "notes": "Review the Kd blocker",
+            "title": "Ah bluff Th",
+            "notes": "Review the Kd blocker with 10s",
             "tags": ["Qs study"],
         },
     )
@@ -1866,6 +1866,12 @@ def test_history_card_queries_match_screenshot_metadata_only(
         "Ah bluff",
         "Kd blocker",
         "Qs study",
+        "Th",
+        "10h",
+        "10h bluff",
+        "10s",
+        "Ts",
+        "Ts blocker",
     ):
         response = client.get("/api/history", params={"query": query})
 

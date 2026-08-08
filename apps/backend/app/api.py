@@ -1981,12 +1981,16 @@ def history_card_tokens(job: JobRecord) -> set[str]:
     if state is None:
         return set()
     tokens = {card.code.casefold() for card in [*state.hero_cards, *state.board_cards]}
-    tokens.update(
-        f"10{token[1:]}"
-        for token in tuple(tokens)
-        if token.startswith("t")
-    )
+    add_history_ten_aliases(tokens)
     return tokens
+
+
+def add_history_ten_aliases(tokens: set[str]) -> None:
+    for token in tuple(tokens):
+        if token.startswith("t"):
+            tokens.add(f"10{token[1:]}")
+        elif token.startswith("10"):
+            tokens.add(f"t{token[2:]}")
 
 
 def history_metadata_card_tokens(job: JobRecord) -> set[str]:
@@ -2002,6 +2006,7 @@ def history_metadata_card_tokens(job: JobRecord) -> set[str]:
             card_terms = compact_history_card_terms(candidate)
             if card_terms is not None:
                 tokens.update(card_terms)
+    add_history_ten_aliases(tokens)
     return tokens
 
 

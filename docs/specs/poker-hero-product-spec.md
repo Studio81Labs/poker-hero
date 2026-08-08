@@ -646,6 +646,8 @@ frequencies.
     queue/history entries and dialogs are removed and both projections refresh.
     If benchmark state is loaded or the stale job was labeled, deletion also
     reloads the corpus overview instead of adjusting its count optimistically.
+    History card searches treat `T` and `10` as equivalent in screenshot title,
+    notes, and tags, matching canonical hand-card search behavior.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

@@ -5454,6 +5454,26 @@ export default function App() {
     return true;
   }
 
+  function mutationComposesWithActiveRecommendation(
+    scope: PersistedJobMutationScope,
+  ): boolean {
+    const lease = scope === "processing"
+      ? processingMutationLeaseRef.current
+      : historyMutationLeaseRef.current;
+    if (lease?.ownerId !== mutationOwnerId) {
+      return false;
+    }
+    const activeRequests = [
+      ...activeRecommendationRequestsRef.current.entries(),
+    ].filter(([, request]) => request.mutationScope === scope);
+    if (lease.kind === "job") {
+      return activeRequests.some(([jobId]) => jobId === lease.jobId);
+    }
+    return lease.kind === "projection"
+      && lease.benchmarkImportRequestId === null
+      && activeRequests.length > 0;
+  }
+
   function trackExpectedUpload(
     requestId: string,
     target: ProjectionMutationTarget,
@@ -8729,13 +8749,11 @@ export default function App() {
       return;
     }
     const mutationScope = persistedJobMutationScope(managedJob);
-    const concurrentRecommendation = activeRecommendationRequestsRef.current.get(
-      managedJob.id,
+    const savingAlongsideRecommendation = mutationComposesWithActiveRecommendation(
+      mutationScope,
     );
-    const savingDuringRecommendation = concurrentRecommendation?.mutationScope
-      === mutationScope;
     if (
-      !savingDuringRecommendation
+      !savingAlongsideRecommendation
       && mutationRecoveryPending([mutationScope])
     ) {
       return;
@@ -8756,7 +8774,7 @@ export default function App() {
       notes,
       tags,
     };
-    if (savingDuringRecommendation) {
+    if (savingAlongsideRecommendation) {
       if (mutationScope === "processing") {
         beginProcessingMembershipMutation();
       } else {
@@ -8786,7 +8804,7 @@ export default function App() {
         ));
       }
       updateHistoryJob(updated);
-      if (!savingDuringRecommendation) {
+      if (!savingAlongsideRecommendation) {
         settlePersistedMutationLease(
           mutationScope,
           [updated],
@@ -8807,7 +8825,7 @@ export default function App() {
       }
       setError(messageFromError(metadataError, "Could not save screenshot details"));
     } finally {
-      if (savingDuringRecommendation) {
+      if (savingAlongsideRecommendation) {
         if (mutationScope === "processing") {
           endProcessingMembershipMutation(restoreAfterMutation);
         } else {
@@ -8890,8 +8908,11 @@ export default function App() {
     );
     const deletingDuringRecommendation = concurrentRecommendation?.mutationScope
       === mutationScope;
+    const deletingAlongsideRecommendation = mutationComposesWithActiveRecommendation(
+      mutationScope,
+    );
     if (
-      !deletingDuringRecommendation
+      !deletingAlongsideRecommendation
       && mutationRecoveryPending([mutationScope])
     ) {
       return;
@@ -8906,6 +8927,7 @@ export default function App() {
     let restoreAfterMutation = false;
     try {
       await deleteJob(managedJob.id);
+      restoreAfterMutation = true;
       if (
         concurrentRecommendation?.ownsMutationLease
         && deletingDuringRecommendation
@@ -8919,6 +8941,13 @@ export default function App() {
       setManagedJobId(null);
       setScreenshotDeleteArmed(false);
       toast.success("Screenshot permanently deleted");
+      if (mutationScope === "processing") {
+        markHistorySessionUnsynced();
+        void requestHistoryRestore(null, true);
+      } else {
+        markProcessingQueueSessionUnsynced();
+        scheduleProcessingQueueRestore();
+      }
       if (concurrentRecommendation && deletingDuringRecommendation) {
         concurrentRecommendation.controller.abort();
       }

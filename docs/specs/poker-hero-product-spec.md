@@ -632,7 +632,10 @@ frequencies.
     is running; deletion cancels that browser request without restoring the
     removed hand when a stale response arrives. Automated recommendations are
     canceled per hand, so deleting one screenshot does not abort or stall the
-    remaining upload queue.
+    remaining upload queue. Metadata and deletion for other hands in the same
+    projection compose with the active recommendation lease rather than waiting
+    for its provider. Successful deletion refreshes processing and history so a
+    concurrent archival cannot leave stale membership or totals behind.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

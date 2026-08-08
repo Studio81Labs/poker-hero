@@ -709,6 +709,70 @@ describe("App", () => {
     )).not.toBeInTheDocument();
   });
 
+  it("reconciles history after deleting a queue record archived by another tab", async () => {
+    const jobId = "d".repeat(32);
+    const staleQueueJob = recommendedJob();
+    staleQueueJob.id = jobId;
+    staleQueueJob.original_filename = "archived-during-delete.png";
+    const archivedVersion = {
+      ...staleQueueJob,
+      archived_at: "2026-07-10T00:03:00Z",
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleQueueJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{
+        id: jobId,
+        job: archivedVersion,
+        savedAt: archivedVersion.archived_at,
+      }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    fetchMock().mockImplementation((url, options) => {
+      if (
+        url === `http://localhost:8000/api/jobs/${jobId}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-concurrent-delete",
+        }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: archived-during-delete.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    ));
+    await waitFor(() => expect(window.localStorage.getItem(
+      "poker-training-history-total-v1",
+    )).toBe("0"));
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);
@@ -5450,6 +5514,116 @@ describe("App", () => {
     expect(secondRecommendationCompleted).toBe(true);
     expect(screen.queryByText(/Import aborted/)).not.toBeInTheDocument();
     expect(screen.queryByText(/need attention/)).not.toBeInTheDocument();
+    await waitFor(() => expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).toBeNull());
+  });
+
+  it("mutates an unrelated queue job during automated recommendation", async () => {
+    const recommendationJobId = "7".repeat(32);
+    const unrelatedJobId = "8".repeat(32);
+    const unrelatedJob = approvedJob();
+    unrelatedJob.id = unrelatedJobId;
+    unrelatedJob.original_filename = "unrelated-queue.png";
+    const updatedUnrelatedJob = {
+      ...unrelatedJob,
+      title: "Reviewed independently",
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    const created = jobRecord({
+      id: recommendationJobId,
+      original_filename: "automated-solver.png",
+    });
+    const approved = {
+      ...approvedJob(),
+      id: recommendationJobId,
+      original_filename: created.original_filename,
+    };
+    const recommended = {
+      ...recommendedJob(),
+      id: recommendationJobId,
+      original_filename: created.original_filename,
+    };
+    const pendingRecommendation = deferredResponse();
+    let unrelatedDeleted = false;
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([unrelatedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/jobs") {
+        if (options?.method === "POST") {
+          return Promise.resolve(jsonResponse(created, 201));
+        }
+        return Promise.resolve(processingQueueResponse([recommended]));
+      }
+      if (url === `http://localhost:8000/api/jobs/${recommendationJobId}/approve`) {
+        return Promise.resolve(jsonResponse(approved));
+      }
+      if (url === `http://localhost:8000/api/jobs/${recommendationJobId}/recommend`) {
+        return pendingRecommendation.promise;
+      }
+      if (url === `http://localhost:8000/api/jobs/${unrelatedJobId}/metadata`) {
+        return Promise.resolve(jsonResponse(updatedUnrelatedJob));
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${unrelatedJobId}`
+        && options?.method === "DELETE"
+      ) {
+        unrelatedDeleted = true;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-unrelated-delete",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["solver"], created.original_filename, { type: "image/png" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${recommendationJobId}/recommend`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+
+    await user.click(screen.getByRole("button", {
+      name: /Manage screenshot \d+: unrelated-queue\.png/,
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Reviewed independently");
+    await user.click(within(dialog).getByRole("button", { name: "Save details" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${unrelatedJobId}/metadata`,
+      expect.objectContaining({ method: "PUT" }),
+    ));
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    await waitFor(() => expect(unrelatedDeleted).toBe(true));
+    expect(window.sessionStorage.getItem(
+      "poker-training-processing-mutation-v1",
+    )).not.toBeNull();
+    expect(screen.queryByText(
+      "Finishing recovery from a previous action. Try again in a moment.",
+    )).not.toBeInTheDocument();
+
+    await act(async () => {
+      pendingRecommendation.resolve(jsonResponse(recommended));
+      await pendingRecommendation.promise;
+    });
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(screen.queryByText("unrelated-queue.png")).not.toBeInTheDocument();
     await waitFor(() => expect(window.sessionStorage.getItem(
       "poker-training-processing-mutation-v1",
     )).toBeNull());

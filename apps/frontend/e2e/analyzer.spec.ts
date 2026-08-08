@@ -903,10 +903,13 @@ test("overlays delete confirmation without resizing screenshot details", async (
   await expect(coveredFooter.locator("button").last()).toBeDisabled();
 
   const after = await dialog.boundingBox();
+  const footerBox = await coveredFooter.boundingBox();
   const confirmationBox = await confirmation.boundingBox();
   expect(after).not.toBeNull();
+  expect(footerBox).not.toBeNull();
   expect(confirmationBox).not.toBeNull();
   expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(confirmationBox!.y - footerBox!.y)).toBeLessThanOrEqual(1);
   expect(
     Math.abs(
       confirmationBox!.y + confirmationBox!.height - (after!.y + after!.height),
@@ -920,9 +923,9 @@ test("overlays delete confirmation without resizing screenshot details", async (
   await dialog.getByRole("button", { name: "Delete screenshot" }).click();
   const mobileConfirmationBox = await confirmation.boundingBox();
   expect(mobileConfirmationBox).not.toBeNull();
-  expect(mobileConfirmationBox!.y).toBeGreaterThanOrEqual(
-    mobileFooterBox!.y - 1,
-  );
+  expect(
+    Math.abs(mobileConfirmationBox!.y - mobileFooterBox!.y),
+  ).toBeLessThanOrEqual(1);
 
   await confirmation.getByRole("button", {
     name: "Delete permanently",

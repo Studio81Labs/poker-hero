@@ -6,6 +6,7 @@ from typing import Literal
 from app.models import CanonicalState
 from app.solvers.preflop_context import (
     MAX_SUPPORTED_FOUR_BET_TO_THREE_BET_RATIO,
+    MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB,
     MAX_SUPPORTED_THREE_BET_TO_OPEN_RATIO,
     MAX_SINGLE_OPEN_SIZE_BB,
     MIN_SINGLE_OPEN_SIZE_BB,
@@ -20,6 +21,7 @@ from app.solvers.preflop_context import (
 RangeSource = Literal[
     "configured",
     "preflop_chart_limped_pot",
+    "preflop_chart_isolation_raised_pot",
     "preflop_chart_single_raised_pot",
     "preflop_chart_three_bet_pot",
     "preflop_chart_cold_three_bet_pot",
@@ -68,6 +70,19 @@ def select_postflop_ranges(
             state,
             hero_relative_position,
             limped_context,
+        )
+        if selection is not None:
+            return selection
+
+    isolation_raised_context = _isolation_raised_pot_context(
+        state,
+        hero_relative_position,
+    )
+    if isolation_raised_context is not None:
+        selection = _isolation_raised_pot_selection(
+            state,
+            hero_relative_position,
+            isolation_raised_context,
         )
         if selection is not None:
             return selection
@@ -324,6 +339,96 @@ def _single_raised_pot_selection(
             "caller_base_reraise_fraction": base_defense.reraise_fraction,
             "caller_continue_fraction": defense.continue_fraction,
             "caller_reraise_fraction": defense.reraise_fraction,
+        },
+    )
+
+
+def _isolation_raised_pot_selection(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+    context: tuple[Position, float, float, tuple[Position, Position]],
+) -> PostflopRangeSelection | None:
+    limper, limp_size, isolation_raise_size, participant_positions = context
+    from app.solvers.preflop_chart import (
+        ISOLATION_RESPONSE_POLICIES,
+        ISOLATION_RESPONSE_POLICY_NAME,
+        LIMP_RESPONSE_POLICIES,
+        LIMP_RESPONSE_POLICY_NAME,
+        adjusted_defense_policy,
+        adjusted_limp_raise_fraction,
+        policy_for_isolation_raise_size,
+        policy_for_stack_depth,
+    )
+
+    base_isolation_policy = LIMP_RESPONSE_POLICIES.get(limper)
+    base_limper_defense = ISOLATION_RESPONSE_POLICIES.get(
+        (limper, "big_blind")
+    )
+    size_policy = policy_for_isolation_raise_size(isolation_raise_size)
+    starting_effective_stack, stack_depth_source = _contextual_stack_depth(
+        state,
+        hero_relative_position,
+        final_preflop_commitment=isolation_raise_size,
+    )
+    stack_policy = policy_for_stack_depth(starting_effective_stack)
+    if (
+        base_isolation_policy is None
+        or base_limper_defense is None
+        or size_policy is None
+        or stack_policy is None
+    ):
+        return None
+
+    isolation_fraction = adjusted_limp_raise_fraction(
+        base_isolation_policy,
+        stack_policy,
+    )
+    limper_defense = adjusted_defense_policy(
+        base_limper_defense,
+        size_policy,
+        stack_policy,
+    )
+    isolation_range = _range_for_policy_band(isolation_fraction)
+    limper_call_range = _range_for_policy_band(
+        limper_defense.continue_fraction,
+        minimum_exclusive=limper_defense.reraise_fraction,
+    )
+    if not isolation_range or not limper_call_range:
+        return None
+
+    return _selection_for_ranges(
+        state,
+        hero_relative_position,
+        ranges_by_position={
+            limper: limper_call_range,
+            "big_blind": isolation_range,
+        },
+        source="preflop_chart_isolation_raised_pot",
+        participant_positions=participant_positions,
+        context={
+            "scenario": "isolation_raised_pot",
+            "limper_position": limper,
+            "isolation_raiser_position": "big_blind",
+            "limp_size_bb": limp_size,
+            "isolation_raise_size_bb": isolation_raise_size,
+            "limp_response_policy": LIMP_RESPONSE_POLICY_NAME,
+            "isolation_response_policy": ISOLATION_RESPONSE_POLICY_NAME,
+            "isolation_raise_size_policy": size_policy.name,
+            "stack_depth_policy": stack_policy.name,
+            "starting_effective_stack_bb": starting_effective_stack,
+            "stack_depth_source": stack_depth_source,
+            "isolation_raiser_base_fraction": (
+                base_isolation_policy.raise_fraction
+            ),
+            "isolation_raiser_fraction": isolation_fraction,
+            "limper_base_continue_fraction": (
+                base_limper_defense.continue_fraction
+            ),
+            "limper_base_reraise_fraction": (
+                base_limper_defense.reraise_fraction
+            ),
+            "limper_continue_fraction": limper_defense.continue_fraction,
+            "limper_reraise_fraction": limper_defense.reraise_fraction,
         },
     )
 
@@ -1055,6 +1160,66 @@ def _single_raised_pot_context(
     ):
         return None
     return opener, caller, opening_action.amount
+
+
+def _isolation_raised_pot_context(
+    state: CanonicalState,
+    hero_relative_position: Literal["ip", "oop"],
+) -> tuple[Position, float, float, tuple[Position, Position]] | None:
+    if state.players_in_hand != 2 or len(state.preflop_action_history) != 3:
+        return None
+    limp_action, isolation_action, calling_action = (
+        state.preflop_action_history
+    )
+    if (
+        limp_action.action != "call"
+        or abs(limp_action.amount - 1.0) > MONEY_TOLERANCE_BB
+        or isolation_action.action != "raise"
+        or isolation_action.actor != "big_blind"
+        or calling_action.action != "call"
+        or calling_action.actor != limp_action.actor
+        or abs(calling_action.amount - isolation_action.amount)
+        > MONEY_TOLERANCE_BB
+    ):
+        return None
+
+    isolation_raise_size = isolation_action.amount
+    if not (
+        2.0 - MONEY_TOLERANCE_BB
+        <= isolation_raise_size
+        <= MAX_SUPPORTED_ISOLATION_RAISE_SIZE_BB + MONEY_TOLERANCE_BB
+    ):
+        return None
+    limper = normalize_position(limp_action.actor)
+    if (
+        limper is None
+        or limper == "big_blind"
+        or POSITION_ACTION_ORDER[limper]
+        >= POSITION_ACTION_ORDER["big_blind"]
+    ):
+        return None
+    participant_positions = _limped_pot_participant_positions(
+        state,
+        hero_relative_position,
+        limper,
+    )
+    if participant_positions is None:
+        return None
+    flop_root_pot = _flop_root_pot(state, hero_relative_position)
+    if not pot_matches_preflop_actions(
+        flop_root_pot,
+        (
+            (limper, calling_action.amount),
+            ("big_blind", isolation_raise_size),
+        ),
+    ):
+        return None
+    return (
+        limper,
+        limp_action.amount,
+        isolation_raise_size,
+        participant_positions,
+    )
 
 
 def _three_bet_pot_context(

@@ -225,6 +225,9 @@ The recommendation registry loads the active recommendation provider from config
 Provider types:
 
 - `local_solver_provider`: calls the configured local engine plugin or a custom command. The default route uses a position-aware preflop training chart with bounded one- to five-limper big-blind responses, a heads-up response after hero limps and a later player isolation-raises, a heads-up response after hero isolation-raises and the original limper reraises, open-defense, one to four represented callers through the terminal six-max ordering, supported hero-open/facing-3-bet matchups, bounded opponent-open/opponent-3-bet seat policies, a heads-up squeeze response after hero cold-calls and the opener folds, and heads-up hero-3-bet/facing-4-bet responses, including a later cold 4-bettor after the opener folds, with explicit sizing and stack-depth boundaries; solves supported heads-up postflop trees with explicit relative position, an unambiguous reviewed hero/opponent seat pair, or an exact squeeze or cold 4-bet history that resolves a surviving blind pair; derives limper/big-blind-check ranges from an exact supported one-limp state when postflop order is independently established, opener/flat-caller ranges from an exact supported single-raised state, 3-bettor/opener-call ranges from an exact supported 3-bet state, 3-bettor/cold-caller ranges from an exact supported cold-call state after the opener folds, squeezer/caller ranges from an exact supported squeeze state after the opener folds, opener-4-bet/3-bettor-call ranges from an exact supported 4-bet state, and cold-4-bettor/3-bettor-call ranges from an exact supported cold 4-bet state after the opener folds, with a verified root pot in every case; uses terminal completed-flop history for turn ranges and terminal completed-flop plus completed-turn history for river ranges to condition those starting ranges through reviewed actions and dealt cards before solving the current decision; applies a reconstructable starting effective stack to those range policies and records a 100 BB assumption when stack evidence is incomplete; retains configured ranges for every other tree and when bounded conditioning cannot be applied; maps canonical dealer labels to button/IP; and records use of the bundled range/EV fallback for ambiguous or unsupported spots. Multiway fallback aggression estimates independent equal-response probabilities, enumerates every caller-count branch with its own range equity and final pot, requires the reviewed count of opponents already committed at the current wager, resolves the latest wager separately from hero's call amount, includes every active opponent's recorded commitment level, requires a reviewed aggregate when multiway postflop history cannot represent lower wager levels, retains posted blinds and limps in first-in branches, and exposes both per-opponent and whole-field fold equity as decision evidence.
+  In contextual postflop range mode, the local solver also derives
+  big-blind-isolator and limper-call ranges from the exact supported 1 BB limp,
+  2-5 BB big-blind raise, and matching original-limper call.
 - `rule_based_provider`: deterministic equity and hand-texture guidance.
 - `external_solver_provider`: calls an external API for public or broader testing.
 - `llm_advice_provider`: uses an LLM for reasoning-oriented recommendations.
@@ -391,6 +394,19 @@ must match blinds plus the represented limp. The chart must use explicit
 limper-position isolation ranges, adjust them by the selected stack-depth band,
 cap the target isolation raise by the available effective total, and expose the
 limper, policy, adjusted range, target, and cap as recommendation evidence.
+
+For a postflop decision, that exact limp may continue with a 2-5 BB raise by
+the big blind and a matching call by the original limper. Exactly two players
+must remain, and they must be the represented limper and big blind. The
+reconstructed flop-root pot must match both final commitments and the posted
+blinds. The big blind's range uses the same stack-adjusted isolation boundary;
+the limper's call range uses the corresponding matchup-, size-, and
+stack-adjusted continue band after excluding the limp-reraise segment. The
+output must expose both actors, limp and isolation sizes, named policies,
+starting-stack source, and adjusted range boundaries. Call-first structured
+history takes precedence over stale opener metadata. A different isolator,
+extra active player, mismatched final call, unsupported size, ambiguous
+survivor pair, or contradictory pot must retain configured ranges.
 
 The big-blind option may also route exactly two ordered 1 BB limps when exactly
 three players remain active. The limpers must occupy distinct seats before the

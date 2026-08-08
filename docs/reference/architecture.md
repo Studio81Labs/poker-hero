@@ -123,7 +123,15 @@ reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
 stack-adjusted first-in range as an explicit proxy and the complement of the
 big blind's isolation-raise band as the checked range. Both reviewed survivor
-seats and the reconstructed flop-root pot must match that line. An
+seats and the reconstructed flop-root pot must match that line. The exact
+three-action continuation in which the big blind instead isolation-raises to
+2-5 BB and the original limper calls uses the adjusted big-blind isolation
+band for the raiser and the limper's matchup-, size-, and stack-adjusted
+continue band after excluding limp-reraises. The call-first structured history
+takes precedence over legacy opener metadata. Both final commitments, the
+survivor pair, and the reconstructed flop-root pot must agree; other isolator
+positions keep the configured ranges because no initial isolation policy is
+charted for them. An
 open-and-call preflop history whose actors match the reviewed seats replaces
 the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.

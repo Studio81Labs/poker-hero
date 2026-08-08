@@ -192,13 +192,19 @@ resolve that order because it proves a multi-seat preflop line. Its ranges, bet 
 iteration target, rake, timeout, and memory ceiling are configurable through
 the `POKER_POSTFLOP_SOLVER_*` variables in the example env files.
 In the default `contextual` range mode, an exact two-player state with a
-single 1 BB limp checked by the big blind, an open-and-call, ordinary
+single 1 BB limp checked by the big blind, the same limp followed by a 2-5 BB
+big-blind isolation raise and matching call by the original limper, an
+open-and-call, ordinary
 open/3-bet/call, cold-caller open/3-bet/call, open/call/squeeze/call, or
 open/3-bet/4-bet/call preflop history, including a later cold 4-bettor after the
 opener folds, selects transparent ranges from the same position-aware chart
 boundaries used by the preflop trainer. The limped route
 uses the limper's stack-adjusted first-in range as an explicit proxy and the
 complement of the big blind's isolation-raise band as the checked range.
+The called-isolation route uses that big-blind isolation band as the raiser's
+range and the limper's adjusted continue band after excluding limp-reraises as
+the calling range. Non-big-blind isolation raises retain configured ranges
+because the bundled chart does not define their initial isolation band.
 Dead-money routes require the original opener to be absent
 from the two reviewed survivors and keep that player's opening contribution in
 the reconstructed root pot. The squeeze route applies the chart's existing

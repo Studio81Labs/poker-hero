@@ -393,6 +393,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
   preflop_chart_limped_pot: "Preflop chart · limped pot",
+  preflop_chart_isolation_raised_pot: "Preflop chart · isolation-raised pot",
   preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
   preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
   preflop_chart_cold_three_bet_pot: "Preflop chart · cold-call 3-bet pot",
@@ -1044,6 +1045,7 @@ function recommendationEvidenceFromRaw(
 
     const contextualRangeSource = (
       rawRangeSource === "preflop_chart_limped_pot"
+      || rawRangeSource === "preflop_chart_isolation_raised_pot"
       || rawRangeSource === "preflop_chart_single_raised_pot"
       || rawRangeSource === "preflop_chart_three_bet_pot"
       || rawRangeSource === "preflop_chart_cold_three_bet_pot"
@@ -1143,6 +1145,51 @@ function recommendationEvidenceFromRaw(
             + " · BB check "
             + formatEvidenceRatio(rangeBigBlindRaise)
             + "-100%",
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_isolation_raised_pot") {
+      const rangeLimperPosition = metadataLabel(rangeContext?.limper_position);
+      const rangeIsolationRaiserPosition = metadataLabel(
+        rangeContext?.isolation_raiser_position,
+      );
+      const rangeLimpSize = metadataNumber(rangeContext?.limp_size_bb);
+      const rangeIsolationRaiseSize = metadataNumber(
+        rangeContext?.isolation_raise_size_bb,
+      );
+      if (rangeLimperPosition && rangeIsolationRaiserPosition) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeLimperPosition} limps${
+            rangeLimpSize !== null && rangeLimpSize > 0
+              ? ` ${formatEvidenceBb(rangeLimpSize)}`
+              : ""
+          } · ${rangeIsolationRaiserPosition} raises${
+            rangeIsolationRaiseSize !== null && rangeIsolationRaiseSize > 0
+              ? ` ${formatEvidenceBb(rangeIsolationRaiseSize)}`
+              : ""
+          } · ${rangeLimperPosition} calls`,
+        });
+      }
+      const rangeIsolationFraction = metadataRatio(
+        rangeContext?.isolation_raiser_fraction,
+      );
+      const rangeLimperContinue = metadataRatio(
+        rangeContext?.limper_continue_fraction,
+      );
+      const rangeLimperReraise = metadataRatio(
+        rangeContext?.limper_reraise_fraction,
+      );
+      if (
+        rangeIsolationFraction !== null
+        && rangeLimperContinue !== null
+        && rangeLimperReraise !== null
+        && rangeLimperReraise < rangeLimperContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `BB isolate ${formatEvidenceRatio(rangeIsolationFraction)} · limper call ${
+            formatEvidenceRatio(rangeLimperReraise)
+          }-${formatEvidenceRatio(rangeLimperContinue)}`,
         });
       }
     } else if (rawRangeSource === "preflop_chart_single_raised_pot") {

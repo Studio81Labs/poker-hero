@@ -8657,15 +8657,26 @@ export default function App() {
         notes,
         tags,
       });
-      updateJobs((current) => current.map((candidate) =>
-        candidate.id === updated.id ? updated : candidate
-      ));
+      const movedToHistory = mutationScope === "processing"
+        && updated.archived_at !== null;
+      if (movedToHistory) {
+        removeJobFromProcessingProjection(updated.id);
+        setManagedJobId(null);
+        markHistorySessionUnsynced();
+      } else {
+        updateJobs((current) => current.map((candidate) =>
+          candidate.id === updated.id ? updated : candidate
+        ));
+      }
       updateHistoryJob(updated);
       settlePersistedMutationLease(
         mutationScope,
         [updated],
         mutationScope === "processing",
       );
+      if (movedToHistory) {
+        void requestHistoryRestore(null, true);
+      }
       setScreenshotTitle(updated.title ?? "");
       setScreenshotNotes(updated.notes ?? "");
       setScreenshotTagInput(screenshotTags(updated).join(", "));
@@ -8681,21 +8692,25 @@ export default function App() {
     }
   }
 
-  function removeScreenshotFromClient(deletedJob: JobRecord) {
+  function removeJobFromProcessingProjection(jobId: string) {
     const currentJobs = jobsRef.current;
     const deletedIndex = currentJobs.findIndex(
-      (candidate) => candidate.id === deletedJob.id,
+      (candidate) => candidate.id === jobId,
     );
-    const nextJobs = currentJobs.filter((candidate) => candidate.id !== deletedJob.id);
+    const nextJobs = currentJobs.filter((candidate) => candidate.id !== jobId);
     updateJobs(() => nextJobs);
-    clearJobAttention(deletedJob.id);
-    if (activeJobIdRef.current === deletedJob.id) {
+    clearJobAttention(jobId);
+    if (activeJobIdRef.current === jobId) {
       const fallbackIndex = Math.min(Math.max(deletedIndex, 0), nextJobs.length - 1);
       alignWorkspaceToJob(nextJobs[fallbackIndex] ?? null);
     }
     if (writeProcessingQueue(nextJobs)) {
       markProcessingQueueSessionSynced();
     }
+  }
+
+  function removeScreenshotFromClient(deletedJob: JobRecord) {
+    removeJobFromProcessingProjection(deletedJob.id);
 
     const removedFromSearch = historySearchResults?.some(
       (item) => item.id === deletedJob.id,
@@ -10133,7 +10148,7 @@ export default function App() {
                     type="button"
                     className="danger-button"
                     onClick={() => void permanentlyDeleteScreenshot()}
-                    disabled={screenshotDeleting || managedJob.recommendation_pending}
+                    disabled={screenshotDeleting}
                   >
                     <Trash2 size={14} aria-hidden="true" />
                     {screenshotDeleting ? "Deleting..." : "Delete permanently"}
@@ -10147,7 +10162,7 @@ export default function App() {
                     type="button"
                     className="screenshot-delete-button"
                     onClick={() => setScreenshotDeleteArmed(true)}
-                    disabled={screenshotMetadataSaving || screenshotDeleting || managedJob.recommendation_pending}
+                    disabled={screenshotMetadataSaving || screenshotDeleting}
                   >
                     <Trash2 size={14} aria-hidden="true" />
                     Delete screenshot

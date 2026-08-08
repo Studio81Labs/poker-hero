@@ -358,6 +358,52 @@ describe("App", () => {
     expect(await screen.findAllByText("Turn bluff review")).toHaveLength(2);
   });
 
+  it("moves a metadata response archived by another client into history", async () => {
+    const cachedJob = jobRecord({
+      id: "4".repeat(32),
+      original_filename: "cross-tab-table.png",
+    });
+    const archivedJob = {
+      ...cachedJob,
+      title: "Archived elsewhere",
+      archived_at: "2026-07-10T00:02:00Z",
+      updated_at: "2026-07-10T00:03:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([cachedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(archivedJob))
+      .mockResolvedValueOnce(jsonResponse({
+        total: 1,
+        jobs: [archivedJob],
+        snapshot_version: "archived-metadata-snapshot",
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: cross-tab-table.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.type(within(dialog).getByLabelText("Title"), "Archived elsewhere");
+    await user.click(within(dialog).getByRole("button", { name: "Save details" }));
+
+    await waitFor(() => expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: cross-tab-table.png",
+    })).not.toBeInTheDocument());
+    expect(await screen.findByRole("button", {
+      name: "Manage history item 1: cross-tab-table.png",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Screenshot details" })).not.toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/history",
+      { credentials: "include" },
+    );
+  });
+
   it("permanently removes an unarchivable screenshot from the queue", async () => {
     const failedJob = jobRecord({
       id: "2".repeat(32),
@@ -388,6 +434,47 @@ describe("App", () => {
     expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledWith(
       `http://localhost:8000/api/jobs/${failedJob.id}`,
+      { method: "DELETE", credentials: "include" },
+    );
+  });
+
+  it("allows deleting a screenshot with an external recommendation pending", async () => {
+    const pendingJob = approvedJob();
+    pendingJob.id = "5".repeat(32);
+    pendingJob.original_filename = "stuck-recommendation.png";
+    pendingJob.recommendation_pending = true;
+    pendingJob.recommendation_request_id = "external-request";
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([pendingJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(processingQueueResponse([pendingJob]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: stuck-recommendation.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    const armDelete = within(dialog).getByRole("button", { name: "Delete screenshot" });
+    expect(armDelete).toBeEnabled();
+    await user.click(armDelete);
+    const confirmDelete = within(dialog).getByRole("button", { name: "Delete permanently" });
+    expect(confirmDelete).toBeEnabled();
+    await user.click(confirmDelete);
+
+    await waitFor(() => expect(screen.queryByRole("button", {
+      name: "Open screenshot 1: stuck-recommendation.png",
+    })).not.toBeInTheDocument());
+    expect(fetchMock()).toHaveBeenCalledWith(
+      `http://localhost:8000/api/jobs/${pendingJob.id}`,
       { method: "DELETE", credentials: "include" },
     );
   });

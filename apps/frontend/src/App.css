@@ -2135,8 +2135,19 @@ button:disabled {
 
 .mcp-access-panel {
   display: grid;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.mcp-access-panel > p {
+  margin: 0;
+}
+
+.mcp-access-panel .secondary-button {
+  font-size: 11px;
+  min-height: 34px;
+  padding: 7px 10px;
+  white-space: nowrap;
 }
 
 .mcp-issued-token {
@@ -2165,6 +2176,25 @@ button:disabled {
   grid-template-columns: minmax(150px, 1.4fr) minmax(110px, 0.8fr) minmax(165px, 1fr) auto;
 }
 
+.mcp-unlock-row {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.mcp-session-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mcp-session-row > span {
+  font-size: 12px;
+}
+
+.mcp-unlock-row label,
 .mcp-create-grid label {
   color: var(--muted);
   display: grid;
@@ -2173,6 +2203,7 @@ button:disabled {
   gap: 4px;
 }
 
+.mcp-unlock-row input,
 .mcp-create-grid input,
 .mcp-create-grid select {
   min-height: 34px;
@@ -2216,12 +2247,37 @@ button:disabled {
 
 @media (max-width: 720px) {
   .mcp-create-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(130px, 0.7fr);
+  }
+
+  .mcp-create-grid > :nth-child(3) {
+    grid-column: 1;
+  }
+
+  .mcp-create-grid > button {
+    grid-column: 2;
   }
 
   .mcp-principal-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .mcp-create-grid,
+  .mcp-unlock-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-create-grid > :nth-child(3),
+  .mcp-create-grid > button {
+    grid-column: auto;
+  }
+
+  .mcp-create-grid > button,
+  .mcp-unlock-row > button {
+    width: 100%;
   }
 }
 

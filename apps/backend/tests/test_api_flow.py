@@ -1815,6 +1815,65 @@ def test_history_card_queries_do_not_match_recommendation_prose(
     assert canonical_card_response.json()["total"] == 0
 
 
+def test_history_card_queries_match_screenshot_metadata_only(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    metadata_id = upload_job(
+        client,
+        filename="metadata-card-terms.png",
+    ).json()["id"]
+    prose_id = upload_job(
+        client,
+        filename="prose-card-terms.png",
+    ).json()["id"]
+    state_without_metadata_cards = {
+        **APPROVED_STATE,
+        "hero_cards": [
+            {"rank": "Q", "suit": "clubs"},
+            {"rank": "J", "suit": "spades"},
+        ],
+        "board_cards": [
+            {"rank": "2", "suit": "hearts"},
+            {"rank": "3", "suit": "diamonds"},
+            {"rank": "4", "suit": "clubs"},
+        ],
+    }
+    approve_job(client, metadata_id, state_without_metadata_cards)
+    approve_job(client, prose_id, state_without_metadata_cards)
+    metadata = client.put(
+        f"/api/jobs/{metadata_id}/metadata",
+        json={
+            "title": "Ah bluff",
+            "notes": "Review the Kd blocker",
+            "tags": ["Qs study"],
+        },
+    )
+    store = FileJobStore(tmp_path)
+    prose_job = store.get(prose_id)
+    prose_job.training_review_note = "Ah Kd Qs appeared only in review prose."
+    store.save(prose_job)
+    client.put(
+        "/api/history",
+        json={"job_ids": [metadata_id, prose_id]},
+    )
+
+    assert metadata.status_code == 200
+    for query in (
+        "Ah",
+        "Kd",
+        "Qs",
+        "Ah bluff",
+        "Kd blocker",
+        "Qs study",
+    ):
+        response = client.get("/api/history", params={"query": query})
+
+        assert response.status_code == 200
+        assert response.json()["total"] == 1
+        assert [job["id"] for job in response.json()["jobs"]] == [metadata_id]
+
+
 def test_history_rejects_duplicate_job_ids(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
@@ -2904,6 +2963,63 @@ def test_metadata_update_during_active_parser_is_preserved(
     assert persisted.title == "Turn bluff review"
     assert persisted.notes == "Check the smaller sizing."
     assert persisted.tags == ["turn", "bluff"]
+
+
+@pytest.mark.parametrize(
+    ("complete_recommendation", "expected_status"),
+    [(False, "approved"), (True, "recommended")],
+)
+def test_late_parser_failure_preserves_newer_approved_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    complete_recommendation: bool,
+    expected_status: str,
+) -> None:
+    parse_started = Event()
+    release_parse = Event()
+    responses: dict[str, object] = {}
+
+    class SlowFailingParser:
+        name = "slow_failing"
+
+        def parse(self, image_path: Path):
+            parse_started.set()
+            assert release_parse.wait(timeout=5)
+            raise ParserError("late parser failure")
+
+    monkeypatch.setattr(
+        "app.api.build_parser",
+        lambda settings: SlowFailingParser(),
+    )
+    client = make_client(tmp_path)
+    upload_thread = Thread(
+        target=lambda: responses.update(upload=upload_job(client)),
+    )
+    upload_thread.start()
+    assert parse_started.wait(timeout=2)
+    job_id = FileJobStore(tmp_path).list()[0].id
+
+    try:
+        approved = approve_job(client, job_id)
+        recommendation = (
+            client.post(f"/api/jobs/{job_id}/recommend")
+            if complete_recommendation
+            else None
+        )
+        assert approved.status_code == 200
+        if recommendation is not None:
+            assert recommendation.status_code == 200
+    finally:
+        release_parse.set()
+        upload_thread.join(timeout=5)
+
+    assert not upload_thread.is_alive()
+    assert responses["upload"].status_code == 502
+    persisted = FileJobStore(tmp_path).get(job_id)
+    assert persisted.status == expected_status
+    assert persisted.error is None
+    assert persisted.approved_state is not None
+    assert (persisted.recommendation is not None) is complete_recommendation
 
 
 def test_delete_during_active_parser_cancels_upload_without_resurrecting_job(

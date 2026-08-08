@@ -151,6 +151,9 @@ HISTORY_CARD_QUERY_TOKEN_PATTERN = re.compile(
 )
 HISTORY_LOWERCASE_FACE_CARD_QUERY_PATTERN = re.compile(r"[tjqka][cdhs]")
 HISTORY_QUERY_SEPARATOR_PATTERN = re.compile(r"[,\s]+")
+HISTORY_METADATA_CARD_CANDIDATE_PATTERN = re.compile(
+    r"(?<!\w)[0-9A-Za-z♣♦♥♠]+(?!\w)",
+)
 PROXY_SHARED_SECRET_HEADER = "X-Poker-Proxy-Secret"
 PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -689,6 +692,8 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         status_code=409,
                         detail="Upload was deleted while parsing",
                     ) from exc
+                if current.approved_state is not None:
+                    return current
                 current.status = "error"
                 current.error = message
                 return save_job(current)
@@ -1962,8 +1967,9 @@ def history_matches_query(
 ) -> bool:
     search_text = history_search_text(job)
     card_tokens = history_card_tokens(job)
+    metadata_card_tokens = history_metadata_card_tokens(job)
     return all(
-        term in card_tokens
+        term in card_tokens or term in metadata_card_tokens
         if is_card
         else term in search_text
         for term, is_card in query_terms
@@ -1980,6 +1986,22 @@ def history_card_tokens(job: JobRecord) -> set[str]:
         for token in tuple(tokens)
         if token.startswith("t")
     )
+    return tokens
+
+
+def history_metadata_card_tokens(job: JobRecord) -> set[str]:
+    tokens: set[str] = set()
+    values = [job.title or "", job.notes or "", *job.tags]
+    for value in values:
+        normalized_value = value.translate(
+            HISTORY_PRESENTATION_SELECTOR_TRANSLATION
+        )
+        for candidate in HISTORY_METADATA_CARD_CANDIDATE_PATTERN.findall(
+            normalized_value
+        ):
+            card_terms = compact_history_card_terms(candidate)
+            if card_terms is not None:
+                tokens.update(card_terms)
     return tokens
 
 

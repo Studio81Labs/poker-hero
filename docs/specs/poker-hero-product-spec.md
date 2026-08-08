@@ -616,20 +616,23 @@ frequencies.
     into retryable errors. An untouched benchmark-only hand opened for review
     remains visible as workspace-only state during processing refreshes; if it
     later becomes processing work, the queue record replaces it without a
-    duplicate.
+    duplicate. Parser completion and failure handling merge into the latest
+    persisted record; a late parser failure cannot replace a newer approved or
+    recommended status.
     Every visible processing or history item can also open persisted screenshot
     details. A user may assign a title, notes, and up to ten tags; archive search
-    includes all three metadata fields. Permanent deletion removes the original
-    image and complete job record from either projection, including malformed or
-    otherwise unarchivable jobs, after explicit confirmation. Deleting a selected
-    ground-truth hand also removes it from the current benchmark corpus. Permanent
-    deletion is blocked while a durable benchmark import still requires recovery,
-    and concurrent detail or image reads complete before deletion removes their
-    files. Details, metadata saves, and permanent deletion remain available while
-    a recommendation provider is running; deletion cancels that browser request
-    without restoring the removed hand when a stale response arrives. Automated
-    recommendations are canceled per hand, so deleting one screenshot does not
-    abort or stall the remaining upload queue.
+    includes all three metadata fields, including terms that look like card codes.
+    Permanent deletion removes the original image and complete job record from
+    either projection, including malformed or otherwise unarchivable jobs, after
+    explicit confirmation. Deleting a selected ground-truth hand also removes it
+    from the current benchmark corpus. Permanent deletion is blocked while a
+    durable benchmark import still requires recovery, and concurrent detail or
+    image reads complete before deletion removes their files. Details, metadata
+    saves, and permanent deletion remain available while a recommendation provider
+    is running; deletion cancels that browser request without restoring the
+    removed hand when a stale response arrives. Automated recommendations are
+    canceled per hand, so deleting one screenshot does not abort or stall the
+    remaining upload queue.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

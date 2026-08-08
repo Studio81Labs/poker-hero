@@ -709,6 +709,75 @@ describe("App", () => {
     )).not.toBeInTheDocument();
   });
 
+  it("preserves delete recovery until an unrelated recommendation finishes", async () => {
+    const recommendationJob = approvedJob();
+    recommendationJob.id = "b".repeat(32);
+    recommendationJob.original_filename = "solver-still-running.png";
+    const deletedJob = approvedJob();
+    deletedJob.id = "d".repeat(32);
+    deletedJob.original_filename = "delete-response-lost.png";
+    const recommendedJobA = {
+      ...recommendedJob(),
+      id: recommendationJob.id,
+      original_filename: recommendationJob.original_filename,
+      updated_at: "2026-07-10T00:02:00Z",
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([recommendationJob, deletedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+    const pendingRecommendation = deferredResponse();
+    fetchMock().mockImplementation((url, options) => {
+      if (url === `http://localhost:8000/api/jobs/${recommendationJob.id}/recommend`) {
+        return pendingRecommendation.promise;
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${deletedJob.id}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.reject(new TypeError("Connection lost after delete"));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse(
+          [recommendedJobA],
+          "queue-after-lost-delete-response",
+        ));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Request recommendation" }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 2: delete-response-lost.png",
+    }));
+    const dialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete screenshot" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete permanently" }));
+
+    expect(await screen.findByText("Connection lost after delete")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open screenshot 2: delete-response-lost.png",
+    })).toBeInTheDocument();
+
+    await act(async () => {
+      pendingRecommendation.resolve(jsonResponse(recommendedJobA));
+      await pendingRecommendation.promise;
+    });
+
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/jobs",
+      { credentials: "include" },
+    ));
+    await waitFor(() => expect(screen.queryByText(
+      "delete-response-lost.png",
+    )).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Recommendation")).toBeInTheDocument();
+  });
+
   it("reconciles an ambiguous upload before allowing permanent deletion", async () => {
     const persistedJob = jobRecord({
       id: "c".repeat(32),

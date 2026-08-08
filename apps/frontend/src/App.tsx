@@ -5858,12 +5858,12 @@ export default function App() {
       historyMutationCountRef.current - 1,
       0,
     );
+    if (restoreAfterMutation) {
+      historyRestoreRetryRequestedRef.current = true;
+    }
     if (
       historyMutationCountRef.current === 0
-      && (
-        restoreAfterMutation
-        || historyRestoreRetryRequestedRef.current
-      )
+      && historyRestoreRetryRequestedRef.current
     ) {
       historyRestoreRetryRequestedRef.current = false;
       requestDeferredHistoryRestore();
@@ -5890,12 +5890,12 @@ export default function App() {
       processingMutationCountRef.current - 1,
       0,
     );
+    if (restoreAfterMutation) {
+      processingRestoreRetryRequestedRef.current = true;
+    }
     if (
       processingMutationCountRef.current === 0
-      && (
-        restoreAfterMutation
-        || processingRestoreRetryRequestedRef.current
-      )
+      && processingRestoreRetryRequestedRef.current
     ) {
       scheduleProcessingQueueRestore();
     }

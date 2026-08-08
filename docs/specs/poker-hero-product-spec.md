@@ -639,7 +639,9 @@ frequencies.
     failed-upload placeholder cannot be deleted while its durable upload lease
     or an authoritative queue refresh could still reveal a persisted job; the
     client first reconciles by upload request ID, then deletes the resolved job
-    or unlocks local-only removal after storage absence is confirmed.
+    or unlocks local-only removal after storage absence is confirmed. Recovery
+    requested by one queue or history mutation remains deferred until every
+    overlapping mutation in that projection has finished.
 22. An approved hand may be explicitly added to the parser benchmark; inclusion is never implied by automation.
 
 One item failing at any stage must not stop, discard, or roll back unrelated

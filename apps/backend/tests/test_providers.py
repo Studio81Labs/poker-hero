@@ -2409,6 +2409,59 @@ def test_local_solver_falls_back_for_contradictory_isolation_labels(
     assert result.raw["engine"] == "postflop_solver"
 
 
+def test_local_solver_resolves_blind_limp_reraised_pot(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "context = json.loads(os.environ['POKER_POSTFLOP_SOLVER_RANGE_CONTEXT'])\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == "
+        "'preflop_chart_limp_reraised_pot'\n"
+        "assert context['limper_position'] == 'small_blind'\n"
+        "assert context['isolation_raiser_position'] == 'big_blind'\n"
+        "assert context['limp_reraise_size_bb'] == 12\n"
+        "assert 'AA' in os.environ['POKER_POSTFLOP_SOLVER_OOP_RANGE'].split(',')\n"
+        "assert 'AA' not in os.environ['POKER_POSTFLOP_SOLVER_IP_RANGE'].split(',')\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual blind limp-reraised response', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    state.pot_size = 24.0
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.effective_stack = 88.0
+    state.hero_position = "big_blind"
+    state.opponent_position = "small_blind"
+    state.preflop_action_history = [
+        PreflopAction(actor="small_blind", action="call", amount=1.0),
+        PreflopAction(actor="big_blind", action="raise", amount=4.0),
+        PreflopAction(actor="small_blind", action="raise", amount=12.0),
+        PreflopAction(actor="big_blind", action="call", amount=12.0),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_local_solver_derives_blind_limp_ranges_with_relative_evidence(
     tmp_path: Path,
 ) -> None:

@@ -11423,6 +11423,78 @@ describe("App", () => {
     )).toBeInTheDocument();
   });
 
+  it("shows contextual limp-reraised-pot range assumptions", async () => {
+    const postflopJob: JobRecord = {
+      ...recommendedJob(),
+      id: "limp-reraised-postflop-job",
+      original_filename: "limp-reraised-postflop.png",
+      image_filename: "limp-reraised-postflop.png",
+      recommendation: {
+        action: "check",
+        sizing: null,
+        confidence: 0.8,
+        explanation: "The postflop solver recommends checking.",
+        raw: {
+          provider: "local_solver",
+          engine: "postflop_solver",
+          hero_position: "ip",
+          range_source: "preflop_chart_limp_reraised_pot",
+          range_context: {
+            scenario: "limp_reraised_pot",
+            limper_position: "utg",
+            isolation_raiser_position: "button",
+            limp_reraiser_position: "utg",
+            limp_size_bb: 1,
+            isolation_raise_size_bb: 4,
+            limp_reraise_size_bb: 12,
+            limp_reraise_to_isolation_ratio: 3,
+            isolation_response_policy: "heads_up_after_hero_limp",
+            limp_reraise_response_policy: "heads_up_original_limper_reraise",
+            isolation_raise_size_policy: "standard",
+            limp_reraise_size_policy: "large",
+            stack_depth_policy: "standard",
+            starting_effective_stack_bb: 100,
+            stack_depth_source: "reconstructed",
+            limper_reraise_fraction: 0.045,
+            isolation_raiser_continue_fraction: 0.045,
+            isolation_raiser_four_bet_fraction: 0.0209,
+          },
+          ranges: {
+            oop: "AA-QQ,AKs",
+            ip: "JJ-TT,AQs",
+          },
+          candidates: [
+            { action: "check", sizing: null, frequency: 1, ev: 0 },
+          ],
+        },
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-history-v1",
+      JSON.stringify([{ id: postflopJob.id, job: postflopJob, savedAt: new Date().toISOString() }]),
+    );
+    window.localStorage.setItem("poker-training-history-total-v1", "1");
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Reopen history item 1" }));
+
+    const evidence = await screen.findByLabelText("Decision evidence");
+    const decisionContext = within(evidence).getByLabelText("Decision context");
+    expect(within(decisionContext).getByText(
+      "Preflop chart · limp-reraised pot",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Standard · 100 BB starting",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "UTG limps 1 BB · Button isolates 4 BB · UTG reraises 12 BB · Button calls",
+    )).toBeInTheDocument();
+    expect(within(decisionContext).getByText(
+      "Limper reraise 4.5% · isolator call 2.1%-4.5%",
+    )).toBeInTheDocument();
+  });
+
   it("shows contextual three-bet pot range assumptions", async () => {
     const postflopJob: JobRecord = {
       ...recommendedJob(),

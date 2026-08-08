@@ -1491,6 +1491,7 @@ fn validated_range_source(value: &str) -> Result<&str, String> {
         "configured"
         | "preflop_chart_limped_pot"
         | "preflop_chart_isolation_raised_pot"
+        | "preflop_chart_limp_reraised_pot"
         | "preflop_chart_single_raised_pot"
         | "preflop_chart_three_bet_pot"
         | "preflop_chart_cold_three_bet_pot"
@@ -1981,6 +1982,10 @@ mod tests {
         assert_eq!(
             validated_range_source("preflop_chart_isolation_raised_pot"),
             Ok("preflop_chart_isolation_raised_pot")
+        );
+        assert_eq!(
+            validated_range_source("preflop_chart_limp_reraised_pot"),
+            Ok("preflop_chart_limp_reraised_pot")
         );
         assert_eq!(
             validated_range_source("preflop_chart_single_raised_pot"),

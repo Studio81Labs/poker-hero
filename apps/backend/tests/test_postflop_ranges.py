@@ -526,6 +526,64 @@ def test_rejects_isolation_raised_pot_with_duplicate_relative_labels() -> None:
     assert selection.source == "configured"
 
 
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("small_blind", "IP", "oop"),
+        ("OOP", "big_blind", "oop"),
+        ("big_blind", "OOP", "ip"),
+        ("IP", "small_blind", "ip"),
+    ),
+)
+def test_assigns_blind_isolation_ranges_from_consistent_mixed_labels(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = isolation_raised_pot_state(limper_position="small_blind")
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_isolation_raised_pot"
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("small_blind", "OOP", "ip"),
+        ("IP", "big_blind", "ip"),
+        ("big_blind", "IP", "oop"),
+        ("OOP", "small_blind", "oop"),
+    ),
+)
+def test_rejects_blind_isolation_ranges_from_contradictory_mixed_labels(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = isolation_raised_pot_state(limper_position="small_blind")
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
+
+
 def test_resolves_blind_isolation_raised_pot_relative_position() -> None:
     state = isolation_raised_pot_state(limper_position="small_blind")
 

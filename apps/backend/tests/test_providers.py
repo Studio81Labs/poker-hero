@@ -2364,6 +2364,51 @@ def test_local_solver_resolves_relative_isolation_raised_pot_ranges(
     assert result.raw["engine"] == "postflop_solver"
 
 
+def test_local_solver_falls_back_for_contradictory_isolation_labels(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "assert os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE'] == 'configured'\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Configured-range fallback', "
+        "'raw': {'provider': 'local_solver', 'engine': 'postflop_solver'}"
+        "}))\n"
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+    state = heads_up_postflop_state()
+    state.current_bet = 0
+    state.pot_size = 8.0
+    state.opponents_at_current_bet = None
+    state.opponent_wager = None
+    state.opponent_commitment_total = None
+    state.facing_action = None
+    state.effective_stack = 96.0
+    state.hero_position = "small_blind"
+    state.opponent_position = "OOP"
+    state.preflop_action_history = [
+        PreflopAction(actor="small_blind", action="call", amount=1.0),
+        PreflopAction(actor="big_blind", action="raise", amount=4.0),
+        PreflopAction(actor="small_blind", action="call", amount=4.0),
+    ]
+
+    result = provider.recommend(
+        RecommendationRequest(state=state, provider=provider.name)
+    )
+
+    assert result.action == "check"
+    assert result.raw["engine"] == "postflop_solver"
+
+
 def test_local_solver_derives_blind_limp_ranges_with_relative_evidence(
     tmp_path: Path,
 ) -> None:

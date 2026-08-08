@@ -1244,12 +1244,45 @@ def _isolation_raised_pot_participant_positions(
     hero_relative_position: Literal["ip", "oop"],
     limper: Position,
 ) -> tuple[Position, Position] | None:
+    big_blind_relative: Literal["ip", "oop"] = (
+        "ip" if limper == "small_blind" else "oop"
+    )
+    limper_relative: Literal["ip", "oop"] = (
+        "oop" if big_blind_relative == "ip" else "ip"
+    )
     participant_positions = _limped_pot_participant_positions(
         state,
         hero_relative_position,
         limper,
     )
     if participant_positions is not None:
+        hero_position, opponent_position = participant_positions
+        expected_hero_relative = (
+            big_blind_relative
+            if hero_position == "big_blind"
+            else limper_relative
+        )
+        expected_opponent_relative = (
+            big_blind_relative
+            if opponent_position == "big_blind"
+            else limper_relative
+        )
+        hero_relative_label = _relative_position_label(state.hero_position)
+        opponent_relative_label = _relative_position_label(
+            state.opponent_position
+        )
+        if (
+            hero_relative_position != expected_hero_relative
+            or (
+                hero_relative_label is not None
+                and hero_relative_label != expected_hero_relative
+            )
+            or (
+                opponent_relative_label is not None
+                and opponent_relative_label != expected_opponent_relative
+            )
+        ):
+            return None
         return participant_positions
 
     hero_relative_label = _relative_position_label(state.hero_position)
@@ -1265,9 +1298,6 @@ def _isolation_raised_pot_participant_positions(
     ):
         return None
 
-    big_blind_relative: Literal["ip", "oop"] = (
-        "ip" if limper == "small_blind" else "oop"
-    )
     hero_position: Position = (
         "big_blind"
         if hero_relative_position == big_blind_relative

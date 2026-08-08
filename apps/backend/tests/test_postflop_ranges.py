@@ -24,6 +24,28 @@ from app.solvers.preflop_chart import (
 )
 
 
+def limped_pot_state(
+    *,
+    hero_position: str = "big_blind",
+    limper_position: str = "button",
+) -> CanonicalState:
+    opponent_position = (
+        limper_position if hero_position == "big_blind" else "big_blind"
+    )
+    return CanonicalState(
+        players_in_hand=2,
+        hero_position=hero_position,
+        opponent_position=opponent_position,
+        street="flop",
+        pot_size=2.0 if limper_position == "small_blind" else 2.5,
+        current_bet=0,
+        effective_stack=99.0,
+        preflop_action_history=[
+            PreflopAction(actor=limper_position, action="call", amount=1.0),
+        ],
+    )
+
+
 def single_raised_pot_state(*, hero_position: str = "big_blind") -> CanonicalState:
     opponent_position = "button" if hero_position == "big_blind" else "big_blind"
     return CanonicalState(
@@ -134,6 +156,223 @@ def select(state: CanonicalState, *, contextual_enabled: bool = True):
         configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
         contextual_enabled=contextual_enabled,
     )
+
+
+def test_selects_chart_ranges_for_heads_up_limped_pot() -> None:
+    selection = select(limped_pot_state())
+
+    assert selection.source == "preflop_chart_limped_pot"
+    assert selection.context == {
+        "scenario": "limped_pot",
+        "limper_position": "button",
+        "big_blind_position": "big_blind",
+        "limp_size_bb": 1.0,
+        "limper_range_model": "stack_adjusted_first_in_proxy",
+        "limp_response_policy": "heads_up_single_limper",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
+        "limper_base_fraction": 0.45,
+        "limper_fraction": 0.45,
+        "big_blind_base_raise_fraction": 0.36,
+        "big_blind_raise_fraction": 0.36,
+    }
+    assert "AA" in selection.ip_range.split(",")
+    assert "AA" not in selection.oop_range.split(",")
+    assert "72o" not in selection.ip_range.split(",")
+    assert "72o" in selection.oop_range.split(",")
+
+
+def test_assigns_limped_ranges_by_relative_position() -> None:
+    big_blind_hero = select(limped_pot_state())
+    limper_hero = select(
+        limped_pot_state(hero_position="button")
+    )
+
+    assert limper_hero.ip_range == big_blind_hero.ip_range
+    assert limper_hero.oop_range == big_blind_hero.oop_range
+
+
+@pytest.mark.parametrize(
+    "limper_position",
+    ("utg", "hijack", "cutoff", "button", "small_blind"),
+)
+def test_supports_every_charted_heads_up_limped_pot(
+    limper_position: str,
+) -> None:
+    state = limped_pot_state(limper_position=limper_position)
+    hero_relative_position = "ip" if limper_position == "small_blind" else "oop"
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limped_pot"
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("big_blind", "OOP", "ip"),
+        ("OOP", "big_blind", "oop"),
+    ),
+)
+def test_assigns_blind_limp_ranges_with_explicit_relative_label(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: str,
+) -> None:
+    state = limped_pot_state(limper_position="small_blind")
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limped_pot"
+    assert "AA" in selection.oop_range.split(",")
+    assert "AA" not in selection.ip_range.split(",")
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("dealer", "big_blind", "ip"),
+        ("big_blind", "dealer", "oop"),
+    ),
+)
+def test_assigns_heads_up_dealer_as_small_blind_limper(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: str,
+) -> None:
+    state = limped_pot_state(limper_position="small_blind")
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limped_pot"
+    assert "AA" in selection.ip_range.split(",")
+    assert "AA" not in selection.oop_range.split(",")
+
+
+def test_rejects_blind_limp_with_contradictory_relative_label() -> None:
+    state = limped_pot_state(limper_position="small_blind")
+    state.opponent_position = "OOP"
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position="oop",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
+
+
+def test_rejects_relative_label_that_contradicts_nonblind_limper() -> None:
+    state = limped_pot_state(limper_position="button")
+    state.opponent_position = "OOP"
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position="ip",
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
+
+
+def test_selects_limped_ranges_on_turn_after_completed_flop() -> None:
+    state = limped_pot_state()
+    state.street = "turn"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_limped_pot"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_limped_ranges_apply_stack_depth_policy() -> None:
+    short = limped_pot_state()
+    short.effective_stack = 19.0
+    deep = limped_pot_state()
+    deep.effective_stack = 200.0
+
+    short_selection = select(short)
+    deep_selection = select(deep)
+
+    assert short_selection.context["stack_depth_policy"] == "short"
+    assert short_selection.context["limper_fraction"] == 0.405
+    assert short_selection.context["big_blind_raise_fraction"] == 0.468
+    assert deep_selection.context["stack_depth_policy"] == "deep"
+    assert deep_selection.context["limper_fraction"] == 0.4635
+    assert deep_selection.context["big_blind_raise_fraction"] == 0.324
+
+
+def test_keeps_configured_ranges_for_inexact_limped_pot() -> None:
+    state = limped_pot_state()
+    state.players_in_hand = 3
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.preflop_action_history[0].action = "raise"
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.preflop_action_history[0].amount = 1.5
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.preflop_action_history.append(
+        PreflopAction(actor="small_blind", action="call", amount=1.0)
+    )
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.opponent_position = "cutoff"
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.preflop_opener_position = "button"
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.preflop_open_size = 2.5
+    assert select(state).source == "configured"
+
+    state = limped_pot_state()
+    state.pot_size = 4.0
+    assert select(state).source == "configured"
 
 
 def test_selects_chart_ranges_for_heads_up_single_raised_pot() -> None:

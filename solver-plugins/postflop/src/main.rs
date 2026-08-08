@@ -1489,6 +1489,7 @@ fn env_string(name: &str, default: &str) -> String {
 fn validated_range_source(value: &str) -> Result<&str, String> {
     match value {
         "configured"
+        | "preflop_chart_limped_pot"
         | "preflop_chart_single_raised_pot"
         | "preflop_chart_three_bet_pot"
         | "preflop_chart_cold_three_bet_pot"
@@ -1971,6 +1972,10 @@ mod tests {
     #[test]
     fn range_evidence_accepts_supported_sources_and_object_context() {
         assert_eq!(validated_range_source("configured"), Ok("configured"));
+        assert_eq!(
+            validated_range_source("preflop_chart_limped_pot"),
+            Ok("preflop_chart_limped_pot")
+        );
         assert_eq!(
             validated_range_source("preflop_chart_single_raised_pot"),
             Ok("preflop_chart_single_raised_pot")

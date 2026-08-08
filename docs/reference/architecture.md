@@ -115,9 +115,10 @@ map to button/IP. When both reviewed seats are available, distinct normalized
 six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a small-blind versus
 big-blind pair remain ambiguous and use fallback. A limp/check line cannot
-resolve that pair because it is also valid heads-up; an exact reviewed squeeze
-or cold 4-bet history can resolve it because the additional seats prove the
-preflop order.
+resolve that pair because it is also valid heads-up. An exact called big-blind
+isolation line resolves the pair under its six-max chart contract, with the
+small blind OOP and big blind IP. An exact reviewed squeeze or cold 4-bet line
+can also resolve it because the additional seats prove the preflop order.
 First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
@@ -131,7 +132,9 @@ continue band after excluding limp-reraises. The call-first structured history
 takes precedence over legacy opener metadata. Both final commitments, the
 survivor pair, and the reconstructed flop-root pot must agree; other isolator
 positions keep the configured ranges because no initial isolation policy is
-charted for them. An
+charted for them. When those survivors are the small blind and big blind, this
+exact six-max chart route establishes the small blind as OOP and the big blind
+as IP. An
 open-and-call preflop history whose actors match the reviewed seats replaces
 the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.

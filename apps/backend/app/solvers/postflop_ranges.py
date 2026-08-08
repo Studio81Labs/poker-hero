@@ -184,6 +184,23 @@ def resolve_squeeze_pot_relative_position(
     return hero_relative_position
 
 
+def resolve_isolation_raised_pot_relative_position(
+    state: CanonicalState,
+) -> Literal["ip", "oop"] | None:
+    """Resolve a blind pair from an exact six-max isolation-raised line."""
+    hero_position = normalize_position(state.hero_position)
+    opponent_position = normalize_position(state.opponent_position)
+    if {hero_position, opponent_position} != {"small_blind", "big_blind"}:
+        return None
+
+    hero_relative_position: Literal["ip", "oop"] = (
+        "ip" if hero_position == "big_blind" else "oop"
+    )
+    if _isolation_raised_pot_context(state, hero_relative_position) is None:
+        return None
+    return hero_relative_position
+
+
 def resolve_cold_four_bet_pot_relative_position(
     state: CanonicalState,
 ) -> Literal["ip", "oop"] | None:

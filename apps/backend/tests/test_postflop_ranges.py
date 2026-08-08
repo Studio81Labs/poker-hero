@@ -13,6 +13,7 @@ from app.models import (
 from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import (
     resolve_cold_four_bet_pot_relative_position,
+    resolve_isolation_raised_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -476,6 +477,19 @@ def test_assigns_isolation_raised_ranges_by_relative_position() -> None:
 
     assert limper_hero.ip_range == isolation_raiser_hero.ip_range
     assert limper_hero.oop_range == isolation_raiser_hero.oop_range
+
+
+def test_resolves_blind_isolation_raised_pot_relative_position() -> None:
+    state = isolation_raised_pot_state(limper_position="small_blind")
+
+    assert resolve_isolation_raised_pot_relative_position(state) == "ip"
+
+    state.hero_position = "small_blind"
+    state.opponent_position = "big_blind"
+    assert resolve_isolation_raised_pot_relative_position(state) == "oop"
+
+    state.pot_size = 10.0
+    assert resolve_isolation_raised_pot_relative_position(state) is None
 
 
 def test_selects_isolation_raised_ranges_on_turn_after_completed_flop() -> None:

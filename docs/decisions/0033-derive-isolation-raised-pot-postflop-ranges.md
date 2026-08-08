@@ -22,7 +22,9 @@ a matching call by that same limper. Require exactly two active players, the
 reviewed survivor pair to be the limper and big blind, legal six-max action
 order, and a reconstructed flop-root pot that matches both final commitments
 plus unrepresented blinds. Call-first structured history takes precedence over
-legacy opener metadata.
+legacy opener metadata. When the reviewed survivors are the small blind and
+big blind, interpret the exact route under the six-max chart contract and
+resolve the small blind as OOP and the big blind as IP.
 
 Use the existing limper-position and stack-adjusted big-blind isolation band as
 the raiser's range. Use the existing limper-versus-big-blind defense policy,
@@ -42,5 +44,7 @@ contradictory evidence retain configured ranges.
   limper's call band after excluding limp-reraises.
 - The implementation remains honest about the chart's missing non-big-blind
   isolation policies.
+- The exact route reaches the production solver for a reviewed small-blind and
+  big-blind survivor pair without separate relative-position labels.
 - Extra players, mismatched actions, unsupported sizes, ambiguous positions,
   and inconsistent pots keep the existing configured fallback.

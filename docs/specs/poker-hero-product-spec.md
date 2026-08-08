@@ -404,9 +404,11 @@ the limper's call range uses the corresponding matchup-, size-, and
 stack-adjusted continue band after excluding the limp-reraise segment. The
 output must expose both actors, limp and isolation sizes, named policies,
 starting-stack source, and adjusted range boundaries. Call-first structured
-history takes precedence over stale opener metadata. A different isolator,
-extra active player, mismatched final call, unsupported size, ambiguous
-survivor pair, or contradictory pot must retain configured ranges.
+history takes precedence over stale opener metadata. When the reviewed seats
+are small blind and big blind, the exact six-max chart route must resolve the
+small blind as OOP and the big blind as IP. A different isolator, extra active
+player, mismatched final call, unsupported size, mismatched survivor pair, or
+contradictory pot must retain configured ranges.
 
 The big-blind option may also route exactly two ordered 1 BB limps when exactly
 three players remain active. The limpers must occupy distinct seats before the

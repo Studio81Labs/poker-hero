@@ -242,7 +242,10 @@ that owns its runtime factory, user-facing label, and optional readiness check.
 The runtime factory and advertised capabilities consume the same descriptor;
 the deployment allowlist remains a separately validated boundary. Local solver
 engines are nested options of the `local_solver` provider rather than standalone
-recommendation providers.
+recommendation providers. Each local engine is represented by an immutable
+descriptor that owns its subprocess command factory, label, execution mode, and
+deployment-selectability. A configured custom command resolves to a fixed engine
+descriptor and cannot be selected or replaced from the browser.
 
 Provider types:
 
@@ -934,7 +937,8 @@ Example configuration concepts:
   recommendation use the same configured tools. Installed recommendation
   provider IDs, labels, runtime factories, and readiness checks come from one
   immutable catalog, while the allowlist controls which catalog entries users
-  may select in that deployment.
+  may select in that deployment. Local engine IDs, labels, command factories,
+  and routing modes likewise come from one immutable nested catalog.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
 - Independent optional bearer tokens for external vision, solver, and LLM

@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from app.config import (
-    KNOWN_LOCAL_SOLVER_ENGINES,
     Settings,
 )
 from app.models import PipelineCapabilities, PipelineOption, PipelineSelection
@@ -13,6 +12,10 @@ from app.providers.registry import (
     RECOMMENDATION_PLUGIN_IDS,
     get_recommendation_plugin,
 )
+from app.solvers.registry import (
+    DEPLOYMENT_SELECTABLE_LOCAL_SOLVER_ENGINE_IDS,
+    get_local_solver_engine,
+)
 
 LAYOUT_LABELS = {
     "generic": "Generic",
@@ -21,13 +24,6 @@ LAYOUT_LABELS = {
     "fortuna_nations": "Fortuna / Nations",
     "pokerstars": "PokerStars",
 }
-ENGINE_LABELS = {
-    "local_ev": "Local EV",
-    "postflop_solver": "Postflop CFR",
-    "custom_local": "Custom local solver",
-}
-
-
 class PipelineSelectionError(ValueError):
     pass
 
@@ -174,7 +170,7 @@ def resolve_pipeline_selection(
         else:
             _require_known(
                 selected_engine,
-                KNOWN_LOCAL_SOLVER_ENGINES,
+                DEPLOYMENT_SELECTABLE_LOCAL_SOLVER_ENGINE_IDS,
                 "recommendation engine",
             )
             if enforce_recommendation_allowlist:
@@ -256,6 +252,16 @@ def _recommendation_option(settings: Settings, value: str) -> PipelineOption:
     )
 
 
+def _solver_engine_option(value: str) -> PipelineOption:
+    plugin = get_local_solver_engine(value)
+    return PipelineOption(
+        id=value,
+        label=plugin.label,
+        available=True,
+        unavailable_reason=None,
+    )
+
+
 def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
     defaults = resolve_pipeline_selection(
         settings,
@@ -297,5 +303,5 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
         recommendation_providers=[
             _recommendation_option(settings, value) for value in recommendations
         ],
-        recommendation_engines=[_option(value, ENGINE_LABELS) for value in engines],
+        recommendation_engines=[_solver_engine_option(value) for value in engines],
     )

@@ -41,6 +41,9 @@ configuration allowlist remains a separately validated deployment boundary.
 Recommendation providers follow the same catalog contract for their factory,
 label, and readiness check. Local solver engines remain a nested selection of
 the `local_solver` provider and retain their independent deployment allowlist.
+Each local engine descriptor owns its subprocess command factory, label,
+execution mode, and whether users may select it. The custom command is a
+deployment-fixed engine descriptor rather than an allowlisted browser option.
 Layout profile IDs are deployment-defined data. The capability response includes
 a parser/layout compatibility matrix: multi-layout external vision can accept
 custom profiles such as `pokerstars`, while fixed-region OCR is selectable only

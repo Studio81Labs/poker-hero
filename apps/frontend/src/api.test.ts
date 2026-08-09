@@ -35,7 +35,7 @@ describe("humanReadableMessage", () => {
         missing_fields: ["opponent_wager", "opponents_at_current_bet"],
       },
     }, "Recommendation failed")).toBe(
-      "Complete the required table details before requesting a recommendation: Opponent wager total and opponents at the current wager. Refresh the approved state to edit them, then approve it again.",
+      "Complete the required table details before requesting a recommendation: Opponent wager total and opponents at the current wager. Edit the listed fields, then approve the state again.",
     );
   });
 
@@ -53,7 +53,7 @@ describe("humanReadableMessage", () => {
       '{"missing_fields":["effective_stack"]}',
       "Recommendation failed",
     )).toBe(
-      "Complete the required table details before requesting a recommendation: Effective stack. Refresh the approved state to edit them, then approve it again.",
+      "Complete the required table details before requesting a recommendation: Effective stack. Edit the listed fields, then approve the state again.",
     );
   });
 
@@ -73,7 +73,7 @@ describe("API error messages", () => {
     )));
 
     await expect(requestRecommendation("job-1", "request-1")).rejects.toThrow(
-      "Complete the required table details before requesting a recommendation: Opponent wager total. Refresh the approved state to edit them, then approve it again.",
+      "Complete the required table details before requesting a recommendation: Opponent wager total. Edit the listed fields, then approve the state again.",
     );
   });
 

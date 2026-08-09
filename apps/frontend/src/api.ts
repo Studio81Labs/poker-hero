@@ -163,7 +163,7 @@ function structuredMessage(value: unknown, depth = 0): string | null {
       const readableFields = fields.map((field, index) => (
         index === 0 ? field : `${field[0].toLowerCase()}${field.slice(1)}`
       ));
-      return `Complete the required table details before requesting a recommendation: ${joinReadable(readableFields)}. Refresh the approved state to edit them, then approve it again.`;
+      return `Complete the required table details before requesting a recommendation: ${joinReadable(readableFields)}. Edit the listed fields, then approve the state again.`;
     }
   }
   for (const key of ["detail", "message", "error", "title"]) {

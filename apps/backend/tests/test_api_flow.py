@@ -215,6 +215,39 @@ def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
     ]
 
 
+def test_pipeline_endpoint_reports_fallbacks_for_unavailable_defaults(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_provider="llm_vision",
+        parser_enabled_providers=["mock"],
+        recommendation_provider="external_solver",
+        recommendation_enabled_providers=["rule_based"],
+    )
+
+    response = client.get("/api/pipeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["parser_providers"][0] == {
+        "id": "llm_vision",
+        "label": "External vision",
+        "available": False,
+        "unavailable_reason": "External parser URL is not configured",
+    }
+    assert payload["parser_providers"][1]["id"] == "mock"
+    assert payload["parser_providers"][1]["available"] is True
+    assert payload["recommendation_providers"][0] == {
+        "id": "external_solver",
+        "label": "External solver",
+        "available": False,
+        "unavailable_reason": "External solver URL is not configured",
+    }
+    assert payload["recommendation_providers"][1]["id"] == "rule_based"
+    assert payload["recommendation_providers"][1]["available"] is True
+
+
 def test_upload_persists_explicit_pipeline_selection(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,

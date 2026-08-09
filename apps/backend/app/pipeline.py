@@ -101,6 +101,7 @@ def resolve_pipeline_selection(
     require_known_defaults: bool = False,
     validate_parser: bool = True,
     enforce_recommendation_allowlist: bool = True,
+    validate_availability: bool = True,
 ) -> PipelineSelection:
     selected_parser = (parser_provider or settings.parser_provider).strip().lower()
     selected_layout = (
@@ -144,17 +145,18 @@ def resolve_pipeline_selection(
             ),
             "recommendation provider",
         )
-    if validate_parser:
-        parser_unavailable = _availability(settings, "parser", selected_parser)
-        if parser_unavailable:
-            raise PipelineSelectionError(parser_unavailable)
-    recommendation_unavailable = _availability(
-        settings,
-        "recommendation",
-        selected_recommendation,
-    )
-    if recommendation_unavailable:
-        raise PipelineSelectionError(recommendation_unavailable)
+    if validate_availability:
+        if validate_parser:
+            parser_unavailable = _availability(settings, "parser", selected_parser)
+            if parser_unavailable:
+                raise PipelineSelectionError(parser_unavailable)
+        recommendation_unavailable = _availability(
+            settings,
+            "recommendation",
+            selected_recommendation,
+        )
+        if recommendation_unavailable:
+            raise PipelineSelectionError(recommendation_unavailable)
 
     selected_engine: str | None = None
     if selected_recommendation == "local_solver":
@@ -224,7 +226,11 @@ def _option(
 
 
 def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
-    defaults = resolve_pipeline_selection(settings, require_known_defaults=True)
+    defaults = resolve_pipeline_selection(
+        settings,
+        require_known_defaults=True,
+        validate_availability=False,
+    )
     parsers = _enabled(settings.parser_provider, settings.parser_enabled_providers)
     layouts = _enabled(
         settings.parser_layout_profile,

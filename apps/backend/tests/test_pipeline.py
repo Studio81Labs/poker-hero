@@ -52,6 +52,56 @@ def test_capabilities_expose_defaults_and_enabled_plugins(tmp_path: Path) -> Non
     assert capabilities.recommendation_providers[1].available is False
 
 
+def test_capabilities_expose_fallbacks_when_defaults_are_unavailable(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        parser_provider="llm_vision",
+        parser_enabled_providers=["mock"],
+        recommendation_provider="external_solver",
+        recommendation_enabled_providers=["rule_based"],
+    )
+
+    capabilities = pipeline_capabilities(settings)
+
+    assert capabilities.defaults.parser_provider == "llm_vision"
+    assert capabilities.defaults.recommendation_provider == "external_solver"
+    assert [option.model_dump() for option in capabilities.parser_providers] == [
+        {
+            "id": "llm_vision",
+            "label": "External vision",
+            "available": False,
+            "unavailable_reason": "External parser URL is not configured",
+        },
+        {
+            "id": "mock",
+            "label": "Mock parser",
+            "available": True,
+            "unavailable_reason": None,
+        },
+    ]
+    assert [
+        option.model_dump() for option in capabilities.recommendation_providers
+    ] == [
+        {
+            "id": "external_solver",
+            "label": "External solver",
+            "available": False,
+            "unavailable_reason": "External solver URL is not configured",
+        },
+        {
+            "id": "rule_based",
+            "label": "Rule-based training",
+            "available": True,
+            "unavailable_reason": None,
+        },
+    ]
+
+    with pytest.raises(PipelineSelectionError, match="URL is not configured"):
+        resolve_pipeline_selection(settings)
+
+
 def test_selection_rejects_plugins_not_enabled_for_deployment(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)
 

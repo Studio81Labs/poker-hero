@@ -147,6 +147,7 @@ def import_parser_dataset(
     dataset: ParsedParserDataset,
     store: FileJobStore,
     recommendation_provider: str,
+    recommendation_engine: str | None,
     parser_provider: str,
     layout_profile: str,
     max_archive_bytes: int,
@@ -261,6 +262,7 @@ def import_parser_dataset(
                     parser_provider=dataset.parser_provider,
                     parser_layout_profile=dataset.layout_profile,
                     recommendation_provider=recommendation_provider,
+                    recommendation_engine=recommendation_engine,
                     job_id=case.job_id,
                 )
                 job.approved_state = case.approved_state
@@ -275,6 +277,7 @@ def import_parser_dataset(
                     parser_provider=dataset.parser_provider,
                     parser_layout_profile=dataset.layout_profile,
                     recommendation_provider=recommendation_provider,
+                    recommendation_engine=recommendation_engine,
                     approved_state=case.approved_state,
                     import_request_id=import_request_id,
                 )

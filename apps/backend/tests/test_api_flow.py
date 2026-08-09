@@ -3844,7 +3844,11 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     )
     archive = source_client.get("/api/benchmarks/export").content
     target_dir = tmp_path / "target"
-    target_client = make_client(target_dir)
+    target_client = make_client(
+        target_dir,
+        recommendation_provider="local_solver",
+        local_solver_engine="local_ev",
+    )
 
     imported = target_client.post(
         "/api/benchmarks/import",
@@ -3881,6 +3885,8 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert imported_job.status == "approved"
     assert imported_job.parser_result is None
     assert imported_job.recommendation is None
+    assert imported_job.recommendation_provider == "local_solver"
+    assert imported_job.recommendation_engine == "local_ev"
     assert imported_job.training_decision is None
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
 
@@ -3942,7 +3948,12 @@ def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
         json={"included": True},
     )
     archive = source_client.get("/api/benchmarks/export").content
-    target_client = make_client(tmp_path / "target")
+    target_dir = tmp_path / "target"
+    target_client = make_client(
+        target_dir,
+        recommendation_provider="local_solver",
+        local_solver_engine="local_ev",
+    )
     request_id = "benchmark-import-request-123"
     headers = {"X-Benchmark-Import-Request-ID": request_id}
 
@@ -3977,6 +3988,9 @@ def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
     }
     assert repeated.status_code == 200
     assert repeated.json() == imported.json()
+    imported_job = FileJobStore(target_dir).get(source_job_id)
+    assert imported_job.recommendation_provider == "local_solver"
+    assert imported_job.recommendation_engine == "local_ev"
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Benchmark dataset import not found"
 

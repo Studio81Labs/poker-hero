@@ -79,10 +79,16 @@ def _availability(
     return None
 
 
-def _configured_engine(settings: Settings) -> str:
+def configured_local_solver_engine(settings: Settings) -> str:
     if (settings.local_solver_command or "").strip():
         return "custom_local"
     return settings.local_solver_engine.strip().lower()
+
+
+def configured_recommendation_engine(settings: Settings) -> str | None:
+    if settings.recommendation_provider.strip().lower() != "local_solver":
+        return None
+    return configured_local_solver_engine(settings)
 
 
 def resolve_pipeline_selection(
@@ -152,7 +158,7 @@ def resolve_pipeline_selection(
 
     selected_engine: str | None = None
     if selected_recommendation == "local_solver":
-        configured_engine = _configured_engine(settings)
+        configured_engine = configured_local_solver_engine(settings)
         selected_engine = (recommendation_engine or configured_engine).strip().lower()
         if configured_engine == "custom_local":
             if selected_engine != "custom_local":
@@ -228,7 +234,7 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
         settings.recommendation_provider,
         settings.recommendation_enabled_providers,
     )
-    configured_engine = _configured_engine(settings)
+    configured_engine = configured_local_solver_engine(settings)
     engines = (
         ["custom_local"]
         if configured_engine == "custom_local"

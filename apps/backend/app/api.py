@@ -105,6 +105,7 @@ from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
 from app.pipeline import (
     PipelineSelectionError,
+    configured_recommendation_engine,
     pipeline_capabilities,
     resolve_pipeline_selection,
     settings_for_selection,
@@ -639,6 +640,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     dataset,
                     store,
                     recommendation_provider=active_settings.recommendation_provider,
+                    recommendation_engine=configured_recommendation_engine(
+                        active_settings
+                    ),
                     parser_provider=active_settings.parser_provider,
                     layout_profile=active_settings.parser_layout_profile,
                     max_archive_bytes=active_settings.max_dataset_upload_bytes,
@@ -1778,6 +1782,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         dataset,
                         store,
                         recommendation_provider=active_settings.recommendation_provider,
+                        recommendation_engine=configured_recommendation_engine(
+                            active_settings
+                        ),
                         parser_provider=active_settings.parser_provider,
                         layout_profile=active_settings.parser_layout_profile,
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,

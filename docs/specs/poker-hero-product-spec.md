@@ -235,7 +235,14 @@ calibrated Fortuna/Nations layout.
 
 ### Recommendation Registry
 
-The recommendation registry loads the active recommendation provider from configuration. Providers share one interface and receive canonical Texas Hold'em state.
+The recommendation registry loads the active recommendation provider from
+configuration. Providers share one interface and receive canonical Texas
+Hold'em state. Each installed provider has one immutable catalog descriptor
+that owns its runtime factory, user-facing label, and optional readiness check.
+The runtime factory and advertised capabilities consume the same descriptor;
+the deployment allowlist remains a separately validated boundary. Local solver
+engines are nested options of the `local_solver` provider rather than standalone
+recommendation providers.
 
 Provider types:
 
@@ -924,7 +931,10 @@ Example configuration concepts:
 - `recommendation.localEngine`: `postflop_solver` or `local_ev`.
 - Deployment allowlists for additional recommendation providers and local
   engines. The chosen pipeline is persisted with the job so later approval and
-  recommendation use the same configured tools.
+  recommendation use the same configured tools. Installed recommendation
+  provider IDs, labels, runtime factories, and readiness checks come from one
+  immutable catalog, while the allowlist controls which catalog entries users
+  may select in that deployment.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
 - Independent optional bearer tokens for external vision, solver, and LLM

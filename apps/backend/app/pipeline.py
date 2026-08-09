@@ -4,11 +4,15 @@ from collections.abc import Iterable
 
 from app.config import (
     KNOWN_LOCAL_SOLVER_ENGINES,
-    KNOWN_RECOMMENDATION_PROVIDERS,
     Settings,
 )
 from app.models import PipelineCapabilities, PipelineOption, PipelineSelection
 from app.parsers.registry import PARSER_PLUGINS, PARSER_PLUGIN_IDS, get_parser_plugin
+from app.providers.registry import (
+    RECOMMENDATION_PLUGINS,
+    RECOMMENDATION_PLUGIN_IDS,
+    get_recommendation_plugin,
+)
 
 LAYOUT_LABELS = {
     "generic": "Generic",
@@ -16,13 +20,6 @@ LAYOUT_LABELS = {
     "nations": "Nations",
     "fortuna_nations": "Fortuna / Nations",
     "pokerstars": "PokerStars",
-}
-RECOMMENDATION_LABELS = {
-    "rule_based": "Rule-based training",
-    "mock": "Mock recommendation",
-    "local_solver": "Local solver",
-    "external_solver": "External solver",
-    "llm_advice": "LLM advice",
 }
 ENGINE_LABELS = {
     "local_ev": "Local EV",
@@ -79,14 +76,9 @@ def _availability(
     if kind == "parser":
         plugin = PARSER_PLUGINS.get(value)
         return plugin.unavailable_reason(settings) if plugin is not None else None
-    if (
-        kind == "recommendation"
-        and value == "external_solver"
-        and not settings.external_provider_url
-    ):
-        return "External solver URL is not configured"
-    if kind == "recommendation" and value == "llm_advice" and not settings.llm_advice_url:
-        return "LLM advice URL is not configured"
+    if kind == "recommendation":
+        plugin = RECOMMENDATION_PLUGINS.get(value)
+        return plugin.unavailable_reason(settings) if plugin is not None else None
     return None
 
 
@@ -129,7 +121,7 @@ def resolve_pipeline_selection(
     if recommendation_provider is not None or require_known_defaults:
         _require_known(
             selected_recommendation,
-            KNOWN_RECOMMENDATION_PROVIDERS,
+            RECOMMENDATION_PLUGIN_IDS,
             "recommendation provider",
         )
     if validate_parser:
@@ -253,6 +245,17 @@ def _parser_option(
     )
 
 
+def _recommendation_option(settings: Settings, value: str) -> PipelineOption:
+    plugin = get_recommendation_plugin(value)
+    unavailable_reason = plugin.unavailable_reason(settings)
+    return PipelineOption(
+        id=value,
+        label=plugin.label,
+        available=unavailable_reason is None,
+        unavailable_reason=unavailable_reason,
+    )
+
+
 def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
     defaults = resolve_pipeline_selection(
         settings,
@@ -292,12 +295,7 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
         parser_layout_profiles=[_option(value, LAYOUT_LABELS) for value in layouts],
         parser_layout_compatibility=layout_compatibility,
         recommendation_providers=[
-            _option(
-                value,
-                RECOMMENDATION_LABELS,
-                _availability(settings, "recommendation", value),
-            )
-            for value in recommendations
+            _recommendation_option(settings, value) for value in recommendations
         ],
         recommendation_engines=[_option(value, ENGINE_LABELS) for value in engines],
     )

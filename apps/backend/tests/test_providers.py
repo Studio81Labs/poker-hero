@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from app.config import Settings
+from app.config import KNOWN_RECOMMENDATION_PROVIDERS, Settings
 from app.models import (
     CanonicalState,
     Card,
@@ -23,7 +23,14 @@ from app.providers.base import (
     missing_required_fields,
 )
 from app.providers.local_solver import _postflop_position
-from app.providers.registry import build_provider
+from app.providers.registry import (
+    RECOMMENDATION_PLUGINS,
+    RECOMMENDATION_PLUGIN_IDS,
+    RecommendationPlugin,
+    _plugin_catalog,
+    build_provider,
+    get_recommendation_plugin,
+)
 from app.solvers.ev_solver_cli import _hero_outcomes
 from app.solvers.wager_context import (
     resolve_hero_wager,
@@ -238,6 +245,94 @@ def test_required_field_validation_rejects_unknown_field() -> None:
 def test_registry_rejects_unknown_provider(tmp_path: Path) -> None:
     with pytest.raises(ProviderConfigurationError, match="Unknown recommendation provider"):
         build_provider(Settings(data_dir=tmp_path, recommendation_provider="missing"))
+
+
+def test_recommendation_plugin_catalog_matches_configuration_allowlist(
+    tmp_path: Path,
+) -> None:
+    assert RECOMMENDATION_PLUGIN_IDS == KNOWN_RECOMMENDATION_PROVIDERS
+    assert list(RECOMMENDATION_PLUGINS) == [
+        "rule_based",
+        "mock",
+        "local_solver",
+        "external_solver",
+        "llm_advice",
+    ]
+
+    assert get_recommendation_plugin("rule_based").label == "Rule-based training"
+    assert get_recommendation_plugin("mock").label == "Mock recommendation"
+    assert get_recommendation_plugin("local_solver").label == "Local solver"
+
+    external = get_recommendation_plugin("external_solver")
+    assert external.label == "External solver"
+    assert external.unavailable_reason(Settings(data_dir=tmp_path)) == (
+        "External solver URL is not configured"
+    )
+    assert (
+        external.unavailable_reason(
+            Settings(
+                data_dir=tmp_path,
+                external_provider_url="https://solver.example.com/recommend",
+            )
+        )
+        is None
+    )
+
+    llm = get_recommendation_plugin("llm_advice")
+    assert llm.label == "LLM advice"
+    assert llm.unavailable_reason(Settings(data_dir=tmp_path)) == (
+        "LLM advice URL is not configured"
+    )
+    assert (
+        llm.unavailable_reason(
+            Settings(
+                data_dir=tmp_path,
+                llm_advice_url="https://llm.example.com/recommend",
+            )
+        )
+        is None
+    )
+
+
+def test_recommendation_plugin_rejects_factory_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    mismatched = RecommendationPlugin(
+        id="different",
+        label="Different provider",
+        factory=RECOMMENDATION_PLUGINS["mock"].factory,
+    )
+
+    with pytest.raises(
+        ProviderConfigurationError,
+        match="built provider 'mock'",
+    ):
+        mismatched.build(Settings(data_dir=tmp_path))
+
+
+def test_recommendation_plugin_catalog_rejects_invalid_descriptors() -> None:
+    factory = RECOMMENDATION_PLUGINS["mock"].factory
+
+    with pytest.raises(ValueError, match="identity fields"):
+        RecommendationPlugin(id="", label="Missing ID", factory=factory)
+    with pytest.raises(TypeError, match="factory must be callable"):
+        RecommendationPlugin(  # type: ignore[arg-type]
+            id="invalid_factory",
+            label="Invalid factory",
+            factory=None,
+        )
+    with pytest.raises(TypeError, match="availability check must be callable"):
+        RecommendationPlugin(  # type: ignore[arg-type]
+            id="invalid_availability",
+            label="Invalid availability",
+            factory=factory,
+            availability_check="invalid",
+        )
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        _plugin_catalog(
+            RECOMMENDATION_PLUGINS["mock"],
+            RECOMMENDATION_PLUGINS["mock"],
+        )
 
 
 def test_local_solver_uses_bundled_solver_when_command_is_missing(tmp_path: Path) -> None:

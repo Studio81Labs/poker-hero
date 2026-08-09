@@ -18,6 +18,8 @@ pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --minimum-ev-coverage 0.90 \
   --minimum-conditioning-accuracy 1.00 \
   --minimum-conditioning-coverage 1.00 \
+  --minimum-range-source-accuracy 1.00 \
+  --minimum-range-source-coverage 1.00 \
   --maximum-policy-distance 0.15 \
   --maximum-ev-loss 0.05 \
   --maximum-fallback-rate 0.20
@@ -32,7 +34,7 @@ status `2` when the corpus or provider configuration is invalid.
 ```json
 {
   "schema": "poker-hero-recommendation-benchmark",
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "Reviewed heads-up turn sample",
   "reference_source": {
     "name": "Independent solver export",
@@ -45,8 +47,14 @@ status `2` when the corpus or provider configuration is invalid.
     {
       "id": "btn-vs-bb-turn-001",
       "description": "Button checks or bets half pot after a checked flop",
-      "tags": ["single-raised-pot", "in-position", "range-conditioning"],
+      "tags": [
+        "single-raised-pot",
+        "in-position",
+        "range-conditioning",
+        "range-source"
+      ],
       "expected_range_conditioning": "applied",
+      "expected_range_source": "preflop_chart_single_raised_pot",
       "state": {
         "hero_cards": [
           { "rank": "A", "suit": "hearts" },
@@ -112,7 +120,8 @@ The values above illustrate the file shape and are not strategy claims.
 - Reference frequencies are strict finite JSON numbers and sum to `1.0` per case.
 - `reference_source` records the independent solver or reviewed strategy source.
   Version-1 corpora without provenance or tags and version-2 corpora without
-  range-conditioning expectations remain readable; new corpora use version 3.
+  range-conditioning expectations remain readable. Version-3 corpora without
+  range-source expectations also remain readable; new corpora use version 4.
   Use `--require-reference-source` for trusted regression runs.
 - Lowercase case tags classify scenarios such as `single-raised-pot` and
   `facing-bet`. Reports include deterministic street and tag breakdowns; a case
@@ -138,6 +147,13 @@ The values above illustrate the file shape and are not strategy claims.
   `raw.range_conditioning.status`; an absent or malformed status lowers evidence
   coverage, while a recognized wrong status lowers agreement. The conditioning
   accuracy and coverage thresholds make both regressions fail explicitly.
+- Flop, turn, and river cases may declare `expected_range_source` as
+  `configured` or one of the `preflop_chart_*_pot` sources emitted by the local
+  postflop solver. The benchmark compares the exact value with
+  `raw.range_source`. A missing, malformed, or unknown source lowers evidence
+  coverage; a recognized but incorrect source lowers agreement. Use
+  `--minimum-range-source-accuracy` and `--minimum-range-source-coverage` to
+  make either regression fail the run.
 - Line, policy, and EV coverage report how many completed cases supplied enough
   evidence for each optional metric. Their minimum thresholds prevent missing
   sizes, frequencies, or EV labels from making a partial result look healthy.

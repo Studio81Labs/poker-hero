@@ -247,6 +247,10 @@ require provenance for trusted regression runs. Version-3 turn and river cases
 may also require the provider to report whether reviewed prior-street actions
 were applied to range conditioning or deliberately skipped. Agreement and
 evidence-coverage thresholds catch incorrect or missing conditioning metadata.
+Version-4 postflop cases may additionally require the exact `raw.range_source`
+selected by the provider. The benchmark validates that value against the
+configured and contextual source registry, then reports independent agreement
+and evidence coverage with optional CI thresholds for both.
 Reference frequencies must sum to one, sizing identities must be
 unambiguous at the configured tolerance, and EV labels cover either every line
 in a case or none.

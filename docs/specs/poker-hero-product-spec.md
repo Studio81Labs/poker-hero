@@ -755,7 +755,9 @@ provenance. Version-3 turn and river cases may require `applied` or `skipped`
 range-conditioning evidence; the report measures both status agreement and
 evidence coverage so missing provider metadata cannot pass unnoticed. The same
 provider registry and canonical request contract used by the application must
-be used by the benchmark.
+be used by the benchmark. Version-4 postflop cases may also require the exact
+configured or contextual range source, with separate agreement and evidence
+coverage thresholds so wrong routing and missing metadata remain distinguishable.
 
 ## Application Backup And Restore
 

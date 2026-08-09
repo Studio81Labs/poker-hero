@@ -301,7 +301,9 @@ export interface JobRecord {
   tags?: string[];
   image_filename: string;
   parser_provider: string;
+  parser_layout_profile?: string | null;
   recommendation_provider: string;
+  recommendation_engine?: string | null;
   parser_result: ParserResult | null;
   approved_state: CanonicalState | null;
   training_decision: TrainingDecision | null;
@@ -315,6 +317,28 @@ export interface JobRecord {
   error: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PipelineOption {
+  id: string;
+  label: string;
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
+export interface PipelineSelection {
+  parser_provider: string;
+  parser_layout_profile: string;
+  recommendation_provider: string;
+  recommendation_engine: string | null;
+}
+
+export interface PipelineCapabilities {
+  defaults: PipelineSelection;
+  parser_providers: PipelineOption[];
+  parser_layout_profiles: PipelineOption[];
+  recommendation_providers: PipelineOption[];
+  recommendation_engines: PipelineOption[];
 }
 
 export interface JobHistory {

@@ -198,6 +198,8 @@ class FileJobStore:
         image_bytes: bytes,
         parser_provider: str,
         recommendation_provider: str,
+        parser_layout_profile: str | None = None,
+        recommendation_engine: str | None = None,
         job_id: str | None = None,
         upload_request_id: str | None = None,
     ) -> JobRecord:
@@ -206,7 +208,9 @@ class FileJobStore:
             "original_filename": original_filename,
             "image_filename": f"original{image_suffix}",
             "parser_provider": parser_provider,
+            "parser_layout_profile": parser_layout_profile,
             "recommendation_provider": recommendation_provider,
+            "recommendation_engine": recommendation_engine,
             "upload_request_id": upload_request_id,
         }
         if job_id is not None:
@@ -226,6 +230,8 @@ class FileJobStore:
         image_bytes: bytes,
         parser_provider: str,
         recommendation_provider: str,
+        parser_layout_profile: str | None = None,
+        recommendation_engine: str | None = None,
         approved_state: CanonicalState,
         import_request_id: str,
     ) -> JobRecord:
@@ -236,7 +242,9 @@ class FileJobStore:
             original_filename=original_filename,
             image_filename=f"original{image_suffix}",
             parser_provider=parser_provider,
+            parser_layout_profile=parser_layout_profile,
             recommendation_provider=recommendation_provider,
+            recommendation_engine=recommendation_engine,
             approved_state=approved_state,
             benchmark_included=True,
             benchmark_import_request_id=import_request_id,

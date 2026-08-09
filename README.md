@@ -78,8 +78,16 @@ The main provider switches are:
 
 - `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, or `ocr_cv`
 - `POKER_PARSER_LAYOUT_PROFILE`: `generic`, `fortuna`, `nations`, or `fortuna_nations`
+- `POKER_PARSER_ENABLED_PROVIDERS` and
+  `POKER_PARSER_ENABLED_LAYOUT_PROFILES`: JSON lists of additional installed
+  plugins a user may select for each new upload or live capture; the deployment
+  defaults are always enabled
 - `POKER_RECOMMENDATION_PROVIDER`: `rule_based`, `mock`, `local_solver`, `external_solver`, or `llm_advice`
+- `POKER_RECOMMENDATION_ENABLED_PROVIDERS`: JSON list of additional installed
+  recommendation plugins exposed for per-screenshot selection
 - `POKER_LOCAL_SOLVER_ENGINE`: `postflop_solver` (default) or `local_ev`
+- `POKER_LOCAL_SOLVER_ENABLED_ENGINES`: JSON list of additional local solver
+  engines exposed when `local_solver` is selected
 - `POKER_POSTFLOP_SOLVER_RANGE_MODE`: derive ranges from a complete supported
   heads-up preflop history with `contextual` (default), or always use the
   configured OOP/IP ranges with `configured`

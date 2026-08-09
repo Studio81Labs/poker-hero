@@ -312,7 +312,8 @@ initialization and `get_environment_status` against the expected environment,
 and revokes the principal during cleanup. The credential expires within one
 hour if cleanup cannot reach the deployment. When the optional Cloudflare
 Access service credentials are configured, the authenticated probe forwards
-them only to the validated configuration and MCP URLs.
+them only to the validated deployment, configuration, and MCP URLs, including
+the ephemeral principal creation and revocation requests.
 
 ## Uptime Monitoring And Alerts
 

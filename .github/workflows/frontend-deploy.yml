@@ -176,6 +176,31 @@ jobs:
           MCP_SMOKE_URL: ${{ vars.MCP_SMOKE_URL }}
         run: |
           set -euo pipefail
+          node -e '
+            const url = new URL(process.env.URL);
+            if (
+              url.protocol !== "https:"
+              || url.username
+              || url.password
+              || url.pathname !== "/"
+              || url.search
+              || url.hash
+            ) {
+              console.error("::error::Deployment smoke URL must be an exact HTTPS origin");
+              process.exit(1);
+            }
+          '
+          ACCESS_CURL_ARGS=()
+          if [ -n "$CLOUDFLARE_ACCESS_CLIENT_ID" ] || [ -n "$CLOUDFLARE_ACCESS_CLIENT_SECRET" ]; then
+            test -n "$CLOUDFLARE_ACCESS_CLIENT_ID" && test -n "$CLOUDFLARE_ACCESS_CLIENT_SECRET" || {
+              echo "::error::Cloudflare Access client ID and secret must be configured together"
+              exit 1
+            }
+            ACCESS_CURL_ARGS+=(
+              --header "CF-Access-Client-Id: $CLOUDFLARE_ACCESS_CLIENT_ID"
+              --header "CF-Access-Client-Secret: $CLOUDFLARE_ACCESS_CLIENT_SECRET"
+            )
+          fi
           MCP_SMOKE_PRINCIPAL_ID=""
           cleanup_mcp_smoke_principal() {
             if [ -z "$MCP_SMOKE_PRINCIPAL_ID" ]; then
@@ -184,6 +209,7 @@ jobs:
             if curl --silent --show-error --fail-with-body \
               --request DELETE \
               --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
+              "${ACCESS_CURL_ARGS[@]}" \
               --output /dev/null \
               "$URL/api/mcp/principals/$MCP_SMOKE_PRINCIPAL_ID"; then
               echo "::notice::Revoked the ephemeral MCP smoke credential"
@@ -213,6 +239,7 @@ jobs:
             MCP_SMOKE_RESPONSE=$(curl --silent --show-error --fail-with-body \
               --request POST \
               --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
+              "${ACCESS_CURL_ARGS[@]}" \
               --header "Content-Type: application/json" \
               --data "$MCP_SMOKE_REQUEST" \
               "$URL/api/mcp/principals")

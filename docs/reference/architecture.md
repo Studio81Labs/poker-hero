@@ -34,6 +34,10 @@ registries define installed defaults and runtime allowlists. New uploads and liv
 captures may select an advertised parser, layout profile, recommendation provider,
 and local engine; that selection is persisted on the job so the frontend flow does
 not depend on a concrete engine.
+Layout profile IDs are deployment-defined data. The capability response includes
+a parser/layout compatibility matrix: multi-layout external vision can accept
+custom profiles such as `pokerstars`, while fixed-region OCR is selectable only
+with profiles for which its coordinates and templates are calibrated.
 Per-job mutations use bounded lock stripes around short storage transitions.
 Screenshot parsing runs outside those stripes, then reloads and merges into the
 latest job record so slow OCR does not block unrelated jobs and deleted uploads

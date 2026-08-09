@@ -4,9 +4,9 @@ from collections.abc import Iterable
 
 from app.config import (
     KNOWN_LOCAL_SOLVER_ENGINES,
-    KNOWN_PARSER_LAYOUT_PROFILES,
     KNOWN_PARSER_PROVIDERS,
     KNOWN_RECOMMENDATION_PROVIDERS,
+    OCR_CV_LAYOUT_PROFILES,
     Settings,
 )
 from app.models import PipelineCapabilities, PipelineOption, PipelineSelection
@@ -21,6 +21,7 @@ LAYOUT_LABELS = {
     "fortuna": "Fortuna",
     "nations": "Nations",
     "fortuna_nations": "Fortuna / Nations",
+    "pokerstars": "PokerStars",
 }
 RECOMMENDATION_LABELS = {
     "rule_based": "Rule-based training",
@@ -58,6 +59,18 @@ def _require_enabled(value: str, enabled: list[str], kind: str) -> None:
     if value not in enabled:
         raise PipelineSelectionError(
             f"{kind.capitalize()} '{value}' is not enabled for this deployment"
+        )
+
+
+def parser_supports_layout(parser_provider: str, layout_profile: str) -> bool:
+    return parser_provider != "ocr_cv" or layout_profile in OCR_CV_LAYOUT_PROFILES
+
+
+def _require_compatible_layout(parser_provider: str, layout_profile: str) -> None:
+    if not parser_supports_layout(parser_provider, layout_profile):
+        raise PipelineSelectionError(
+            f"Layout profile '{layout_profile}' is not supported by parser provider "
+            f"'{parser_provider}'"
         )
 
 
@@ -102,6 +115,7 @@ def resolve_pipeline_selection(
     validate_parser: bool = True,
     enforce_recommendation_allowlist: bool = True,
     validate_availability: bool = True,
+    validate_layout_compatibility: bool = True,
 ) -> PipelineSelection:
     selected_parser = (parser_provider or settings.parser_provider).strip().lower()
     selected_layout = (
@@ -114,8 +128,6 @@ def resolve_pipeline_selection(
     if validate_parser:
         if parser_provider is not None or require_known_defaults:
             _require_known(selected_parser, KNOWN_PARSER_PROVIDERS, "parser provider")
-        if parser_layout_profile is not None or require_known_defaults:
-            _require_known(selected_layout, KNOWN_PARSER_LAYOUT_PROFILES, "layout profile")
     if recommendation_provider is not None or require_known_defaults:
         _require_known(
             selected_recommendation,
@@ -136,6 +148,8 @@ def resolve_pipeline_selection(
             ),
             "layout profile",
         )
+        if validate_layout_compatibility:
+            _require_compatible_layout(selected_parser, selected_layout)
     if enforce_recommendation_allowlist:
         _require_enabled(
             selected_recommendation,
@@ -230,6 +244,7 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
         settings,
         require_known_defaults=True,
         validate_availability=False,
+        validate_layout_compatibility=False,
     )
     parsers = _enabled(settings.parser_provider, settings.parser_enabled_providers)
     layouts = _enabled(
@@ -246,13 +261,31 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
         if configured_engine == "custom_local"
         else _enabled(settings.local_solver_engine, settings.local_solver_enabled_engines)
     )
+    layout_compatibility = {
+        parser: [
+            layout
+            for layout in layouts
+            if parser_supports_layout(parser, layout)
+        ]
+        for parser in parsers
+    }
     return PipelineCapabilities(
         defaults=defaults,
         parser_providers=[
-            _option(value, PARSER_LABELS, _availability(settings, "parser", value))
+            _option(
+                value,
+                PARSER_LABELS,
+                _availability(settings, "parser", value)
+                or (
+                    None
+                    if layout_compatibility[value]
+                    else "No enabled layout profile is compatible with this parser"
+                ),
+            )
             for value in parsers
         ],
         parser_layout_profiles=[_option(value, LAYOUT_LABELS) for value in layouts],
+        parser_layout_compatibility=layout_compatibility,
         recommendation_providers=[
             _option(
                 value,

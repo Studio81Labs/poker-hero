@@ -461,6 +461,64 @@ function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider.replace(/_/g, " ");
 }
 
+function availablePipelineOption(
+  options: PipelineOption[],
+  optionId: string | null | undefined,
+): PipelineOption | undefined {
+  return options.find((option) => option.available && option.id === optionId);
+}
+
+function compatiblePipelineLayouts(
+  capabilities: PipelineCapabilities,
+  parserProvider: string,
+): PipelineOption[] {
+  const compatibleIds = capabilities.parser_layout_compatibility?.[parserProvider];
+  if (!compatibleIds) {
+    return capabilities.parser_layout_profiles;
+  }
+  const compatible = new Set(compatibleIds);
+  return capabilities.parser_layout_profiles.filter((option) => compatible.has(option.id));
+}
+
+function reconcilePipelineSelection(
+  capabilities: PipelineCapabilities,
+  candidate: PipelineSelection,
+): PipelineSelection {
+  const parserProvider = availablePipelineOption(
+    capabilities.parser_providers,
+    candidate.parser_provider,
+  )?.id ?? capabilities.parser_providers.find((option) => option.available)?.id
+    ?? capabilities.defaults.parser_provider;
+  const layouts = compatiblePipelineLayouts(capabilities, parserProvider);
+  const parserLayoutProfile = availablePipelineOption(
+    layouts,
+    candidate.parser_layout_profile,
+  )?.id ?? availablePipelineOption(layouts, capabilities.defaults.parser_layout_profile)?.id
+    ?? layouts.find((option) => option.available)?.id
+    ?? capabilities.defaults.parser_layout_profile;
+  const recommendationProvider = availablePipelineOption(
+    capabilities.recommendation_providers,
+    candidate.recommendation_provider,
+  )?.id ?? capabilities.recommendation_providers.find((option) => option.available)?.id
+    ?? capabilities.defaults.recommendation_provider;
+  const recommendationEngine = recommendationProvider === "local_solver"
+    ? availablePipelineOption(
+      capabilities.recommendation_engines,
+      candidate.recommendation_engine,
+    )?.id ?? availablePipelineOption(
+      capabilities.recommendation_engines,
+      capabilities.defaults.recommendation_engine,
+    )?.id ?? capabilities.recommendation_engines.find((option) => option.available)?.id
+      ?? null
+    : null;
+  return {
+    parser_provider: parserProvider,
+    parser_layout_profile: parserLayoutProfile,
+    recommendation_provider: recommendationProvider,
+    recommendation_engine: recommendationEngine,
+  };
+}
+
 function metadataRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -8133,7 +8191,10 @@ export default function App() {
     void getPipelineCapabilities()
       .then((capabilities) => {
         setPipelineCapabilities(capabilities);
-        setPipelineSelection((current) => current ?? capabilities.defaults);
+        setPipelineSelection((current) => reconcilePipelineSelection(
+          capabilities,
+          current ?? capabilities.defaults,
+        ));
       })
       .catch((pipelineError) => {
         setError(messageFromError(pipelineError, "Could not read analysis plugins"));
@@ -8142,13 +8203,24 @@ export default function App() {
   }
 
   function updatePipelineSelection(
-    field: "parser_provider" | "parser_layout_profile" | "recommendation_engine",
+    field: "parser_layout_profile" | "recommendation_engine",
     value: string,
   ) {
     setPipelineSelection((current) => current ? {
       ...current,
       [field]: value,
     } : current);
+  }
+
+  function updateParserProvider(value: string) {
+    setPipelineSelection((current) => (
+      current && pipelineCapabilities
+        ? reconcilePipelineSelection(pipelineCapabilities, {
+          ...current,
+          parser_provider: value,
+        })
+        : current
+    ));
   }
 
   function updateRecommendationProvider(value: string) {
@@ -10712,13 +10784,16 @@ export default function App() {
                     description="Reads the table state from the screenshot"
                     options={pipelineCapabilities.parser_providers}
                     value={pipelineSelection.parser_provider}
-                    onChange={(value) => updatePipelineSelection("parser_provider", value)}
+                    onChange={updateParserProvider}
                   />
                   <PipelineSelect
                     id="pipeline-layout"
                     label="Table layout"
                     description="Defines where cards, wagers, and player seats are located"
-                    options={pipelineCapabilities.parser_layout_profiles}
+                    options={compatiblePipelineLayouts(
+                      pipelineCapabilities,
+                      pipelineSelection.parser_provider,
+                    )}
                     value={pipelineSelection.parser_layout_profile}
                     onChange={(value) => updatePipelineSelection("parser_layout_profile", value)}
                   />

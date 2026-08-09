@@ -34,6 +34,11 @@ a missing or mismatched identity. The backend image already contains
 tree limit is separate from container overhead, so allocate at least 1.5 GB RAM
 or lower `POKER_POSTFLOP_SOLVER_MAX_MEMORY_MB`. Keep provider URLs and
 credentials in Coolify secrets.
+To expose another poker client through `llm_vision`, add its normalized ID to
+`POKER_PARSER_ENABLED_LAYOUT_PROFILES` and enable `llm_vision` in
+`POKER_PARSER_ENABLED_PROVIDERS`. The API advertises parser/layout compatibility,
+so deployment-defined profiles such as `pokerstars` are not offered with the
+fixed-coordinate `ocr_cv` parser until local calibration is implemented.
 `POKER_POSTFLOP_SOLVER_RANGE_MODE=contextual` uses a complete supported flop
 open-and-call, open/3-bet/call, or open/3-bet/4-bet/call history whose
 reconstructed root pot matches the recorded final commitments to select

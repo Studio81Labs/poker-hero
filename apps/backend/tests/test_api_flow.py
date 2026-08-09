@@ -209,6 +209,9 @@ def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
         "generic",
         "fortuna_nations",
     ]
+    assert payload["parser_layout_compatibility"] == {
+        "mock": ["generic", "fortuna_nations"],
+    }
     assert [option["id"] for option in payload["recommendation_providers"]] == [
         "mock",
         "rule_based",
@@ -251,21 +254,21 @@ def test_pipeline_endpoint_reports_fallbacks_for_unavailable_defaults(
 def test_upload_persists_explicit_pipeline_selection(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,
-        parser_enabled_layout_profiles=["fortuna"],
+        parser_enabled_layout_profiles=["pokerstars"],
         recommendation_enabled_providers=["rule_based"],
     )
 
     response = upload_job_with_pipeline(
         client,
         parser_provider="mock",
-        parser_layout_profile="fortuna",
+        parser_layout_profile="pokerstars",
         recommendation_provider="rule_based",
     )
 
     assert response.status_code == 201
     payload = response.json()
     assert payload["parser_provider"] == "mock"
-    assert payload["parser_layout_profile"] == "fortuna"
+    assert payload["parser_layout_profile"] == "pokerstars"
     assert payload["recommendation_provider"] == "rule_based"
     assert payload["recommendation_engine"] is None
 
@@ -285,6 +288,29 @@ def test_upload_rejects_pipeline_plugin_not_enabled_by_deployment(
     assert response.status_code == 400
     assert response.json()["detail"] == (
         "Parser provider 'ocr_cv' is not enabled for this deployment"
+    )
+    assert list((tmp_path / "jobs").iterdir()) == []
+
+
+def test_upload_rejects_layout_not_supported_by_selected_parser(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_enabled_providers=["ocr_cv"],
+        parser_enabled_layout_profiles=["pokerstars"],
+    )
+
+    response = upload_job_with_pipeline(
+        client,
+        parser_provider="ocr_cv",
+        parser_layout_profile="pokerstars",
+        recommendation_provider="mock",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Layout profile 'pokerstars' is not supported by parser provider 'ocr_cv'"
     )
     assert list((tmp_path / "jobs").iterdir()) == []
 

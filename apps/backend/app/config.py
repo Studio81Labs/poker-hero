@@ -1,3 +1,4 @@
+import re
 from functools import lru_cache
 from ipaddress import AddressValueError, IPv4Address, IPv6Address
 from pathlib import Path
@@ -9,9 +10,10 @@ from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_va
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Threshold = Annotated[float, Field(ge=0, le=1)]
+PIPELINE_ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
 KNOWN_PARSER_PROVIDERS = frozenset({"mock", "llm_vision", "ocr_cv"})
-KNOWN_PARSER_LAYOUT_PROFILES = frozenset(
+OCR_CV_LAYOUT_PROFILES = frozenset(
     {"generic", "fortuna", "nations", "fortuna_nations"}
 )
 KNOWN_RECOMMENDATION_PROVIDERS = frozenset(
@@ -92,7 +94,12 @@ class Settings(BaseSettings):
     )
     access_log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     parser_provider: str = Field(default="mock")
-    parser_layout_profile: str = Field(default="generic")
+    parser_layout_profile: str = Field(
+        default="generic",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
     parser_enabled_providers: list[str] = Field(default_factory=list, max_length=16)
     parser_enabled_layout_profiles: list[str] = Field(
         default_factory=list,
@@ -171,6 +178,13 @@ class Settings(BaseSettings):
             return value.strip().upper()
         return value
 
+    @field_validator("parser_layout_profile", mode="before")
+    @classmethod
+    def normalize_parser_layout_profile(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
     @field_validator(
         "parser_enabled_providers",
         "parser_enabled_layout_profiles",
@@ -185,16 +199,25 @@ class Settings(BaseSettings):
     ) -> list[str]:
         known_values = {
             "parser_enabled_providers": KNOWN_PARSER_PROVIDERS,
-            "parser_enabled_layout_profiles": KNOWN_PARSER_LAYOUT_PROFILES,
             "recommendation_enabled_providers": KNOWN_RECOMMENDATION_PROVIDERS,
             "local_solver_enabled_engines": KNOWN_LOCAL_SOLVER_ENGINES,
-        }[info.field_name]
+        }.get(info.field_name)
         normalized: list[str] = []
         for item in value:
             candidate = item.strip().lower()
-            if candidate not in known_values:
+            if known_values is not None and candidate not in known_values:
                 raise ValueError(
                     f"{info.field_name} contains unknown plugin ID: {item}"
+                )
+            if (
+                info.field_name == "parser_enabled_layout_profiles"
+                and (
+                    len(candidate) > 64
+                    or PIPELINE_ID_PATTERN.fullmatch(candidate) is None
+                )
+            ):
+                raise ValueError(
+                    f"{info.field_name} contains invalid layout profile ID: {item}"
                 )
             if candidate not in normalized:
                 normalized.append(candidate)

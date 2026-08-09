@@ -337,6 +337,7 @@ export interface PipelineCapabilities {
   defaults: PipelineSelection;
   parser_providers: PipelineOption[];
   parser_layout_profiles: PipelineOption[];
+  parser_layout_compatibility?: Record<string, string[]>;
   recommendation_providers: PipelineOption[];
   recommendation_engines: PipelineOption[];
 }

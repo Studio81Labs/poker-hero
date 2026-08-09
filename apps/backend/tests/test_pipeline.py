@@ -45,6 +45,10 @@ def test_capabilities_expose_defaults_and_enabled_plugins(tmp_path: Path) -> Non
         "fortuna_nations",
         "generic",
     ]
+    assert capabilities.parser_layout_compatibility == {
+        "ocr_cv": ["fortuna_nations", "generic"],
+        "llm_vision": ["fortuna_nations", "generic"],
+    }
     assert [option.id for option in capabilities.recommendation_engines] == [
         "postflop_solver",
         "local_ev",
@@ -100,6 +104,41 @@ def test_capabilities_expose_fallbacks_when_defaults_are_unavailable(
 
     with pytest.raises(PipelineSelectionError, match="URL is not configured"):
         resolve_pipeline_selection(settings)
+
+
+def test_custom_layout_profiles_are_provider_aware(tmp_path: Path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        parser_provider="llm_vision",
+        parser_enabled_providers=["ocr_cv"],
+        parser_layout_profile="pokerstars",
+        parser_enabled_layout_profiles=["fortuna_nations"],
+        external_parser_url="https://parser.example.com/analyze",
+    )
+
+    capabilities = pipeline_capabilities(settings)
+
+    assert [option.id for option in capabilities.parser_layout_profiles] == [
+        "pokerstars",
+        "fortuna_nations",
+    ]
+    assert capabilities.parser_layout_profiles[0].label == "PokerStars"
+    assert capabilities.parser_layout_compatibility == {
+        "llm_vision": ["pokerstars", "fortuna_nations"],
+        "ocr_cv": ["fortuna_nations"],
+    }
+    assert resolve_pipeline_selection(
+        settings,
+        parser_provider="llm_vision",
+        parser_layout_profile="pokerstars",
+    ).parser_layout_profile == "pokerstars"
+
+    with pytest.raises(PipelineSelectionError, match="not supported"):
+        resolve_pipeline_selection(
+            settings,
+            parser_provider="ocr_cv",
+            parser_layout_profile="pokerstars",
+        )
 
 
 def test_selection_rejects_plugins_not_enabled_for_deployment(tmp_path: Path) -> None:
@@ -185,9 +224,14 @@ def test_enabled_plugin_ids_are_normalized_and_validated(tmp_path: Path) -> None
     settings = Settings(
         data_dir=tmp_path,
         parser_enabled_providers=[" OCR_CV ", "ocr_cv"],
+        parser_enabled_layout_profiles=[" PokerStars ", "pokerstars"],
     )
 
     assert settings.parser_enabled_providers == ["ocr_cv"]
+    assert settings.parser_enabled_layout_profiles == ["pokerstars"]
 
     with pytest.raises(ValidationError, match="unknown plugin ID"):
         Settings(data_dir=tmp_path, parser_enabled_providers=["shell_command"])
+
+    with pytest.raises(ValidationError, match="invalid layout profile ID"):
+        Settings(data_dir=tmp_path, parser_enabled_layout_profiles=["poker-stars"])

@@ -207,6 +207,8 @@ jobs:
               return
             fi
             if curl --silent --show-error --fail-with-body \
+              --connect-timeout 10 \
+              --max-time 30 \
               --request DELETE \
               --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
               "${ACCESS_CURL_ARGS[@]}" \
@@ -245,6 +247,8 @@ jobs:
               --arg expires_at "$MCP_SMOKE_EXPIRY" \
               '{name: $name, scopes: ["read"], expires_at: $expires_at}')
             MCP_SMOKE_RESPONSE=$(curl --silent --show-error --fail-with-body \
+              --connect-timeout 10 \
+              --max-time 30 \
               --request POST \
               --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
               "${ACCESS_CURL_ARGS[@]}" \

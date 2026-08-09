@@ -1228,6 +1228,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 recommendation_provider=job.recommendation_provider,
                 recommendation_engine=job.recommendation_engine,
                 validate_parser=False,
+                enforce_recommendation_allowlist=False,
             )
             provider = build_provider(settings_for_selection(active_settings, selection))
             missing = missing_required_fields(

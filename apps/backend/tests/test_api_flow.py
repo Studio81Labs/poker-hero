@@ -1302,6 +1302,38 @@ def test_recommendation_does_not_require_a_completed_job_parser_to_remain_enable
     assert response.json()["status"] == "recommended"
 
 
+def test_recommendation_does_not_require_a_persisted_provider_to_remain_enabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        parser_provider="mock",
+        recommendation_provider="mock",
+        recommendation_enabled_providers=["rule_based"],
+    )
+    client = TestClient(create_app(settings))
+    upload = upload_job_with_pipeline(
+        client,
+        parser_provider="mock",
+        parser_layout_profile="generic",
+        recommendation_provider="rule_based",
+    )
+    job_id = upload.json()["id"]
+    approve_job(client, job_id)
+    settings.recommendation_enabled_providers = []
+    monkeypatch.setattr(
+        api_module,
+        "build_provider",
+        lambda _settings: MockRecommendationProvider(),
+    )
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "recommended"
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [

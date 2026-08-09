@@ -94,6 +94,7 @@ def resolve_pipeline_selection(
     recommendation_engine: str | None = None,
     require_known_defaults: bool = False,
     validate_parser: bool = True,
+    enforce_recommendation_allowlist: bool = True,
 ) -> PipelineSelection:
     selected_parser = (parser_provider or settings.parser_provider).strip().lower()
     selected_layout = (
@@ -128,14 +129,15 @@ def resolve_pipeline_selection(
             ),
             "layout profile",
         )
-    _require_enabled(
-        selected_recommendation,
-        _enabled(
-            settings.recommendation_provider,
-            settings.recommendation_enabled_providers,
-        ),
-        "recommendation provider",
-    )
+    if enforce_recommendation_allowlist:
+        _require_enabled(
+            selected_recommendation,
+            _enabled(
+                settings.recommendation_provider,
+                settings.recommendation_enabled_providers,
+            ),
+            "recommendation provider",
+        )
     if validate_parser:
         parser_unavailable = _availability(settings, "parser", selected_parser)
         if parser_unavailable:
@@ -163,14 +165,15 @@ def resolve_pipeline_selection(
                 KNOWN_LOCAL_SOLVER_ENGINES,
                 "recommendation engine",
             )
-            _require_enabled(
-                selected_engine,
-                _enabled(
-                    settings.local_solver_engine,
-                    settings.local_solver_enabled_engines,
-                ),
-                "recommendation engine",
-            )
+            if enforce_recommendation_allowlist:
+                _require_enabled(
+                    selected_engine,
+                    _enabled(
+                        settings.local_solver_engine,
+                        settings.local_solver_enabled_engines,
+                    ),
+                    "recommendation engine",
+                )
     elif recommendation_engine:
         raise PipelineSelectionError(
             "A recommendation engine can be selected only with the local solver provider"

@@ -5197,6 +5197,100 @@ describe("App", () => {
     expect(within(screen.getByLabelText("Parser confidence summary")).getByText("1")).toBeInTheDocument();
   });
 
+  it("clears an inferred wager when facing action is corrected to a raise", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      players_in_hand: 2,
+      opponent_wager: 10,
+      street: "flop",
+      facing_action: "bet",
+      action_context: "Hero faces a 10 BB bet into 31.7 BB pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("10");
+    await user.selectOptions(screen.getByLabelText(/Facing action/), "raise");
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 1 type"), "bet");
+    await user.type(screen.getByLabelText("Action 1 amount"), "5");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 2 type"), "raise");
+    await user.type(screen.getByLabelText("Action 2 amount"), "15");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBeNull();
+    expect(payload.postflop_action_history).toEqual([
+      { actor: "oop", action: "bet", amount: 5 },
+      { actor: "ip", action: "raise", amount: 15 },
+    ]);
+  });
+
+  it("clears an inferred wager when the current bet is corrected", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      opponent_wager: 10,
+      street: "river",
+      facing_action: "bet",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const currentBetInput = screen.getByLabelText(/Current bet/);
+    await user.clear(currentBetInput);
+    await user.type(currentBetInput, "8");
+
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+  });
+
+  it("clears a postflop inferred wager when the street is corrected to preflop", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      opponent_wager: 10,
+      street: "flop",
+      facing_action: "bet",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.selectOptions(screen.getByLabelText(/Street/), "preflop");
+
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+  });
+
   it("excludes opponent-wager confidence from check spots", async () => {
     const checkState: DetectedState = {
       ...detectedState,

@@ -7926,6 +7926,13 @@ export default function App() {
           next.opponent_commitment_total = "";
         }
       }
+      if (
+        field === "current_bet"
+        || (field === "facing_action" && value !== "bet")
+        || (field === "street" && (value === "" || value === "preflop"))
+      ) {
+        next.opponent_wager = "";
+      }
       formDirtyRef.current = JSON.stringify(next)
         !== JSON.stringify(formBaselineRef.current);
       return next;

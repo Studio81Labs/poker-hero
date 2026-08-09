@@ -150,6 +150,9 @@ def test_selection_rejects_plugins_not_enabled_for_deployment(tmp_path: Path) ->
     with pytest.raises(PipelineSelectionError, match="Unknown parser provider"):
         resolve_pipeline_selection(settings, parser_provider="missing")
 
+    with pytest.raises(PipelineSelectionError, match="Unknown recommendation provider"):
+        resolve_pipeline_selection(settings, recommendation_provider="missing")
+
 
 def test_selection_rejects_engine_without_local_solver(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)

@@ -38,6 +38,9 @@ Each installed parser is represented by one immutable catalog descriptor that
 owns its factory, label, readiness check, and supported-layout policy. Runtime
 construction and pipeline capabilities consume the same descriptor, while the
 configuration allowlist remains a separately validated deployment boundary.
+Recommendation providers follow the same catalog contract for their factory,
+label, and readiness check. Local solver engines remain a nested selection of
+the `local_solver` provider and retain their independent deployment allowlist.
 Layout profile IDs are deployment-defined data. The capability response includes
 a parser/layout compatibility matrix: multi-layout external vision can accept
 custom profiles such as `pokerstars`, while fixed-region OCR is selectable only

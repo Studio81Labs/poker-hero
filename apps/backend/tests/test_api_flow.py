@@ -3425,6 +3425,25 @@ def test_parser_configuration_errors_are_http_errors_and_stored(tmp_path: Path) 
     assert job.error == "Unknown parser provider: missing"
 
 
+def test_provider_configuration_errors_are_http_errors_and_stored(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path, recommendation_provider="missing")
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        "Provider configuration error: Unknown recommendation provider: missing"
+    )
+    job = FileJobStore(tmp_path).get(job_id)
+    assert job.status == "error"
+    assert job.error == "Unknown recommendation provider: missing"
+    assert job.recommendation_pending is False
+
+
 def test_parser_runtime_errors_are_bad_gateway_and_stored(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

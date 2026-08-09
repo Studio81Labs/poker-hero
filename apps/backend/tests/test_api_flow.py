@@ -218,6 +218,30 @@ def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
     ]
 
 
+def test_pipeline_endpoint_tolerates_unknown_inactive_local_engine(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="rule_based",
+        local_solver_engine="missing",
+    )
+
+    response = client.get("/api/pipeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["defaults"]["recommendation_engine"] is None
+    assert payload["recommendation_engines"] == [
+        {
+            "id": "missing",
+            "label": "Missing",
+            "available": True,
+            "unavailable_reason": None,
+        }
+    ]
+
+
 def test_pipeline_endpoint_reports_fallbacks_for_unavailable_defaults(
     tmp_path: Path,
 ) -> None:

@@ -106,6 +106,40 @@ def test_capabilities_expose_fallbacks_when_defaults_are_unavailable(
         resolve_pipeline_selection(settings)
 
 
+def test_capabilities_tolerate_unknown_inactive_local_engine(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        recommendation_provider="rule_based",
+        local_solver_engine="missing",
+    )
+
+    capabilities = pipeline_capabilities(settings)
+
+    assert capabilities.defaults.recommendation_provider == "rule_based"
+    assert capabilities.defaults.recommendation_engine is None
+    assert [
+        option.model_dump() for option in capabilities.recommendation_engines
+    ] == [
+        {
+            "id": "missing",
+            "label": "Missing",
+            "available": True,
+            "unavailable_reason": None,
+        }
+    ]
+
+    with pytest.raises(PipelineSelectionError, match="Unknown recommendation engine"):
+        pipeline_capabilities(
+            Settings(
+                data_dir=tmp_path,
+                recommendation_provider="local_solver",
+                local_solver_engine="missing",
+            )
+        )
+
+
 def test_custom_layout_profiles_are_provider_aware(tmp_path: Path) -> None:
     settings = Settings(
         data_dir=tmp_path,

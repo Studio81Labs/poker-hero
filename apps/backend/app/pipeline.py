@@ -14,7 +14,7 @@ from app.providers.registry import (
 )
 from app.solvers.registry import (
     DEPLOYMENT_SELECTABLE_LOCAL_SOLVER_ENGINE_IDS,
-    get_local_solver_engine,
+    LOCAL_SOLVER_ENGINE_PLUGINS,
 )
 
 LAYOUT_LABELS = {
@@ -253,7 +253,11 @@ def _recommendation_option(settings: Settings, value: str) -> PipelineOption:
 
 
 def _solver_engine_option(value: str) -> PipelineOption:
-    plugin = get_local_solver_engine(value)
+    plugin = LOCAL_SOLVER_ENGINE_PLUGINS.get(value)
+    if plugin is None:
+        # Inactive stale defaults remain visible for deployment diagnosis. An
+        # attempt to select local_solver still rejects the unknown engine.
+        return _option(value, {})
     return PipelineOption(
         id=value,
         label=plugin.label,

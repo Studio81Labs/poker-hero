@@ -208,7 +208,11 @@ results or portable backups.
 
 ### Parser Registry
 
-The parser registry loads the active parser from configuration. Parser implementations share one interface and return normalized structured output plus confidence data.
+The parser registry loads the active parser from configuration. Parser
+implementations share one interface and return normalized structured output
+plus confidence data. Each installed parser has one immutable catalog descriptor
+for its factory, label, readiness check, and supported-layout policy; runtime
+construction and capability discovery must consume that same descriptor.
 
 Parser types:
 

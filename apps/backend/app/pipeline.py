@@ -4,18 +4,12 @@ from collections.abc import Iterable
 
 from app.config import (
     KNOWN_LOCAL_SOLVER_ENGINES,
-    KNOWN_PARSER_PROVIDERS,
     KNOWN_RECOMMENDATION_PROVIDERS,
-    OCR_CV_LAYOUT_PROFILES,
     Settings,
 )
 from app.models import PipelineCapabilities, PipelineOption, PipelineSelection
+from app.parsers.registry import PARSER_PLUGINS, PARSER_PLUGIN_IDS, get_parser_plugin
 
-PARSER_LABELS = {
-    "mock": "Mock parser",
-    "llm_vision": "External vision",
-    "ocr_cv": "Template OCR",
-}
 LAYOUT_LABELS = {
     "generic": "Generic",
     "fortuna": "Fortuna",
@@ -63,7 +57,10 @@ def _require_enabled(value: str, enabled: list[str], kind: str) -> None:
 
 
 def parser_supports_layout(parser_provider: str, layout_profile: str) -> bool:
-    return parser_provider != "ocr_cv" or layout_profile in OCR_CV_LAYOUT_PROFILES
+    plugin = PARSER_PLUGINS.get(parser_provider)
+    # Unknown deployment defaults remain runtime parser errors so the job can
+    # persist their failure; explicit user selections are rejected earlier.
+    return plugin is None or plugin.supports_layout(layout_profile)
 
 
 def _require_compatible_layout(parser_provider: str, layout_profile: str) -> None:
@@ -79,8 +76,9 @@ def _availability(
     kind: str,
     value: str,
 ) -> str | None:
-    if kind == "parser" and value == "llm_vision" and not settings.external_parser_url:
-        return "External parser URL is not configured"
+    if kind == "parser":
+        plugin = PARSER_PLUGINS.get(value)
+        return plugin.unavailable_reason(settings) if plugin is not None else None
     if (
         kind == "recommendation"
         and value == "external_solver"
@@ -127,7 +125,7 @@ def resolve_pipeline_selection(
 
     if validate_parser:
         if parser_provider is not None or require_known_defaults:
-            _require_known(selected_parser, KNOWN_PARSER_PROVIDERS, "parser provider")
+            _require_known(selected_parser, PARSER_PLUGIN_IDS, "parser provider")
     if recommendation_provider is not None or require_known_defaults:
         _require_known(
             selected_recommendation,
@@ -239,6 +237,22 @@ def _option(
     )
 
 
+def _parser_option(
+    settings: Settings,
+    value: str,
+    compatible_layouts: list[str],
+) -> PipelineOption:
+    unavailable_reason = _availability(settings, "parser", value)
+    if unavailable_reason is None and not compatible_layouts:
+        unavailable_reason = "No enabled layout profile is compatible with this parser"
+    return PipelineOption(
+        id=value,
+        label=get_parser_plugin(value).label,
+        available=unavailable_reason is None,
+        unavailable_reason=unavailable_reason,
+    )
+
+
 def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
     defaults = resolve_pipeline_selection(
         settings,
@@ -272,16 +286,7 @@ def pipeline_capabilities(settings: Settings) -> PipelineCapabilities:
     return PipelineCapabilities(
         defaults=defaults,
         parser_providers=[
-            _option(
-                value,
-                PARSER_LABELS,
-                _availability(settings, "parser", value)
-                or (
-                    None
-                    if layout_compatibility[value]
-                    else "No enabled layout profile is compatible with this parser"
-                ),
-            )
+            _parser_option(settings, value, layout_compatibility[value])
             for value in parsers
         ],
         parser_layout_profiles=[_option(value, LAYOUT_LABELS) for value in layouts],

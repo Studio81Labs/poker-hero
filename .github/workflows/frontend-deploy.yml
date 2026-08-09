@@ -25,6 +25,9 @@ name: Frontend Deploy
 #   APP_WORKER_NAME           e.g. poker-staging or poker
 #   BACKEND_URL                Backend origin proxied by the Worker, e.g. https://coolify-app.example.com
 #
+# Required for staging and any other environment with hosted MCP enabled:
+#   MCP_SMOKE_URL              Exact public HTTPS /mcp URL
+#
 # Optional per-environment vars:
 #   VITE_API_BASE_URL          Overrides the browser API base URL; defaults to same-origin in production
 #   VITE_SENTRY_DSN            Enables privacy-scrubbed browser error reporting
@@ -43,6 +46,7 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "scripts/check-deployment.mjs"
+      - "scripts/check-mcp-deployment.mjs"
       - ".github/workflows/frontend-deploy.yml"
   workflow_dispatch:
     inputs:
@@ -162,15 +166,67 @@ jobs:
       - name: Smoke test
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          ENV_NAME: ${{ steps.env.outputs.name }}
           BACKEND_URL: ${{ vars.BACKEND_URL }}
           API_PROXY_SECRET: ${{ secrets.API_PROXY_SECRET }}
           CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
           CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+          MCP_ADMIN_TOKEN: ${{ secrets.MCP_ADMIN_TOKEN }}
+          MCP_CONFIG_URL: ${{ steps.deploy.outputs.url }}/api/mcp/config
+          MCP_SMOKE_URL: ${{ vars.MCP_SMOKE_URL }}
         run: |
           set -euo pipefail
+          MCP_SMOKE_PRINCIPAL_ID=""
+          cleanup_mcp_smoke_principal() {
+            if [ -z "$MCP_SMOKE_PRINCIPAL_ID" ]; then
+              return
+            fi
+            if curl --silent --show-error --fail-with-body \
+              --request DELETE \
+              --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
+              --output /dev/null \
+              "$URL/api/mcp/principals/$MCP_SMOKE_PRINCIPAL_ID"; then
+              echo "::notice::Revoked the ephemeral MCP smoke credential"
+            else
+              echo "::warning::Could not revoke the ephemeral MCP smoke credential; it expires within one hour"
+            fi
+          }
+          trap cleanup_mcp_smoke_principal EXIT
+
+          if [ "$ENV_NAME" = "staging" ]; then
+            test -n "$MCP_SMOKE_URL" || {
+              echo "::error::MCP_SMOKE_URL var is required for the staging environment"
+              exit 1
+            }
+          fi
+          if [ -n "$MCP_SMOKE_URL" ]; then
+            test -n "$MCP_ADMIN_TOKEN" || {
+              echo "::error::MCP_ADMIN_TOKEN is required when MCP_SMOKE_URL is configured"
+              exit 1
+            }
+            MCP_SMOKE_EXPIRY=$(node -e \
+              'process.stdout.write(new Date(Date.now() + 60 * 60 * 1000).toISOString())')
+            MCP_SMOKE_REQUEST=$(jq -cn \
+              --arg name "GitHub deployment smoke ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+              --arg expires_at "$MCP_SMOKE_EXPIRY" \
+              '{name: $name, scopes: ["read"], expires_at: $expires_at}')
+            MCP_SMOKE_RESPONSE=$(curl --silent --show-error --fail-with-body \
+              --request POST \
+              --header "Authorization: Bearer $MCP_ADMIN_TOKEN" \
+              --header "Content-Type: application/json" \
+              --data "$MCP_SMOKE_REQUEST" \
+              "$URL/api/mcp/principals")
+            MCP_SMOKE_PRINCIPAL_ID=$(jq -er '.principal.id' <<<"$MCP_SMOKE_RESPONSE")
+            MCP_SMOKE_TOKEN=$(jq -er '.token' <<<"$MCP_SMOKE_RESPONSE")
+            export MCP_SMOKE_TOKEN
+          fi
+
           node scripts/check-deployment.mjs "$URL" \
             --attempts 5 \
             --retry-delay-ms 5000
+          if [ -n "$MCP_SMOKE_URL" ]; then
+            node scripts/check-mcp-deployment.mjs "$MCP_SMOKE_URL" "$ENV_NAME"
+          fi
 
           # The template expression belongs to Node.js, not the shell.
           # shellcheck disable=SC2016

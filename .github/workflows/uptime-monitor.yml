@@ -16,6 +16,8 @@ on:
     paths:
       - "scripts/check-deployment.mjs"
       - "scripts/check-deployment.test.mjs"
+      - "scripts/check-deployment-mcp.test.mjs"
+      - "scripts/check-mcp-deployment.mjs"
       - "package.json"
       - ".github/workflows/uptime-monitor.yml"
   pull_request:
@@ -23,6 +25,8 @@ on:
     paths:
       - "scripts/check-deployment.mjs"
       - "scripts/check-deployment.test.mjs"
+      - "scripts/check-deployment-mcp.test.mjs"
+      - "scripts/check-mcp-deployment.mjs"
       - "package.json"
       - ".github/workflows/uptime-monitor.yml"
 

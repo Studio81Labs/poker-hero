@@ -292,6 +292,12 @@ Required for staging and before enabling MCP in another environment:
 
 - `MCP_ADMIN_TOKEN`, a separate high-entropy operator credential
 
+Required environment variable for staging and any other environment with hosted
+MCP enabled:
+
+- `MCP_SMOKE_URL`, the exact public HTTPS `/mcp` URL reported by that
+  deployment
+
 The workflow smoke-tests both the SPA and `/api/health`. A frontend success with
 an API `502` means the Worker deployed but its configured backend origin is not
 healthy or reachable. It also reads one bounded processing-queue page so a
@@ -300,7 +306,11 @@ calls the matching backend queue URL without that credential and requires a
 `401`, proving the Coolify setting is active rather than merely accepting an
 unused Worker header. It also requires unauthenticated MCP principal management
 to return `401` and verifies that the Worker routes `/mcp` to the backend rather
-than Static Assets.
+than Static Assets. When `MCP_SMOKE_URL` is configured, the deployment workflow
+uses `MCP_ADMIN_TOKEN` to issue an ephemeral read-only principal, verifies MCP
+initialization and `get_environment_status` against the expected environment,
+and revokes the principal during cleanup. The credential expires within one
+hour if cleanup cannot reach the deployment.
 
 ## Uptime Monitoring And Alerts
 

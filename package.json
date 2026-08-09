@@ -23,7 +23,7 @@
     "frontend:build": "pnpm -C apps/frontend build",
     "frontend:test": "pnpm -C apps/frontend test",
     "frontend:test:watch": "pnpm -C apps/frontend test:watch",
-    "monitor:test": "node --test scripts/check-deployment.test.mjs",
+    "monitor:test": "node --test scripts/check-deployment.test.mjs scripts/check-deployment-mcp.test.mjs",
     "test:e2e": "pnpm -C apps/frontend test:e2e",
     "docker:up": "docker compose -f infra/docker/compose.yaml up --build",
     "docker:down": "docker compose -f infra/docker/compose.yaml down"

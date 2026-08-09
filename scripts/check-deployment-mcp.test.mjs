@@ -1,0 +1,173 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { once } from "node:events";
+import test from "node:test";
+
+import { checkMcpDeployment } from "./check-mcp-deployment.mjs";
+
+const MCP_TOKEN = `phmcp_ABCDEFGHIJKL.${"a".repeat(43)}`;
+
+async function withServer(handler, exercise) {
+  const server = createServer((request, response) => {
+    Promise.resolve(handler(request, response)).catch(() => {
+      response.writeHead(500).end();
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  assert.notEqual(address, null);
+  assert.equal(typeof address, "object");
+  try {
+    await exercise(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+}
+
+async function readJsonRequest(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function respondToBaseCheck(request, response, mcpConfig) {
+  if (request.url === "/") {
+    response.writeHead(200).end("Poker Training Analyzer");
+    return true;
+  }
+  if (request.url === "/api/mcp/principals") {
+    response.writeHead(401).end();
+    return true;
+  }
+  if (request.url === "/api/health") {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ status: "ok" }));
+    return true;
+  }
+  if (request.url === "/api/mcp/config") {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify(mcpConfig));
+    return true;
+  }
+  if (request.url === "/api/jobs?limit=1") {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ jobs: [], total: 0 }));
+    return true;
+  }
+  return false;
+}
+
+test("initializes MCP and calls the bound environment with an agent token", async () => {
+  const authenticatedMethods = [];
+  let mcpUrl = "";
+  await withServer(
+    async (request, response) => {
+      if (
+        respondToBaseCheck(request, response, {
+          enabled: true,
+          endpoint: mcpUrl,
+          environment: "staging",
+        })
+      ) {
+        return;
+      }
+      assert.equal(request.url, "/mcp");
+      if (!request.headers.authorization) {
+        response.writeHead(401).end();
+        return;
+      }
+      assert.equal(request.headers.authorization, `Bearer ${MCP_TOKEN}`);
+      const payload = await readJsonRequest(request);
+      authenticatedMethods.push(payload.method);
+      if (payload.method === "initialize") {
+        response.writeHead(200, { "Content-Type": "text/event-stream" });
+        response.end(
+          `event: message\ndata: ${JSON.stringify({
+            jsonrpc: "2.0",
+            id: payload.id,
+            result: {
+              protocolVersion: "2025-06-18",
+              capabilities: {},
+              serverInfo: { name: "Poker Hero staging", version: "1.0" },
+            },
+          })}\n\n`,
+        );
+        return;
+      }
+      assert.equal(payload.method, "tools/call");
+      assert.equal(payload.params.name, "get_environment_status");
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            content: [{ type: "text", text: "staging" }],
+            isError: false,
+            structuredContent: { environment: "staging" },
+          },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      mcpUrl = `${baseUrl}/mcp`;
+      const result = await checkMcpDeployment(mcpUrl, "staging", {
+        allowHttp: true,
+        attempts: 1,
+        configUrl: `${baseUrl}/api/mcp/config`,
+        token: MCP_TOKEN,
+        timeoutMs: 1_000,
+      });
+      assert.equal(result.environment, "staging");
+    },
+  );
+  assert.deepEqual(authenticatedMethods, ["initialize", "tools/call"]);
+});
+
+test("requires a Poker Hero agent token", async () => {
+  await assert.rejects(
+    checkMcpDeployment("https://poker.example.com/mcp", "staging", {
+      attempts: 1,
+      configUrl: "https://poker.example.com/api/mcp/config",
+      token: "admin-token",
+    }),
+    /MCP smoke token is not a Poker Hero agent credential/,
+  );
+});
+
+test("does not send an agent token when the deployment reports another URL", async () => {
+  let receivedAuthorization = false;
+  await withServer(
+    (request, response) => {
+      if (
+        respondToBaseCheck(request, response, {
+          enabled: true,
+          endpoint: "https://unexpected.example/mcp",
+          environment: "staging",
+        })
+      ) {
+        return;
+      }
+      assert.equal(request.url, "/mcp");
+      receivedAuthorization ||= Boolean(request.headers.authorization);
+      response.writeHead(401).end();
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        checkMcpDeployment(`${baseUrl}/mcp`, "staging", {
+          allowHttp: true,
+          attempts: 1,
+          configUrl: `${baseUrl}/api/mcp/config`,
+          token: MCP_TOKEN,
+          timeoutMs: 1_000,
+        }),
+        /MCP configuration did not report the expected enabled endpoint and environment/,
+      );
+    },
+  );
+  assert.equal(receivedAuthorization, false);
+});

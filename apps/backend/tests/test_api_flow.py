@@ -187,6 +187,23 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     }
 
 
+@pytest.mark.parametrize("engine", ["", "   "])
+def test_health_preserves_invalid_blank_local_solver_engine(
+    tmp_path: Path,
+    engine: str,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine=engine,
+    )
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["recommendation_engine"] == ""
+
+
 def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,

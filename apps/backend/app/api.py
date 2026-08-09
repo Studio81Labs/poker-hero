@@ -888,14 +888,16 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
+        configured_engine = configured_recommendation_engine(active_settings)
         return {
             "status": "ok",
             "environment": active_settings.deployment_environment,
             "parser_provider": active_settings.parser_provider,
             "recommendation_provider": active_settings.recommendation_provider,
             "recommendation_engine": (
-                configured_recommendation_engine(active_settings)
-                or active_settings.recommendation_provider
+                active_settings.recommendation_provider
+                if configured_engine is None
+                else configured_engine
             ),
         }
 

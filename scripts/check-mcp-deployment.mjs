@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
+const MAX_RATE_LIMIT_WAIT_MS = 65_000;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MCP_TOKEN_PATTERN = /^phmcp_[A-Za-z0-9_-]{12}\.[A-Za-z0-9_-]{43}$/;
 
@@ -163,10 +164,43 @@ async function postMcp(url, token, payload, headers, timeoutMs, label) {
     throw new Error(`${label} request failed`);
   }
   if (!response.ok) {
+    const retryAfter = response.headers.get("retry-after");
     await response.body?.cancel();
-    throw new Error(`${label} returned HTTP ${response.status}`);
+    const error = new Error(`${label} returned HTTP ${response.status}`);
+    error.status = response.status;
+    error.retryAfterMs = /^\d+$/.test(retryAfter ?? "")
+      ? Number(retryAfter) * 1_000
+      : null;
+    throw error;
   }
   return parseMcpResponse(await readBoundedBody(response, label), label);
+}
+
+async function postEnvironmentStatus(mcpUrl, token, headers, timeoutMs, wait) {
+  const request = {
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: {
+      name: "get_environment_status",
+      arguments: {},
+    },
+  };
+  const label = "Authenticated MCP environment check";
+  try {
+    return await postMcp(mcpUrl, token, request, headers, timeoutMs, label);
+  } catch (error) {
+    if (
+      error?.status !== 429 ||
+      !Number.isSafeInteger(error.retryAfterMs) ||
+      error.retryAfterMs <= 0 ||
+      error.retryAfterMs > MAX_RATE_LIMIT_WAIT_MS
+    ) {
+      throw error;
+    }
+    await wait(error.retryAfterMs);
+    return postMcp(mcpUrl, token, request, headers, timeoutMs, label);
+  }
 }
 
 async function checkOnce(
@@ -176,6 +210,7 @@ async function checkOnce(
   token,
   headers,
   timeoutMs,
+  wait,
 ) {
   const configuration = await fetchConfiguration(configUrl, headers, timeoutMs);
   if (
@@ -216,21 +251,12 @@ async function checkOnce(
     throw new Error("Authenticated MCP initialization was not successful");
   }
 
-  const status = await postMcp(
+  const status = await postEnvironmentStatus(
     mcpUrl,
     token,
-    {
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: {
-        name: "get_environment_status",
-        arguments: {},
-      },
-    },
     headers,
     timeoutMs,
-    "Authenticated MCP environment check",
+    wait,
   );
   if (
     status?.error ||
@@ -277,6 +303,10 @@ export async function checkMcpDeployment(rawUrl, environment, options = {}) {
   if (!Number.isSafeInteger(retryDelayMs) || retryDelayMs < 0) {
     throw new Error("Retry delay must be a non-negative integer");
   }
+  const wait = options.wait ?? delay;
+  if (typeof wait !== "function") {
+    throw new Error("Wait must be a function");
+  }
 
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -288,6 +318,7 @@ export async function checkMcpDeployment(rawUrl, environment, options = {}) {
         token,
         headers,
         timeoutMs,
+        wait,
       );
       return {
         attempts: attempt,

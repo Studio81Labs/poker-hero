@@ -448,6 +448,7 @@ const CONFIDENCE_KEYS = [
   "hero_stack",
   "effective_stack",
   "players_in_hand",
+  "opponent_wager",
   "hero_position",
   "facing_action",
   "action_context",
@@ -9688,7 +9689,11 @@ export default function App() {
                 </Field>
               ) : null}
               {Number(form.current_bet) > 0 ? (
-                <Field label="Opponent wager total" confidence="manual">
+                <Field
+                  label="Opponent wager total"
+                  confidence={confidenceLabel(confidences.opponent_wager)}
+                  confidenceValue={confidences.opponent_wager}
+                >
                   <input
                     disabled={stateControlsDisabled}
                     inputMode="decimal"

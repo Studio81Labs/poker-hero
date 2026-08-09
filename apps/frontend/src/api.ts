@@ -186,6 +186,27 @@ export function humanReadableMessage(value: unknown, fallback: string): string {
   return structuredMessage(value) ?? fallback;
 }
 
+const MAX_PLAIN_TEXT_ERROR_LENGTH = 512;
+
+function readablePlainTextError(response: Response, body: string): string | null {
+  const message = body.trim();
+  const contentType = response.headers.get("Content-Type")?.toLowerCase() ?? "";
+  if (
+    !message
+    || message.length > MAX_PLAIN_TEXT_ERROR_LENGTH
+    || contentType.includes("text/html")
+    || message.startsWith("<")
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(message)
+    || /<(?:!doctype|html|head|body|title|h[1-6]|div|p)\b/i.test(message)
+  ) {
+    return null;
+  }
+  if (contentType && !contentType.startsWith("text/plain")) {
+    return null;
+  }
+  return message;
+}
+
 function retryAfterSeconds(response: Response): number | null {
   const value = response.headers.get("Retry-After")?.trim();
   if (!value) {
@@ -213,7 +234,7 @@ async function readJson<T>(response: Response): Promise<T> {
         try {
           payload = JSON.parse(body);
         } catch {
-          payload = body;
+          payload = readablePlainTextError(response, body);
         }
       }
       detail = humanReadableMessage(payload, fallback);

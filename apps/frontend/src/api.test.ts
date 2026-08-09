@@ -69,6 +69,50 @@ describe("API error messages", () => {
       "Complete the required table details before requesting a recommendation: Opponent wager total. Refresh the approved state to edit them, then approve it again.",
     );
   });
+
+  it("uses the HTTP fallback instead of displaying an HTML error page", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(
+      "<!doctype html><html><body><h1>Bad gateway</h1></body></html>",
+      {
+        status: 502,
+        statusText: "Bad Gateway",
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      },
+    )));
+
+    await expect(requestRecommendation("job-1", "request-1")).rejects.toThrow(
+      "Bad Gateway",
+    );
+  });
+
+  it("preserves concise plain-text API errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(
+      "Solver is warming up",
+      {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      },
+    )));
+
+    await expect(requestRecommendation("job-1", "request-1")).rejects.toThrow(
+      "Solver is warming up",
+    );
+  });
+
+  it("uses the HTTP fallback for oversized plain-text errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(
+      "x".repeat(513),
+      {
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      },
+    )));
+
+    await expect(requestRecommendation("job-1", "request-1")).rejects.toThrow(
+      "Service Unavailable",
+    );
+  });
 });
 
 describe("archiveJobs", () => {

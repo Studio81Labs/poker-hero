@@ -5197,6 +5197,35 @@ describe("App", () => {
     expect(within(screen.getByLabelText("Parser confidence summary")).getByText("1")).toBeInTheDocument();
   });
 
+  it("excludes opponent-wager confidence from check spots", async () => {
+    const checkState: DetectedState = {
+      ...detectedState,
+      current_bet: 0,
+      opponent_wager: null,
+      facing_action: null,
+      action_context: "No bet to call; pot is 12.5 BB",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: checkState,
+        confidences: {
+          ...jobRecord().parser_result!.confidences,
+          action_context: 0.9,
+        },
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    await uploadScreenshot();
+
+    expect(screen.queryByLabelText(/Opponent wager total/)).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
+  });
+
   it("clears multiway commitments when players in hand is corrected to heads-up", async () => {
     const preflopState: DetectedState = {
       ...detectedState,

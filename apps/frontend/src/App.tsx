@@ -448,7 +448,6 @@ const CONFIDENCE_KEYS = [
   "hero_stack",
   "effective_stack",
   "players_in_hand",
-  "opponent_wager",
   "hero_position",
   "facing_action",
   "action_context",
@@ -4265,9 +4264,13 @@ function summarizeConfidences(
   warnings: string[],
   state: CanonicalState | null,
 ) {
-  const confidenceKeys: readonly string[] = state && requiresOpponentPosition(state)
-    ? [...CONFIDENCE_KEYS, "opponent_position"]
-    : CONFIDENCE_KEYS;
+  const confidenceKeys: string[] = [...CONFIDENCE_KEYS];
+  if ((state?.current_bet ?? 0) > 0) {
+    confidenceKeys.push("opponent_wager");
+  }
+  if (state && requiresOpponentPosition(state)) {
+    confidenceKeys.push("opponent_position");
+  }
   const values = confidenceKeys.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
   const detectedCount = values.length;
   const averageConfidence = detectedCount === 0 ? 0 : Math.round((values.reduce((sum, value) => sum + value, 0) / detectedCount) * 100);

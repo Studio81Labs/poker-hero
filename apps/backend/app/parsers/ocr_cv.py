@@ -74,6 +74,7 @@ HERO_STACK_BOX = (430, 545, 575, 586)
 CALL_AMOUNT_BOX = (740, 666, 858, 686)
 RAISE_TO_AMOUNT_BOX = (858, 666, 973, 686)
 HEADER_STAKES_BOX = (0, 0, 560, 30)
+ACTION_CONTROL_MIN_CONFIDENCE = 0.7
 
 OPPONENT_SEATS = (
     OpponentSeat("top", (425, 45, 630, 130), (450, 144, 585, 166)),
@@ -701,6 +702,10 @@ class OcrCvParser:
             hero_cards_visible=hero_cards_visible,
             street=street,
         )
+        if "opponent_wager" in manual_review_fields:
+            warnings.append(
+                "Opponent wager needs manual review; action controls were not recognized reliably"
+            )
         confidences = _field_confidences(hero_cards, board_cards, street)
         confidences.update(numeric_confidences)
 
@@ -977,7 +982,7 @@ def _parse_numeric_state(
     image: Image.Image,
     *,
     hero_cards_visible: bool = True,
-    street: Street = "preflop",
+    street: Street | None = "preflop",
 ) -> tuple[dict[str, object], dict[str, float], dict[str, object], list[str]]:
     state: dict[str, object] = {}
     confidences: dict[str, float] = {}
@@ -1021,7 +1026,7 @@ def _parse_numeric_state(
         confidences["current_bet"] = min(0.88, call_amount.confidence)
         if money_scale.scale != 1:
             raw["current_bet_normalized"] = _number_raw(normalized_call_amount)
-        if street != "preflop" and normalized_call_amount.value > 0:
+        if street in {"flop", "turn", "river"} and normalized_call_amount.value > 0:
             raise_to_amount = _read_number_from_box(
                 image,
                 RAISE_TO_AMOUNT_BOX,
@@ -1041,17 +1046,22 @@ def _parse_numeric_state(
                 normalized_call_amount.value,
                 normalized_raise_to.value if normalized_raise_to is not None else None,
             )
-            if facing_action is not None:
+            action_confidence = min(
+                call_amount.confidence,
+                raise_to_amount.confidence if raise_to_amount is not None else 0,
+                0.76,
+            )
+            if (
+                facing_action is not None
+                and action_confidence >= ACTION_CONTROL_MIN_CONFIDENCE
+            ):
                 state["facing_action"] = facing_action
-                action_confidence = min(
-                    call_amount.confidence,
-                    raise_to_amount.confidence if raise_to_amount is not None else 0,
-                    0.76,
-                )
                 confidences["facing_action"] = action_confidence
                 if facing_action == "bet":
                     state["opponent_wager"] = normalized_call_amount.value
                     confidences["opponent_wager"] = action_confidence
+            else:
+                manual_review_fields.append("opponent_wager")
     else:
         raw["current_bet_source"] = "hero cards not visible"
         raw["current_bet"] = None

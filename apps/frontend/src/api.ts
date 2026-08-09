@@ -129,7 +129,7 @@ function structuredMessage(value: unknown, depth = 0): string | null {
           return prefix ? `${prefix}: ${decoded}` : decoded;
         }
       } catch {
-        if (structuredStart === 0) return null;
+        return message;
       }
     }
     return message;

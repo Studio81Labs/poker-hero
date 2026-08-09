@@ -56,6 +56,13 @@ describe("humanReadableMessage", () => {
       "Complete the required table details before requesting a recommendation: Effective stack. Refresh the approved state to edit them, then approve it again.",
     );
   });
+
+  it.each([
+    "[low light] board cards unclear",
+    "{solver unavailable until ranges load",
+  ])("preserves bracket-prefixed plain diagnostics: %s", (message) => {
+    expect(humanReadableMessage(message, "Request failed")).toBe(message);
+  });
 });
 
 describe("API error messages", () => {

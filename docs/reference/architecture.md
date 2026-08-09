@@ -34,6 +34,10 @@ registries define installed defaults and runtime allowlists. New uploads and liv
 captures may select an advertised parser, layout profile, recommendation provider,
 and local engine; that selection is persisted on the job so the frontend flow does
 not depend on a concrete engine.
+Each installed parser is represented by one immutable catalog descriptor that
+owns its factory, label, readiness check, and supported-layout policy. Runtime
+construction and pipeline capabilities consume the same descriptor, while the
+configuration allowlist remains a separately validated deployment boundary.
 Layout profile IDs are deployment-defined data. The capability response includes
 a parser/layout compatibility matrix: multi-layout external vision can accept
 custom profiles such as `pokerstars`, while fixed-region OCR is selectable only

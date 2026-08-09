@@ -6,7 +6,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from app.config import OCR_CV_LAYOUT_PROFILES, Settings
+from app.config import KNOWN_PARSER_PROVIDERS, OCR_CV_LAYOUT_PROFILES, Settings
 from app.ocr_layouts import (
     FORTUNA_NATIONS_LAYOUT,
     OCR_CV_LAYOUT_PROFILE_IDS,
@@ -35,7 +35,14 @@ from app.parsers.ocr_cv import (
     _street_from_board_count,
     format_number,
 )
-from app.parsers.registry import build_parser
+from app.parsers.registry import (
+    PARSER_PLUGINS,
+    PARSER_PLUGIN_IDS,
+    ParserPlugin,
+    _plugin_catalog,
+    build_parser,
+    get_parser_plugin,
+)
 
 
 def test_registry_builds_mock_parser(tmp_path: Path) -> None:
@@ -58,6 +65,71 @@ def test_registry_rejects_unknown_parser(tmp_path: Path) -> None:
 
     with pytest.raises(ParserConfigurationError, match="Unknown parser provider"):
         build_parser(settings)
+
+
+def test_parser_plugin_catalog_matches_configuration_allowlist(tmp_path: Path) -> None:
+    assert PARSER_PLUGIN_IDS == KNOWN_PARSER_PROVIDERS
+    assert list(PARSER_PLUGINS) == ["mock", "llm_vision", "ocr_cv"]
+
+    mock = get_parser_plugin("mock")
+    external = get_parser_plugin("llm_vision")
+    local_ocr = get_parser_plugin("ocr_cv")
+
+    assert mock.label == "Mock parser"
+    assert mock.supports_layout("pokerstars")
+    assert external.label == "External vision"
+    assert external.supports_layout("pokerstars")
+    assert external.unavailable_reason(Settings(data_dir=tmp_path)) == (
+        "External parser URL is not configured"
+    )
+    assert (
+        external.unavailable_reason(
+            Settings(
+                data_dir=tmp_path,
+                external_parser_url="https://parser.example.com/parse",
+            )
+        )
+        is None
+    )
+    assert local_ocr.label == "Template OCR"
+    assert local_ocr.supports_layout("fortuna")
+    assert not local_ocr.supports_layout("pokerstars")
+
+
+def test_parser_plugin_rejects_factory_identity_mismatch(tmp_path: Path) -> None:
+    mismatched = ParserPlugin(
+        id="different",
+        label="Different parser",
+        factory=PARSER_PLUGINS["mock"].factory,
+    )
+
+    with pytest.raises(
+        ParserConfigurationError,
+        match="built parser 'mock'",
+    ):
+        mismatched.build(Settings(data_dir=tmp_path))
+
+
+def test_parser_plugin_catalog_rejects_invalid_descriptors() -> None:
+    factory = PARSER_PLUGINS["mock"].factory
+
+    with pytest.raises(ValueError, match="identity fields"):
+        ParserPlugin(id="", label="Missing ID", factory=factory)
+    with pytest.raises(TypeError, match="factory must be callable"):
+        ParserPlugin(  # type: ignore[arg-type]
+            id="invalid_factory",
+            label="Invalid factory",
+            factory=None,
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        ParserPlugin(
+            id="empty_layouts",
+            label="Empty layouts",
+            factory=factory,
+            supported_layouts=frozenset(),
+        )
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        _plugin_catalog(PARSER_PLUGINS["mock"], PARSER_PLUGINS["mock"])
 
 
 @pytest.mark.parametrize(

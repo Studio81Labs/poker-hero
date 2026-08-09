@@ -50,6 +50,12 @@ encrypted Worker binding. Never reuse `API_PROXY_SECRET` or an agent principal
 token. The Worker rejects administration when this binding is absent and strips
 the operator bearer header before proxying an authorized request to FastAPI.
 
+Set the `MCP_SMOKE_URL` environment variable to the same exact public HTTPS
+`/mcp` URL. After each frontend deployment, the workflow uses the admin
+boundary to issue an ephemeral read-only principal, initializes the MCP server,
+calls `get_environment_status`, and revokes the principal. The smoke principal
+also expires after one hour so a failed cleanup cannot leave durable access.
+
 ## Principal lifecycle
 
 Open the app information dialog and find **Agent access**.

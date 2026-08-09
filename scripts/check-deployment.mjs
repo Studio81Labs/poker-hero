@@ -55,9 +55,8 @@ function endpointUrl(baseUrl, endpoint) {
   const url = new URL(baseUrl);
   const basePath = url.pathname.replace(/\/+$/, "");
   const endpointParts = new URL(endpoint, "https://deployment-check.invalid");
-  url.pathname = endpoint === "/"
-    ? `${basePath}/`
-    : `${basePath}${endpointParts.pathname}`;
+  url.pathname =
+    endpoint === "/" ? `${basePath}/` : `${basePath}${endpointParts.pathname}`;
   url.search = endpointParts.search;
   return url;
 }
@@ -199,25 +198,13 @@ function parseJson(body, label) {
 }
 
 async function checkOnce(baseUrl, headers, timeoutMs) {
-  const spa = await fetchText(
-    baseUrl,
-    "/",
-    "Frontend",
-    headers,
-    timeoutMs,
-  );
+  const spa = await fetchText(baseUrl, "/", "Frontend", headers, timeoutMs);
   if (!spa.toLowerCase().includes("poker training analyzer")) {
     throw new Error("Frontend response did not contain the application marker");
   }
 
   const health = parseJson(
-    await fetchText(
-      baseUrl,
-      "/api/health",
-      "API health",
-      headers,
-      timeoutMs,
-    ),
+    await fetchText(baseUrl, "/api/health", "API health", headers, timeoutMs),
     "API health",
   );
   if (health?.status !== "ok") {
@@ -235,7 +222,9 @@ async function checkOnce(baseUrl, headers, timeoutMs) {
     "Protected API proxy",
   );
   if (!Array.isArray(queue?.jobs)) {
-    throw new Error("Protected API proxy response did not contain a jobs array");
+    throw new Error(
+      "Protected API proxy response did not contain a jobs array",
+    );
   }
 
   const mcpConfig = parseJson(
@@ -269,6 +258,8 @@ async function checkOnce(baseUrl, headers, timeoutMs) {
     mcpConfig.enabled ? 401 : 404,
     "POST",
   );
+
+  return mcpConfig;
 }
 
 function delay(milliseconds) {
@@ -297,8 +288,16 @@ export async function checkDeployment(rawUrl, options = {}) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await checkOnce(baseUrl, headers, timeoutMs);
-      return { attempts: attempt, url: baseUrl.href.replace(/\/$/, "") };
+      const mcpConfig = await checkOnce(baseUrl, headers, timeoutMs);
+      return {
+        attempts: attempt,
+        mcp: {
+          enabled: mcpConfig.enabled,
+          endpoint: mcpConfig.endpoint ?? null,
+          environment: mcpConfig.environment ?? null,
+        },
+        url: baseUrl.href.replace(/\/$/, ""),
+      };
     } catch (error) {
       lastError = error;
       if (attempt < attempts && retryDelayMs > 0) {
@@ -313,6 +312,7 @@ export async function checkDeployment(rawUrl, options = {}) {
 
 function parseArguments(argv) {
   const options = {};
+  let json = false;
   let url = "";
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -321,6 +321,10 @@ function parseArguments(argv) {
         throw new Error("Only one deployment URL may be provided");
       }
       url = argument;
+      continue;
+    }
+    if (argument === "--json") {
+      json = true;
       continue;
     }
     const value = argv[index + 1];
@@ -339,18 +343,24 @@ function parseArguments(argv) {
     }
   }
   if (!url) {
-    throw new Error("Usage: node scripts/check-deployment.mjs <deployment-url>");
+    throw new Error(
+      "Usage: node scripts/check-deployment.mjs <deployment-url>",
+    );
   }
-  return { options, url };
+  return { json, options, url };
 }
 
 async function main() {
-  const { options, url } = parseArguments(process.argv.slice(2));
+  const { json, options, url } = parseArguments(process.argv.slice(2));
   const result = await checkDeployment(url, {
     ...options,
     accessClientId: process.env.CLOUDFLARE_ACCESS_CLIENT_ID,
     accessClientSecret: process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET,
   });
+  if (json) {
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    return;
+  }
   process.stdout.write(
     `Deployment healthy after ${result.attempts} attempt(s): ${result.url}\n`,
   );

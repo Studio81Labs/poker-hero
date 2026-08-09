@@ -13045,7 +13045,12 @@ describe("App", () => {
   });
 
   it("sends corrected approval payload with user_approved forced true", async () => {
-    const correctedState = canonicalState({ current_bet: 3.5 });
+    const correctedState = canonicalState({
+      current_bet: 3.5,
+      opponent_wager: null,
+      facing_action: null,
+      action_context: null,
+    });
     const created = jobRecord();
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
@@ -13065,7 +13070,9 @@ describe("App", () => {
 
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
-    expect(payload.facing_action).toBe("bet");
+    expect(payload.opponent_wager).toBeNull();
+    expect(payload.facing_action).toBeNull();
+    expect(payload.action_context).toBeNull();
     expect(payload.user_approved).toBe(true);
   });
 

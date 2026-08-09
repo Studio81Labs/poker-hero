@@ -7883,7 +7883,7 @@ export default function App() {
       if (field === "current_bet") {
         next.opponent_wager = "";
         next.action_context = "";
-        if (value !== "" && Number(value) <= 0) {
+        if (value !== "") {
           next.facing_action = "";
         }
       }

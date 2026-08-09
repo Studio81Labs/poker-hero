@@ -176,17 +176,15 @@ async function postMcp(url, token, payload, headers, timeoutMs, label) {
   return parseMcpResponse(await readBoundedBody(response, label), label);
 }
 
-async function postEnvironmentStatus(mcpUrl, token, headers, timeoutMs, wait) {
-  const request = {
-    jsonrpc: "2.0",
-    id: 2,
-    method: "tools/call",
-    params: {
-      name: "get_environment_status",
-      arguments: {},
-    },
-  };
-  const label = "Authenticated MCP environment check";
+async function postMcpWithRateLimitWait(
+  mcpUrl,
+  token,
+  request,
+  headers,
+  timeoutMs,
+  label,
+  wait,
+) {
   try {
     return await postMcp(mcpUrl, token, request, headers, timeoutMs, label);
   } catch (error) {
@@ -223,7 +221,7 @@ async function checkOnce(
     );
   }
 
-  const initialized = await postMcp(
+  const initialized = await postMcpWithRateLimitWait(
     mcpUrl,
     token,
     {
@@ -242,6 +240,7 @@ async function checkOnce(
     headers,
     timeoutMs,
     "Authenticated MCP initialization",
+    wait,
   );
   if (
     initialized?.jsonrpc !== "2.0" ||
@@ -251,11 +250,21 @@ async function checkOnce(
     throw new Error("Authenticated MCP initialization was not successful");
   }
 
-  const status = await postEnvironmentStatus(
+  const status = await postMcpWithRateLimitWait(
     mcpUrl,
     token,
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "get_environment_status",
+        arguments: {},
+      },
+    },
     headers,
     timeoutMs,
+    "Authenticated MCP environment check",
     wait,
   );
   if (

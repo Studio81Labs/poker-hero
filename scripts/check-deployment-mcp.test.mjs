@@ -201,6 +201,84 @@ test("honors Retry-After without repeating MCP initialization", async () => {
   assert.deepEqual(waits, [61_000]);
 });
 
+test("honors Retry-After when an outer retry rate-limits initialization", async () => {
+  const authenticatedMethods = [];
+  const waits = [];
+  let initializationRequests = 0;
+  let environmentChecks = 0;
+  let mcpUrl = "";
+  await withServer(
+    async (request, response) => {
+      if (
+        respondToBaseCheck(request, response, {
+          enabled: true,
+          endpoint: mcpUrl,
+          environment: "staging",
+        })
+      ) {
+        return;
+      }
+      const payload = await readJsonRequest(request);
+      authenticatedMethods.push(payload.method);
+      if (payload.method === "initialize") {
+        initializationRequests += 1;
+        if (initializationRequests === 2) {
+          response.writeHead(429, { "Retry-After": "56" }).end();
+          return;
+        }
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: payload.id,
+            result: { serverInfo: { name: "Poker Hero staging" } },
+          }),
+        );
+        return;
+      }
+      environmentChecks += 1;
+      if (environmentChecks === 1) {
+        response.writeHead(503).end();
+        return;
+      }
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            isError: false,
+            structuredContent: { environment: "staging" },
+          },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      mcpUrl = `${baseUrl}/mcp`;
+      const result = await checkMcpDeployment(mcpUrl, "staging", {
+        allowHttp: true,
+        attempts: 2,
+        configUrl: `${baseUrl}/api/mcp/config`,
+        retryDelayMs: 0,
+        token: MCP_TOKEN,
+        timeoutMs: 1_000,
+        wait: async (milliseconds) => {
+          waits.push(milliseconds);
+        },
+      });
+      assert.equal(result.attempts, 2);
+    },
+  );
+  assert.deepEqual(authenticatedMethods, [
+    "initialize",
+    "tools/call",
+    "initialize",
+    "initialize",
+    "tools/call",
+  ]);
+  assert.deepEqual(waits, [56_000]);
+});
+
 test("requires a Poker Hero agent token", async () => {
   await assert.rejects(
     checkMcpDeployment("https://poker.example.com/mcp", "staging", {

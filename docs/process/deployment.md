@@ -311,8 +311,8 @@ to return `401` and verifies that the Worker routes `/mcp` to the backend rather
 than Static Assets. When `MCP_SMOKE_URL` is configured, the deployment workflow
 uses `MCP_ADMIN_TOKEN` to issue an ephemeral read-only principal, verifies MCP
 initialization and `get_environment_status` against the expected environment,
-honors one bounded server `Retry-After` delay when the environment-status call
-meets the principal's read limit, and revokes the principal during cleanup.
+honors one bounded server `Retry-After` delay for each authenticated probe call
+that meets the principal's read limit, and revokes the principal during cleanup.
 Principal creation and revocation use bounded connection and transfer timeouts.
 The credential expires within one
 hour if cleanup cannot reach the deployment. When the optional Cloudflare

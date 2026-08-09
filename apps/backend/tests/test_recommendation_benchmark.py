@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 from typing import Literal
 
 import pytest
@@ -89,6 +90,7 @@ def benchmark_case(
     *,
     tags: list[str] | None = None,
     expected_range_conditioning: Literal["applied", "skipped"] | None = None,
+    expected_range_source: str | None = None,
     **state_overrides: object,
 ) -> RecommendationBenchmarkCase:
     return RecommendationBenchmarkCase(
@@ -97,6 +99,7 @@ def benchmark_case(
         tags=tags or [],
         state=benchmark_state(**state_overrides),
         expected_range_conditioning=expected_range_conditioning,
+        expected_range_source=expected_range_source,
         reference_lines=lines,
     )
 
@@ -124,6 +127,7 @@ def recommendation(
     candidates: list[dict[str, object]] | None = None,
     fallback_reason: str | None = None,
     range_conditioning: object | None = None,
+    range_source: object | None = None,
 ) -> RecommendationResult:
     raw: dict[str, object] = {"engine": "reference_test_v1"}
     if candidates is not None:
@@ -132,6 +136,8 @@ def recommendation(
         raw["fallback_reason"] = fallback_reason
     if range_conditioning is not None:
         raw["range_conditioning"] = range_conditioning
+    if range_source is not None:
+        raw["range_source"] = range_source
     return RecommendationResult.model_validate(
         {
             "action": action,
@@ -914,6 +920,110 @@ def test_conditioning_coverage_includes_failed_expected_cases() -> None:
     assert report.conditioning_coverage == 0
 
 
+def test_report_scores_expected_postflop_range_source_evidence() -> None:
+    expected_source = "preflop_chart_single_raised_pot"
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "range-source-correct",
+                [reference_line("check")],
+                tags=["range-source"],
+                expected_range_source=expected_source,
+            ),
+            benchmark_case(
+                "range-source-wrong",
+                [reference_line("check")],
+                tags=["range-source"],
+                expected_range_source=expected_source,
+            ),
+            benchmark_case(
+                "range-source-missing",
+                [reference_line("check")],
+                tags=["range-source"],
+                expected_range_source="configured",
+            ),
+            benchmark_case(
+                "range-source-padded",
+                [reference_line("check")],
+                tags=["range-source"],
+                expected_range_source="configured",
+            ),
+            benchmark_case(
+                "range-source-not-expected",
+                [reference_line("check")],
+            ),
+        ]
+    )
+    provider = SequenceProvider(
+        [
+            recommendation("check", range_source=expected_source),
+            recommendation(
+                "check",
+                range_source="preflop_chart_three_bet_pot",
+            ),
+            recommendation("check"),
+            recommendation("check", range_source=" configured "),
+            recommendation("check", range_source="configured"),
+        ]
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.range_source_expected_cases == 4
+    assert report.range_source_evaluated_cases == 2
+    assert report.range_source_correct_cases == 1
+    assert report.range_source_accuracy == 0.5
+    assert report.range_source_coverage == 0.5
+    assert report.cases[0].range_source == expected_source
+    assert report.cases[0].range_source_match is True
+    assert report.cases[1].range_source == "preflop_chart_three_bet_pot"
+    assert report.cases[1].range_source_match is False
+    assert report.cases[2].range_source is None
+    assert report.cases[2].range_source_match is None
+    assert report.cases[3].range_source is None
+    assert report.cases[3].range_source_match is None
+    assert report.cases[4].range_source == "configured"
+    assert report.cases[4].range_source_match is None
+    assert report.street_metrics[0].range_source_accuracy == 0.5
+    assert report.tag_metrics[0].range_source_coverage == 0.5
+    formatted = format_recommendation_benchmark_report(report)
+    assert "Range source agreement: 1/2 (50.0%)" in formatted
+    assert "Range source evidence coverage: 2/4 (50.0%)" in formatted
+    assert "range-source-wrong: mismatched range source" in formatted
+    assert (
+        "range-source-missing: mismatched range source"
+        " (expected configured, not reported)"
+    ) in formatted
+    assert (
+        "range-source-padded: mismatched range source"
+        " (expected configured, not reported)"
+    ) in formatted
+    assert "range source 50.0% (50.0% coverage)" in formatted
+
+
+def test_range_source_coverage_includes_failed_expected_cases() -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "range-source-provider-failure",
+                [reference_line("check")],
+                expected_range_source="configured",
+            )
+        ]
+    )
+
+    report = run_recommendation_benchmark(
+        dataset,
+        SequenceProvider([RuntimeError("solver unavailable")]),
+    )
+
+    assert report.failed_cases == 1
+    assert report.range_source_expected_cases == 1
+    assert report.range_source_evaluated_cases == 0
+    assert report.range_source_accuracy is None
+    assert report.range_source_coverage == 0
+
+
 def test_action_only_wager_reference_skips_line_accuracy() -> None:
     dataset = benchmark_dataset(
         [
@@ -1133,6 +1243,8 @@ def test_missing_street_is_visible_in_unknown_breakdown() -> None:
         "invalid_tag",
         "invalid_conditioning_status",
         "flop_conditioning_expectation",
+        "invalid_range_source",
+        "preflop_range_source_expectation",
         "extra_reference_source_field",
         "extra_state_field",
     ],
@@ -1185,6 +1297,11 @@ def test_recommendation_benchmark_dataset_rejects_invalid_schema(
         payload["cases"][0]["expected_range_conditioning"] = "pending"
     elif mutation == "flop_conditioning_expectation":
         payload["cases"][0]["expected_range_conditioning"] = "applied"
+    elif mutation == "invalid_range_source":
+        payload["cases"][0]["expected_range_source"] = "automatic"
+    elif mutation == "preflop_range_source_expectation":
+        payload["cases"][0]["expected_range_source"] = "configured"
+        payload["cases"][0]["state"]["street"] = "preflop"
     elif mutation == "extra_reference_source_field":
         payload["reference_source"] = {
             "name": "Independent Solver",
@@ -1267,6 +1384,42 @@ def test_loader_rejects_conditioning_expectation_in_version_two(
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(RecommendationBenchmarkError, match="schema version 3"):
+        load_recommendation_benchmark_dataset(path)
+
+
+def test_loader_accepts_version_three_corpus_without_range_source(
+    tmp_path: Path,
+) -> None:
+    payload = benchmark_dataset(
+        [benchmark_case("version-three-check", [reference_line("check")])]
+    ).model_dump(mode="json", by_alias=True)
+    payload["schema_version"] = 3
+    path = tmp_path / "version-three.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    dataset = load_recommendation_benchmark_dataset(path)
+
+    assert dataset.schema_version == 3
+    assert dataset.cases[0].expected_range_source is None
+
+
+def test_loader_rejects_range_source_expectation_in_version_three(
+    tmp_path: Path,
+) -> None:
+    payload = benchmark_dataset(
+        [
+            benchmark_case(
+                "version-three-range-source",
+                [reference_line("check")],
+                expected_range_source="configured",
+            )
+        ]
+    ).model_dump(mode="json", by_alias=True)
+    payload["schema_version"] = 3
+    path = tmp_path / "invalid-version-three.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RecommendationBenchmarkError, match="schema version 4"):
         load_recommendation_benchmark_dataset(path)
 
 
@@ -1474,6 +1627,67 @@ def test_cli_enforces_range_conditioning_accuracy_and_coverage(
     )
 
 
+def test_cli_enforces_range_source_accuracy_and_coverage(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    expected_source = "preflop_chart_single_raised_pot"
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [
+                benchmark_case(
+                    "range-source-correct",
+                    [reference_line("check")],
+                    expected_range_source=expected_source,
+                ),
+                benchmark_case(
+                    "range-source-wrong",
+                    [reference_line("check")],
+                    expected_range_source=expected_source,
+                ),
+                benchmark_case(
+                    "range-source-missing",
+                    [reference_line("check")],
+                    expected_range_source="configured",
+                ),
+            ]
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--minimum-range-source-accuracy",
+            "1",
+            "--minimum-range-source-coverage",
+            "1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider(
+            [
+                recommendation("check", range_source=expected_source),
+                recommendation(
+                    "check",
+                    range_source="preflop_chart_three_bet_pot",
+                ),
+                recommendation("check"),
+            ]
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert (
+        "Range source agreement 50.0% is below the minimum 100.0%"
+        in captured.err
+    )
+    assert (
+        "Range source evidence coverage 66.7% is below the minimum 100.0%"
+        in captured.err
+    )
+
+
 def test_cli_fails_when_a_required_optional_metric_is_unavailable(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1530,6 +1744,35 @@ def test_cli_fails_when_range_conditioning_is_not_expected(
     assert (
         "Range conditioning evidence coverage was not evaluated" in captured.err
     )
+
+
+def test_cli_fails_when_range_source_is_not_expected(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset_path = write_dataset(
+        tmp_path / "recommendations.json",
+        benchmark_dataset(
+            [benchmark_case("action-only", [reference_line("check")])]
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--minimum-range-source-accuracy",
+            "0",
+            "--minimum-range-source-coverage",
+            "0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Range source agreement was not evaluated" in captured.err
+    assert "Range source evidence coverage was not evaluated" in captured.err
 
 
 def test_cli_reports_unknown_provider_as_configuration_error(
@@ -1623,6 +1866,66 @@ def test_benchmark_file_uses_configured_provider(tmp_path: Path) -> None:
 
     assert report.provider == "mock"
     assert report.total_cases == 1
+
+
+def test_recommendation_benchmark_scores_local_solver_range_source(
+    tmp_path: Path,
+) -> None:
+    solver_script = tmp_path / "postflop.py"
+    solver_script.write_text(
+        "import json, os\n"
+        "print(json.dumps({"
+        "'action': 'check', 'sizing': None, 'confidence': 0.8, "
+        "'explanation': 'Contextual range response', "
+        "'raw': {"
+        "'provider': 'local_solver', 'engine': 'postflop_solver', "
+        "'range_source': os.environ['POKER_POSTFLOP_SOLVER_RANGE_SOURCE']"
+        "}}))\n",
+        encoding="utf-8",
+    )
+    expected_source = "preflop_chart_single_raised_pot"
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "postflop-single-raised-range-source",
+                [reference_line("check")],
+                tags=["postflop", "single-raised-pot", "range-source"],
+                expected_range_source=expected_source,
+                pot_size=5.5,
+                current_bet=0,
+                hero_stack=97.5,
+                opponent_stack=97.5,
+                effective_stack=97.5,
+                hero_position="button",
+                opponent_position="big_blind",
+                preflop_opener_position="button",
+                preflop_open_size=2.5,
+                preflop_action_history=[
+                    PreflopAction(actor="button", action="raise", amount=2.5),
+                    PreflopAction(actor="big_blind", action="call", amount=2.5),
+                ],
+            )
+        ]
+    )
+    provider = build_provider(
+        Settings(
+            data_dir=tmp_path,
+            recommendation_provider="local_solver",
+            postflop_solver_command=f"{sys.executable} {solver_script}",
+            postflop_solver_fallback_enabled=False,
+        )
+    )
+
+    report = run_recommendation_benchmark(dataset, provider)
+
+    assert report.completed_cases == 1
+    assert report.range_source_expected_cases == 1
+    assert report.range_source_evaluated_cases == 1
+    assert report.range_source_correct_cases == 1
+    assert report.range_source_accuracy == 1
+    assert report.range_source_coverage == 1
+    assert report.cases[0].range_source == expected_source
+    assert report.cases[0].range_source_match is True
 
 
 def test_recommendation_benchmark_runs_isolation_response_preflop_chart(

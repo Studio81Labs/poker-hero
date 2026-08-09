@@ -116,9 +116,12 @@ six-max seats establish their postflop order; explicit relative labels take
 precedence. Contradictory labels, duplicate seats, and a small-blind versus
 big-blind pair remain ambiguous and use fallback. A limp/check line cannot
 resolve that pair because it is also valid heads-up. An exact called big-blind
-isolation line resolves the pair under its six-max chart contract, with the
-small blind OOP and big blind IP. An exact reviewed squeeze or cold 4-bet line
-can also resolve it because the additional seats prove the preflop order.
+isolation or called limp-reraise line resolves the pair under its six-max chart
+contract, with the small blind OOP and big blind IP. On the limp-reraise route,
+a reviewed `dealer`/`button` alias maps to the small-blind action actor and
+proves the heads-up order instead, with that player IP and the big blind OOP.
+An exact reviewed squeeze or cold 4-bet line can also resolve the pair because
+the additional seats prove the preflop order.
 First-bet decisions retain the compact
 reconstruction path. In `contextual` range mode, an exact reviewed heads-up
 state with one 1 BB limp checked by the big blind uses the limper's
@@ -137,7 +140,13 @@ contradictory labels retain configured ranges. Other isolator
 positions keep the configured ranges because no initial isolation policy is
 charted for them. When those survivors are the small blind and big blind, this
 exact six-max chart route establishes the small blind as OOP and the big blind
-as IP. An
+as IP. A reviewed dealer/button alias distinguishes the heads-up form of this
+line and maps that IP player to the small-blind action actor. An exact
+four-action limp/isolation-raise/limp-reraise/call line can
+instead use every charted limper/isolator matchup. The limper uses its
+isolation-response reraise band, while the isolator uses its adjusted continue
+band after excluding 4-bets. Both final commitments, the full-raise and ratio
+bounds, reviewed actor labels, and the reconstructed root pot must agree. An
 open-and-call preflop history whose actors match the reviewed seats replaces
 the configured generic ranges with the chart's opener
 range and its flat-caller continue band after excluding the reraise segment.

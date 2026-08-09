@@ -16,6 +16,7 @@ from app.solvers.preflop_context import POSTED_BLIND_BB, Position
 from app.solvers.postflop_ranges import (
     resolve_cold_four_bet_pot_relative_position,
     resolve_isolation_raised_pot_relative_position,
+    resolve_limp_reraised_pot_relative_position,
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
@@ -24,6 +25,7 @@ from app.solvers.preflop_chart import (
     COLD_THREE_BET_DEFENSE_POLICIES,
     FOUR_BET_DEFENSE_POLICIES,
     ISOLATION_RESPONSE_POLICIES,
+    LIMP_RERAISE_RESPONSE_POLICIES,
     SQUEEZE_DEFENSE_POLICIES,
     THREE_BET_DEFENSE_POLICIES,
     hand_classes_in_policy_band,
@@ -106,6 +108,57 @@ def isolation_raised_pot_state(
                 actor=limper_position,
                 action="call",
                 amount=isolation_raise_size,
+            ),
+        ],
+    )
+
+
+def limp_reraised_pot_state(
+    *,
+    hero_position: Position = "button",
+    limper_position: Position = "utg",
+    isolation_raiser_position: Position = "button",
+    isolation_raise_size: float = 4.0,
+    limp_reraise_size: float = 12.0,
+) -> CanonicalState:
+    opponent_position = (
+        limper_position
+        if hero_position == isolation_raiser_position
+        else isolation_raiser_position
+    )
+    return CanonicalState(
+        players_in_hand=2,
+        hero_position=hero_position,
+        opponent_position=opponent_position,
+        street="flop",
+        pot_size=(
+            1.5
+            - POSTED_BLIND_BB[limper_position]
+            - POSTED_BLIND_BB[isolation_raiser_position]
+            + 2 * limp_reraise_size
+        ),
+        current_bet=0,
+        effective_stack=100.0 - limp_reraise_size,
+        preflop_action_history=[
+            PreflopAction(
+                actor=limper_position,
+                action="call",
+                amount=1.0,
+            ),
+            PreflopAction(
+                actor=isolation_raiser_position,
+                action="raise",
+                amount=isolation_raise_size,
+            ),
+            PreflopAction(
+                actor=limper_position,
+                action="raise",
+                amount=limp_reraise_size,
+            ),
+            PreflopAction(
+                actor=isolation_raiser_position,
+                action="call",
+                amount=limp_reraise_size,
             ),
         ],
     )
@@ -705,6 +758,284 @@ def test_keeps_configured_ranges_for_inexact_isolation_raised_pot() -> None:
 
     state = isolation_raised_pot_state()
     state.pot_size = 10.0
+    assert select(state).source == "configured"
+
+
+def test_selects_chart_ranges_for_heads_up_limp_reraised_pot() -> None:
+    selection = select(limp_reraised_pot_state())
+
+    assert selection.source == "preflop_chart_limp_reraised_pot"
+    assert selection.context == {
+        "scenario": "limp_reraised_pot",
+        "limper_position": "utg",
+        "isolation_raiser_position": "button",
+        "limp_reraiser_position": "utg",
+        "limp_size_bb": 1.0,
+        "isolation_raise_size_bb": 4.0,
+        "limp_reraise_size_bb": 12.0,
+        "limp_reraise_to_isolation_ratio": 3.0,
+        "isolation_response_policy": "heads_up_after_hero_limp",
+        "limp_reraise_response_policy": (
+            "heads_up_original_limper_reraise"
+        ),
+        "isolation_raise_size_policy": "standard",
+        "limp_reraise_size_policy": "large",
+        "stack_depth_policy": "standard",
+        "starting_effective_stack_bb": 100.0,
+        "stack_depth_source": "reconstructed",
+        "limper_base_reraise_fraction": 0.045,
+        "limper_reraise_fraction": 0.045,
+        "isolation_raiser_base_continue_fraction": 0.05,
+        "isolation_raiser_base_four_bet_fraction": 0.022,
+        "isolation_raiser_continue_fraction": 0.045,
+        "isolation_raiser_four_bet_fraction": 0.0209,
+    }
+    assert "AA" in selection.oop_range.split(",")
+    assert "AA" not in selection.ip_range.split(",")
+    assert selection.oop_range != DEFAULT_POSTFLOP_OOP_RANGE
+    assert selection.ip_range != DEFAULT_POSTFLOP_IP_RANGE
+
+
+@pytest.mark.parametrize(
+    ("limper_position", "isolation_raiser_position"),
+    tuple(LIMP_RERAISE_RESPONSE_POLICIES),
+)
+def test_supports_every_charted_called_limp_reraise(
+    limper_position: Position,
+    isolation_raiser_position: Position,
+) -> None:
+    state = limp_reraised_pot_state(
+        limper_position=limper_position,
+        isolation_raiser_position=isolation_raiser_position,
+        hero_position=isolation_raiser_position,
+    )
+    hero_relative_position = resolve_limp_reraised_pot_relative_position(
+        state
+    )
+
+    assert hero_relative_position is not None
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+    assert selection.source == "preflop_chart_limp_reraised_pot"
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("IP", "OOP", "ip"),
+        ("OOP", "IP", "oop"),
+        ("button", "OOP", "ip"),
+        ("IP", "utg", "ip"),
+    ),
+)
+def test_assigns_limp_reraised_ranges_from_reviewed_position_labels(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = limp_reraised_pot_state()
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limp_reraised_pot"
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("button", "IP", "oop"),
+        ("OOP", "utg", "oop"),
+        ("IP", "IP", "ip"),
+    ),
+)
+def test_rejects_contradictory_limp_reraised_position_labels(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = limp_reraised_pot_state()
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "configured"
+    assert resolve_limp_reraised_pot_relative_position(state) is None
+
+
+def test_resolves_blind_limp_reraised_pot_relative_position() -> None:
+    state = limp_reraised_pot_state(
+        hero_position="big_blind",
+        limper_position="small_blind",
+        isolation_raiser_position="big_blind",
+    )
+
+    assert resolve_limp_reraised_pot_relative_position(state) == "ip"
+
+    state.hero_position = "small_blind"
+    state.opponent_position = "big_blind"
+    assert resolve_limp_reraised_pot_relative_position(state) == "oop"
+
+    state.pot_size = 30.0
+    assert resolve_limp_reraised_pot_relative_position(state) is None
+
+
+@pytest.mark.parametrize(
+    ("hero_position", "opponent_position", "hero_relative_position"),
+    (
+        ("dealer", "big_blind", "ip"),
+        ("button", "big_blind", "ip"),
+        ("big_blind", "dealer", "oop"),
+        ("big_blind", "button", "oop"),
+    ),
+)
+def test_assigns_heads_up_dealer_as_small_blind_limp_reraiser(
+    hero_position: str,
+    opponent_position: str,
+    hero_relative_position: Literal["ip", "oop"],
+) -> None:
+    state = limp_reraised_pot_state(
+        hero_position="small_blind",
+        limper_position="small_blind",
+        isolation_raiser_position="big_blind",
+    )
+    state.hero_position = hero_position
+    state.opponent_position = opponent_position
+
+    assert (
+        resolve_limp_reraised_pot_relative_position(state)
+        == hero_relative_position
+    )
+    selection = select_postflop_ranges(
+        state,
+        hero_relative_position=hero_relative_position,
+        configured_oop_range=DEFAULT_POSTFLOP_OOP_RANGE,
+        configured_ip_range=DEFAULT_POSTFLOP_IP_RANGE,
+        contextual_enabled=True,
+    )
+
+    assert selection.source == "preflop_chart_limp_reraised_pot"
+    assert "AA" in selection.ip_range.split(",")
+    assert "AA" not in selection.oop_range.split(",")
+
+
+def test_limp_reraised_ranges_apply_size_and_stack_policies() -> None:
+    short = limp_reraised_pot_state(
+        isolation_raise_size=3.0,
+        limp_reraise_size=8.0,
+    )
+    short.effective_stack = 12.0
+    deep = limp_reraised_pot_state(
+        isolation_raise_size=5.0,
+        limp_reraise_size=20.0,
+    )
+    deep.effective_stack = 180.0
+
+    short_selection = select(short)
+    deep_selection = select(deep)
+
+    assert short_selection.context["stack_depth_policy"] == "short"
+    assert short_selection.context["isolation_raise_size_policy"] == "small"
+    assert short_selection.context["limp_reraise_size_policy"] == "standard"
+    assert short_selection.context["limper_reraise_fraction"] == 0.0614
+    assert short_selection.context["isolation_raiser_continue_fraction"] == 0.045
+    assert short_selection.context["isolation_raiser_four_bet_fraction"] == 0.0286
+    assert deep_selection.context["stack_depth_policy"] == "deep"
+    assert deep_selection.context["isolation_raise_size_policy"] == "large"
+    assert deep_selection.context["limp_reraise_size_policy"] == "very_large"
+    assert deep_selection.context["limper_reraise_fraction"] == 0.0373
+    assert deep_selection.context["isolation_raiser_continue_fraction"] == 0.042
+    assert deep_selection.context["isolation_raiser_four_bet_fraction"] == 0.0178
+
+
+def test_selects_limp_reraised_ranges_after_completed_flop() -> None:
+    state = limp_reraised_pot_state()
+    state.street = "turn"
+    state.completed_postflop_streets = [
+        CompletedPostflopStreetHistory(
+            street="flop",
+            actions=[
+                CompletedPostflopAction(actor="oop", action="check"),
+                CompletedPostflopAction(actor="ip", action="check"),
+            ],
+        )
+    ]
+
+    selection = select(state)
+
+    assert selection.source == "preflop_chart_limp_reraised_pot"
+    assert selection.context["decision_street"] == "turn"
+    assert selection.context["completed_street_count"] == 1.0
+
+
+def test_call_first_limp_reraise_history_ignores_legacy_opener_metadata() -> None:
+    state = limp_reraised_pot_state()
+    state.preflop_opener_position = "cutoff"
+    state.preflop_open_size = 2.5
+
+    assert select(state).source == "preflop_chart_limp_reraised_pot"
+
+
+def test_keeps_configured_ranges_for_inexact_limp_reraised_pot() -> None:
+    state = limp_reraised_pot_state()
+    state.players_in_hand = 3
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[0].amount = 1.5
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[1].amount = 5.5
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[2].actor = "hijack"
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[2].amount = 6.0
+    state.preflop_action_history[3].amount = 6.0
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[2].amount = 17.0
+    state.preflop_action_history[3].amount = 17.0
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[3].actor = "cutoff"
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.preflop_action_history[3].amount = 11.0
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.opponent_position = "cutoff"
+    assert select(state).source == "configured"
+
+    state = limp_reraised_pot_state()
+    state.pot_size = 30.0
     assert select(state).source == "configured"
 
 
@@ -2087,6 +2418,14 @@ def test_reconstructs_flop_root_from_current_street_wagers() -> None:
     isolation_facing_bet.facing_action = "bet"
     assert select(isolation_facing_bet).source == (
         "preflop_chart_isolation_raised_pot"
+    )
+
+    limp_reraised_facing_bet = limp_reraised_pot_state()
+    limp_reraised_facing_bet.pot_size = 27.5
+    limp_reraised_facing_bet.current_bet = 2.0
+    limp_reraised_facing_bet.facing_action = "bet"
+    assert select(limp_reraised_facing_bet).source == (
+        "preflop_chart_limp_reraised_pot"
     )
 
     facing_bet = single_raised_pot_state()

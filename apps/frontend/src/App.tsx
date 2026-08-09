@@ -394,6 +394,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
   preflop_chart_limped_pot: "Preflop chart · limped pot",
   preflop_chart_isolation_raised_pot: "Preflop chart · isolation-raised pot",
+  preflop_chart_limp_reraised_pot: "Preflop chart · limp-reraised pot",
   preflop_chart_single_raised_pot: "Preflop chart · single-raised pot",
   preflop_chart_three_bet_pot: "Preflop chart · 3-bet pot",
   preflop_chart_cold_three_bet_pot: "Preflop chart · cold-call 3-bet pot",
@@ -1046,6 +1047,7 @@ function recommendationEvidenceFromRaw(
     const contextualRangeSource = (
       rawRangeSource === "preflop_chart_limped_pot"
       || rawRangeSource === "preflop_chart_isolation_raised_pot"
+      || rawRangeSource === "preflop_chart_limp_reraised_pot"
       || rawRangeSource === "preflop_chart_single_raised_pot"
       || rawRangeSource === "preflop_chart_three_bet_pot"
       || rawRangeSource === "preflop_chart_cold_three_bet_pot"
@@ -1190,6 +1192,58 @@ function recommendationEvidenceFromRaw(
           value: `BB isolate ${formatEvidenceRatio(rangeIsolationFraction)} · limper call ${
             formatEvidenceRatio(rangeLimperReraise)
           }-${formatEvidenceRatio(rangeLimperContinue)}`,
+        });
+      }
+    } else if (rawRangeSource === "preflop_chart_limp_reraised_pot") {
+      const rangeLimperPosition = metadataLabel(rangeContext?.limper_position);
+      const rangeIsolationRaiserPosition = metadataLabel(
+        rangeContext?.isolation_raiser_position,
+      );
+      const rangeLimpSize = metadataNumber(rangeContext?.limp_size_bb);
+      const rangeIsolationRaiseSize = metadataNumber(
+        rangeContext?.isolation_raise_size_bb,
+      );
+      const rangeLimpReraiseSize = metadataNumber(
+        rangeContext?.limp_reraise_size_bb,
+      );
+      if (rangeLimperPosition && rangeIsolationRaiserPosition) {
+        details.push({
+          label: "Range actors",
+          value: `${rangeLimperPosition} limps${
+            rangeLimpSize !== null && rangeLimpSize > 0
+              ? ` ${formatEvidenceBb(rangeLimpSize)}`
+              : ""
+          } · ${rangeIsolationRaiserPosition} isolates${
+            rangeIsolationRaiseSize !== null && rangeIsolationRaiseSize > 0
+              ? ` ${formatEvidenceBb(rangeIsolationRaiseSize)}`
+              : ""
+          } · ${rangeLimperPosition} reraises${
+            rangeLimpReraiseSize !== null && rangeLimpReraiseSize > 0
+              ? ` ${formatEvidenceBb(rangeLimpReraiseSize)}`
+              : ""
+          } · ${rangeIsolationRaiserPosition} calls`,
+        });
+      }
+      const rangeLimperReraise = metadataRatio(
+        rangeContext?.limper_reraise_fraction,
+      );
+      const rangeIsolationRaiserContinue = metadataRatio(
+        rangeContext?.isolation_raiser_continue_fraction,
+      );
+      const rangeIsolationRaiserFourBet = metadataRatio(
+        rangeContext?.isolation_raiser_four_bet_fraction,
+      );
+      if (
+        rangeLimperReraise !== null
+        && rangeIsolationRaiserContinue !== null
+        && rangeIsolationRaiserFourBet !== null
+        && rangeIsolationRaiserFourBet < rangeIsolationRaiserContinue
+      ) {
+        details.push({
+          label: "Range bands",
+          value: `Limper reraise ${formatEvidenceRatio(rangeLimperReraise)} · isolator call ${
+            formatEvidenceRatio(rangeIsolationRaiserFourBet)
+          }-${formatEvidenceRatio(rangeIsolationRaiserContinue)}`,
         });
       }
     } else if (rawRangeSource === "preflop_chart_single_raised_pot") {

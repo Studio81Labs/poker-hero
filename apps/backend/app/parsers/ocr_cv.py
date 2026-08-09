@@ -8,27 +8,25 @@ from typing import Literal, cast
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.models import Card, DetectedState, ParserResult, Rank, Street, Suit
-from app.parsers.base import ParserError
+from app.ocr_layouts import (
+    FORTUNA_NATIONS_LAYOUT,
+    CardSlot,
+    OcrLayout,
+    PixelBox,
+    TextMode,
+    get_ocr_layout,
+)
+from app.parsers.base import ParserConfigurationError, ParserError
 
-BASE_WIDTH = 973
-BASE_HEIGHT = 691
+BASE_WIDTH = FORTUNA_NATIONS_LAYOUT.base_width
+BASE_HEIGHT = FORTUNA_NATIONS_LAYOUT.base_height
 MIN_RANK_PIXELS = 12
 RANK_THRESHOLD = 145
 RANK_TEMPLATE_WIDTH = 12
 RANK_TEMPLATE_HEIGHT = 18
 RANK_MATCH_THRESHOLD = 0.58
 
-PixelBox = tuple[int, int, int, int]
 RankMask = tuple[str, ...]
-SlotKind = Literal["hero", "board"]
-TextMode = Literal["light", "dark"]
-
-
-@dataclass(frozen=True)
-class CardSlot:
-    name: str
-    kind: SlotKind
-    box: PixelBox
 
 
 @dataclass(frozen=True)
@@ -38,13 +36,6 @@ class ParsedCard:
     confidence: float
     rank_score: float
     suit_confidence: float
-
-
-@dataclass(frozen=True)
-class OpponentSeat:
-    name: str
-    card_box: PixelBox
-    stack_box: PixelBox
 
 
 @dataclass(frozen=True)
@@ -69,20 +60,14 @@ class MoneyScale:
     big_blind: float | None
 
 
-POT_BOX = (420, 225, 560, 260)
-HERO_STACK_BOX = (430, 545, 575, 586)
-CALL_AMOUNT_BOX = (740, 666, 858, 686)
-RAISE_TO_AMOUNT_BOX = (858, 666, 973, 686)
-HEADER_STAKES_BOX = (0, 0, 560, 30)
+POT_BOX = FORTUNA_NATIONS_LAYOUT.pot_box
+HERO_STACK_BOX = FORTUNA_NATIONS_LAYOUT.hero_stack_box
+CALL_AMOUNT_BOX = FORTUNA_NATIONS_LAYOUT.call_amount_box
+RAISE_TO_AMOUNT_BOX = FORTUNA_NATIONS_LAYOUT.raise_to_amount_box
+HEADER_STAKES_BOX = FORTUNA_NATIONS_LAYOUT.header_stakes_box
 ACTION_CONTROL_MIN_CONFIDENCE = 0.7
 
-OPPONENT_SEATS = (
-    OpponentSeat("top", (425, 45, 630, 130), (450, 144, 585, 166)),
-    OpponentSeat("upper_left", (50, 120, 190, 220), (70, 205, 200, 245)),
-    OpponentSeat("upper_right", (780, 120, 930, 220), (805, 220, 910, 244)),
-    OpponentSeat("lower_left", (130, 410, 280, 500), (155, 514, 255, 538)),
-    OpponentSeat("lower_right", (710, 410, 850, 500), (730, 514, 835, 538)),
-)
+OPPONENT_SEATS = FORTUNA_NATIONS_LAYOUT.opponent_seats
 
 NUMERIC_TEMPLATE_WIDTH = 10
 NUMERIC_TEMPLATE_HEIGHT = 16
@@ -662,15 +647,7 @@ RANK_TEMPLATES: dict[Rank, tuple[RankMask, ...]] = {
     ),
 }
 
-CARD_SLOTS = (
-    CardSlot("hero_1", "hero", (420, 468, 486, 542)),
-    CardSlot("hero_2", "hero", (486, 468, 552, 542)),
-    CardSlot("board_1", "board", (319, 262, 384, 346)),
-    CardSlot("board_2", "board", (386, 262, 451, 346)),
-    CardSlot("board_3", "board", (454, 262, 519, 346)),
-    CardSlot("board_4", "board", (522, 262, 587, 346)),
-    CardSlot("board_5", "board", (590, 262, 655, 346)),
-)
+CARD_SLOTS = FORTUNA_NATIONS_LAYOUT.card_slots
 
 
 class OcrCvParser:
@@ -678,28 +655,35 @@ class OcrCvParser:
 
     def __init__(self, layout_profile: str = "generic") -> None:
         self.layout_profile = layout_profile
+        try:
+            self.layout = get_ocr_layout(layout_profile)
+        except ValueError as exc:
+            raise ParserConfigurationError(str(exc)) from exc
 
     def parse(self, image_path: Path) -> ParserResult:
         image = _load_image(image_path)
         warnings: list[str] = []
         raw_slots: list[dict[str, object]] = []
 
-        if self.layout_profile not in {"generic", "fortuna", "nations", "fortuna_nations"}:
+        aspect_ratio = image.width / image.height
+        if abs(aspect_ratio - self.layout.aspect_ratio) > 0.08:
             warnings.append(
-                f"Layout profile '{self.layout_profile}' is not calibrated; using Fortuna/Nations fixed regions"
+                f"Screenshot aspect ratio differs from calibrated {self.layout.label} table captures"
             )
 
-        aspect_ratio = image.width / image.height
-        if abs(aspect_ratio - (BASE_WIDTH / BASE_HEIGHT)) > 0.08:
-            warnings.append("Screenshot aspect ratio differs from calibrated Fortuna/Nations table captures")
-
-        hero_cards, board_cards = _parse_card_slots(image, warnings, raw_slots)
+        hero_cards, board_cards = _parse_card_slots(
+            image,
+            warnings,
+            raw_slots,
+            layout=self.layout,
+        )
         hero_cards, board_cards = _remove_duplicate_cards(hero_cards, board_cards, warnings)
         hero_cards_visible = _hero_slots_have_visible_cards(raw_slots)
         street = _street_from_board_count(len(board_cards))
         numeric_state, numeric_confidences, numeric_raw, manual_review_fields = _parse_numeric_state(
             image,
             hero_cards_visible=hero_cards_visible,
+            layout=self.layout,
             street=street,
         )
         if "opponent_wager" in manual_review_fields:
@@ -735,7 +719,7 @@ class OcrCvParser:
             raw={
                 "provider": self.name,
                 "layout_profile": self.layout_profile,
-                "layout_engine": "fortuna_nations_fixed_v1",
+                "layout_engine": self.layout.engine,
                 "image_filename": image_path.name,
                 "image_size": [image.width, image.height],
                 "manual_review_fields": manual_review_fields,
@@ -761,13 +745,17 @@ def _load_image(image_path: Path) -> Image.Image:
 
 
 def _parse_card_slots(
-    image: Image.Image, warnings: list[str], raw_slots: list[dict[str, object]]
+    image: Image.Image,
+    warnings: list[str],
+    raw_slots: list[dict[str, object]],
+    *,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
 ) -> tuple[list[ParsedCard], list[ParsedCard]]:
     hero_cards: list[ParsedCard] = []
     board_cards: list[ParsedCard] = []
 
-    for slot in CARD_SLOTS:
-        parsed = _parse_card_slot(image, slot)
+    for slot in layout.card_slots:
+        parsed = _parse_card_slot(image, slot, layout)
         raw_slots.append(parsed["raw"])
         card = parsed["card"]
         if card is None:
@@ -783,9 +771,13 @@ def _parse_card_slots(
     return hero_cards, board_cards
 
 
-def _parse_card_slot(image: Image.Image, slot: CardSlot) -> dict[str, object]:
-    card_box = _scale_box(slot.box, image.width, image.height)
-    rank_box = _scale_box(_rank_box(slot.box), image.width, image.height)
+def _parse_card_slot(
+    image: Image.Image,
+    slot: CardSlot,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+) -> dict[str, object]:
+    card_box = _scale_box(slot.box, image.width, image.height, layout)
+    rank_box = _scale_box(_rank_box(slot), image.width, image.height, layout)
     rank_mask = _rank_mask_from_crop(image.crop(rank_box))
     raw: dict[str, object] = {
         "slot": slot.name,
@@ -860,9 +852,14 @@ def _hero_slots_have_visible_cards(raw_slots: list[dict[str, object]]) -> bool:
     return False
 
 
-def _scale_box(box: PixelBox, width: int, height: int) -> PixelBox:
-    x_ratio = width / BASE_WIDTH
-    y_ratio = height / BASE_HEIGHT
+def _scale_box(
+    box: PixelBox,
+    width: int,
+    height: int,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+) -> PixelBox:
+    x_ratio = width / layout.base_width
+    y_ratio = height / layout.base_height
     return (
         round(box[0] * x_ratio),
         round(box[1] * y_ratio),
@@ -871,8 +868,14 @@ def _scale_box(box: PixelBox, width: int, height: int) -> PixelBox:
     )
 
 
-def _rank_box(slot_box: PixelBox) -> PixelBox:
-    return (slot_box[0], slot_box[1], slot_box[0] + 26, slot_box[1] + 38)
+def _rank_box(slot: CardSlot) -> PixelBox:
+    left, top, right, bottom = slot.rank_region
+    return (
+        slot.box[0] + left,
+        slot.box[1] + top,
+        slot.box[0] + right,
+        slot.box[1] + bottom,
+    )
 
 
 def _rank_mask_from_crop(crop: Image.Image) -> RankMask | None:
@@ -982,20 +985,29 @@ def _parse_numeric_state(
     image: Image.Image,
     *,
     hero_cards_visible: bool = True,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
     street: Street | None = "preflop",
 ) -> tuple[dict[str, object], dict[str, float], dict[str, object], list[str]]:
     state: dict[str, object] = {}
     confidences: dict[str, float] = {}
     raw: dict[str, object] = {}
     manual_review_fields: list[str] = ["hero_position"]
-    money_scale = _money_scale_from_image(image)
+    money_scale = _money_scale_from_image(image, layout)
     raw["money_scale"] = {
         "scale": money_scale.scale,
         "display_unit": money_scale.display_unit,
         "big_blind": money_scale.big_blind,
     }
 
-    pot = _read_number_from_box(image, POT_BOX, "light", start_group=4, max_gap=7)
+    pot = _read_number_from_box(
+        image,
+        layout.pot.box,
+        layout.pot.mode,
+        layout,
+        start_group=layout.pot.start_group,
+        max_gap=layout.pot.max_gap,
+        min_height=layout.pot.min_height,
+    )
     raw["pot_size"] = _number_raw(pot)
     if pot is not None:
         normalized_pot = _scale_money_read(pot, money_scale.scale)
@@ -1006,7 +1018,11 @@ def _parse_numeric_state(
     else:
         manual_review_fields.append("pot_size")
 
-    hero_stack = _read_stack_number_from_box(image, HERO_STACK_BOX) if hero_cards_visible else None
+    hero_stack = (
+        _read_stack_number_from_box(image, layout.hero_stack_box, layout)
+        if hero_cards_visible
+        else None
+    )
     raw["hero_stack"] = _number_raw(hero_stack)
     if not hero_cards_visible:
         raw["hero_stack_source"] = "hero cards not visible"
@@ -1014,7 +1030,15 @@ def _parse_numeric_state(
     call_amount: NumberRead | None = None
     raise_to_amount: NumberRead | None = None
     if hero_cards_visible:
-        call_amount = _read_number_from_box(image, CALL_AMOUNT_BOX, "dark", max_gap=8, min_height=6)
+        call_amount = _read_number_from_box(
+            image,
+            layout.call_amount.box,
+            layout.call_amount.mode,
+            layout,
+            start_group=layout.call_amount.start_group,
+            max_gap=layout.call_amount.max_gap,
+            min_height=layout.call_amount.min_height,
+        )
         if call_amount is None or (call_amount.value == 0 and call_amount.confidence < 0.6):
             call_amount = NumberRead(value=0.0, text="0", confidence=0.68)
             raw["current_bet_source"] = "no call amount detected; assuming check option"
@@ -1029,10 +1053,12 @@ def _parse_numeric_state(
         if street in {"flop", "turn", "river"} and normalized_call_amount.value > 0:
             raise_to_amount = _read_number_from_box(
                 image,
-                RAISE_TO_AMOUNT_BOX,
-                "dark",
-                max_gap=8,
-                min_height=6,
+                layout.raise_to_amount.box,
+                layout.raise_to_amount.mode,
+                layout,
+                start_group=layout.raise_to_amount.start_group,
+                max_gap=layout.raise_to_amount.max_gap,
+                min_height=layout.raise_to_amount.min_height,
             )
             raw["raise_to"] = _number_raw(raise_to_amount)
             normalized_raise_to = (
@@ -1069,9 +1095,9 @@ def _parse_numeric_state(
 
     active_seats: list[dict[str, object]] = []
     opponent_stacks: list[float] = []
-    for seat in OPPONENT_SEATS:
-        card_box = _scale_box(seat.card_box, image.width, image.height)
-        stack_box = _scale_box(seat.stack_box, image.width, image.height)
+    for seat in layout.opponent_seats:
+        card_box = _scale_box(seat.card_box, image.width, image.height, layout)
+        stack_box = _scale_box(seat.stack_box, image.width, image.height, layout)
         activity_confidence = _card_back_confidence(image.crop(card_box))
         seat_raw: dict[str, object] = {
             "seat": seat.name,
@@ -1081,7 +1107,7 @@ def _parse_numeric_state(
             "stack_box": list(stack_box),
         }
         if activity_confidence >= 0.18:
-            stack = _read_stack_number_from_box(image, seat.stack_box)
+            stack = _read_stack_number_from_box(image, seat.stack_box, layout)
             seat_raw["stack"] = _number_raw(stack)
             if stack is not None:
                 normalized_stack = _scale_money_read(stack, money_scale.scale)
@@ -1173,21 +1199,44 @@ def _scale_money_read(number: NumberRead, scale: float) -> NumberRead:
     )
 
 
-def _money_scale_from_image(image: Image.Image) -> MoneyScale:
-    big_blind = _read_big_blind_from_header(image)
+def _money_scale_from_image(
+    image: Image.Image,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+) -> MoneyScale:
+    big_blind = _read_big_blind_from_header(image, layout)
     if big_blind is None:
         return MoneyScale(scale=1.0, display_unit="bb", big_blind=None)
 
-    if _number_box_has_bb_suffix(image, POT_BOX, start_group=4, max_gap=7):
+    if _number_box_has_bb_suffix(
+        image,
+        layout.pot.box,
+        layout,
+        mode=layout.pot.mode,
+        start_group=layout.pot.start_group,
+        max_gap=layout.pot.max_gap,
+        min_height=layout.pot.min_height,
+    ):
         return MoneyScale(scale=1.0, display_unit="bb", big_blind=big_blind)
 
     return MoneyScale(scale=round(1 / big_blind, 4), display_unit="cash", big_blind=big_blind)
 
 
-def _read_big_blind_from_header(image: Image.Image) -> float | None:
-    scaled_box = _scale_box(HEADER_STAKES_BOX, image.width, image.height)
+def _read_big_blind_from_header(
+    image: Image.Image,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+) -> float | None:
+    scaled_box = _scale_box(
+        layout.header_stakes.box,
+        image.width,
+        image.height,
+        layout,
+    )
     crop = image.crop(scaled_box)
-    sequence = _numeric_sequence_from_crop(crop, "light", min_height=3)
+    sequence = _numeric_sequence_from_crop(
+        crop,
+        layout.header_stakes.mode,
+        min_height=layout.header_stakes.min_height,
+    )
     return _big_blind_from_numeric_sequence(sequence)
 
 
@@ -1267,11 +1316,18 @@ def _decimal_candidates_from_numeric_sequence(sequence: str) -> list[DecimalCand
 
 
 def _number_box_has_bb_suffix(
-    image: Image.Image, box: PixelBox, *, start_group: int, max_gap: int, min_height: int = 0
+    image: Image.Image,
+    box: PixelBox,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+    *,
+    mode: TextMode = "light",
+    start_group: int,
+    max_gap: int,
+    min_height: int = 0,
 ) -> bool:
-    scaled_box = _scale_box(box, image.width, image.height)
+    scaled_box = _scale_box(box, image.width, image.height, layout)
     crop = image.crop(scaled_box)
-    groups, _ = _numeric_groups(crop, "light", min_height=min_height)
+    groups, _ = _numeric_groups(crop, mode, min_height=min_height)
     selected_groups = _select_numeric_group_run(groups[start_group:], max_gap=max_gap)
     if not selected_groups:
         return False
@@ -1292,12 +1348,13 @@ def _read_number_from_box(
     image: Image.Image,
     box: PixelBox,
     mode: TextMode,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
     *,
     start_group: int = 0,
     max_gap: int = 8,
     min_height: int = 0,
 ) -> NumberRead | None:
-    scaled_box = _scale_box(box, image.width, image.height)
+    scaled_box = _scale_box(box, image.width, image.height, layout)
     crop = image.crop(scaled_box)
     return _read_number_from_crop(
         crop,
@@ -1308,8 +1365,12 @@ def _read_number_from_box(
     )
 
 
-def _read_stack_number_from_box(image: Image.Image, box: PixelBox) -> NumberRead | None:
-    scaled_box = _scale_box(box, image.width, image.height)
+def _read_stack_number_from_box(
+    image: Image.Image,
+    box: PixelBox,
+    layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
+) -> NumberRead | None:
+    scaled_box = _scale_box(box, image.width, image.height, layout)
     crop = image.crop(scaled_box)
     candidates: list[tuple[int, float, float, NumberRead]] = []
     for start_y, end_y in _numeric_row_runs(crop, "light"):

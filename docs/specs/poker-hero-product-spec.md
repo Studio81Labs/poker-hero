@@ -222,6 +222,12 @@ provider/profile compatibility so a fixed-region parser cannot be paired with an
 uncalibrated client. A generic parser may attempt the first pass, and
 profile-specific parser settings can be added as screenshots reveal layout
 differences.
+The deterministic local parser resolves installed profiles through immutable
+layout definitions that own every fixed read region and the recognition-engine
+identity. Unknown local profiles must fail before reading an image; they must
+never silently reuse another client's coordinates. The current generic,
+Fortuna, Nations, and combined profile IDs are compatibility aliases for one
+calibrated Fortuna/Nations layout.
 
 ### Recommendation Registry
 

@@ -38,6 +38,12 @@ Layout profile IDs are deployment-defined data. The capability response includes
 a parser/layout compatibility matrix: multi-layout external vision can accept
 custom profiles such as `pokerstars`, while fixed-region OCR is selectable only
 with profiles for which its coordinates and templates are calibrated.
+Installed local OCR profiles resolve through an immutable layout registry. Each
+layout supplies the reference dimensions and every card, pot, control, stack,
+stakes-header, and opponent-seat region used during parsing. The legacy
+`generic`, `fortuna`, `nations`, and `fortuna_nations` IDs intentionally alias
+the same calibrated engine; an unknown local profile fails closed instead of
+borrowing those coordinates.
 Per-job mutations use bounded lock stripes around short storage transitions.
 Screenshot parsing runs outside those stripes, then reloads and merges into the
 latest job record so slow OCR does not block unrelated jobs and deleted uploads

@@ -1,3 +1,4 @@
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from typing import BinaryIO
 
@@ -5,12 +6,18 @@ import httpx
 import pytest
 from PIL import Image
 
-from app.config import Settings
+from app.config import OCR_CV_LAYOUT_PROFILES, Settings
+from app.ocr_layouts import (
+    FORTUNA_NATIONS_LAYOUT,
+    OCR_CV_LAYOUT_PROFILE_IDS,
+    get_ocr_layout,
+)
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.ocr_cv import (
     CALL_AMOUNT_BOX,
     POT_BOX,
     RAISE_TO_AMOUNT_BOX,
+    MoneyScale,
     NumberRead,
     OcrCvParser,
     _big_blind_from_numeric_sequence,
@@ -19,8 +26,12 @@ from app.parsers.ocr_cv import (
     _facing_action_from_controls,
     _hero_slots_have_visible_cards,
     _match_rank,
+    _money_scale_from_image,
+    _number_box_has_bb_suffix,
+    _parse_card_slot,
     _parse_numeric_state,
     _rank_template,
+    _scale_box,
     _street_from_board_count,
     format_number,
 )
@@ -416,6 +427,268 @@ def test_registry_builds_ocr_cv_parser(tmp_path: Path) -> None:
 
     assert isinstance(parser, OcrCvParser)
     assert parser.name == "ocr_cv"
+    assert parser.layout is FORTUNA_NATIONS_LAYOUT
+
+
+def test_local_ocr_layout_aliases_share_the_calibrated_engine() -> None:
+    assert OCR_CV_LAYOUT_PROFILE_IDS == OCR_CV_LAYOUT_PROFILES
+
+    for profile in OCR_CV_LAYOUT_PROFILE_IDS:
+        assert get_ocr_layout(profile) is FORTUNA_NATIONS_LAYOUT
+
+
+def test_local_ocr_layout_geometry_is_immutable() -> None:
+    with pytest.raises(FrozenInstanceError):
+        FORTUNA_NATIONS_LAYOUT.base_width = 1  # type: ignore[misc]
+
+    with pytest.raises(TypeError):
+        FORTUNA_NATIONS_LAYOUT.card_slots[0] = (  # type: ignore[index]
+            FORTUNA_NATIONS_LAYOUT.card_slots[1]
+        )
+
+
+def test_local_ocr_layout_rejects_invalid_geometry() -> None:
+    with pytest.raises(
+        ValueError,
+        match="pot box is outside its reference dimensions",
+    ):
+        replace(
+            FORTUNA_NATIONS_LAYOUT,
+            pot=replace(FORTUNA_NATIONS_LAYOUT.pot, box=(0, 0, 974, 10)),
+        )
+
+    with pytest.raises(ValueError, match="call amount numeric settings are invalid"):
+        replace(
+            FORTUNA_NATIONS_LAYOUT,
+            call_amount=replace(FORTUNA_NATIONS_LAYOUT.call_amount, max_gap=0),
+        )
+
+    with pytest.raises(ValueError, match="duplicate card slot names"):
+        replace(
+            FORTUNA_NATIONS_LAYOUT,
+            card_slots=(
+                FORTUNA_NATIONS_LAYOUT.card_slots[0],
+                FORTUNA_NATIONS_LAYOUT.card_slots[0],
+            ),
+        )
+
+    with pytest.raises(ValueError, match="rank region is outside its card slot"):
+        replace(
+            FORTUNA_NATIONS_LAYOUT,
+            card_slots=(
+                replace(
+                    FORTUNA_NATIONS_LAYOUT.card_slots[0],
+                    rank_region=(0, 0, 100, 100),
+                ),
+            ),
+        )
+
+
+def test_ocr_cv_parser_rejects_unknown_layout_without_fallback(tmp_path: Path) -> None:
+    with pytest.raises(
+        ParserConfigurationError,
+        match="Unknown local OCR layout profile: pokerstars",
+    ):
+        build_parser(
+            Settings(
+                data_dir=tmp_path,
+                parser_provider="ocr_cv",
+                parser_layout_profile="pokerstars",
+            )
+        )
+
+
+def test_ocr_cv_scales_regions_against_the_selected_layout() -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="test",
+        base_width=1946,
+        base_height=1382,
+    )
+
+    assert _scale_box((100, 200, 400, 600), 973, 691, layout) == (50, 100, 200, 300)
+
+
+def test_ocr_cv_uses_layout_card_rank_region() -> None:
+    slot = replace(
+        FORTUNA_NATIONS_LAYOUT.card_slots[0],
+        box=(100, 100, 166, 174),
+        rank_region=(5, 6, 20, 30),
+    )
+
+    parsed = _parse_card_slot(
+        Image.new("RGB", (973, 691)),
+        slot,
+        FORTUNA_NATIONS_LAYOUT,
+    )
+
+    assert parsed["raw"]["card_box"] == [100, 100, 166, 174]
+    assert parsed["raw"]["rank_box"] == [105, 106, 120, 130]
+
+
+def test_ocr_cv_uses_layout_numeric_regions(monkeypatch: pytest.MonkeyPatch) -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="test",
+        pot=replace(
+            FORTUNA_NATIONS_LAYOUT.pot,
+            box=(10, 10, 100, 40),
+            mode="dark",
+            start_group=1,
+            max_gap=3,
+            min_height=2,
+        ),
+        hero_stack_box=(10, 50, 100, 80),
+        call_amount=replace(
+            FORTUNA_NATIONS_LAYOUT.call_amount,
+            box=(10, 90, 100, 120),
+            mode="light",
+            start_group=2,
+            max_gap=4,
+            min_height=3,
+        ),
+        raise_to_amount=replace(
+            FORTUNA_NATIONS_LAYOUT.raise_to_amount,
+            box=(10, 130, 100, 160),
+            mode="light",
+            start_group=3,
+            max_gap=5,
+            min_height=4,
+        ),
+        opponent_seats=(),
+    )
+    number_calls: list[tuple[object, ...]] = []
+    stack_calls: list[tuple[object, ...]] = []
+
+    def read_number(
+        _image: Image.Image,
+        box: tuple[int, int, int, int],
+        mode: str,
+        selected_layout: object,
+        **options: int,
+    ) -> NumberRead | None:
+        number_calls.append((box, mode, selected_layout, options))
+        values = {
+            layout.pot.box: NumberRead(value=10, text="10", confidence=0.9),
+            layout.call_amount.box: NumberRead(value=2, text="2", confidence=0.9),
+            layout.raise_to_amount.box: NumberRead(value=4, text="4", confidence=0.9),
+        }
+        return values.get(box)
+
+    def read_stack(
+        _image: Image.Image,
+        box: tuple[int, int, int, int],
+        selected_layout: object,
+    ) -> NumberRead:
+        stack_calls.append((box, selected_layout))
+        return NumberRead(value=50, text="50", confidence=0.9)
+
+    monkeypatch.setattr("app.parsers.ocr_cv._read_number_from_box", read_number)
+    monkeypatch.setattr("app.parsers.ocr_cv._read_stack_number_from_box", read_stack)
+    monkeypatch.setattr(
+        "app.parsers.ocr_cv._money_scale_from_image",
+        lambda _image, _layout: MoneyScale(scale=1, display_unit="bb", big_blind=None),
+    )
+
+    state, _confidences, _raw, _manual_review_fields = _parse_numeric_state(
+        Image.new("RGB", (973, 691)),
+        layout=layout,
+        street="flop",
+    )
+
+    assert state["pot_size"] == 10
+    assert state["current_bet"] == 2
+    assert state["opponent_wager"] == 2
+    assert number_calls == [
+        (layout.pot.box, "dark", layout, {"start_group": 1, "max_gap": 3, "min_height": 2}),
+        (
+            layout.call_amount.box,
+            "light",
+            layout,
+            {"start_group": 2, "max_gap": 4, "min_height": 3},
+        ),
+        (
+            layout.raise_to_amount.box,
+            "light",
+            layout,
+            {"start_group": 3, "max_gap": 5, "min_height": 4},
+        ),
+    ]
+    assert stack_calls == [(layout.hero_stack_box, layout)]
+
+
+def test_ocr_cv_uses_pot_text_mode_for_bb_suffix_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="dark_pot",
+        pot=replace(FORTUNA_NATIONS_LAYOUT.pot, mode="dark"),
+    )
+    captured_modes: list[str] = []
+
+    def numeric_groups(
+        _crop: Image.Image,
+        mode: str,
+        *,
+        min_height: int,
+    ) -> tuple[list[tuple[int, int, int, int, int]], list[list[bool]]]:
+        captured_modes.append(mode)
+        return [], []
+
+    monkeypatch.setattr("app.parsers.ocr_cv._numeric_groups", numeric_groups)
+
+    assert not _number_box_has_bb_suffix(
+        Image.new("RGB", (973, 691)),
+        layout.pot.box,
+        layout,
+        mode=layout.pot.mode,
+        start_group=layout.pot.start_group,
+        max_gap=layout.pot.max_gap,
+        min_height=layout.pot.min_height,
+    )
+    assert captured_modes == ["dark"]
+
+
+def test_money_scale_forwards_pot_text_mode_to_suffix_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="dark_pot",
+        pot=replace(FORTUNA_NATIONS_LAYOUT.pot, mode="dark"),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.parsers.ocr_cv._read_big_blind_from_header",
+        lambda _image, _layout: 0.1,
+    )
+
+    def has_bb_suffix(
+        _image: Image.Image,
+        box: tuple[int, int, int, int],
+        selected_layout: object,
+        **options: object,
+    ) -> bool:
+        captured.update(box=box, layout=selected_layout, options=options)
+        return True
+
+    monkeypatch.setattr("app.parsers.ocr_cv._number_box_has_bb_suffix", has_bb_suffix)
+
+    scale = _money_scale_from_image(Image.new("RGB", (973, 691)), layout)
+
+    assert scale.scale == 1
+    assert captured == {
+        "box": layout.pot.box,
+        "layout": layout,
+        "options": {
+            "mode": "dark",
+            "start_group": layout.pot.start_group,
+            "max_gap": layout.pot.max_gap,
+            "min_height": layout.pot.min_height,
+        },
+    }
 
 
 def test_ocr_cv_parser_missing_file_raises_parser_error(tmp_path: Path) -> None:

@@ -42,6 +42,23 @@ function expectedEnvironment(value) {
   return value;
 }
 
+function accessHeaders(accessClientId, accessClientSecret) {
+  const hasClientId = Boolean(accessClientId);
+  const hasClientSecret = Boolean(accessClientSecret);
+  if (hasClientId !== hasClientSecret) {
+    throw new Error(
+      "Cloudflare Access client ID and secret must be configured together",
+    );
+  }
+  if (!hasClientId) {
+    return {};
+  }
+  return {
+    "CF-Access-Client-Id": accessClientId,
+    "CF-Access-Client-Secret": accessClientSecret,
+  };
+}
+
 async function readBoundedBody(response, label) {
   if (!response.body) {
     return "";
@@ -95,13 +112,14 @@ function parseMcpResponse(body, label) {
   throw new Error(`${label} returned invalid MCP event data`);
 }
 
-async function fetchConfiguration(url, timeoutMs) {
+async function fetchConfiguration(url, headers, timeoutMs) {
   let response;
   try {
     response = await fetch(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": "poker-hero-mcp-deployment-check/1.0",
+        ...headers,
       },
       redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
@@ -122,7 +140,7 @@ async function fetchConfiguration(url, timeoutMs) {
   );
 }
 
-async function postMcp(url, token, payload, timeoutMs, label) {
+async function postMcp(url, token, payload, headers, timeoutMs, label) {
   let response;
   try {
     response = await fetch(url, {
@@ -132,6 +150,7 @@ async function postMcp(url, token, payload, timeoutMs, label) {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "User-Agent": "poker-hero-mcp-deployment-check/1.0",
+        ...headers,
       },
       method: "POST",
       redirect: "manual",
@@ -150,8 +169,15 @@ async function postMcp(url, token, payload, timeoutMs, label) {
   return parseMcpResponse(await readBoundedBody(response, label), label);
 }
 
-async function checkOnce(mcpUrl, configUrl, environment, token, timeoutMs) {
-  const configuration = await fetchConfiguration(configUrl, timeoutMs);
+async function checkOnce(
+  mcpUrl,
+  configUrl,
+  environment,
+  token,
+  headers,
+  timeoutMs,
+) {
+  const configuration = await fetchConfiguration(configUrl, headers, timeoutMs);
   if (
     configuration?.enabled !== true ||
     configuration?.endpoint !== mcpUrl.href ||
@@ -178,6 +204,7 @@ async function checkOnce(mcpUrl, configUrl, environment, token, timeoutMs) {
         },
       },
     },
+    headers,
     timeoutMs,
     "Authenticated MCP initialization",
   );
@@ -201,6 +228,7 @@ async function checkOnce(mcpUrl, configUrl, environment, token, timeoutMs) {
         arguments: {},
       },
     },
+    headers,
     timeoutMs,
     "Authenticated MCP environment check",
   );
@@ -233,6 +261,10 @@ export async function checkMcpDeployment(rawUrl, environment, options = {}) {
   if (!MCP_TOKEN_PATTERN.test(token)) {
     throw new Error("MCP smoke token is not a Poker Hero agent credential");
   }
+  const headers = accessHeaders(
+    options.accessClientId ?? "",
+    options.accessClientSecret ?? "",
+  );
   const attempts = positiveInteger(
     options.attempts ?? DEFAULT_ATTEMPTS,
     "Attempts",
@@ -254,6 +286,7 @@ export async function checkMcpDeployment(rawUrl, environment, options = {}) {
         configUrl,
         normalizedEnvironment,
         token,
+        headers,
         timeoutMs,
       );
       return {
@@ -281,6 +314,8 @@ async function main() {
     );
   }
   const result = await checkMcpDeployment(url, environment, {
+    accessClientId: process.env.CLOUDFLARE_ACCESS_CLIENT_ID,
+    accessClientSecret: process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET,
     configUrl: process.env.MCP_CONFIG_URL,
     token: process.env.MCP_SMOKE_TOKEN,
   });

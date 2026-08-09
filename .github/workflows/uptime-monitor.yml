@@ -46,7 +46,7 @@ jobs:
           node-version: 24
 
       - name: Test deployment probe
-        run: node --test scripts/check-deployment.test.mjs
+        run: node --test scripts/check-deployment.test.mjs scripts/check-deployment-mcp.test.mjs
 
   monitor:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

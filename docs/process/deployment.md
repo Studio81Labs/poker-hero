@@ -310,7 +310,9 @@ than Static Assets. When `MCP_SMOKE_URL` is configured, the deployment workflow
 uses `MCP_ADMIN_TOKEN` to issue an ephemeral read-only principal, verifies MCP
 initialization and `get_environment_status` against the expected environment,
 and revokes the principal during cleanup. The credential expires within one
-hour if cleanup cannot reach the deployment.
+hour if cleanup cannot reach the deployment. When the optional Cloudflare
+Access service credentials are configured, the authenticated probe forwards
+them only to the validated configuration and MCP URLs.
 
 ## Uptime Monitoring And Alerts
 

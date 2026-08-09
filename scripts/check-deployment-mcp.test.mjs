@@ -66,6 +66,8 @@ test("initializes MCP and calls the bound environment with an agent token", asyn
   let mcpUrl = "";
   await withServer(
     async (request, response) => {
+      assert.equal(request.headers["cf-access-client-id"], "client-id");
+      assert.equal(request.headers["cf-access-client-secret"], "client-secret");
       if (
         respondToBaseCheck(request, response, {
           enabled: true,
@@ -116,6 +118,8 @@ test("initializes MCP and calls the bound environment with an agent token", asyn
     async (baseUrl) => {
       mcpUrl = `${baseUrl}/mcp`;
       const result = await checkMcpDeployment(mcpUrl, "staging", {
+        accessClientId: "client-id",
+        accessClientSecret: "client-secret",
         allowHttp: true,
         attempts: 1,
         configUrl: `${baseUrl}/api/mcp/config`,
@@ -136,6 +140,18 @@ test("requires a Poker Hero agent token", async () => {
       token: "admin-token",
     }),
     /MCP smoke token is not a Poker Hero agent credential/,
+  );
+});
+
+test("requires both Cloudflare Access service-token values", async () => {
+  await assert.rejects(
+    checkMcpDeployment("https://poker.example.com/mcp", "staging", {
+      accessClientId: "client-id",
+      attempts: 1,
+      configUrl: "https://poker.example.com/api/mcp/config",
+      token: MCP_TOKEN,
+    }),
+    /Cloudflare Access client ID and secret must be configured together/,
   );
 });
 

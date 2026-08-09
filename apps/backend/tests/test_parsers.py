@@ -26,6 +26,8 @@ from app.parsers.ocr_cv import (
     _facing_action_from_controls,
     _hero_slots_have_visible_cards,
     _match_rank,
+    _money_scale_from_image,
+    _number_box_has_bb_suffix,
     _parse_card_slot,
     _parse_numeric_state,
     _rank_template,
@@ -613,6 +615,80 @@ def test_ocr_cv_uses_layout_numeric_regions(monkeypatch: pytest.MonkeyPatch) -> 
         ),
     ]
     assert stack_calls == [(layout.hero_stack_box, layout)]
+
+
+def test_ocr_cv_uses_pot_text_mode_for_bb_suffix_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="dark_pot",
+        pot=replace(FORTUNA_NATIONS_LAYOUT.pot, mode="dark"),
+    )
+    captured_modes: list[str] = []
+
+    def numeric_groups(
+        _crop: Image.Image,
+        mode: str,
+        *,
+        min_height: int,
+    ) -> tuple[list[tuple[int, int, int, int, int]], list[list[bool]]]:
+        captured_modes.append(mode)
+        return [], []
+
+    monkeypatch.setattr("app.parsers.ocr_cv._numeric_groups", numeric_groups)
+
+    assert not _number_box_has_bb_suffix(
+        Image.new("RGB", (973, 691)),
+        layout.pot.box,
+        layout,
+        mode=layout.pot.mode,
+        start_group=layout.pot.start_group,
+        max_gap=layout.pot.max_gap,
+        min_height=layout.pot.min_height,
+    )
+    assert captured_modes == ["dark"]
+
+
+def test_money_scale_forwards_pot_text_mode_to_suffix_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    layout = replace(
+        FORTUNA_NATIONS_LAYOUT,
+        id="dark_pot",
+        pot=replace(FORTUNA_NATIONS_LAYOUT.pot, mode="dark"),
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "app.parsers.ocr_cv._read_big_blind_from_header",
+        lambda _image, _layout: 0.1,
+    )
+
+    def has_bb_suffix(
+        _image: Image.Image,
+        box: tuple[int, int, int, int],
+        selected_layout: object,
+        **options: object,
+    ) -> bool:
+        captured.update(box=box, layout=selected_layout, options=options)
+        return True
+
+    monkeypatch.setattr("app.parsers.ocr_cv._number_box_has_bb_suffix", has_bb_suffix)
+
+    scale = _money_scale_from_image(Image.new("RGB", (973, 691)), layout)
+
+    assert scale.scale == 1
+    assert captured == {
+        "box": layout.pot.box,
+        "layout": layout,
+        "options": {
+            "mode": "dark",
+            "start_group": layout.pot.start_group,
+            "max_gap": layout.pot.max_gap,
+            "min_height": layout.pot.min_height,
+        },
+    }
 
 
 def test_ocr_cv_parser_missing_file_raises_parser_error(tmp_path: Path) -> None:

@@ -1211,6 +1211,7 @@ def _money_scale_from_image(
         image,
         layout.pot.box,
         layout,
+        mode=layout.pot.mode,
         start_group=layout.pot.start_group,
         max_gap=layout.pot.max_gap,
         min_height=layout.pot.min_height,
@@ -1319,13 +1320,14 @@ def _number_box_has_bb_suffix(
     box: PixelBox,
     layout: OcrLayout = FORTUNA_NATIONS_LAYOUT,
     *,
+    mode: TextMode = "light",
     start_group: int,
     max_gap: int,
     min_height: int = 0,
 ) -> bool:
     scaled_box = _scale_box(box, image.width, image.height, layout)
     crop = image.crop(scaled_box)
-    groups, _ = _numeric_groups(crop, "light", min_height=min_height)
+    groups, _ = _numeric_groups(crop, mode, min_height=min_height)
     selected_groups = _select_numeric_group_run(groups[start_group:], max_gap=max_gap)
     if not selected_groups:
         return False

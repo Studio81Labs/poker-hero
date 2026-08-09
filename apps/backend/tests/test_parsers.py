@@ -8,12 +8,18 @@ from PIL import Image
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.ocr_cv import (
+    CALL_AMOUNT_BOX,
+    POT_BOX,
+    RAISE_TO_AMOUNT_BOX,
+    NumberRead,
     OcrCvParser,
     _big_blind_from_numeric_sequence,
     _classify_suit,
     _clean_number_text,
+    _facing_action_from_controls,
     _hero_slots_have_visible_cards,
     _match_rank,
+    _parse_numeric_state,
     _rank_template,
     _street_from_board_count,
     format_number,
@@ -41,6 +47,119 @@ def test_registry_rejects_unknown_parser(tmp_path: Path) -> None:
 
     with pytest.raises(ParserConfigurationError, match="Unknown parser provider"):
         build_parser(settings)
+
+
+@pytest.mark.parametrize(
+    ("amount_to_call", "raise_to_amount", "expected"),
+    [
+        (10.0, 20.0, "bet"),
+        (10.0, 20.009, "bet"),
+        (10.0, 20.2, None),
+        (10.0, 25.0, None),
+        (0.0, 2.0, None),
+        (10.0, None, None),
+        (10.0, 15.0, None),
+    ],
+)
+def test_facing_action_from_postflop_controls(
+    amount_to_call: float,
+    raise_to_amount: float | None,
+    expected: str | None,
+) -> None:
+    assert _facing_action_from_controls(amount_to_call, raise_to_amount) == expected
+
+
+def test_numeric_parser_records_unambiguous_postflop_bet_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads = {
+        POT_BOX: NumberRead(value=31.7, text="31.70", confidence=0.9),
+        CALL_AMOUNT_BOX: NumberRead(value=10, text="10", confidence=0.78),
+        RAISE_TO_AMOUNT_BOX: NumberRead(value=20, text="20", confidence=0.73),
+    }
+
+    def read_number(_image: Image.Image, box: tuple[int, int, int, int], *_args, **_kwargs):
+        return reads.get(box)
+
+    monkeypatch.setattr("app.parsers.ocr_cv._read_number_from_box", read_number)
+    monkeypatch.setattr("app.parsers.ocr_cv._read_stack_number_from_box", lambda *_args: None)
+    monkeypatch.setattr("app.parsers.ocr_cv._card_back_confidence", lambda *_args: 0.0)
+
+    state, confidences, raw, manual_review_fields = _parse_numeric_state(
+        Image.new("RGB", (973, 691)),
+        street="river",
+    )
+
+    assert state["current_bet"] == 10
+    assert state["facing_action"] == "bet"
+    assert state["opponent_wager"] == 10
+    assert state["action_context"] == "Hero faces a 10 BB bet into 31.7 BB pot"
+    assert confidences["facing_action"] == 0.73
+    assert raw["raise_to"]["value"] == 20
+    assert "facing_action" not in manual_review_fields
+    assert "opponent_wager" not in manual_review_fields
+
+
+@pytest.mark.parametrize(
+    ("call_confidence", "raise_confidence"),
+    [(0.69, 0.9), (0.9, 0.69)],
+)
+def test_numeric_parser_rejects_low_confidence_postflop_action_controls(
+    monkeypatch: pytest.MonkeyPatch,
+    call_confidence: float,
+    raise_confidence: float,
+) -> None:
+    reads = {
+        POT_BOX: NumberRead(value=31.7, text="31.70", confidence=0.9),
+        CALL_AMOUNT_BOX: NumberRead(value=10, text="10", confidence=call_confidence),
+        RAISE_TO_AMOUNT_BOX: NumberRead(value=20, text="20", confidence=raise_confidence),
+    }
+
+    def read_number(_image: Image.Image, box: tuple[int, int, int, int], *_args, **_kwargs):
+        return reads.get(box)
+
+    monkeypatch.setattr("app.parsers.ocr_cv._read_number_from_box", read_number)
+    monkeypatch.setattr("app.parsers.ocr_cv._read_stack_number_from_box", lambda *_args: None)
+    monkeypatch.setattr("app.parsers.ocr_cv._card_back_confidence", lambda *_args: 0.0)
+
+    state, confidences, _raw, manual_review_fields = _parse_numeric_state(
+        Image.new("RGB", (973, 691)),
+        street="river",
+    )
+
+    assert "facing_action" not in state
+    assert "opponent_wager" not in state
+    assert "facing_action" not in confidences
+    assert "opponent_wager" not in confidences
+    assert "opponent_wager" in manual_review_fields
+
+
+def test_numeric_parser_requires_known_postflop_street_for_wager_inference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reads = {
+        POT_BOX: NumberRead(value=31.7, text="31.70", confidence=0.9),
+        CALL_AMOUNT_BOX: NumberRead(value=10, text="10", confidence=0.9),
+        RAISE_TO_AMOUNT_BOX: NumberRead(value=20, text="20", confidence=0.9),
+    }
+
+    def read_number(_image: Image.Image, box: tuple[int, int, int, int], *_args, **_kwargs):
+        return reads.get(box)
+
+    monkeypatch.setattr("app.parsers.ocr_cv._read_number_from_box", read_number)
+    monkeypatch.setattr("app.parsers.ocr_cv._read_stack_number_from_box", lambda *_args: None)
+    monkeypatch.setattr("app.parsers.ocr_cv._card_back_confidence", lambda *_args: 0.0)
+
+    state, confidences, raw, _manual_review_fields = _parse_numeric_state(
+        Image.new("RGB", (973, 691)),
+        street=None,
+    )
+
+    assert "raise_to" not in raw
+    assert "facing_action" not in state
+    assert "opponent_wager" not in state
+    assert "facing_action" not in confidences
+    assert "opponent_wager" not in confidences
 
 
 def test_http_vision_parser_requires_url(tmp_path: Path) -> None:

@@ -3303,9 +3303,14 @@ describe("App", () => {
 
   it("persists every selected file before starting a batch upload", async () => {
     const pendingUpload = deferredResponse();
+    let followUpRequest = 0;
     fetchMock()
       .mockReturnValueOnce(pendingUpload.promise)
-      .mockResolvedValue(jsonResponse({ detail: "Invalid screenshot" }, 422));
+      .mockImplementation(() => Promise.resolve(
+        followUpRequest++ === 0
+          ? jsonResponse({ detail: "Invalid screenshot" }, 422)
+          : processingQueueResponse([], "failed-batch-snapshot"),
+      ));
     render(<App />);
     const user = userEvent.setup();
 
@@ -5014,7 +5019,7 @@ describe("App", () => {
     expect(screen.getByLabelText(/Facing action/)).toHaveValue("bet");
     expect(screen.getByRole("button", { name: "Approve state" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
-    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/12")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "About this app" }));
     expect(screen.getAllByText("Demo engine")).toHaveLength(2);
@@ -5045,7 +5050,7 @@ describe("App", () => {
 
     const user = await uploadScreenshot();
     const opponentPosition = await screen.findByLabelText(/Opponent position/);
-    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/12")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/13")).toBeInTheDocument();
     await user.type(opponentPosition, "button");
     await user.click(screen.getByRole("button", { name: "Approve state" }));
 
@@ -5075,7 +5080,7 @@ describe("App", () => {
     await uploadScreenshot();
 
     expect(screen.queryByLabelText(/Opponent position/)).not.toBeInTheDocument();
-    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/12")).toBeInTheDocument();
   });
 
   it("records the reviewed committed-opponent count for multiway wagers", async () => {
@@ -5122,6 +5127,202 @@ describe("App", () => {
     expect(payload.opponents_at_current_bet).toBe(2);
     expect(payload.opponent_wager).toBe(2.5);
     expect(payload.opponent_commitment_total).toBe(5);
+  });
+
+  it("exposes the opponent wager when OCR cannot classify a postflop action", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      players_in_hand: 2,
+      opponent_wager: null,
+      street: "river",
+      facing_action: null,
+      action_context: "Hero faces 10 BB to call into 31.7 BB pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...postflopState,
+      opponent_wager: 10,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const wagerInput = await screen.findByLabelText(/Opponent wager total/);
+    expect(wagerInput.closest("label")).toHaveTextContent("not detected");
+    await user.type(wagerInput, "10");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBe(10);
+  });
+
+  it("shows OCR confidence for a recognized opponent wager", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      players_in_hand: 2,
+      opponent_wager: 10,
+      street: "river",
+      facing_action: "bet",
+      action_context: "Hero faces a 10 BB bet into 31.7 BB pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+        confidences: {
+          ...jobRecord().parser_result!.confidences,
+          opponent_wager: 0.63,
+        },
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    await uploadScreenshot();
+
+    const wagerInput = await screen.findByLabelText(/Opponent wager total/);
+    expect(wagerInput.closest("label")).toHaveTextContent("63%");
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("1")).toBeInTheDocument();
+  });
+
+  it("clears an inferred wager when facing action is corrected to a raise", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      players_in_hand: 2,
+      opponent_wager: 10,
+      street: "flop",
+      facing_action: "bet",
+      action_context: "Hero faces a 10 BB bet into 31.7 BB pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("10");
+    await user.selectOptions(screen.getByLabelText(/Facing action/), "raise");
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 1 type"), "bet");
+    await user.type(screen.getByLabelText("Action 1 amount"), "5");
+    await user.click(screen.getByRole("button", { name: "Add action" }));
+    await user.selectOptions(screen.getByLabelText("Action 2 type"), "raise");
+    await user.type(screen.getByLabelText("Action 2 amount"), "15");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBeNull();
+    expect(payload.postflop_action_history).toEqual([
+      { actor: "oop", action: "bet", amount: 5 },
+      { actor: "ip", action: "raise", amount: 15 },
+    ]);
+  });
+
+  it("clears inferred action state when the current bet is corrected to zero", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      opponent_wager: 10,
+      street: "river",
+      facing_action: "bet",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const currentBetInput = screen.getByLabelText(/Current bet/);
+    await user.clear(currentBetInput);
+    await user.type(currentBetInput, "0");
+
+    expect(screen.queryByLabelText(/Opponent wager total/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
+  });
+
+  it("clears a postflop inferred wager when the street is corrected to preflop", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      opponent_wager: 10,
+      street: "flop",
+      facing_action: "bet",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    await user.selectOptions(screen.getByLabelText(/Street/), "preflop");
+
+    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
+  });
+
+  it("excludes opponent-wager confidence from check spots", async () => {
+    const checkState: DetectedState = {
+      ...detectedState,
+      current_bet: 0,
+      opponent_wager: null,
+      facing_action: null,
+      action_context: "No bet to call; pot is 12.5 BB",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: checkState,
+        confidences: {
+          ...jobRecord().parser_result!.confidences,
+          action_context: 0.9,
+        },
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+
+    await uploadScreenshot();
+
+    expect(screen.queryByLabelText(/Opponent wager total/)).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Parser confidence summary")).getByText("/11")).toBeInTheDocument();
   });
 
   it("clears multiway commitments when players in hand is corrected to heads-up", async () => {
@@ -12844,7 +13045,12 @@ describe("App", () => {
   });
 
   it("sends corrected approval payload with user_approved forced true", async () => {
-    const correctedState = canonicalState({ current_bet: 3.5 });
+    const correctedState = canonicalState({
+      current_bet: 3.5,
+      opponent_wager: null,
+      facing_action: null,
+      action_context: null,
+    });
     const created = jobRecord();
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
@@ -12864,7 +13070,9 @@ describe("App", () => {
 
     expect(fetchMock().mock.calls[2][0]).toBe("http://localhost:8000/api/jobs/job-123/approve");
     expect(payload.current_bet).toBe(3.5);
-    expect(payload.facing_action).toBe("bet");
+    expect(payload.opponent_wager).toBeNull();
+    expect(payload.facing_action).toBeNull();
+    expect(payload.action_context).toBeNull();
     expect(payload.user_approved).toBe(true);
   });
 
@@ -14483,7 +14691,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
-    expect(await screen.findAllByText(/effective_stack/)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/Effective stack/)).not.toHaveLength(0);
     expect(await screen.findByRole("button", {
       name: "Open screenshot 1: correctable-recommendation.png",
     })).toBeInTheDocument();

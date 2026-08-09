@@ -21,6 +21,7 @@ import {
   getProcessingJobs,
   getSystemInfo,
   getTrainingProgress,
+  humanReadableMessage,
   imageUrl,
   importBenchmarkDataset,
   recordTrainingDecision,
@@ -4263,9 +4264,13 @@ function summarizeConfidences(
   warnings: string[],
   state: CanonicalState | null,
 ) {
-  const confidenceKeys: readonly string[] = state && requiresOpponentPosition(state)
-    ? [...CONFIDENCE_KEYS, "opponent_position"]
-    : CONFIDENCE_KEYS;
+  const confidenceKeys: string[] = [...CONFIDENCE_KEYS];
+  if ((state?.current_bet ?? 0) > 0) {
+    confidenceKeys.push("opponent_wager");
+  }
+  if (state && requiresOpponentPosition(state)) {
+    confidenceKeys.push("opponent_position");
+  }
   const values = confidenceKeys.map((key) => confidences[key]).filter((value): value is number => value !== undefined);
   const detectedCount = values.length;
   const averageConfidence = detectedCount === 0 ? 0 : Math.round((values.reduce((sum, value) => sum + value, 0) / detectedCount) * 100);
@@ -4617,7 +4622,7 @@ function approvalKey(state: CanonicalState): string {
 }
 
 function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return humanReadableMessage(error instanceof Error ? error.message : error, fallback);
 }
 
 function isAbortError(error: unknown): boolean {
@@ -4803,7 +4808,7 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
     return attention;
   }
   if (job.status === "error") {
-    return job.error ?? "Needs attention";
+    return humanReadableMessage(job.error, "Needs attention");
   }
   if (job.status === "created") {
     return "Parsing screenshot";
@@ -5103,7 +5108,10 @@ export default function App() {
                 true,
               );
               setBenchmarkImporting(false);
-              setError(receipt.error ?? "Could not recover parser dataset import");
+              setError(humanReadableMessage(
+                receipt.error,
+                "Could not recover parser dataset import",
+              ));
               markProcessingQueueSessionUnsynced();
               scheduleProcessingQueueRestore();
               markHistorySessionUnsynced();
@@ -5283,8 +5291,12 @@ export default function App() {
     }
   }, [form]);
   const confidences: Record<string, number> = job?.parser_result?.confidences ?? {};
-  const parserWarnings = job?.parser_result?.warnings ?? [];
-  const warnings = job?.error ? [...parserWarnings, job.error] : parserWarnings;
+  const parserWarnings = (job?.parser_result?.warnings ?? []).map((warning) => (
+    humanReadableMessage(warning, "The parser reported a warning")
+  ));
+  const warnings = job?.error
+    ? [...parserWarnings, humanReadableMessage(job.error, "The screenshot needs attention")]
+    : parserWarnings;
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
   const activeRecommendation = currentStateApproved ? job?.recommendation ?? null : null;
@@ -7868,6 +7880,22 @@ export default function App() {
   function updateForm<K extends keyof StateForm>(field: K, value: StateForm[K]) {
     setForm((current) => {
       const next = { ...current, [field]: value };
+      if (field === "current_bet") {
+        next.opponent_wager = "";
+        next.action_context = "";
+        if (value !== "") {
+          next.facing_action = "";
+        }
+      }
+      if (field === "facing_action") {
+        next.opponent_wager = "";
+        next.action_context = "";
+      }
+      if (field === "street" && (value === "" || value === "preflop")) {
+        next.opponent_wager = "";
+        next.facing_action = "";
+        next.action_context = "";
+      }
       if (
         (
           (field === "street" && value !== "preflop")
@@ -9679,12 +9707,12 @@ export default function App() {
                   />
                 </Field>
               ) : null}
-              {Number(form.current_bet) > 0 && (
-                form.street === "preflop"
-                || form.facing_action === "raise"
-                || form.opponent_wager !== ""
-              ) ? (
-                <Field label="Opponent wager total" confidence="manual">
+              {Number(form.current_bet) > 0 ? (
+                <Field
+                  label="Opponent wager total"
+                  confidence={confidenceLabel(confidences.opponent_wager)}
+                  confidenceValue={confidences.opponent_wager}
+                >
                   <input
                     disabled={stateControlsDisabled}
                     inputMode="decimal"
@@ -12016,7 +12044,9 @@ export default function App() {
                               >
                                 <span>
                                   <strong>{benchmarkCase.original_filename}</strong>
-                                  <small>{benchmarkCase.error ?? benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
+                                  <small>{benchmarkCase.error
+                                    ? humanReadableMessage(benchmarkCase.error, "Benchmark failed")
+                                    : benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
                                 </span>
                                 <strong className={benchmarkCase.status === "error" || mismatches.length > 0 ? "needs-review" : ""}>
                                   {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
@@ -12025,7 +12055,11 @@ export default function App() {
                               </button>
                               {expanded ? (
                                 <div id={detailId} className="benchmark-case-details">
-                                  {benchmarkCase.error ? <p className="benchmark-case-error">{benchmarkCase.error}</p> : null}
+                                  {benchmarkCase.error ? (
+                                    <p className="benchmark-case-error">
+                                      {humanReadableMessage(benchmarkCase.error, "Benchmark failed")}
+                                    </p>
+                                  ) : null}
                                   {mismatches.length > 0 ? (
                                     <div className="benchmark-mismatch-list">
                                       {mismatches.map((comparison) => (

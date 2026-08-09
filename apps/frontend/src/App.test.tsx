@@ -3303,9 +3303,14 @@ describe("App", () => {
 
   it("persists every selected file before starting a batch upload", async () => {
     const pendingUpload = deferredResponse();
+    let followUpRequest = 0;
     fetchMock()
       .mockReturnValueOnce(pendingUpload.promise)
-      .mockResolvedValue(jsonResponse({ detail: "Invalid screenshot" }, 422));
+      .mockImplementation(() => Promise.resolve(
+        followUpRequest++ === 0
+          ? jsonResponse({ detail: "Invalid screenshot" }, 422)
+          : processingQueueResponse([], "failed-batch-snapshot"),
+      ));
     render(<App />);
     const user = userEvent.setup();
 
@@ -5122,6 +5127,41 @@ describe("App", () => {
     expect(payload.opponents_at_current_bet).toBe(2);
     expect(payload.opponent_wager).toBe(2.5);
     expect(payload.opponent_commitment_total).toBe(5);
+  });
+
+  it("exposes the opponent wager when OCR cannot classify a postflop action", async () => {
+    const postflopState: DetectedState = {
+      ...detectedState,
+      current_bet: 10,
+      players_in_hand: 2,
+      opponent_wager: null,
+      street: "river",
+      facing_action: null,
+      action_context: "Hero faces 10 BB to call into 31.7 BB pot",
+    };
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        state: postflopState,
+      },
+    });
+    const approvedState = canonicalState({
+      ...postflopState,
+      opponent_wager: 10,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]))
+      .mockResolvedValueOnce(jsonResponse(approvedJob(approvedState)));
+    render(<App />);
+
+    const user = await uploadScreenshot();
+    const wagerInput = await screen.findByLabelText(/Opponent wager total/);
+    await user.type(wagerInput, "10");
+    await user.click(screen.getByRole("button", { name: "Approve state" }));
+
+    const payload = JSON.parse(String(fetchMock().mock.calls[2][1]?.body));
+    expect(payload.opponent_wager).toBe(10);
   });
 
   it("clears multiway commitments when players in hand is corrected to heads-up", async () => {
@@ -14483,7 +14523,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Request recommendation" }));
 
-    expect(await screen.findAllByText(/effective_stack/)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/Effective stack/)).not.toHaveLength(0);
     expect(await screen.findByRole("button", {
       name: "Open screenshot 1: correctable-recommendation.png",
     })).toBeInTheDocument();

@@ -72,6 +72,7 @@ class MoneyScale:
 POT_BOX = (420, 225, 560, 260)
 HERO_STACK_BOX = (430, 545, 575, 586)
 CALL_AMOUNT_BOX = (740, 666, 858, 686)
+RAISE_TO_AMOUNT_BOX = (858, 666, 973, 686)
 HEADER_STAKES_BOX = (0, 0, 560, 30)
 
 OPPONENT_SEATS = (
@@ -696,7 +697,9 @@ class OcrCvParser:
         hero_cards_visible = _hero_slots_have_visible_cards(raw_slots)
         street = _street_from_board_count(len(board_cards))
         numeric_state, numeric_confidences, numeric_raw, manual_review_fields = _parse_numeric_state(
-            image, hero_cards_visible=hero_cards_visible
+            image,
+            hero_cards_visible=hero_cards_visible,
+            street=street,
         )
         confidences = _field_confidences(hero_cards, board_cards, street)
         confidences.update(numeric_confidences)
@@ -717,6 +720,7 @@ class OcrCvParser:
                 hero_stack=numeric_state.get("hero_stack"),
                 effective_stack=numeric_state.get("effective_stack"),
                 players_in_hand=numeric_state.get("players_in_hand"),
+                opponent_wager=numeric_state.get("opponent_wager"),
                 hero_position=numeric_state.get("hero_position"),
                 facing_action=numeric_state.get("facing_action"),
                 action_context=numeric_state.get("action_context"),
@@ -973,6 +977,7 @@ def _parse_numeric_state(
     image: Image.Image,
     *,
     hero_cards_visible: bool = True,
+    street: Street = "preflop",
 ) -> tuple[dict[str, object], dict[str, float], dict[str, object], list[str]]:
     state: dict[str, object] = {}
     confidences: dict[str, float] = {}
@@ -1002,6 +1007,7 @@ def _parse_numeric_state(
         raw["hero_stack_source"] = "hero cards not visible"
 
     call_amount: NumberRead | None = None
+    raise_to_amount: NumberRead | None = None
     if hero_cards_visible:
         call_amount = _read_number_from_box(image, CALL_AMOUNT_BOX, "dark", max_gap=8, min_height=6)
         if call_amount is None or (call_amount.value == 0 and call_amount.confidence < 0.6):
@@ -1015,6 +1021,37 @@ def _parse_numeric_state(
         confidences["current_bet"] = min(0.88, call_amount.confidence)
         if money_scale.scale != 1:
             raw["current_bet_normalized"] = _number_raw(normalized_call_amount)
+        if street != "preflop" and normalized_call_amount.value > 0:
+            raise_to_amount = _read_number_from_box(
+                image,
+                RAISE_TO_AMOUNT_BOX,
+                "dark",
+                max_gap=8,
+                min_height=6,
+            )
+            raw["raise_to"] = _number_raw(raise_to_amount)
+            normalized_raise_to = (
+                _scale_money_read(raise_to_amount, money_scale.scale)
+                if raise_to_amount is not None
+                else None
+            )
+            if normalized_raise_to is not None and money_scale.scale != 1:
+                raw["raise_to_normalized"] = _number_raw(normalized_raise_to)
+            facing_action = _facing_action_from_controls(
+                normalized_call_amount.value,
+                normalized_raise_to.value if normalized_raise_to is not None else None,
+            )
+            if facing_action is not None:
+                state["facing_action"] = facing_action
+                action_confidence = min(
+                    call_amount.confidence,
+                    raise_to_amount.confidence if raise_to_amount is not None else 0,
+                    0.76,
+                )
+                confidences["facing_action"] = action_confidence
+                if facing_action == "bet":
+                    state["opponent_wager"] = normalized_call_amount.value
+                    confidences["opponent_wager"] = action_confidence
     else:
         raw["current_bet_source"] = "hero cards not visible"
         raw["current_bet"] = None
@@ -1071,11 +1108,18 @@ def _parse_numeric_state(
         normalized_pot = _scale_money_read(pot, money_scale.scale)
         normalized_call_amount = _scale_money_read(call_amount, money_scale.scale)
         if normalized_call_amount.value > 0:
-            manual_review_fields.append("facing_action")
-            state["action_context"] = (
-                f"Hero faces {format_number(normalized_call_amount.value)} BB to call into "
-                f"{format_number(normalized_pot.value)} BB pot"
-            )
+            facing_action = state.get("facing_action")
+            if facing_action == "bet":
+                state["action_context"] = (
+                    f"Hero faces a {format_number(normalized_call_amount.value)} BB bet into "
+                    f"{format_number(normalized_pot.value)} BB pot"
+                )
+            else:
+                manual_review_fields.append("facing_action")
+                state["action_context"] = (
+                    f"Hero faces {format_number(normalized_call_amount.value)} BB to call into "
+                    f"{format_number(normalized_pot.value)} BB pot"
+                )
         else:
             state["action_context"] = f"No bet to call; pot is {format_number(normalized_pot.value)} BB"
         confidences["action_context"] = 0.66
@@ -1083,6 +1127,20 @@ def _parse_numeric_state(
         manual_review_fields.append("action_context")
 
     return state, confidences, raw, manual_review_fields
+
+
+def _facing_action_from_controls(
+    amount_to_call: float,
+    raise_to_amount: float | None,
+) -> Literal["bet"] | None:
+    """Recognize a first postflop bet when the controls make it unambiguous."""
+    if amount_to_call <= 0 or raise_to_amount is None or raise_to_amount <= 0:
+        return None
+    first_bet_raise_to = amount_to_call * 2
+    tolerance = 0.01
+    if abs(raise_to_amount - first_bet_raise_to) <= tolerance:
+        return "bet"
+    return None
 
 
 def _number_raw(number: NumberRead | None) -> dict[str, object] | None:

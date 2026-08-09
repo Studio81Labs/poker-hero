@@ -21,6 +21,7 @@ import {
   getProcessingJobs,
   getSystemInfo,
   getTrainingProgress,
+  humanReadableMessage,
   imageUrl,
   importBenchmarkDataset,
   recordTrainingDecision,
@@ -4617,7 +4618,7 @@ function approvalKey(state: CanonicalState): string {
 }
 
 function messageFromError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return humanReadableMessage(error instanceof Error ? error.message : error, fallback);
 }
 
 function isAbortError(error: unknown): boolean {
@@ -4803,7 +4804,7 @@ function queueDetail(job: JobRecord, attention: string | undefined): string {
     return attention;
   }
   if (job.status === "error") {
-    return job.error ?? "Needs attention";
+    return humanReadableMessage(job.error, "Needs attention");
   }
   if (job.status === "created") {
     return "Parsing screenshot";
@@ -5103,7 +5104,10 @@ export default function App() {
                 true,
               );
               setBenchmarkImporting(false);
-              setError(receipt.error ?? "Could not recover parser dataset import");
+              setError(humanReadableMessage(
+                receipt.error,
+                "Could not recover parser dataset import",
+              ));
               markProcessingQueueSessionUnsynced();
               scheduleProcessingQueueRestore();
               markHistorySessionUnsynced();
@@ -5283,8 +5287,12 @@ export default function App() {
     }
   }, [form]);
   const confidences: Record<string, number> = job?.parser_result?.confidences ?? {};
-  const parserWarnings = job?.parser_result?.warnings ?? [];
-  const warnings = job?.error ? [...parserWarnings, job.error] : parserWarnings;
+  const parserWarnings = (job?.parser_result?.warnings ?? []).map((warning) => (
+    humanReadableMessage(warning, "The parser reported a warning")
+  ));
+  const warnings = job?.error
+    ? [...parserWarnings, humanReadableMessage(job.error, "The screenshot needs attention")]
+    : parserWarnings;
   const currentStateKey = validation.state ? approvalKey(validation.state) : null;
   const currentStateApproved = Boolean(job?.approved_state && currentStateKey && approvedStateKey === currentStateKey);
   const activeRecommendation = currentStateApproved ? job?.recommendation ?? null : null;
@@ -9679,11 +9687,7 @@ export default function App() {
                   />
                 </Field>
               ) : null}
-              {Number(form.current_bet) > 0 && (
-                form.street === "preflop"
-                || form.facing_action === "raise"
-                || form.opponent_wager !== ""
-              ) ? (
+              {Number(form.current_bet) > 0 ? (
                 <Field label="Opponent wager total" confidence="manual">
                   <input
                     disabled={stateControlsDisabled}
@@ -12016,7 +12020,9 @@ export default function App() {
                               >
                                 <span>
                                   <strong>{benchmarkCase.original_filename}</strong>
-                                  <small>{benchmarkCase.error ?? benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
+                                  <small>{benchmarkCase.error
+                                    ? humanReadableMessage(benchmarkCase.error, "Benchmark failed")
+                                    : benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
                                 </span>
                                 <strong className={benchmarkCase.status === "error" || mismatches.length > 0 ? "needs-review" : ""}>
                                   {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
@@ -12025,7 +12031,11 @@ export default function App() {
                               </button>
                               {expanded ? (
                                 <div id={detailId} className="benchmark-case-details">
-                                  {benchmarkCase.error ? <p className="benchmark-case-error">{benchmarkCase.error}</p> : null}
+                                  {benchmarkCase.error ? (
+                                    <p className="benchmark-case-error">
+                                      {humanReadableMessage(benchmarkCase.error, "Benchmark failed")}
+                                    </p>
+                                  ) : null}
                                   {mismatches.length > 0 ? (
                                     <div className="benchmark-mismatch-list">
                                       {mismatches.map((comparison) => (

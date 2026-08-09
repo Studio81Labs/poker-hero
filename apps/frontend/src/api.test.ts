@@ -7,6 +7,7 @@ import {
   deleteJob,
   getBenchmarkDatasetImport,
   getHistory,
+  humanReadableMessage,
   listMcpPrincipals,
   getProcessingJobs,
   requestRecommendation,
@@ -25,6 +26,49 @@ function jsonResponse(payload: unknown): Response {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("humanReadableMessage", () => {
+  it("turns missing recommendation fields into table language", () => {
+    expect(humanReadableMessage({
+      detail: {
+        missing_fields: ["opponent_wager", "opponents_at_current_bet"],
+      },
+    }, "Recommendation failed")).toBe(
+      "Complete the required table details before requesting a recommendation: Opponent wager total and opponents at the current wager. Refresh the approved state to edit them, then approve it again.",
+    );
+  });
+
+  it("turns FastAPI validation arrays into readable field messages", () => {
+    expect(humanReadableMessage([{
+      type: "missing",
+      loc: ["body", "file"],
+      msg: "Field required",
+      input: null,
+    }], "Upload failed")).toBe("File is required");
+  });
+
+  it("decodes structured JSON strings instead of displaying raw payloads", () => {
+    expect(humanReadableMessage(
+      '{"missing_fields":["effective_stack"]}',
+      "Recommendation failed",
+    )).toBe(
+      "Complete the required table details before requesting a recommendation: Effective stack. Refresh the approved state to edit them, then approve it again.",
+    );
+  });
+});
+
+describe("API error messages", () => {
+  it("uses the human-readable message for structured recommendation errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(
+      JSON.stringify({ detail: { missing_fields: ["opponent_wager"] } }),
+      { status: 422, headers: { "Content-Type": "application/json" } },
+    )));
+
+    await expect(requestRecommendation("job-1", "request-1")).rejects.toThrow(
+      "Complete the required table details before requesting a recommendation: Opponent wager total. Refresh the approved state to edit them, then approve it again.",
+    );
+  });
 });
 
 describe("archiveJobs", () => {

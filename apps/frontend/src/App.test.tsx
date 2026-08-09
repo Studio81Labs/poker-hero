@@ -291,6 +291,49 @@ afterEach(() => {
 });
 
 describe("App", () => {
+  it("selects compatible fallbacks when configured pipeline defaults are unavailable", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        defaults: {
+          parser_provider: "llm_vision",
+          parser_layout_profile: "pokerstars",
+          recommendation_provider: "external_solver",
+          recommendation_engine: null,
+        },
+        parser_providers: [
+          { id: "llm_vision", label: "External vision", available: false, unavailable_reason: "External parser URL is not configured" },
+          { id: "mock", label: "Mock parser", available: true, unavailable_reason: null },
+        ],
+        parser_layout_profiles: [
+          { id: "pokerstars", label: "PokerStars", available: true, unavailable_reason: null },
+          { id: "generic", label: "Generic", available: true, unavailable_reason: null },
+        ],
+        parser_layout_compatibility: {
+          llm_vision: ["pokerstars", "generic"],
+          mock: ["pokerstars", "generic"],
+        },
+        recommendation_providers: [
+          { id: "external_solver", label: "External solver", available: false, unavailable_reason: "External solver URL is not configured" },
+          { id: "rule_based", label: "Rule-based training", available: true, unavailable_reason: null },
+        ],
+        recommendation_engines: [],
+      }))
+      .mockResolvedValue(jsonResponse({
+        total: 0,
+        jobs: [],
+        snapshot_version: "pipeline-fallback-snapshot",
+      }));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    const dialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+
+    expect(within(dialog).getByLabelText("Recognition")).toHaveValue("mock");
+    expect(within(dialog).getByLabelText("Table layout")).toHaveValue("pokerstars");
+    expect(within(dialog).getByLabelText("Recommendation")).toHaveValue("rule_based");
+  });
+
   it("selects installed analysis plugins for new uploads", async () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({
@@ -308,7 +351,13 @@ describe("App", () => {
         parser_layout_profiles: [
           { id: "generic", label: "Generic", available: true, unavailable_reason: null },
           { id: "fortuna_nations", label: "Fortuna / Nations", available: true, unavailable_reason: null },
+          { id: "pokerstars", label: "PokerStars", available: true, unavailable_reason: null },
         ],
+        parser_layout_compatibility: {
+          mock: ["generic", "fortuna_nations", "pokerstars"],
+          ocr_cv: ["generic", "fortuna_nations"],
+          llm_vision: ["generic", "fortuna_nations", "pokerstars"],
+        },
         recommendation_providers: [
           { id: "mock", label: "Mock recommendation", available: true, unavailable_reason: null },
           { id: "local_solver", label: "Local solver", available: true, unavailable_reason: null },
@@ -336,7 +385,9 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
     const dialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
     expect(within(dialog).getByText("External parser URL is not configured", { exact: false })).toBeInTheDocument();
+    expect(within(dialog).getByRole("option", { name: "PokerStars" })).toBeInTheDocument();
     await user.selectOptions(within(dialog).getByLabelText("Recognition"), "ocr_cv");
+    expect(within(dialog).queryByRole("option", { name: "PokerStars" })).not.toBeInTheDocument();
     await user.selectOptions(within(dialog).getByLabelText("Table layout"), "fortuna_nations");
     await user.selectOptions(within(dialog).getByLabelText("Recommendation"), "local_solver");
     expect(within(dialog).getByLabelText("Solver engine")).toHaveValue("postflop_solver");

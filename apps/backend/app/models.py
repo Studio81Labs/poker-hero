@@ -898,6 +898,7 @@ class PipelineCapabilities(BaseModel):
     defaults: PipelineSelection
     parser_providers: list[PipelineOption]
     parser_layout_profiles: list[PipelineOption]
+    parser_layout_compatibility: dict[str, list[str]]
     recommendation_providers: list[PipelineOption]
     recommendation_engines: list[PipelineOption]
 

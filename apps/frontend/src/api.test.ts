@@ -365,6 +365,7 @@ describe("getPipelineCapabilities", () => {
       },
       parser_providers: [],
       parser_layout_profiles: [],
+      parser_layout_compatibility: {},
       recommendation_providers: [],
       recommendation_engines: [],
     };

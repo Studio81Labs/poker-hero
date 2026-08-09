@@ -77,11 +77,14 @@ Backend settings use the `POKER_` prefix. `pnpm bootstrap` copies
 The main provider switches are:
 
 - `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, or `ocr_cv`
-- `POKER_PARSER_LAYOUT_PROFILE`: `generic`, `fortuna`, `nations`, or `fortuna_nations`
+- `POKER_PARSER_LAYOUT_PROFILE`: the default layout ID. Fixed-region `ocr_cv`
+  supports `generic`, `fortuna`, `nations`, and `fortuna_nations`; external
+  vision may use deployment-defined IDs such as `pokerstars`
 - `POKER_PARSER_ENABLED_PROVIDERS` and
   `POKER_PARSER_ENABLED_LAYOUT_PROFILES`: JSON lists of additional installed
-  plugins a user may select for each new upload or live capture; the deployment
-  defaults are always enabled
+  parsers and layout IDs a user may select for each new upload or live capture;
+  the deployment defaults are always enabled and the UI shows only compatible
+  parser/layout combinations
 - `POKER_RECOMMENDATION_PROVIDER`: `rule_based`, `mock`, `local_solver`, `external_solver`, or `llm_advice`
 - `POKER_RECOMMENDATION_ENABLED_PROVIDERS`: JSON list of additional installed
   recommendation plugins exposed for per-screenshot selection
@@ -98,6 +101,18 @@ The main provider switches are:
   and recommendation requests (default 60 seconds)
 - `POKER_DEPLOYMENT_ENVIRONMENT`: `local`, `staging`, or `production`; MCP
   gateways verify this identity before accessing jobs
+
+For example, a private deployment can expose PokerStars through the external
+vision adapter without claiming local OCR support for that client:
+
+```dotenv
+POKER_PARSER_ENABLED_PROVIDERS=["llm_vision"]
+POKER_PARSER_ENABLED_LAYOUT_PROFILES=["pokerstars"]
+POKER_EXTERNAL_PARSER_URL=https://vision.example.com/parse
+```
+
+The local `ocr_cv` option remains unavailable for `pokerstars` until a labeled
+corpus and calibrated coordinates/templates are added for that layout.
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
 - `POKER_DATA_VOLUME_ID`: stable deployment identity required only by the
   operational backup CLI

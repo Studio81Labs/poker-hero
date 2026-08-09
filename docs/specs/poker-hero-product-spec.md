@@ -216,7 +216,12 @@ Parser types:
 - `ocr_cv_parser`: deterministic OCR/computer-vision parser with configurable layout profiles.
 - `mock_parser`: predictable parser for tests and UI development.
 
-The system should support multiple layout profiles. A generic parser may attempt the first pass, and profile-specific parser settings can be added as screenshots reveal layout differences.
+The system should support multiple layout profiles. Layout IDs may be supplied by
+deployment configuration for multi-layout parsers. The backend advertises
+provider/profile compatibility so a fixed-region parser cannot be paired with an
+uncalibrated client. A generic parser may attempt the first pass, and
+profile-specific parser settings can be added as screenshots reveal layout
+differences.
 
 ### Recommendation Registry
 
@@ -901,7 +906,8 @@ Example configuration concepts:
 - `parser.layoutProfile`: generic or a named poker-client layout profile.
 - Deployment allowlists for additional parser providers and layout profiles;
   users can choose only installed options advertised by the backend for each
-  new upload or live capture.
+  new upload or live capture. Capabilities include compatible layout IDs per
+  parser, and the control panel filters invalid combinations.
 - `parser.autoApprove.enabled`: boolean.
 - `parser.autoApprove.thresholds`: required confidence thresholds per field.
 - `recommendation.provider`: `mock`, `local_solver`, `external_solver`, or `llm_advice`.

@@ -219,9 +219,17 @@ jobs:
           }
           trap cleanup_mcp_smoke_principal EXIT
 
-          if [ "$ENV_NAME" = "staging" ]; then
+          DEPLOYMENT_RESULT=$(node scripts/check-deployment.mjs "$URL" \
+            --attempts 5 \
+            --retry-delay-ms 5000 \
+            --json)
+          MCP_ENABLED=$(jq -er \
+            '.mcp.enabled | if type == "boolean" then tostring else error("missing MCP enabled state") end' \
+            <<<"$DEPLOYMENT_RESULT")
+
+          if [ "$ENV_NAME" = "staging" ] || [ "$MCP_ENABLED" = "true" ]; then
             test -n "$MCP_SMOKE_URL" || {
-              echo "::error::MCP_SMOKE_URL var is required for the staging environment"
+              echo "::error::MCP_SMOKE_URL var is required for staging and every hosted MCP deployment"
               exit 1
             }
           fi
@@ -248,9 +256,6 @@ jobs:
             export MCP_SMOKE_TOKEN
           fi
 
-          node scripts/check-deployment.mjs "$URL" \
-            --attempts 5 \
-            --retry-delay-ms 5000
           if [ -n "$MCP_SMOKE_URL" ]; then
             node scripts/check-mcp-deployment.mjs "$MCP_SMOKE_URL" "$ENV_NAME"
           fi

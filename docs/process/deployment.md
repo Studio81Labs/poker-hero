@@ -298,7 +298,9 @@ MCP enabled:
 - `MCP_SMOKE_URL`, the exact public HTTPS `/mcp` URL reported by that
   deployment
 
-The workflow smoke-tests both the SPA and `/api/health`. A frontend success with
+The workflow smoke-tests both the SPA and `/api/health`. It reads the deployed
+MCP configuration and fails when hosted MCP is enabled without a matching
+`MCP_SMOKE_URL`, including in production. A frontend success with
 an API `502` means the Worker deployed but its configured backend origin is not
 healthy or reachable. It also reads one bounded processing-queue page so a
 mismatched proxy credential fails deployment validation. The workflow also

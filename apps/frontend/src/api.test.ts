@@ -7,6 +7,7 @@ import {
   deleteJob,
   getBenchmarkDatasetImport,
   getHistory,
+  getPipelineCapabilities,
   humanReadableMessage,
   listMcpPrincipals,
   getProcessingJobs,
@@ -327,6 +328,54 @@ describe("uploadScreenshot", () => {
       "upload-request-123",
     );
     expect(job.upload_request_id).toBe("upload-request-123");
+  });
+
+  it("sends a selected analysis pipeline with the screenshot", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      id: "job-123",
+      status: "parsed",
+      original_filename: "table.png",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["image"], "table.png", { type: "image/png" });
+
+    await uploadScreenshot(file, "upload-request-123", undefined, {
+      parser_provider: "ocr_cv",
+      parser_layout_profile: "fortuna_nations",
+      recommendation_provider: "local_solver",
+      recommendation_engine: "postflop_solver",
+    });
+
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get("parser_provider")).toBe("ocr_cv");
+    expect(form.get("parser_layout_profile")).toBe("fortuna_nations");
+    expect(form.get("recommendation_provider")).toBe("local_solver");
+    expect(form.get("recommendation_engine")).toBe("postflop_solver");
+  });
+});
+
+describe("getPipelineCapabilities", () => {
+  it("reads the plugins advertised by the backend", async () => {
+    const payload = {
+      defaults: {
+        parser_provider: "ocr_cv",
+        parser_layout_profile: "fortuna_nations",
+        recommendation_provider: "local_solver",
+        recommendation_engine: "postflop_solver",
+      },
+      parser_providers: [],
+      parser_layout_profiles: [],
+      recommendation_providers: [],
+      recommendation_engines: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getPipelineCapabilities()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/pipeline",
+      { credentials: "include" },
+    );
   });
 });
 

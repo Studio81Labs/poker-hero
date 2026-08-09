@@ -29,8 +29,11 @@ Post-hand agent
 
 `apps/backend` owns upload validation, parser and provider selection, canonical
 state validation, automation-compatible job transitions, recommendation calls,
-persisted job/image data, and read-only parser benchmark runs. Integrations are selected by environment-driven
-registries so the frontend flow does not depend on a concrete engine.
+persisted job/image data, and read-only parser benchmark runs. Environment-driven
+registries define installed defaults and runtime allowlists. New uploads and live
+captures may select an advertised parser, layout profile, recommendation provider,
+and local engine; that selection is persisted on the job so the frontend flow does
+not depend on a concrete engine.
 Per-job mutations use bounded lock stripes around short storage transitions.
 Screenshot parsing runs outside those stripes, then reloads and merges into the
 latest job record so slow OCR does not block unrelated jobs and deleted uploads

@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -18,6 +18,7 @@ import {
   getBenchmarkReport,
   getHistory,
   getJob,
+  getPipelineCapabilities,
   getProcessingJobs,
   getSystemInfo,
   getTrainingProgress,
@@ -52,6 +53,9 @@ import type {
   JobHistory,
   JobQueue,
   JobRecord,
+  PipelineCapabilities,
+  PipelineOption,
+  PipelineSelection,
   PreflopAction,
   PreflopActionType,
   PreflopPosition,
@@ -4880,6 +4884,10 @@ export default function App() {
     readAutomationSettings,
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [pipelineDialogOpen, setPipelineDialogOpen] = useState(false);
+  const [pipelineCapabilities, setPipelineCapabilities] = useState<PipelineCapabilities | null>(null);
+  const [pipelineSelection, setPipelineSelection] = useState<PipelineSelection | null>(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
   const [managedJobId, setManagedJobId] = useState<string | null>(null);
   const [screenshotTitle, setScreenshotTitle] = useState("");
   const [screenshotNotes, setScreenshotNotes] = useState("");
@@ -7154,6 +7162,7 @@ export default function App() {
           selectedFile,
           expectedUpload.requestId,
           controller.signal,
+          pipelineSelection ?? undefined,
         );
         updateExpectedUpload(
           expectedUploadIndex,
@@ -7379,7 +7388,12 @@ export default function App() {
     file: File,
     uploadRequestId: string,
   ): Promise<JobRecord> {
-    const created = await uploadScreenshot(file, uploadRequestId);
+    const created = await uploadScreenshot(
+      file,
+      uploadRequestId,
+      undefined,
+      pipelineSelection ?? undefined,
+    );
     appendJob(created);
     return created;
   }
@@ -8107,6 +8121,60 @@ export default function App() {
     updater: (current: AutomationSettings) => AutomationSettings,
   ) {
     setAutomationSettings(updater);
+  }
+
+  function openPipelineDialog() {
+    setPipelineDialogOpen(true);
+    if (pipelineCapabilities || pipelineLoading) {
+      return;
+    }
+
+    setPipelineLoading(true);
+    void getPipelineCapabilities()
+      .then((capabilities) => {
+        setPipelineCapabilities(capabilities);
+        setPipelineSelection((current) => current ?? capabilities.defaults);
+      })
+      .catch((pipelineError) => {
+        setError(messageFromError(pipelineError, "Could not read analysis plugins"));
+      })
+      .finally(() => setPipelineLoading(false));
+  }
+
+  function updatePipelineSelection(
+    field: "parser_provider" | "parser_layout_profile" | "recommendation_engine",
+    value: string,
+  ) {
+    setPipelineSelection((current) => current ? {
+      ...current,
+      [field]: value,
+    } : current);
+  }
+
+  function updateRecommendationProvider(value: string) {
+    setPipelineSelection((current) => {
+      if (!current) {
+        return current;
+      }
+      if (value !== "local_solver") {
+        return {
+          ...current,
+          recommendation_provider: value,
+          recommendation_engine: null,
+        };
+      }
+      const selectedEngineAvailable = pipelineCapabilities?.recommendation_engines.some(
+        (option) => option.available && option.id === current.recommendation_engine,
+      );
+      const recommendationEngine = selectedEngineAvailable
+        ? current.recommendation_engine
+        : pipelineCapabilities?.recommendation_engines.find((option) => option.available)?.id ?? null;
+      return {
+        ...current,
+        recommendation_provider: value,
+        recommendation_engine: recommendationEngine,
+      };
+    });
   }
 
   function openInfoDialog() {
@@ -9303,6 +9371,16 @@ export default function App() {
               <Settings size={17} aria-hidden="true" />
             </button>
           </div>
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={openPipelineDialog}
+            disabled={busy}
+            title="Analysis plugins"
+            aria-label="Configure analysis plugins"
+          >
+            <SlidersHorizontal size={18} aria-hidden="true" />
+          </button>
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
           </button>
@@ -10603,6 +10681,74 @@ export default function App() {
                 Master automation is <strong>{automationEnabled ? "On" : "Off"}</strong>
               </span>
               <button type="button" className="secondary-button" onClick={() => setAutomationDialogOpen(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {pipelineDialogOpen ? (
+        <section className="modal-backdrop">
+          <div className="automation-dialog pipeline-dialog" role="dialog" aria-modal="true" aria-labelledby="pipeline-dialog-title">
+            <div className="automation-dialog-header">
+              <div>
+                <h2 id="pipeline-dialog-title">Analysis plugins</h2>
+                <p>Choose the tools used for new uploads and live captures</p>
+              </div>
+              <button type="button" className="dialog-icon-button" onClick={() => setPipelineDialogOpen(false)} aria-label="Close analysis plugin settings">
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="pipeline-dialog-body">
+              {pipelineLoading ? (
+                <p className="pipeline-loading">Reading installed plugins...</p>
+              ) : pipelineCapabilities && pipelineSelection ? (
+                <>
+                  <PipelineSelect
+                    id="pipeline-parser"
+                    label="Recognition"
+                    description="Reads the table state from the screenshot"
+                    options={pipelineCapabilities.parser_providers}
+                    value={pipelineSelection.parser_provider}
+                    onChange={(value) => updatePipelineSelection("parser_provider", value)}
+                  />
+                  <PipelineSelect
+                    id="pipeline-layout"
+                    label="Table layout"
+                    description="Defines where cards, wagers, and player seats are located"
+                    options={pipelineCapabilities.parser_layout_profiles}
+                    value={pipelineSelection.parser_layout_profile}
+                    onChange={(value) => updatePipelineSelection("parser_layout_profile", value)}
+                  />
+                  <PipelineSelect
+                    id="pipeline-recommendation"
+                    label="Recommendation"
+                    description="Analyzes the approved table state"
+                    options={pipelineCapabilities.recommendation_providers}
+                    value={pipelineSelection.recommendation_provider}
+                    onChange={updateRecommendationProvider}
+                  />
+                  {pipelineSelection.recommendation_provider === "local_solver" ? (
+                    <PipelineSelect
+                      id="pipeline-engine"
+                      label="Solver engine"
+                      description="Runs locally inside the backend deployment"
+                      options={pipelineCapabilities.recommendation_engines}
+                      value={pipelineSelection.recommendation_engine ?? ""}
+                      onChange={(value) => updatePipelineSelection("recommendation_engine", value)}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <p className="pipeline-loading">Plugin details are unavailable.</p>
+              )}
+            </div>
+
+            <div className="automation-dialog-footer pipeline-dialog-footer">
+              <span>Existing screenshots keep their original pipeline.</span>
+              <button type="button" className="secondary-button" onClick={() => setPipelineDialogOpen(false)}>
                 Done
               </button>
             </div>
@@ -12169,6 +12315,46 @@ export default function App() {
         </section>
       ) : null}
     </main>
+  );
+}
+
+function PipelineSelect({
+  id,
+  label,
+  description,
+  options,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  options: PipelineOption[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const unavailableOptions = options.filter((option) => !option.available);
+  return (
+    <div className="pipeline-select-row">
+      <label htmlFor={id}>
+        <span>
+          <strong>{label}</strong>
+          <small>{description}</small>
+        </span>
+        <select id={id} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+          {options.map((option) => (
+            <option key={option.id} value={option.id} disabled={!option.available}>
+              {option.label}{option.available ? "" : " (unavailable)"}
+            </option>
+          ))}
+        </select>
+      </label>
+      {unavailableOptions.map((option) => (
+        <small key={option.id} className="pipeline-unavailable">
+          {option.label}: {option.unavailable_reason ?? "Not configured"}
+        </small>
+      ))}
+    </div>
   );
 }
 

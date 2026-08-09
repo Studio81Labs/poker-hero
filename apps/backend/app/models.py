@@ -863,6 +863,45 @@ class TrainingProgress(BaseModel):
     review_queue: list[TrainingRecentHand] = Field(default_factory=list)
 
 
+class PipelineOption(BaseModel):
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    label: str = Field(min_length=1, max_length=100)
+    available: bool = True
+    unavailable_reason: str | None = Field(default=None, max_length=300)
+
+
+class PipelineSelection(BaseModel):
+    parser_provider: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    parser_layout_profile: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    recommendation_provider: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    recommendation_engine: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+
+
+class PipelineCapabilities(BaseModel):
+    defaults: PipelineSelection
+    parser_providers: list[PipelineOption]
+    parser_layout_profiles: list[PipelineOption]
+    recommendation_providers: list[PipelineOption]
+    recommendation_engines: list[PipelineOption]
+
+
 class JobRecord(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
@@ -880,7 +919,9 @@ class JobRecord(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=10)
     image_filename: str
     parser_provider: str
+    parser_layout_profile: str | None = None
     recommendation_provider: str
+    recommendation_engine: str | None = None
     parser_result: ParserResult | None = None
     approved_state: CanonicalState | None = None
     training_decision: TrainingDecision | None = None

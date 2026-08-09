@@ -259,6 +259,7 @@ def import_parser_dataset(
                     original_filename=case.original_filename,
                     image_bytes=case.image_bytes,
                     parser_provider=dataset.parser_provider,
+                    parser_layout_profile=dataset.layout_profile,
                     recommendation_provider=recommendation_provider,
                     job_id=case.job_id,
                 )
@@ -272,6 +273,7 @@ def import_parser_dataset(
                     original_filename=case.original_filename,
                     image_bytes=case.image_bytes,
                     parser_provider=dataset.parser_provider,
+                    parser_layout_profile=dataset.layout_profile,
                     recommendation_provider=recommendation_provider,
                     approved_state=case.approved_state,
                     import_request_id=import_request_id,

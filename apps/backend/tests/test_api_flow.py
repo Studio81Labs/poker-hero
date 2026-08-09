@@ -106,6 +106,28 @@ def upload_job(
     )
 
 
+def upload_job_with_pipeline(
+    client: TestClient,
+    *,
+    parser_provider: str,
+    parser_layout_profile: str,
+    recommendation_provider: str,
+    recommendation_engine: str | None = None,
+):
+    data = {
+        "parser_provider": parser_provider,
+        "parser_layout_profile": parser_layout_profile,
+        "recommendation_provider": recommendation_provider,
+    }
+    if recommendation_engine is not None:
+        data["recommendation_engine"] = recommendation_engine
+    return client.post(
+        "/api/jobs",
+        files={"file": ("table.png", VALID_PNG, "image/png")},
+        data=data,
+    )
+
+
 def approve_job(client: TestClient, job_id: str, state: dict[str, object] | None = None):
     return client.post(f"/api/jobs/{job_id}/approve", json=state or APPROVED_STATE)
 
@@ -163,6 +185,75 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
         "recommendation_provider": "local_solver",
         "recommendation_engine": "postflop_solver",
     }
+
+
+def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        parser_layout_profile="generic",
+        parser_enabled_layout_profiles=["fortuna_nations"],
+        recommendation_enabled_providers=["rule_based"],
+    )
+
+    response = client.get("/api/pipeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["defaults"] == {
+        "parser_provider": "mock",
+        "parser_layout_profile": "generic",
+        "recommendation_provider": "mock",
+        "recommendation_engine": None,
+    }
+    assert [option["id"] for option in payload["parser_layout_profiles"]] == [
+        "generic",
+        "fortuna_nations",
+    ]
+    assert [option["id"] for option in payload["recommendation_providers"]] == [
+        "mock",
+        "rule_based",
+    ]
+
+
+def test_upload_persists_explicit_pipeline_selection(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        parser_enabled_layout_profiles=["fortuna"],
+        recommendation_enabled_providers=["rule_based"],
+    )
+
+    response = upload_job_with_pipeline(
+        client,
+        parser_provider="mock",
+        parser_layout_profile="fortuna",
+        recommendation_provider="rule_based",
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["parser_provider"] == "mock"
+    assert payload["parser_layout_profile"] == "fortuna"
+    assert payload["recommendation_provider"] == "rule_based"
+    assert payload["recommendation_engine"] is None
+
+
+def test_upload_rejects_pipeline_plugin_not_enabled_by_deployment(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+
+    response = upload_job_with_pipeline(
+        client,
+        parser_provider="ocr_cv",
+        parser_layout_profile="generic",
+        recommendation_provider="mock",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Parser provider 'ocr_cv' is not enabled for this deployment"
+    )
+    assert list((tmp_path / "jobs").iterdir()) == []
 
 
 def test_default_access_log_level_suppresses_health_event(
@@ -1160,6 +1251,55 @@ def test_upload_parse_approve_and_recommend(tmp_path: Path) -> None:
         FileJobStore(tmp_path).get(job["id"]).recommendation_request_id
         == recommendation_request_id
     )
+
+
+def test_recommendation_uses_provider_selected_when_job_was_uploaded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected_settings: list[Settings] = []
+
+    def capture_provider(settings: Settings):
+        selected_settings.append(settings)
+        return MockRecommendationProvider()
+
+    monkeypatch.setattr(api_module, "build_provider", capture_provider)
+    client = make_client(
+        tmp_path,
+        recommendation_enabled_providers=["rule_based"],
+    )
+    upload = upload_job_with_pipeline(
+        client,
+        parser_provider="mock",
+        parser_layout_profile="generic",
+        recommendation_provider="rule_based",
+    )
+    job_id = upload.json()["id"]
+    approve_job(client, job_id)
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 200
+    assert len(selected_settings) == 1
+    assert selected_settings[0].recommendation_provider == "rule_based"
+
+
+def test_recommendation_does_not_require_a_completed_job_parser_to_remain_enabled(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    store = FileJobStore(tmp_path)
+    job = store.get(job_id)
+    job.parser_provider = "llm_vision"
+    job.parser_layout_profile = "generic"
+    store.save(job)
+    approve_job(client, job_id)
+
+    response = client.post(f"/api/jobs/{job_id}/recommend")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "recommended"
 
 
 @pytest.mark.parametrize(

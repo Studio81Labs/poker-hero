@@ -12,6 +12,8 @@ import type {
   McpIssuedPrincipal,
   McpPrincipal,
   McpScope,
+  PipelineCapabilities,
+  PipelineSelection,
   RecommendationAction,
   SystemInfo,
   TrainingCertainty,
@@ -278,6 +280,13 @@ export async function getSystemInfo(): Promise<SystemInfo> {
   return readJson<SystemInfo>(response);
 }
 
+export async function getPipelineCapabilities(): Promise<PipelineCapabilities> {
+  const response = await fetch(`${API_BASE_URL}/api/pipeline`, {
+    credentials: "include",
+  });
+  return readJson<PipelineCapabilities>(response);
+}
+
 export async function getMcpAccessConfig(): Promise<McpAccessConfig> {
   const response = await fetch(`${API_BASE_URL}/api/mcp/config`, {
     credentials: "include",
@@ -443,10 +452,19 @@ export async function uploadScreenshot(
   file: File,
   uploadRequestId: string,
   signal?: AbortSignal,
+  pipeline?: PipelineSelection,
 ): Promise<JobRecord> {
   const form = new FormData();
   form.append("file", file);
   form.append("upload_request_id", uploadRequestId);
+  if (pipeline) {
+    form.append("parser_provider", pipeline.parser_provider);
+    form.append("parser_layout_profile", pipeline.parser_layout_profile);
+    form.append("recommendation_provider", pipeline.recommendation_provider);
+    if (pipeline.recommendation_engine) {
+      form.append("recommendation_engine", pipeline.recommendation_engine);
+    }
+  }
   const response = await fetch(`${API_BASE_URL}/api/jobs`, {
     method: "POST",
     body: form,

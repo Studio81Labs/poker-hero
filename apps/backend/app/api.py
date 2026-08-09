@@ -79,6 +79,8 @@ from app.models import (
     JobHistory,
     JobQueue,
     JobRecord,
+    PipelineCapabilities,
+    PipelineSelection,
     RecommendationAction,
     RecommendationRequest,
     ScreenshotMetadataRequest,
@@ -101,6 +103,12 @@ from app.mcp_access import (
 from app.mcp_http import HostedMcpRuntime, build_hosted_mcp_runtime
 from app.parsers.base import ParserConfigurationError, ParserError
 from app.parsers.registry import build_parser
+from app.pipeline import (
+    PipelineSelectionError,
+    pipeline_capabilities,
+    resolve_pipeline_selection,
+    settings_for_selection,
+)
 from app.providers.base import (
     ProviderConfigurationError,
     ProviderError,
@@ -660,6 +668,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         original_filename: str,
         image_bytes: bytes,
         upload_request_id: str | None,
+        selection: PipelineSelection,
     ) -> JobRecord:
         if not is_supported_image(image_bytes):
             raise HTTPException(
@@ -670,8 +679,10 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             job = store.create_job(
                 original_filename=original_filename,
                 image_bytes=image_bytes,
-                parser_provider=active_settings.parser_provider,
-                recommendation_provider=active_settings.recommendation_provider,
+                parser_provider=selection.parser_provider,
+                parser_layout_profile=selection.parser_layout_profile,
+                recommendation_provider=selection.recommendation_provider,
+                recommendation_engine=selection.recommendation_engine,
                 upload_request_id=upload_request_id,
             )
         with job_lock_for(job.id):
@@ -699,7 +710,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 return save_job(current)
 
         try:
-            parser = build_parser(active_settings)
+            parser = build_parser(settings_for_selection(active_settings, selection))
             parser_result = parser.parse(store.image_path(job))
         except ParserConfigurationError as exc:
             save_parser_failure(str(exc))
@@ -890,6 +901,16 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ),
         }
 
+    @app.get("/api/pipeline", response_model=PipelineCapabilities)
+    def get_pipeline_capabilities() -> PipelineCapabilities:
+        try:
+            return pipeline_capabilities(active_settings)
+        except PipelineSelectionError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Pipeline configuration error: {exc}",
+            ) from exc
+
     @app.get("/api/mcp/config", response_model=McpAccessConfig)
     def get_mcp_access_config() -> McpAccessConfig:
         return McpAccessConfig(
@@ -983,7 +1004,41 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             max_length=128,
             pattern=r"^[A-Za-z0-9._:-]+$",
         ),
+        parser_provider: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        parser_layout_profile: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        recommendation_provider: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        recommendation_engine: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
     ) -> JobRecord:
+        try:
+            selection = resolve_pipeline_selection(
+                active_settings,
+                parser_provider=parser_provider,
+                parser_layout_profile=parser_layout_profile,
+                recommendation_provider=recommendation_provider,
+                recommendation_engine=recommendation_engine,
+            )
+        except PipelineSelectionError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         image_bytes = await file.read(active_settings.max_upload_bytes + 1)
         if len(image_bytes) > active_settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
@@ -992,6 +1047,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             file.filename or "screenshot.png",
             image_bytes,
             upload_request_id,
+            selection,
         )
 
     @app.get("/api/jobs", response_model=JobQueue)
@@ -1162,12 +1218,23 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             save_job(job)
 
         try:
-            provider = build_provider(active_settings)
+            selection = resolve_pipeline_selection(
+                active_settings,
+                parser_provider=job.parser_provider,
+                parser_layout_profile=(
+                    job.parser_layout_profile
+                    or active_settings.parser_layout_profile
+                ),
+                recommendation_provider=job.recommendation_provider,
+                recommendation_engine=job.recommendation_engine,
+                validate_parser=False,
+            )
+            provider = build_provider(settings_for_selection(active_settings, selection))
             missing = missing_required_fields(
                 approved_state,
                 provider.required_fields_for(approved_state),
             )
-        except ProviderConfigurationError as exc:
+        except (PipelineSelectionError, ProviderConfigurationError) as exc:
             with job_lock_for(job_id):
                 current = current_recommendation_target(
                     job_id,

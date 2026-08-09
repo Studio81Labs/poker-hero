@@ -899,10 +899,16 @@ Example configuration concepts:
 
 - `parser.provider`: `mock`, `llm_vision`, or `ocr_cv`.
 - `parser.layoutProfile`: generic or a named poker-client layout profile.
+- Deployment allowlists for additional parser providers and layout profiles;
+  users can choose only installed options advertised by the backend for each
+  new upload or live capture.
 - `parser.autoApprove.enabled`: boolean.
 - `parser.autoApprove.thresholds`: required confidence thresholds per field.
 - `recommendation.provider`: `mock`, `local_solver`, `external_solver`, or `llm_advice`.
 - `recommendation.localEngine`: `postflop_solver` or `local_ev`.
+- Deployment allowlists for additional recommendation providers and local
+  engines. The chosen pipeline is persisted with the job so later approval and
+  recommendation use the same configured tools.
 - Provider-specific settings such as local engine path, API base URL, model name, and credentials.
 - Provider capability settings such as required canonical fields and whether partial-state advice is allowed.
 - Independent optional bearer tokens for external vision, solver, and LLM

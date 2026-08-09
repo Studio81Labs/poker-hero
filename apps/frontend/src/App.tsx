@@ -7880,6 +7880,22 @@ export default function App() {
   function updateForm<K extends keyof StateForm>(field: K, value: StateForm[K]) {
     setForm((current) => {
       const next = { ...current, [field]: value };
+      if (field === "current_bet") {
+        next.opponent_wager = "";
+        next.action_context = "";
+        if (value !== "" && Number(value) <= 0) {
+          next.facing_action = "";
+        }
+      }
+      if (field === "facing_action") {
+        next.opponent_wager = "";
+        next.action_context = "";
+      }
+      if (field === "street" && (value === "" || value === "preflop")) {
+        next.opponent_wager = "";
+        next.facing_action = "";
+        next.action_context = "";
+      }
       if (
         (
           (field === "street" && value !== "preflop")
@@ -7925,13 +7941,6 @@ export default function App() {
         if (next.street !== "preflop") {
           next.opponent_commitment_total = "";
         }
-      }
-      if (
-        field === "current_bet"
-        || (field === "facing_action" && value !== "bet")
-        || (field === "street" && (value === "" || value === "preflop"))
-      ) {
-        next.opponent_wager = "";
       }
       formDirtyRef.current = JSON.stringify(next)
         !== JSON.stringify(formBaselineRef.current);

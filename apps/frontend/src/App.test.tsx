@@ -5223,6 +5223,7 @@ describe("App", () => {
     expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("10");
     await user.selectOptions(screen.getByLabelText(/Facing action/), "raise");
     expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
     await user.click(screen.getByRole("button", { name: "Add action" }));
     await user.selectOptions(screen.getByLabelText("Action 1 type"), "bet");
     await user.type(screen.getByLabelText("Action 1 amount"), "5");
@@ -5239,7 +5240,7 @@ describe("App", () => {
     ]);
   });
 
-  it("clears an inferred wager when the current bet is corrected", async () => {
+  it("clears inferred action state when the current bet is corrected to zero", async () => {
     const postflopState: DetectedState = {
       ...detectedState,
       current_bet: 10,
@@ -5261,9 +5262,11 @@ describe("App", () => {
     const user = await uploadScreenshot();
     const currentBetInput = screen.getByLabelText(/Current bet/);
     await user.clear(currentBetInput);
-    await user.type(currentBetInput, "8");
+    await user.type(currentBetInput, "0");
 
-    expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    expect(screen.queryByLabelText(/Opponent wager total/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
   });
 
   it("clears a postflop inferred wager when the street is corrected to preflop", async () => {
@@ -5289,6 +5292,8 @@ describe("App", () => {
     await user.selectOptions(screen.getByLabelText(/Street/), "preflop");
 
     expect(screen.getByLabelText(/Opponent wager total/)).toHaveValue("");
+    expect(screen.getByLabelText(/Facing action/)).toHaveValue("");
+    expect(screen.getByLabelText(/Action context/)).toHaveValue("");
   });
 
   it("excludes opponent-wager confidence from check spots", async () => {

@@ -76,7 +76,10 @@ Backend settings use the `POKER_` prefix. `pnpm bootstrap` copies
 
 The main provider switches are:
 
-- `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, or `ocr_cv`
+- `POKER_PARSER_PROVIDER`: `mock`, `llm_vision`, `ocr_cv`, or `auto`. Automatic
+  recognition uses local OCR for explicit calibrated client layouts and
+  external vision for `generic`, other layouts, or local OCR rejection; it
+  requires `POKER_EXTERNAL_PARSER_URL`
 - `POKER_PARSER_LAYOUT_PROFILE`: the default layout ID. Fixed-region `ocr_cv`
   supports `generic`, `fortuna`, `nations`, and `fortuna_nations`; external
   vision may use deployment-defined IDs such as `pokerstars`
@@ -102,17 +105,20 @@ The main provider switches are:
 - `POKER_DEPLOYMENT_ENVIRONMENT`: `local`, `staging`, or `production`; MCP
   gateways verify this identity before accessing jobs
 
-For example, a private deployment can expose PokerStars through the external
-vision adapter without claiming local OCR support for that client:
+For example, a private deployment can route Fortuna/Nations through local OCR
+and PokerStars through external vision behind one automatic recognition option:
 
 ```dotenv
-POKER_PARSER_ENABLED_PROVIDERS=["llm_vision"]
+POKER_PARSER_PROVIDER=auto
+POKER_PARSER_LAYOUT_PROFILE=fortuna_nations
 POKER_PARSER_ENABLED_LAYOUT_PROFILES=["pokerstars"]
 POKER_EXTERNAL_PARSER_URL=https://vision.example.com/parse
 ```
 
-The local `ocr_cv` option remains unavailable for `pokerstars` until a labeled
-corpus and calibrated coordinates/templates are added for that layout.
+The automatic parser routes `pokerstars` directly to external vision. The local
+`ocr_cv` option remains unavailable for that layout until a labeled corpus and
+calibrated coordinates/templates are added.
+
 - `POKER_DATA_DIR`: file-backed jobs and uploaded screenshots
 - `POKER_DATA_VOLUME_ID`: stable deployment identity required only by the
   operational backup CLI

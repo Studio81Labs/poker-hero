@@ -39,6 +39,11 @@ To expose another poker client through `llm_vision`, add its normalized ID to
 `POKER_PARSER_ENABLED_PROVIDERS`. The API advertises parser/layout compatibility,
 so deployment-defined profiles such as `pokerstars` are not offered with the
 fixed-coordinate `ocr_cv` parser until local calibration is implemented.
+Enable or select the `auto` parser only when `POKER_EXTERNAL_PARSER_URL` is set.
+It tries local OCR for explicit registered client layouts, falls back to
+external vision when local OCR rejects a capture, and routes `generic` or other
+enabled layouts directly to the external endpoint. It never infers or changes
+the selected layout profile.
 `POKER_POSTFLOP_SOLVER_RANGE_MODE=contextual` uses a complete supported flop
 open-and-call, open/3-bet/call, or open/3-bet/4-bet/call history whose
 reconstructed root pot matches the recorded final commitments to select

@@ -1212,6 +1212,39 @@ class BenchmarkFieldComparison(BaseModel):
         return self
 
 
+class BenchmarkParserRouting(BaseModel):
+    provider: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    selected_provider: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    layout_profile: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    fallback_from: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    fallback_reason: str | None = Field(default=None, min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_fallback(self) -> Self:
+        if (self.fallback_from is None) != (self.fallback_reason is None):
+            raise ValueError(
+                "Benchmark parser fallback source and reason must be recorded together"
+            )
+        return self
+
+
 class BenchmarkCaseResult(BaseModel):
     job_id: str
     original_filename: str
@@ -1221,6 +1254,7 @@ class BenchmarkCaseResult(BaseModel):
     accuracy: UnitIntervalNumber
     warnings: list[str] = Field(default_factory=list)
     error: str | None = None
+    parser_routing: BenchmarkParserRouting | None = None
     comparisons: list[BenchmarkFieldComparison] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -1322,6 +1356,20 @@ class BenchmarkReport(BaseModel):
 
         field_counts: dict[str, list[int]] = {}
         for case in self.cases:
+            if (
+                case.parser_routing is not None
+                and case.parser_routing.provider != self.parser_provider
+            ):
+                raise ValueError(
+                    "Benchmark case routing provider does not match the report"
+                )
+            if (
+                case.parser_routing is not None
+                and case.parser_routing.layout_profile != self.layout_profile
+            ):
+                raise ValueError(
+                    "Benchmark case routing layout does not match the report"
+                )
             for comparison in case.comparisons:
                 counts = field_counts.setdefault(comparison.field, [0, 0])
                 counts[1] += 1

@@ -216,6 +216,8 @@ construction and capability discovery must consume that same descriptor.
 
 Parser types:
 
+- `automatic_parser`: routes calibrated layouts through local OCR and uses the
+  configured external vision parser for other layouts or local parser failures.
 - `llm_vision_parser`: external multi-layout parser adapter.
 - `ocr_cv_parser`: deterministic OCR/computer-vision parser with configurable layout profiles.
 - `mock_parser`: predictable parser for tests and UI development.
@@ -924,7 +926,7 @@ Configuration controls the active parser and recommendation provider.
 
 Example configuration concepts:
 
-- `parser.provider`: `mock`, `llm_vision`, or `ocr_cv`.
+- `parser.provider`: `mock`, `llm_vision`, `ocr_cv`, or `auto`.
 - `parser.layoutProfile`: generic or a named poker-client layout profile.
 - Deployment allowlists for additional parser providers and layout profiles;
   users can choose only installed options advertised by the backend for each
@@ -1247,6 +1249,8 @@ Poker Hero is successful when:
   destructive confirmation overlays the dialog footer so the details dialog
   keeps a stable size during the two-step action.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
+- Automatic-parser benchmark cases persist the selected provider and fallback
+  evidence so local and external recognition quality remain attributable.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.
 - A valid full backup can restore jobs, screenshots, history, training data,

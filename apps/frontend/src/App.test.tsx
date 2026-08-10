@@ -13759,7 +13759,7 @@ describe("App", () => {
       .mockReturnValueOnce(pendingOverview.promise)
       .mockReturnValueOnce(pendingInclusion.promise)
       .mockReturnValueOnce(pendingBenchmark.promise)
-      .mockResolvedValueOnce(jsonResponse({ included_cases: 1, latest_report: benchmarkReport }))
+      .mockResolvedValueOnce(jsonResponse({ included_cases: 2, latest_report: benchmarkReport }))
       .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), benchmark_included: false }));
     render(<App />);
 
@@ -13844,6 +13844,9 @@ describe("App", () => {
     expect(retainedGroundTruth).toBeEnabled();
     await user.click(retainedGroundTruth);
     await waitFor(() => expect(retainedGroundTruth).toHaveAttribute("aria-checked", "false"));
+    expect(within(reopenedDialog).getByRole("button", {
+      name: "Run benchmark",
+    })).toBeEnabled();
 
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/jobs",
@@ -13875,6 +13878,13 @@ describe("App", () => {
     fetchMock()
       .mockResolvedValueOnce(jsonResponse({ included_cases: 0, latest_report: null, recent_reports: [] }))
       .mockReturnValueOnce(pendingImport.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        included_cases_by_layout: { generic: 2 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
+      }))
       .mockResolvedValueOnce(processingQueueResponse(
         [],
         "dataset-import-snapshot",
@@ -13918,8 +13928,13 @@ describe("App", () => {
     });
     const form = fetchMock().mock.calls[1][1]?.body as FormData;
     expect(form.get("file")).toBe(dataset);
-    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+    expect(fetchMock()).toHaveBeenNthCalledWith(
       3,
+      "http://localhost:8000/api/benchmarks",
+      { credentials: "include" },
+    );
+    await waitFor(() => expect(fetchMock()).toHaveBeenNthCalledWith(
+      4,
       "http://localhost:8000/api/jobs",
       { credentials: "include" },
     ));
@@ -14050,6 +14065,13 @@ describe("App", () => {
         included_cases: 1,
         job_ids: [benchmarkJobId],
       }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { generic: 1 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
+      }))
       .mockReturnValueOnce(pendingQueue.promise);
     render(<App />);
     const user = userEvent.setup();
@@ -14095,6 +14117,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/import",
+      "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs",
     ]);
   });
@@ -14126,6 +14149,13 @@ describe("App", () => {
         reused_cases: 1,
         included_cases: 1,
         job_ids: [benchmarkJobId],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { generic: 1 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
       }))
       .mockReturnValueOnce(pendingQueue.promise);
     render(<App />);
@@ -14177,6 +14207,7 @@ describe("App", () => {
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/import",
+      "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs",
     ]);
   });
@@ -14215,6 +14246,13 @@ describe("App", () => {
         },
         error: null,
         error_status: null,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { generic: 1 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
       }))
       .mockResolvedValueOnce(processingQueueResponse(
         [],
@@ -14263,6 +14301,7 @@ describe("App", () => {
       expect.stringMatching(
         /^http:\/\/localhost:8000\/api\/benchmarks\/imports\/.+/,
       ),
+      "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/history",
       "http://localhost:8000/api/jobs",
     ]);
@@ -14629,6 +14668,13 @@ describe("App", () => {
         recent_reports: [],
       }))
       .mockReturnValueOnce(pendingImport.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { generic: 1 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
+      }))
       .mockResolvedValueOnce(processingQueueResponse(
         [includedJob],
         "confirmed-import-snapshot",
@@ -14681,7 +14727,7 @@ describe("App", () => {
     expect(window.sessionStorage.getItem(
       "poker-training-processing-synced",
     )).toBe("true");
-    expect(fetchMock()).toHaveBeenCalledTimes(4);
+    expect(fetchMock()).toHaveBeenCalledTimes(5);
   });
 
   it("updates an imported hand held only by the history search projection", async () => {
@@ -14708,6 +14754,13 @@ describe("App", () => {
         reused_cases: 1,
         included_cases: 1,
         job_ids: [archivedJob.id],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { generic: 1 },
+        default_layout_profile: "generic",
+        latest_report: null,
+        recent_reports: [],
       }))
       .mockResolvedValueOnce(processingQueueResponse(
         [],
@@ -14758,7 +14811,7 @@ describe("App", () => {
     expect(await within(reopenedDialog).findByRole("switch", {
       name: /Use current hand as ground truth/,
     })).toHaveAttribute("aria-checked", "true");
-    expect(fetchMock()).toHaveBeenCalledTimes(5);
+    expect(fetchMock()).toHaveBeenCalledTimes(6);
   });
 
   it("shows benchmark mismatches and opens the stored hand for correction", async () => {

@@ -5250,7 +5250,7 @@ export default function App() {
         && Date.now() >= benchmarkImportRetryNotBefore
       ) {
         const recovery = getBenchmarkDatasetImport(benchmarkImportRequestId)
-          .then((receipt) => {
+          .then(async (receipt) => {
             benchmarkImportRetryNotBefore = 0;
             if (
               !appMountedRef.current
@@ -5281,10 +5281,21 @@ export default function App() {
               void requestHistoryRestore(null, true);
               return;
             }
-            const readyCases = applyBenchmarkDatasetImportResult(receipt.result);
+            setError(null);
+            const readyCases = await applyBenchmarkDatasetImportResult(
+              receipt.result,
+            );
+            if (
+              !appMountedRef.current
+              || benchmarkImportLeaseRequestId(
+                processingMutationLeaseRef.current,
+                historyMutationLeaseRef.current,
+              ) !== benchmarkImportRequestId
+            ) {
+              return;
+            }
             clearBenchmarkImportLeases(benchmarkImportRequestId);
             setBenchmarkImporting(false);
-            setError(null);
             toast.success(
               `Dataset recovered: ${readyCases} ${readyCases === 1 ? "hand" : "hands"}`,
             );
@@ -8872,9 +8883,9 @@ export default function App() {
       .finally(() => setBenchmarkLoading(false));
   }
 
-  function applyBenchmarkDatasetImportResult(
+  async function applyBenchmarkDatasetImportResult(
     result: BenchmarkDatasetImportResult,
-  ): number {
+  ): Promise<number> {
     const importedIds = new Set(result.job_ids);
     const dirtyActiveJobId = formDirtyRef.current
       ? activeJobIdRef.current
@@ -8887,20 +8898,20 @@ export default function App() {
         processingRemovalCandidateIdsRef.current.delete(removalCandidateId);
       }
     }
+    const importedLayoutCounts = result.included_cases_by_layout;
+    const hasImportedLayoutCounts = Boolean(
+      importedLayoutCounts
+      && (
+        result.included_cases === 0
+        || Object.keys(importedLayoutCounts).length > 0
+      ),
+    );
     setBenchmarkOverview((current) => {
-      const importedLayoutCounts = result.included_cases_by_layout;
-      const hasImportedLayoutCounts = Boolean(
-        importedLayoutCounts
-        && (
-          result.included_cases === 0
-          || Object.keys(importedLayoutCounts).length > 0
-        ),
-      );
       return {
         included_cases: result.included_cases,
         included_cases_by_layout: hasImportedLayoutCounts
           ? importedLayoutCounts ?? undefined
-          : current?.included_cases_by_layout,
+          : undefined,
         default_layout_profile: current?.default_layout_profile,
         latest_report: current?.latest_report ?? null,
         recent_reports: current?.recent_reports ?? [],
@@ -8945,6 +8956,21 @@ export default function App() {
           : item,
       ) ?? null,
     );
+    if (!hasImportedLayoutCounts) {
+      try {
+        const overview = await getBenchmarkOverview();
+        if (appMountedRef.current) {
+          setBenchmarkOverview(overview);
+        }
+      } catch (benchmarkError) {
+        if (appMountedRef.current) {
+          setError(messageFromError(
+            benchmarkError,
+            "Dataset imported, but benchmark counts could not be refreshed",
+          ));
+        }
+      }
+    }
     return result.imported_cases + result.reused_cases;
   }
 
@@ -8998,7 +9024,7 @@ export default function App() {
         datasetFile,
         benchmarkImportRequestId,
       );
-      const readyCases = applyBenchmarkDatasetImportResult(result);
+      const readyCases = await applyBenchmarkDatasetImportResult(result);
       restoreAfterImport = true;
       clearOwnedMutationLease("processing");
       clearOwnedMutationLease("history");
@@ -9060,6 +9086,7 @@ export default function App() {
           ?? current?.default_layout_profile
           ?? null;
         const includedByLayout = layoutProfile
+          && current?.included_cases_by_layout !== undefined
           ? {
               ...(current?.included_cases_by_layout ?? {}),
               [layoutProfile]: Math.max(

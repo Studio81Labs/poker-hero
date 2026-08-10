@@ -13663,7 +13663,11 @@ describe("App", () => {
     const pendingOverview = deferredResponse();
     const pendingInclusion = deferredResponse();
     const pendingBenchmark = deferredResponse();
-    const benchmarkJob = { ...approvedJob(), benchmark_included: true };
+    const benchmarkJob = {
+      ...approvedJob(),
+      parser_layout_profile: "fortuna",
+      benchmark_included: true,
+    };
     const benchmarkReport = {
       id: "benchmark-1",
       parser_provider: "ocr_cv",
@@ -13698,15 +13702,15 @@ describe("App", () => {
         },
       ],
     };
-    const created = jobRecord();
+    const created = jobRecord({ parser_layout_profile: "fortuna" });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
       .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
       .mockResolvedValueOnce(jsonResponse({
         defaults: {
-          parser_provider: "mock",
-          parser_layout_profile: "generic",
+          parser_provider: "ocr_cv",
+          parser_layout_profile: "fortuna",
           recommendation_provider: "mock",
           recommendation_engine: null,
         },
@@ -13789,11 +13793,21 @@ describe("App", () => {
     expect(datasetInput).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
     expect(exportDataset).toHaveAttribute("aria-disabled", "true");
-    expect(exportDataset).toHaveAttribute("href", "http://localhost:8000/api/benchmarks/export");
+    expect(exportDataset).toHaveAttribute(
+      "href",
+      "http://localhost:8000/api/benchmarks/export?parser_provider=ocr_cv&parser_layout_profile=fortuna",
+    );
 
-    pendingOverview.resolve(jsonResponse({ included_cases: 0, latest_report: null }));
+    pendingOverview.resolve(jsonResponse({
+      included_cases: 2,
+      included_cases_by_layout: { pokerstars: 2 },
+      default_layout_profile: "fortuna",
+      latest_report: null,
+    }));
     await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
     expect(datasetInput).toBeEnabled();
+    expect(exportDataset).toHaveAttribute("aria-disabled", "true");
+    expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();
     await user.click(groundTruthSwitch);
     expect(datasetInput).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Run benchmark" })).toBeDisabled();

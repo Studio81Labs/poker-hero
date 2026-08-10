@@ -730,11 +730,13 @@ enables `Use current hand as ground truth`. Auto-approval alone must not add a
 hand to the benchmark corpus. Re-approving a selected hand updates its expected
 state for future runs.
 
-A benchmark run re-parses every selected screenshot with the parser and layout
-currently selected in the control panel. The backend accepts only an enabled,
-compatible, and ready parser/layout pair; API clients that omit a run selection
-retain the deployment defaults for backward compatibility. The run does not
-overwrite the stored parser result, approved state, or recommendation. Reports
+A benchmark run re-parses every selected screenshot labeled for the layout
+currently selected in the control panel. Selected ground truth is partitioned
+by the job's persisted layout profile; legacy jobs without one belong to the
+deployment-default layout. The backend accepts only an enabled, compatible,
+and ready parser/layout pair; API clients that omit a run selection retain the
+deployment defaults for backward compatibility. The run does not overwrite the
+stored parser result, approved state, or recommendation. Reports
 include overall accuracy,
 field-level correct/total counts, per-case accuracy, warnings, and isolated
 case errors. Case results expose expected and detected values for mismatched
@@ -757,17 +759,20 @@ should keep separate trusted corpora and thresholds for each supported poker
 client/layout, covering cards, street, pot, current bet, stacks, player count,
 and position rather than relying on the overall average alone.
 
-The selected corpus can be exported independently of a benchmark run. The ZIP
-contains a versioned JSON manifest and original screenshots under stable,
-job-based paths. It excludes unselected jobs and recommendation/training data.
+The selected layout corpus can be exported independently of a benchmark run.
+The ZIP contains a versioned JSON manifest and original screenshots under
+stable, job-based paths. It excludes unselected jobs, jobs labeled for other
+layouts, and recommendation/training data.
 The same ZIP can be imported into another installation. The backend validates
 the whole archive before writing, preserves stable job IDs, reuses exact matches,
-and rejects conflicting existing jobs without overwriting them. Imported cases
-are approved and selected as parser ground truth. They do not synthesize parser
+and rejects conflicting existing jobs without overwriting them. Reusing a
+stable job ID under a different layout is also a conflict. Imported cases are
+approved and selected as parser ground truth. They do not synthesize parser
 results or confidence from canonical labels.
 Schema version and declared case count must be JSON integers; boolean, string,
 and floating-point coercion is rejected.
-Parser dataset selection, export, and import share a 250-hand corpus limit.
+Parser dataset selection, export, and import share a 250-hand global corpus
+limit. The benchmark overview reports both that total and counts per layout.
 
 ## Recommendation Benchmark
 

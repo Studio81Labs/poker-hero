@@ -485,6 +485,8 @@ export interface BenchmarkReportSummary {
 
 export interface BenchmarkOverview {
   included_cases: number;
+  included_cases_by_layout?: Record<string, number>;
+  default_layout_profile?: string;
   latest_report: BenchmarkReport | null;
   recent_reports: BenchmarkReportSummary[];
 }
@@ -493,6 +495,7 @@ export interface BenchmarkDatasetImportResult {
   imported_cases: number;
   reused_cases: number;
   included_cases: number;
+  included_cases_by_layout?: Record<string, number> | null;
   job_ids: string[];
 }
 

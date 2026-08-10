@@ -375,22 +375,32 @@ and parser/layout compatibility checks used for new uploads, then persists the
 resolved pair on the report. A request without a body continues to use the
 deployment defaults so existing operational scripts remain compatible. Parser
 benchmark validation is independent of recommendation-provider readiness.
+The overview exposes the global selected count, counts partitioned by effective
+stored layout, and the deployment-default layout. Legacy jobs without a stored
+layout are assigned to that default. A run reads only labels for its resolved
+layout, so one client's screenshots cannot affect another layout's metrics.
 
 The explicitly selected benchmark corpus can be exported as a ZIP without
-running the parser. `manifest.json` identifies schema version 1, parser/layout
-context, and each approved canonical state. Original screenshots are stored at
-stable `images/<job-id>.<ext>` paths referenced by the manifest. Unselected jobs,
-parser output, recommendations, and player decisions are excluded.
+running the parser. An explicit parser/layout query exports only the matching
+layout corpus; an omitted selection uses the deployment defaults. `manifest.json`
+identifies schema version 1, parser/layout context, and each approved canonical
+state. Original screenshots are stored at stable `images/<job-id>.<ext>` paths
+referenced by the manifest. Unselected jobs, other layouts, parser output,
+recommendations, and player decisions are excluded.
 
 The same archive can be imported to restore or share a corpus. Import validates
 the complete manifest, paths, limits, and image payloads before creating jobs.
 Schema version and declared case count must be JSON integers; coercion from
 booleans, strings, or floating-point values is rejected.
 Stable job IDs make exact re-imports idempotent; an existing job with different
-image bytes or approved state rejects the archive instead of being overwritten.
+image bytes, approved state, or effective layout rejects the archive instead of
+being overwritten.
 Imported cases are approved benchmark jobs, while recommendation and training
 data remain absent. Ground-truth labels are not copied into parser results, so
 an imported job never presents user-approved state as detected OCR evidence.
+Import results return the refreshed global and per-layout corpus counts. Legacy
+completed import receipts without the layout map remain readable during rolling
+upgrades.
 The shared import/export corpus contract is capped at 250 selected hands; the
 selection API prevents the app from producing a dataset that import rejects.
 The offline runner can gate the corpus size and each field's labeled-case count

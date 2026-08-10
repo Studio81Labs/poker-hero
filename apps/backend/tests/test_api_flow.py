@@ -3820,6 +3820,8 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
     assert overview.status_code == 200
     assert overview.json() == {
         "included_cases": 0,
+        "included_cases_by_layout": {},
+        "default_layout_profile": "generic",
         "latest_report": None,
         "recent_reports": [],
     }
@@ -3983,6 +3985,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
         "imported_cases": 1,
         "reused_cases": 0,
         "included_cases": 1,
+        "included_cases_by_layout": {"fortuna": 1},
         "job_ids": [source_job_id],
     }
     assert repeated.status_code == 200
@@ -3990,6 +3993,7 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
         "imported_cases": 0,
         "reused_cases": 1,
         "included_cases": 1,
+        "included_cases_by_layout": {"fortuna": 1},
         "job_ids": [source_job_id],
     }
     imported_job = FileJobStore(target_dir).get(source_job_id)
@@ -4008,6 +4012,48 @@ def test_benchmark_dataset_import_round_trips_and_reuses_existing_cases(
     assert imported_job.recommendation_engine == "local_ev"
     assert imported_job.training_decision is None
     assert FileJobStore(target_dir).image_path(imported_job).read_bytes() == VALID_PNG
+
+
+def test_benchmark_dataset_import_rejects_cross_layout_job_reuse(
+    tmp_path: Path,
+) -> None:
+    source_client = make_client(tmp_path / "source")
+    job_id = upload_job(source_client, filename="layout-label.png").json()["id"]
+    approve_job(source_client, job_id)
+    source_client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    archive = source_client.get("/api/benchmarks/export").content
+    with ZipFile(BytesIO(archive)) as dataset:
+        manifest = json.loads(dataset.read("manifest.json"))
+    manifest["layout_profile"] = "pokerstars"
+    cross_layout_archive = rebuild_zip_archive(
+        archive,
+        {"manifest.json": json.dumps(manifest).encode()},
+    )
+    target_dir = tmp_path / "target"
+    target_client = make_client(target_dir)
+    imported = target_client.post(
+        "/api/benchmarks/import",
+        files={"file": ("dataset.zip", archive, "application/zip")},
+    )
+
+    response = target_client.post(
+        "/api/benchmarks/import",
+        files={
+            "file": (
+                "cross-layout.zip",
+                cross_layout_archive,
+                "application/zip",
+            )
+        },
+    )
+
+    assert imported.status_code == 200
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        f"Imported case {job_id} conflicts with an existing job"
+    )
+    existing = FileJobStore(target_dir).get(job_id)
+    assert existing.parser_layout_profile == "generic"
 
 
 @pytest.mark.parametrize(
@@ -4094,6 +4140,7 @@ def test_benchmark_dataset_import_persists_request_receipt_for_recovery(
         "imported_cases": 1,
         "reused_cases": 0,
         "included_cases": 1,
+        "included_cases_by_layout": {"generic": 1},
         "job_ids": [source_job_id],
     }
     assert recovered.status_code == 200
@@ -4222,6 +4269,7 @@ def test_benchmark_dataset_import_blocks_runs_until_partial_case_recovers(
         "imported_cases": 1,
         "reused_cases": 0,
         "included_cases": 1,
+        "included_cases_by_layout": {"generic": 1},
         "job_ids": [source_job_id],
     }
     assert recovered_run.status_code == 200
@@ -4768,6 +4816,10 @@ def test_benchmark_scores_an_enabled_selected_parser_pipeline(
         parser_enabled_layout_profiles=["fortuna_nations"],
     )
     job_id = upload_job(client).json()["id"]
+    store = FileJobStore(tmp_path)
+    labeled_job = store.get(job_id)
+    labeled_job.parser_layout_profile = "fortuna_nations"
+    store.save(labeled_job)
     approve_job(client, job_id)
     client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
     parser_settings: list[Settings] = []
@@ -4794,6 +4846,68 @@ def test_benchmark_scores_an_enabled_selected_parser_pipeline(
     assert len(parser_settings) == 1
     assert parser_settings[0].parser_provider == "ocr_cv"
     assert parser_settings[0].parser_layout_profile == "fortuna_nations"
+
+
+def test_benchmark_runs_and_exports_layout_corpora_independently(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_enabled_layout_profiles=["pokerstars"],
+    )
+    generic_id = upload_job(client, filename="generic.png").json()["id"]
+    store = FileJobStore(tmp_path)
+    legacy_generic = store.get(generic_id)
+    legacy_generic.parser_layout_profile = None
+    store.save(legacy_generic)
+    pokerstars_id = upload_job_with_pipeline(
+        client,
+        parser_provider="mock",
+        parser_layout_profile="pokerstars",
+        recommendation_provider="mock",
+    ).json()["id"]
+    for job_id in (generic_id, pokerstars_id):
+        approve_job(client, job_id)
+        client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    overview = client.get("/api/benchmarks").json()
+    generic_report = client.post("/api/benchmarks/run").json()
+    pokerstars_report = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "mock",
+            "parser_layout_profile": "pokerstars",
+        },
+    ).json()
+    pokerstars_export = client.get(
+        "/api/benchmarks/export",
+        params={
+            "parser_provider": "mock",
+            "parser_layout_profile": "pokerstars",
+        },
+    )
+
+    assert overview["included_cases"] == 2
+    assert overview["included_cases_by_layout"] == {
+        "generic": 1,
+        "pokerstars": 1,
+    }
+    assert overview["default_layout_profile"] == "generic"
+    assert [case["job_id"] for case in generic_report["cases"]] == [generic_id]
+    assert generic_report["layout_profile"] == "generic"
+    assert [case["job_id"] for case in pokerstars_report["cases"]] == [
+        pokerstars_id
+    ]
+    assert pokerstars_report["layout_profile"] == "pokerstars"
+    with ZipFile(BytesIO(pokerstars_export.content)) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        assert set(archive.namelist()) == {
+            "manifest.json",
+            f"images/{pokerstars_id}.png",
+        }
+    assert manifest["parser_provider"] == "mock"
+    assert manifest["layout_profile"] == "pokerstars"
+    assert [case["job_id"] for case in manifest["cases"]] == [pokerstars_id]
 
 
 def test_benchmark_rejects_a_parser_not_enabled_for_the_deployment(

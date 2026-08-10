@@ -15,6 +15,10 @@ from pydantic import (
     model_validator,
 )
 
+from app.benchmark_corpus import (
+    benchmark_layout_counts,
+    benchmark_layout_profile,
+)
 from app.dataset_export import (
     DATASET_SCHEMA,
     DATASET_SCHEMA_VERSION,
@@ -148,8 +152,7 @@ def import_parser_dataset(
     store: FileJobStore,
     recommendation_provider: str,
     recommendation_engine: str | None,
-    parser_provider: str,
-    layout_profile: str,
+    default_layout_profile: str,
     max_archive_bytes: int,
     import_request_id: str | None = None,
 ) -> BenchmarkDatasetImportResult:
@@ -181,7 +184,12 @@ def import_parser_dataset(
             existing_image = None
         resumable_state = same_import and existing.approved_state is None
         if (
-            (existing.approved_state != case.approved_state and not resumable_state)
+            benchmark_layout_profile(existing, default_layout_profile)
+            != dataset.layout_profile
+            or (
+                existing.approved_state != case.approved_state
+                and not resumable_state
+            )
             or (
                 existing_image is not None
                 and existing_image != case.image_bytes
@@ -206,6 +214,10 @@ def import_parser_dataset(
             for job in current_jobs
             if job.benchmark_included or job.id in existing_jobs
             if job.id not in resumable_job_ids
+            if (
+                benchmark_layout_profile(job, default_layout_profile)
+                == dataset.layout_profile
+            )
         ]
         for case in dataset.cases:
             existing = existing_jobs.get(case.job_id)
@@ -224,8 +236,8 @@ def import_parser_dataset(
             )
         prospective_archive = build_parser_dataset_archive_from_cases(
             prospective_cases,
-            parser_provider=parser_provider,
-            layout_profile=layout_profile,
+            parser_provider=dataset.parser_provider,
+            layout_profile=dataset.layout_profile,
             max_archive_bytes=max_archive_bytes,
         )
     except DatasetExportError as exc:
@@ -287,10 +299,15 @@ def import_parser_dataset(
             ) from exc
         imported_cases += 1
 
+    stored_jobs = store.list()
     return BenchmarkDatasetImportResult(
         imported_cases=imported_cases,
         reused_cases=reused_cases,
-        included_cases=sum(job.benchmark_included for job in store.list()),
+        included_cases=sum(job.benchmark_included for job in stored_jobs),
+        included_cases_by_layout=benchmark_layout_counts(
+            stored_jobs,
+            default_layout_profile,
+        ),
         job_ids=[case.job_id for case in dataset.cases],
     )
 

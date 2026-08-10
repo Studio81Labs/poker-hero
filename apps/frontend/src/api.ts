@@ -631,8 +631,21 @@ export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
   return readJson<BenchmarkOverview>(response);
 }
 
-export function benchmarkDatasetUrl(): string {
-  return `${API_BASE_URL}/api/benchmarks/export`;
+export function benchmarkDatasetUrl(
+  pipeline?: Pick<
+    PipelineSelection,
+    "parser_provider" | "parser_layout_profile"
+  >,
+): string {
+  const url = `${API_BASE_URL}/api/benchmarks/export`;
+  if (!pipeline) {
+    return url;
+  }
+  const search = new URLSearchParams({
+    parser_provider: pipeline.parser_provider,
+    parser_layout_profile: pipeline.parser_layout_profile,
+  });
+  return `${url}?${search.toString()}`;
 }
 
 export async function importBenchmarkDataset(

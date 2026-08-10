@@ -4,6 +4,7 @@ import {
   ApiResponseError,
   applicationBackupUrl,
   archiveJobs,
+  benchmarkDatasetUrl,
   deleteJob,
   getBenchmarkDatasetImport,
   getHistory,
@@ -217,6 +218,23 @@ describe("application backups", () => {
     const request = fetchMock.mock.calls[0][1];
     expect(request.body).toBeInstanceOf(FormData);
     expect((request.body as FormData).get("file")).toBe(file);
+  });
+});
+
+describe("parser benchmark datasets", () => {
+  it("keeps the deployment-default export URL when no pipeline is selected", () => {
+    expect(benchmarkDatasetUrl()).toBe(
+      "http://localhost:8000/api/benchmarks/export",
+    );
+  });
+
+  it("exports the selected parser layout corpus", () => {
+    expect(benchmarkDatasetUrl({
+      parser_provider: "llm_vision",
+      parser_layout_profile: "pokerstars",
+    })).toBe(
+      "http://localhost:8000/api/benchmarks/export?parser_provider=llm_vision&parser_layout_profile=pokerstars",
+    );
   });
 });
 

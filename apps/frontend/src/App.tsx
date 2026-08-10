@@ -5559,9 +5559,27 @@ export default function App() {
     benchmarkImportRecoveryPending ||
     benchmarkReviewJobId !== null ||
     busy;
+  const benchmarkTargetLayoutProfile = pipelineSelection?.parser_layout_profile
+    ?? benchmarkOverview?.default_layout_profile
+    ?? null;
+  const benchmarkHasLayoutCounts = Boolean(
+    benchmarkOverview?.included_cases_by_layout
+    && (
+      benchmarkOverview.included_cases === 0
+      || Object.keys(benchmarkOverview.included_cases_by_layout).length > 0
+    ),
+  );
+  const benchmarkIncludedCases = benchmarkTargetLayoutProfile
+    && benchmarkHasLayoutCounts
+    && benchmarkOverview?.included_cases_by_layout
+    ? benchmarkOverview.included_cases_by_layout[benchmarkTargetLayoutProfile] ?? 0
+    : benchmarkOverview?.included_cases ?? 0;
+  const benchmarkTargetLayoutLabel = pipelineCapabilities?.parser_layout_profiles
+    .find((option) => option.id === benchmarkTargetLayoutProfile)?.label
+    ?? benchmarkTargetLayoutProfile;
   const benchmarkDatasetExportDisabled =
     benchmarkOperationsLocked ||
-    (benchmarkOverview?.included_cases ?? 0) === 0;
+    benchmarkIncludedCases === 0;
   const previousBenchmarkReport = useMemo(
     () => previousComparableBenchmarkReport(benchmarkReport, recentBenchmarkReports),
     [benchmarkReport, recentBenchmarkReports],
@@ -8869,11 +8887,25 @@ export default function App() {
         processingRemovalCandidateIdsRef.current.delete(removalCandidateId);
       }
     }
-    setBenchmarkOverview((current) => ({
-      included_cases: result.included_cases,
-      latest_report: current?.latest_report ?? null,
-      recent_reports: current?.recent_reports ?? [],
-    }));
+    setBenchmarkOverview((current) => {
+      const importedLayoutCounts = result.included_cases_by_layout;
+      const hasImportedLayoutCounts = Boolean(
+        importedLayoutCounts
+        && (
+          result.included_cases === 0
+          || Object.keys(importedLayoutCounts).length > 0
+        ),
+      );
+      return {
+        included_cases: result.included_cases,
+        included_cases_by_layout: hasImportedLayoutCounts
+          ? importedLayoutCounts ?? undefined
+          : current?.included_cases_by_layout,
+        default_layout_profile: current?.default_layout_profile,
+        latest_report: current?.latest_report ?? null,
+        recent_reports: current?.recent_reports ?? [],
+      };
+    });
     const nextJobs = jobsRef.current.flatMap((candidate) => {
       if (!importedIds.has(candidate.id)) {
         return [candidate];
@@ -9022,18 +9054,34 @@ export default function App() {
     try {
       const updated = await setBenchmarkInclusion(job.id, included);
       replaceJob(updated);
-      setBenchmarkOverview((current) =>
-        current
+      setBenchmarkOverview((current) => {
+        const change = included ? 1 : -1;
+        const layoutProfile = updated.parser_layout_profile
+          ?? current?.default_layout_profile
+          ?? null;
+        const includedByLayout = layoutProfile
+          ? {
+              ...(current?.included_cases_by_layout ?? {}),
+              [layoutProfile]: Math.max(
+                0,
+                (current?.included_cases_by_layout?.[layoutProfile] ?? 0) + change,
+              ),
+            }
+          : current?.included_cases_by_layout;
+        return current
           ? {
               ...current,
-              included_cases: Math.max(0, current.included_cases + (included ? 1 : -1)),
+              included_cases: Math.max(0, current.included_cases + change),
+              included_cases_by_layout: includedByLayout,
             }
           : {
               included_cases: included ? 1 : 0,
+              included_cases_by_layout: includedByLayout,
+              default_layout_profile: layoutProfile ?? undefined,
               latest_report: null,
               recent_reports: [],
-            },
-      );
+            };
+      });
     } catch (benchmarkError) {
       if (mutationFailureMayHavePersistedSideEffect(benchmarkError)) {
         markPersistedJobMutationUncertain(mutationScope, job.id);
@@ -9063,6 +9111,11 @@ export default function App() {
       setSelectedBenchmarkReport(latestReport);
       setBenchmarkOverview((current) => ({
         included_cases: current?.included_cases ?? latestReport.total_cases,
+        included_cases_by_layout: current?.included_cases_by_layout ?? {
+          [latestReport.layout_profile]: latestReport.total_cases,
+        },
+        default_layout_profile: current?.default_layout_profile
+          ?? latestReport.layout_profile,
         latest_report: latestReport,
         recent_reports: [
           latestSummary,
@@ -12495,7 +12548,8 @@ export default function App() {
 
             <div className="automation-dialog-footer benchmark-dialog-footer">
               <span>
-                <strong>{benchmarkOverview?.included_cases ?? 0}</strong> ground-truth {benchmarkOverview?.included_cases === 1 ? "hand" : "hands"}
+                <strong>{benchmarkIncludedCases}</strong> ground-truth {benchmarkIncludedCases === 1 ? "hand" : "hands"}
+                {benchmarkTargetLayoutLabel ? ` · ${benchmarkTargetLayoutLabel}` : ""}
               </span>
               <button
                 type="button"
@@ -12519,7 +12573,7 @@ export default function App() {
               />
               <a
                 className={`secondary-button benchmark-dataset-action benchmark-export-button${benchmarkDatasetExportDisabled ? " disabled" : ""}`}
-                href={benchmarkDatasetUrl()}
+                href={benchmarkDatasetUrl(pipelineSelection ?? undefined)}
                 download
                 aria-label="Export dataset"
                 title="Export dataset"
@@ -12539,7 +12593,7 @@ export default function App() {
                 onClick={onRunBenchmark}
                 disabled={
                   benchmarkOperationsLocked ||
-                  (benchmarkOverview?.included_cases ?? 0) === 0
+                  benchmarkIncludedCases === 0
                 }
               >
                 <Play size={14} aria-hidden="true" />

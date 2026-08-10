@@ -9056,7 +9056,9 @@ export default function App() {
     setBenchmarkRunning(true);
     setError(null);
     try {
-      const latestReport = await runParserBenchmark();
+      const latestReport = await runParserBenchmark(
+        pipelineSelection ?? undefined,
+      );
       const latestSummary = benchmarkReportSummary(latestReport);
       setSelectedBenchmarkReport(latestReport);
       setBenchmarkOverview((current) => ({

@@ -74,6 +74,7 @@ from app.models import (
     BenchmarkOverview,
     BenchmarkReport,
     BenchmarkReportSummary,
+    BenchmarkRunRequest,
     BenchmarkSelectionRequest,
     CanonicalState,
     JobHistory,
@@ -1817,7 +1818,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             raise HTTPException(status_code=404, detail="Benchmark report not found") from exc
 
     @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
-    def run_parser_benchmark() -> BenchmarkReport:
+    def run_parser_benchmark(
+        benchmark_request: BenchmarkRunRequest | None = None,
+    ) -> BenchmarkReport:
         with benchmark_corpus_lock:
             ensure_benchmark_corpus_ready()
             jobs = [job for job in store.list() if job.benchmark_included]
@@ -1827,14 +1830,30 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     detail="Add at least one approved hand to the benchmark",
                 )
             try:
-                parser = build_parser(active_settings)
+                benchmark_settings = active_settings
+                if benchmark_request is not None:
+                    selection = resolve_pipeline_selection(
+                        active_settings,
+                        parser_provider=benchmark_request.parser_provider,
+                        parser_layout_profile=(
+                            benchmark_request.parser_layout_profile
+                        ),
+                        validate_recommendation=False,
+                    )
+                    benchmark_settings = settings_for_selection(
+                        active_settings,
+                        selection,
+                    )
+                parser = build_parser(benchmark_settings)
                 report = run_benchmark(
                     jobs=jobs,
                     parser=parser,
                     image_path_for=store.image_path,
-                    parser_provider=active_settings.parser_provider,
-                    layout_profile=active_settings.parser_layout_profile,
+                    parser_provider=benchmark_settings.parser_provider,
+                    layout_profile=benchmark_settings.parser_layout_profile,
                 )
+            except PipelineSelectionError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             except ParserConfigurationError as exc:
                 raise HTTPException(
                     status_code=500,

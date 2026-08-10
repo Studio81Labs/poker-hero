@@ -369,6 +369,13 @@ evidence. Its attribution denominator remains the report's full case count, so
 older or failed cases without route metadata remain visible rather than being
 silently omitted.
 
+Benchmark run requests may carry the control panel's current parser provider and
+layout profile. The backend applies the same deployment allowlist, readiness,
+and parser/layout compatibility checks used for new uploads, then persists the
+resolved pair on the report. A request without a body continues to use the
+deployment defaults so existing operational scripts remain compatible. Parser
+benchmark validation is independent of recommendation-provider readiness.
+
 The explicitly selected benchmark corpus can be exported as a ZIP without
 running the parser. `manifest.json` identifies schema version 1, parser/layout
 context, and each approved canonical state. Original screenshots are stored at

@@ -236,6 +236,26 @@ def test_selection_rejects_engine_without_local_solver(tmp_path: Path) -> None:
         resolve_pipeline_selection(settings, recommendation_engine="local_ev")
 
 
+def test_parser_only_selection_ignores_recommendation_readiness(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        parser_provider="mock",
+        recommendation_provider="external_solver",
+    )
+
+    selection = resolve_pipeline_selection(
+        settings,
+        validate_recommendation=False,
+    )
+
+    assert selection.parser_provider == "mock"
+    assert selection.parser_layout_profile == "generic"
+    assert selection.recommendation_provider == "external_solver"
+    assert selection.recommendation_engine is None
+
+
 def test_selection_builds_job_scoped_settings_copy(tmp_path: Path) -> None:
     settings = Settings(
         data_dir=tmp_path,

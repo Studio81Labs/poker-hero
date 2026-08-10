@@ -730,9 +730,12 @@ enables `Use current hand as ground truth`. Auto-approval alone must not add a
 hand to the benchmark corpus. Re-approving a selected hand updates its expected
 state for future runs.
 
-A benchmark run re-parses every selected screenshot with the currently
-configured parser and layout profile. It does not overwrite the stored parser
-result, approved state, or recommendation. Reports include overall accuracy,
+A benchmark run re-parses every selected screenshot with the parser and layout
+currently selected in the control panel. The backend accepts only an enabled,
+compatible, and ready parser/layout pair; API clients that omit a run selection
+retain the deployment defaults for backward compatibility. The run does not
+overwrite the stored parser result, approved state, or recommendation. Reports
+include overall accuracy,
 field-level correct/total counts, per-case accuracy, warnings, and isolated
 case errors. Case results expose expected and detected values for mismatched
 fields and can reopen the persisted hand in the review workspace for correction.

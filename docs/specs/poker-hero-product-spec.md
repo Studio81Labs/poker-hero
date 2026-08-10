@@ -228,8 +228,10 @@ profile-specific parser settings can be added as screenshots reveal layout
 differences.
 The deterministic local parser resolves installed profiles through immutable
 layout definitions that own every fixed read region and the recognition-engine
-identity. Unknown local profiles must fail before reading an image; they must
-never silently reuse another client's coordinates. The current generic,
+identity. Each local layout also declares its minimum usable capture scale and
+aspect-ratio tolerance. Unknown local profiles and incompatible capture geometry
+must fail before recognition; they must never silently reuse another client's
+coordinates or return fields from misaligned regions. The current generic,
 Fortuna, Nations, and combined profile IDs are compatibility aliases for one
 calibrated Fortuna/Nations layout.
 

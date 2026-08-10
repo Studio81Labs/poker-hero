@@ -187,6 +187,23 @@ def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
     }
 
 
+@pytest.mark.parametrize("engine", ["", "   "])
+def test_health_preserves_invalid_blank_local_solver_engine(
+    tmp_path: Path,
+    engine: str,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="local_solver",
+        local_solver_engine=engine,
+    )
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json()["recommendation_engine"] == ""
+
+
 def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
     client = make_client(
         tmp_path,
@@ -215,6 +232,30 @@ def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
     assert [option["id"] for option in payload["recommendation_providers"]] == [
         "mock",
         "rule_based",
+    ]
+
+
+def test_pipeline_endpoint_tolerates_unknown_inactive_local_engine(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        recommendation_provider="rule_based",
+        local_solver_engine="missing",
+    )
+
+    response = client.get("/api/pipeline")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["defaults"]["recommendation_engine"] is None
+    assert payload["recommendation_engines"] == [
+        {
+            "id": "missing",
+            "label": "Missing",
+            "available": True,
+            "unavailable_reason": None,
+        }
     ]
 
 

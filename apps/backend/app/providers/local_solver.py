@@ -2,9 +2,7 @@ import json
 import math
 import os
 from pathlib import Path
-import shlex
 import subprocess
-import sys
 from typing import Literal
 
 from pydantic import ValidationError
@@ -29,6 +27,11 @@ from app.solvers.postflop_ranges import (
     resolve_squeeze_pot_relative_position,
     select_postflop_ranges,
 )
+from app.solvers.registry import (
+    LOCAL_SOLVER_ENGINE_PLUGINS,
+    LocalSolverEnginePlugin,
+    resolve_configured_local_solver_engine,
+)
 from app.solvers.wager_context import (
     resolve_hero_wager,
     resolve_opponent_commitment_total,
@@ -49,9 +52,8 @@ class LocalSolverProvider:
 
     def required_fields_for(self, state: CanonicalState) -> list[str]:
         required_fields = list(self.required_fields)
-        custom_command_missing = not (self.settings.local_solver_command or "").strip()
-        engine = self.settings.local_solver_engine.strip().lower()
-        uses_builtin_chart_routing = custom_command_missing and engine == "postflop_solver"
+        engine = self._engine()
+        uses_builtin_chart_routing = engine.uses_postflop_routing
         chart_needs_hero_stack = (
             uses_builtin_chart_routing
             and state.street == "preflop"
@@ -65,12 +67,9 @@ class LocalSolverProvider:
         )
         if chart_needs_hero_stack:
             required_fields.append("hero_stack")
-        uses_builtin_ev = custom_command_missing and (
-            engine == "local_ev"
-            or (
-                engine == "postflop_solver"
-                and self.settings.postflop_solver_fallback_enabled
-            )
+        uses_builtin_ev = engine.uses_ev_routing or (
+            engine.uses_postflop_routing
+            and self.settings.postflop_solver_fallback_enabled
         )
         if (
             uses_builtin_ev
@@ -135,7 +134,9 @@ class LocalSolverProvider:
             if not self._can_fallback():
                 raise
             fallback_reason = str(exc)
-            fallback_command, fallback_cwd = self._ev_command()
+            fallback_command, fallback_cwd = LOCAL_SOLVER_ENGINE_PLUGINS[
+                "local_ev"
+            ].build_command(self.settings).subprocess_arguments()
             result = self._run(fallback_command, fallback_cwd, request)
 
         if fallback_reason is not None:
@@ -197,56 +198,47 @@ class LocalSolverProvider:
     def _command(
         self, request: RecommendationRequest
     ) -> tuple[list[str], Path | None, str | None]:
-        if self.settings.local_solver_command is not None and self.settings.local_solver_command.strip() != "":
-            return (
-                self._parse_command(self.settings.local_solver_command, "POKER_LOCAL_SOLVER_COMMAND"),
-                None,
-                None,
-            )
-
-        engine = self.settings.local_solver_engine.strip().lower()
-        if engine == "local_ev":
-            command, cwd = self._ev_command()
+        engine = self._engine()
+        if engine.is_custom or engine.uses_ev_routing:
+            command, cwd = engine.build_command(
+                self.settings
+            ).subprocess_arguments()
             return command, cwd, None
-        if engine != "postflop_solver":
-            raise ProviderConfigurationError(f"Unknown local solver engine: {self.settings.local_solver_engine}")
 
         unsupported_reason = self._postflop_unsupported_reason(request)
         if unsupported_reason is not None:
             if supports_preflop_chart(request):
-                command, cwd = self._ev_command(preflop_chart_enabled=True)
+                command, cwd = LOCAL_SOLVER_ENGINE_PLUGINS[
+                    "local_ev"
+                ].build_command(
+                    self.settings,
+                    extra_arguments=("--preflop-chart",),
+                ).subprocess_arguments()
                 return command, cwd, unsupported_reason
             if not self.settings.postflop_solver_fallback_enabled:
                 raise ProviderInputError(unsupported_reason)
-            command, cwd = self._ev_command()
+            command, cwd = LOCAL_SOLVER_ENGINE_PLUGINS[
+                "local_ev"
+            ].build_command(self.settings).subprocess_arguments()
             return command, cwd, unsupported_reason
 
-        command = self._parse_command(
-            self.settings.postflop_solver_command,
-            "POKER_POSTFLOP_SOLVER_COMMAND",
-        )
-        return command, None, None
+        command, cwd = engine.build_command(self.settings).subprocess_arguments()
+        return command, cwd, None
+
+    def _engine(self) -> LocalSolverEnginePlugin:
+        return resolve_configured_local_solver_engine(self.settings)
 
     def _requires_postflop_solver_inputs(self, state: CanonicalState) -> bool:
-        custom_command_missing = (
-            self.settings.local_solver_command is None
-            or self.settings.local_solver_command.strip() == ""
-        )
+        engine = self._engine()
         return (
-            custom_command_missing
-            and self.settings.local_solver_engine.strip().lower() == "postflop_solver"
+            engine.uses_postflop_routing
             and not self.settings.postflop_solver_fallback_enabled
             and state.street in {"flop", "turn", "river"}
         )
 
     def _can_fallback(self) -> bool:
-        custom_command_missing = (
-            self.settings.local_solver_command is None
-            or self.settings.local_solver_command.strip() == ""
-        )
         return (
-            custom_command_missing
-            and self.settings.local_solver_engine.strip().lower() == "postflop_solver"
+            self._engine().uses_postflop_routing
             and self.settings.postflop_solver_fallback_enabled
         )
 
@@ -276,23 +268,6 @@ class LocalSolverProvider:
             return "hero stack is required to reconstruct a facing-bet postflop tree"
         return None
 
-    @staticmethod
-    def _ev_command(*, preflop_chart_enabled: bool = False) -> tuple[list[str], Path]:
-        command = [sys.executable, "-m", "app.solvers.ev_solver_cli"]
-        if preflop_chart_enabled:
-            command.append("--preflop-chart")
-        return command, Path(__file__).resolve().parents[2]
-
-    @staticmethod
-    def _parse_command(value: str, field_name: str) -> list[str]:
-        try:
-            command = shlex.split(value)
-        except ValueError as exc:
-            raise ProviderConfigurationError(f"{field_name} is not a valid shell command") from exc
-        if not command:
-            raise ProviderConfigurationError(f"{field_name} must not be blank")
-        return command
-
     def _environment(self, request: RecommendationRequest) -> dict[str, str]:
         environment = os.environ.copy()
         range_selection = select_postflop_ranges(
@@ -302,9 +277,7 @@ class LocalSolverProvider:
             configured_ip_range=self.settings.postflop_solver_ip_range,
             contextual_enabled=(
                 self.settings.postflop_solver_range_mode == "contextual"
-                and not (self.settings.local_solver_command or "").strip()
-                and self.settings.local_solver_engine.strip().lower()
-                == "postflop_solver"
+                and self._engine().uses_postflop_routing
             ),
         )
         environment.update(

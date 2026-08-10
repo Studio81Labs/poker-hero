@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from types import MappingProxyType
 from typing import Literal, Mapping
 
@@ -47,12 +48,18 @@ class OcrLayout:
     header_stakes: NumericRegion
     card_slots: tuple[CardSlot, ...]
     opponent_seats: tuple[OpponentSeat, ...]
+    minimum_capture_scale: float = 0.5
+    aspect_ratio_tolerance: float = 0.08
 
     def __post_init__(self) -> None:
         if not self.id or not self.label or not self.engine:
             raise ValueError("OCR layout identity fields must not be empty")
         if self.base_width <= 0 or self.base_height <= 0:
             raise ValueError("OCR layout reference dimensions must be positive")
+        if not 0 < self.minimum_capture_scale <= 1:
+            raise ValueError("OCR layout minimum capture scale must be between 0 and 1")
+        if not 0 < self.aspect_ratio_tolerance <= 1:
+            raise ValueError("OCR layout aspect ratio tolerance must be between 0 and 1")
 
         named_boxes = [
             ("pot", self.pot.box),
@@ -91,6 +98,23 @@ class OcrLayout:
     @property
     def aspect_ratio(self) -> float:
         return self.base_width / self.base_height
+
+    def validate_capture_dimensions(self, width: int, height: int) -> None:
+        minimum_width = ceil(self.base_width * self.minimum_capture_scale)
+        minimum_height = ceil(self.base_height * self.minimum_capture_scale)
+        if width < minimum_width or height < minimum_height:
+            raise ValueError(
+                f"Screenshot is too small for the {self.label} OCR layout: "
+                f"{width}x{height} pixels received; use a full table capture of at least "
+                f"{minimum_width}x{minimum_height} pixels"
+            )
+
+        aspect_ratio = width / height
+        if abs(aspect_ratio - self.aspect_ratio) > self.aspect_ratio_tolerance:
+            raise ValueError(
+                f"Screenshot dimensions {width}x{height} do not match the {self.label} "
+                "OCR layout; select the correct layout or capture only the full poker table window"
+            )
 
     @property
     def pot_box(self) -> PixelBox:

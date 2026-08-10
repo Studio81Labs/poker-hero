@@ -555,6 +555,42 @@ def test_local_ocr_layout_rejects_invalid_geometry() -> None:
             ),
         )
 
+    with pytest.raises(ValueError, match="minimum capture scale"):
+        replace(FORTUNA_NATIONS_LAYOUT, minimum_capture_scale=0)
+
+    with pytest.raises(ValueError, match="aspect ratio tolerance"):
+        replace(FORTUNA_NATIONS_LAYOUT, aspect_ratio_tolerance=0)
+
+
+def test_local_ocr_layout_accepts_compatible_scaled_capture() -> None:
+    FORTUNA_NATIONS_LAYOUT.validate_capture_dimensions(487, 346)
+
+
+def test_ocr_cv_parser_rejects_capture_too_small_for_calibrated_regions(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "thumbnail.png"
+    Image.new("RGB", (486, 345)).save(image_path)
+    parser = OcrCvParser()
+
+    with pytest.raises(
+        ParserError,
+        match=r"too small.*486x345.*at least 487x346",
+    ):
+        parser.parse(image_path)
+
+
+def test_ocr_cv_parser_rejects_incompatible_capture_shape(tmp_path: Path) -> None:
+    image_path = tmp_path / "full-screen.png"
+    Image.new("RGB", (973, 973)).save(image_path)
+    parser = OcrCvParser()
+
+    with pytest.raises(
+        ParserError,
+        match=r"dimensions 973x973 do not match.*capture only the full poker table window",
+    ):
+        parser.parse(image_path)
+
 
 def test_ocr_cv_parser_rejects_unknown_layout_without_fallback(tmp_path: Path) -> None:
     with pytest.raises(

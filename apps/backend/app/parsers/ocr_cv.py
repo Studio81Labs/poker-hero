@@ -665,11 +665,10 @@ class OcrCvParser:
         warnings: list[str] = []
         raw_slots: list[dict[str, object]] = []
 
-        aspect_ratio = image.width / image.height
-        if abs(aspect_ratio - self.layout.aspect_ratio) > 0.08:
-            warnings.append(
-                f"Screenshot aspect ratio differs from calibrated {self.layout.label} table captures"
-            )
+        try:
+            self.layout.validate_capture_dimensions(image.width, image.height)
+        except ValueError as exc:
+            raise ParserError(str(exc)) from exc
 
         hero_cards, board_cards = _parse_card_slots(
             image,

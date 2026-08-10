@@ -8994,7 +8994,7 @@ export default function App() {
       ) ?? null,
     );
     if (!hasImportedLayoutCounts) {
-      const requestId = benchmarkOverviewRequestRef.current;
+      const requestId = ++benchmarkOverviewRequestRef.current;
       try {
         const overview = await getBenchmarkOverview(pipelineSelection ?? undefined);
         if (
@@ -9012,6 +9012,13 @@ export default function App() {
             benchmarkError,
             "Dataset imported, but benchmark counts could not be refreshed",
           ));
+        }
+      } finally {
+        if (
+          appMountedRef.current
+          && requestId === benchmarkOverviewRequestRef.current
+        ) {
+          setBenchmarkLoading(false);
         }
       }
     }
@@ -9433,7 +9440,7 @@ export default function App() {
     }
     removeScreenshotFromClient(deletedJob);
     if (benchmarkOverview !== null || deletedJob.benchmark_included) {
-      const requestId = benchmarkOverviewRequestRef.current;
+      const requestId = ++benchmarkOverviewRequestRef.current;
       void getBenchmarkOverview(pipelineSelection ?? undefined)
         .then((overview) => {
           if (requestId === benchmarkOverviewRequestRef.current) {
@@ -9446,6 +9453,11 @@ export default function App() {
               benchmarkError,
               "Screenshot removed, but the benchmark count could not refresh",
             ));
+          }
+        })
+        .finally(() => {
+          if (requestId === benchmarkOverviewRequestRef.current) {
+            setBenchmarkLoading(false);
           }
         });
     }

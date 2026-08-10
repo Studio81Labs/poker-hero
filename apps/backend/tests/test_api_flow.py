@@ -17,7 +17,6 @@ from fastapi.testclient import TestClient
 from app import api as api_module
 from app import dataset_export as dataset_export_module
 from app import dataset_import as dataset_import_module
-from app import storage as storage_module
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
@@ -4821,7 +4820,7 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
     ]
 
 
-def test_benchmark_overview_bounds_legacy_summary_backfill(
+def test_benchmark_overview_streams_legacy_summary_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4834,7 +4833,6 @@ def test_benchmark_overview_bounds_legacy_summary_backfill(
 
     for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
         summary_path.unlink()
-    monkeypatch.setattr(storage_module, "BENCHMARK_SUMMARY_BACKFILL_LIMIT", 2)
     original_read_text = Path.read_text
     full_report_reads: list[str] = []
 
@@ -4852,9 +4850,9 @@ def test_benchmark_overview_bounds_legacy_summary_backfill(
     first_overview = client.get("/api/benchmarks")
 
     assert first_overview.status_code == 200
-    assert len(first_overview.json()["recent_reports"]) == 2
-    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 2
-    assert len(full_report_reads) == 3
+    assert len(first_overview.json()["recent_reports"]) == 3
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
+    assert len(full_report_reads) == 1
 
     full_report_reads.clear()
     second_overview = client.get("/api/benchmarks")
@@ -4862,7 +4860,7 @@ def test_benchmark_overview_bounds_legacy_summary_backfill(
     assert second_overview.status_code == 200
     assert len(second_overview.json()["recent_reports"]) == 3
     assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
-    assert len(full_report_reads) == 2
+    assert len(full_report_reads) == 1
 
 
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(
@@ -4948,6 +4946,8 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
             "parser_layout_profile": "generic",
         },
     ).json()
+    for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
+        summary_path.unlink()
     original_read_text = Path.read_text
     full_report_reads: list[str] = []
 

@@ -1127,34 +1127,50 @@ describe("App", () => {
     expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
   });
 
-  it("refreshes the benchmark count after deleting a stale labeled screenshot", async () => {
-    const staleBenchmarkJob = approvedJob();
-    staleBenchmarkJob.id = "e".repeat(32);
-    staleBenchmarkJob.original_filename = "stale-benchmark-label.png";
-    staleBenchmarkJob.benchmark_included = true;
+  it("keeps the newest benchmark count after deleting labeled screenshots", async () => {
+    const firstBenchmarkJob = approvedJob();
+    firstBenchmarkJob.id = "d".repeat(32);
+    firstBenchmarkJob.original_filename = "first-benchmark-label.png";
+    firstBenchmarkJob.benchmark_included = true;
+    const secondBenchmarkJob = approvedJob();
+    secondBenchmarkJob.id = "e".repeat(32);
+    secondBenchmarkJob.original_filename = "second-benchmark-label.png";
+    secondBenchmarkJob.benchmark_included = true;
+    const benchmarkJobs = [firstBenchmarkJob, secondBenchmarkJob];
     window.localStorage.setItem(
       "poker-training-processing-v1",
-      JSON.stringify([staleBenchmarkJob]),
+      JSON.stringify(benchmarkJobs),
     );
-    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+    const firstDeletionOverview = deferredResponse();
+    const secondDeletionOverview = deferredResponse();
+    const deletedIds = new Set<string>();
     let benchmarkReads = 0;
     fetchMock().mockImplementation((url, options) => {
       if (url === "http://localhost:8000/api/benchmarks") {
         benchmarkReads += 1;
-        return Promise.resolve(jsonResponse({
-          included_cases: 2,
-          latest_report: null,
-          recent_reports: [],
-        }));
+        if (benchmarkReads === 1) {
+          return Promise.resolve(jsonResponse({
+            included_cases: 2,
+            latest_report: null,
+            recent_reports: [],
+          }));
+        }
+        return benchmarkReads === 2
+          ? firstDeletionOverview.promise
+          : secondDeletionOverview.promise;
       }
-      if (
-        url === `http://localhost:8000/api/jobs/${staleBenchmarkJob.id}`
-        && options?.method === "DELETE"
-      ) {
+      const deletedJob = benchmarkJobs.find(
+        (candidate) => url === `http://localhost:8000/api/jobs/${candidate.id}`,
+      );
+      if (deletedJob && options?.method === "DELETE") {
+        deletedIds.add(deletedJob.id);
         return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url === "http://localhost:8000/api/jobs") {
-        return Promise.resolve(processingQueueResponse([]));
+        return Promise.resolve(processingQueueResponse(
+          benchmarkJobs.filter((candidate) => !deletedIds.has(candidate.id)),
+        ));
       }
       if (url === "http://localhost:8000/api/history") {
         return Promise.resolve(jsonResponse({
@@ -1176,18 +1192,47 @@ describe("App", () => {
       "2 ground-truth hands",
     ));
     await user.click(screen.getByRole("button", {
-      name: "Manage screenshot 1: stale-benchmark-label.png",
+      name: "Manage screenshot 1: first-benchmark-label.png",
     }));
-    const detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    let detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
     await user.click(within(detailsDialog).getByRole("button", {
       name: "Delete screenshot",
     }));
     await user.click(within(detailsDialog).getByRole("button", {
       name: "Delete permanently",
     }));
-
     await waitFor(() => expect(benchmarkReads).toBe(2));
-    expect(benchmarkDialog).toHaveTextContent("2 ground-truth hands");
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: second-benchmark-label.png",
+    }));
+    detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete screenshot",
+    }));
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete permanently",
+    }));
+    await waitFor(() => expect(benchmarkReads).toBe(3));
+
+    secondDeletionOverview.resolve(jsonResponse({
+      included_cases: 0,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await secondDeletionOverview.promise;
+    await waitFor(() => expect(benchmarkDialog).toHaveTextContent(
+      "0 ground-truth hands",
+    ));
+    firstDeletionOverview.resolve(jsonResponse({
+      included_cases: 1,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await firstDeletionOverview.promise;
+
+    expect(benchmarkDialog).toHaveTextContent("0 ground-truth hands");
+    expect(benchmarkDialog).not.toHaveTextContent("1 ground-truth hand");
     expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
   });
 

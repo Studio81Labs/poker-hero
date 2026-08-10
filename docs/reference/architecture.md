@@ -366,9 +366,10 @@ the requested parser/layout pair, defaulting to the deployment pair when the
 query is omitted. Report controls identify that pair, compact field metrics
 support trend comparisons, and full archived reports are loaded only when
 selected. Rebuildable per-report summary sidecars keep overview reads independent
-of full case payloads; legacy report files receive sidecars in bounded,
-newest-first batches across indexed reads after an upgrade. For automatic-parser
-reports, the client derives
+of full case payloads. A legacy store receives sidecars through a newest-first,
+streaming metadata pass that stops once the requested history is populated and
+does not materialize archived case details. For automatic-parser reports, the
+client derives
 a per-selected-provider accuracy and fallback breakdown from trusted case route
 evidence. Its attribution denominator remains the report's full case count, so
 older or failed cases without route metadata remain visible rather than being

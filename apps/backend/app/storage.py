@@ -8,6 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+import ijson
 from pydantic import TypeAdapter, ValidationError
 
 from app.models import (
@@ -23,7 +24,15 @@ from app.models import (
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
 BENCHMARK_SUMMARY_SUFFIX = ".summary.json"
-BENCHMARK_SUMMARY_BACKFILL_LIMIT = 100
+BENCHMARK_SUMMARY_SCALAR_FIELDS = frozenset({
+    "id",
+    "parser_provider",
+    "layout_profile",
+    "created_at",
+    "total_cases",
+    "failed_cases",
+    "accuracy",
+})
 BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 JOB_RECORD_PAYLOAD_ADAPTER = TypeAdapter(dict[str, Any])
 LEGACY_ACTIONS_WITHOUT_SIZING = frozenset({"fold", "check", "call"})
@@ -449,7 +458,6 @@ class FileBenchmarkStore:
         if limit is not None and limit <= 0:
             return []
 
-        self._backfill_report_summaries(limit=BENCHMARK_SUMMARY_BACKFILL_LIMIT)
         summaries: list[BenchmarkReportSummary] = []
         for path in self.benchmarks_dir.glob(f"*{BENCHMARK_SUMMARY_SUFFIX}"):
             report_id = path.name.removesuffix(BENCHMARK_SUMMARY_SUFFIX)
@@ -463,6 +471,11 @@ class FileBenchmarkStore:
             if layout_profile is not None and summary.layout_profile != layout_profile:
                 continue
             summaries.append(summary)
+        summaries.extend(self._backfill_report_summaries(
+            parser_provider=parser_provider,
+            layout_profile=layout_profile,
+            matching_limit=limit,
+        ))
         summaries.sort(
             key=lambda summary: (summary.created_at, summary.id),
             reverse=True,
@@ -523,7 +536,6 @@ class FileBenchmarkStore:
         self._report_summary_path(report_id).unlink(missing_ok=True)
 
     def refresh_latest(self) -> None:
-        self._backfill_report_summaries(limit=None)
         summaries = self.list_summaries(limit=None)
         latest_path = self.benchmarks_dir / "latest.json"
         if not summaries:
@@ -643,9 +655,11 @@ class FileBenchmarkStore:
         return self.benchmarks_dir / f"{report_id}{BENCHMARK_SUMMARY_SUFFIX}"
 
     def _write_report_summary(self, report: BenchmarkReport) -> None:
-        summary = BenchmarkReportSummary.from_report(report)
+        self._write_summary(BenchmarkReportSummary.from_report(report))
+
+    def _write_summary(self, summary: BenchmarkReportSummary) -> None:
         self._atomic_write(
-            self._report_summary_path(report.id),
+            self._report_summary_path(summary.id),
             summary.model_dump_json(indent=2),
         )
 
@@ -665,7 +679,15 @@ class FileBenchmarkStore:
         self._write_report_summary(report)
         return BenchmarkReportSummary.from_report(report)
 
-    def _backfill_report_summaries(self, limit: int | None) -> None:
+    def _backfill_report_summaries(
+        self,
+        *,
+        parser_provider: str | None,
+        layout_profile: str | None,
+        matching_limit: int | None,
+    ) -> list[BenchmarkReportSummary]:
+        if matching_limit == 0:
+            return []
         report_paths = sorted(
             (
                 path
@@ -676,11 +698,61 @@ class FileBenchmarkStore:
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
-        if limit is not None:
-            report_paths = report_paths[:limit]
+        matching_summaries: list[BenchmarkReportSummary] = []
         for report_path in report_paths:
-            report = BenchmarkReport.model_validate_json(report_path.read_text())
-            self._write_report_summary(report)
+            summary = self._read_report_summary_metadata(report_path)
+            self._write_summary(summary)
+            if (
+                (parser_provider is None or summary.parser_provider == parser_provider)
+                and (layout_profile is None or summary.layout_profile == layout_profile)
+            ):
+                matching_summaries.append(summary)
+                if (
+                    matching_limit is not None
+                    and len(matching_summaries) >= matching_limit
+                ):
+                    break
+        return matching_summaries
+
+    def _read_report_summary_metadata(self, path: Path) -> BenchmarkReportSummary:
+        payload: dict[str, Any] = {"field_metrics": []}
+        current_metric: dict[str, Any] | None = None
+        field_metrics_complete = False
+        with path.open("rb") as report_file:
+            for prefix, event, value in ijson.parse(report_file):
+                if (
+                    prefix in BENCHMARK_SUMMARY_SCALAR_FIELDS
+                    and event in {"string", "number"}
+                ):
+                    payload[prefix] = value
+                elif prefix == "field_metrics.item" and event == "start_map":
+                    current_metric = {}
+                elif (
+                    current_metric is not None
+                    and prefix.startswith("field_metrics.item.")
+                    and event in {"string", "number"}
+                ):
+                    current_metric[prefix.removeprefix("field_metrics.item.")] = value
+                elif (
+                    current_metric is not None
+                    and prefix == "field_metrics.item"
+                    and event == "end_map"
+                ):
+                    payload["field_metrics"].append(current_metric)
+                    current_metric = None
+                elif prefix == "field_metrics" and event == "end_array":
+                    field_metrics_complete = True
+                elif (
+                    prefix == "cases"
+                    and event == "start_array"
+                    and field_metrics_complete
+                    and BENCHMARK_SUMMARY_SCALAR_FIELDS.issubset(payload)
+                ):
+                    break
+        summary = BenchmarkReportSummary.model_validate(payload)
+        if summary.id != path.stem:
+            raise ValueError("Benchmark report ID does not match its filename")
+        return summary
 
     def _import_dir(self, request_id: str) -> Path:
         if (

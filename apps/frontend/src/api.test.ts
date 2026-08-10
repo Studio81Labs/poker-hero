@@ -13,6 +13,7 @@ import {
   getProcessingJobs,
   requestRecommendation,
   restoreApplicationBackup,
+  runParserBenchmark,
   updateJobMetadata,
   uploadScreenshot,
 } from "./api";
@@ -256,6 +257,33 @@ describe("benchmark import recovery", () => {
       status: 429,
       retryAfterSeconds: 7,
     } satisfies Partial<ApiResponseError>));
+  });
+});
+
+describe("runParserBenchmark", () => {
+  it("sends only the selected parser and layout", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      id: "benchmark-1",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runParserBenchmark({
+      parser_provider: "ocr_cv",
+      parser_layout_profile: "fortuna_nations",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/benchmarks/run",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parser_provider: "ocr_cv",
+          parser_layout_profile: "fortuna_nations",
+        }),
+        credentials: "include",
+      },
+    );
   });
 });
 

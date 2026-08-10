@@ -1002,6 +1002,19 @@ class BenchmarkSelectionRequest(BaseModel):
     included: bool
 
 
+class BenchmarkRunRequest(BaseModel):
+    parser_provider: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    parser_layout_profile: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+
+
 class BenchmarkDatasetImportResult(BaseModel):
     imported_cases: int = Field(ge=0)
     reused_cases: int = Field(ge=0)

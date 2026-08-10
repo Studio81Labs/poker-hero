@@ -99,6 +99,7 @@ def resolve_pipeline_selection(
     recommendation_engine: str | None = None,
     require_known_defaults: bool = False,
     validate_parser: bool = True,
+    validate_recommendation: bool = True,
     enforce_recommendation_allowlist: bool = True,
     validate_availability: bool = True,
     validate_layout_compatibility: bool = True,
@@ -114,7 +115,9 @@ def resolve_pipeline_selection(
     if validate_parser:
         if parser_provider is not None or require_known_defaults:
             _require_known(selected_parser, PARSER_PLUGIN_IDS, "parser provider")
-    if recommendation_provider is not None or require_known_defaults:
+    if validate_recommendation and (
+        recommendation_provider is not None or require_known_defaults
+    ):
         _require_known(
             selected_recommendation,
             RECOMMENDATION_PLUGIN_IDS,
@@ -136,7 +139,7 @@ def resolve_pipeline_selection(
         )
         if validate_layout_compatibility:
             _require_compatible_layout(selected_parser, selected_layout)
-    if enforce_recommendation_allowlist:
+    if validate_recommendation and enforce_recommendation_allowlist:
         _require_enabled(
             selected_recommendation,
             _enabled(
@@ -150,16 +153,17 @@ def resolve_pipeline_selection(
             parser_unavailable = _availability(settings, "parser", selected_parser)
             if parser_unavailable:
                 raise PipelineSelectionError(parser_unavailable)
-        recommendation_unavailable = _availability(
-            settings,
-            "recommendation",
-            selected_recommendation,
-        )
-        if recommendation_unavailable:
-            raise PipelineSelectionError(recommendation_unavailable)
+        if validate_recommendation:
+            recommendation_unavailable = _availability(
+                settings,
+                "recommendation",
+                selected_recommendation,
+            )
+            if recommendation_unavailable:
+                raise PipelineSelectionError(recommendation_unavailable)
 
     selected_engine: str | None = None
-    if selected_recommendation == "local_solver":
+    if validate_recommendation and selected_recommendation == "local_solver":
         configured_engine = configured_local_solver_engine(settings)
         selected_engine = (recommendation_engine or configured_engine).strip().lower()
         if configured_engine == "custom_local":
@@ -182,7 +186,7 @@ def resolve_pipeline_selection(
                     ),
                     "recommendation engine",
                 )
-    elif recommendation_engine:
+    elif validate_recommendation and recommendation_engine:
         raise PipelineSelectionError(
             "A recommendation engine can be selected only with the local solver provider"
         )

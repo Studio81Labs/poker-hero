@@ -677,10 +677,23 @@ export async function setBenchmarkInclusion(jobId: string, included: boolean): P
   return readJson<JobRecord>(response);
 }
 
-export async function runParserBenchmark(): Promise<BenchmarkReport> {
-  const response = await fetch(`${API_BASE_URL}/api/benchmarks/run`, {
+export async function runParserBenchmark(
+  pipeline?: Pick<
+    PipelineSelection,
+    "parser_provider" | "parser_layout_profile"
+  >,
+): Promise<BenchmarkReport> {
+  const request: RequestInit = {
     method: "POST",
     credentials: "include",
-  });
+  };
+  if (pipeline) {
+    request.headers = { "Content-Type": "application/json" };
+    request.body = JSON.stringify({
+      parser_provider: pipeline.parser_provider,
+      parser_layout_profile: pipeline.parser_layout_profile,
+    });
+  }
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks/run`, request);
   return readJson<BenchmarkReport>(response);
 }

@@ -13703,6 +13703,55 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse(created, 201))
       .mockResolvedValueOnce(processingQueueResponse([created]))
       .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse({
+        defaults: {
+          parser_provider: "mock",
+          parser_layout_profile: "generic",
+          recommendation_provider: "mock",
+          recommendation_engine: null,
+        },
+        parser_providers: [
+          {
+            id: "mock",
+            label: "Mock parser",
+            available: true,
+            unavailable_reason: null,
+          },
+          {
+            id: "ocr_cv",
+            label: "Template OCR",
+            available: true,
+            unavailable_reason: null,
+          },
+        ],
+        parser_layout_profiles: [
+          {
+            id: "generic",
+            label: "Generic",
+            available: true,
+            unavailable_reason: null,
+          },
+          {
+            id: "fortuna",
+            label: "Fortuna",
+            available: true,
+            unavailable_reason: null,
+          },
+        ],
+        parser_layout_compatibility: {
+          mock: ["generic", "fortuna"],
+          ocr_cv: ["generic", "fortuna"],
+        },
+        recommendation_providers: [
+          {
+            id: "mock",
+            label: "Mock recommendation",
+            available: true,
+            unavailable_reason: null,
+          },
+        ],
+        recommendation_engines: [],
+      }))
       .mockReturnValueOnce(pendingOverview.promise)
       .mockReturnValueOnce(pendingInclusion.promise)
       .mockReturnValueOnce(pendingBenchmark.promise)
@@ -13713,6 +13762,22 @@ describe("App", () => {
     const user = await uploadScreenshot();
     await user.click(screen.getByRole("button", { name: "Approve state" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Request recommendation" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", {
+      name: "Configure analysis plugins",
+    }));
+    const pipelineDialog = await screen.findByRole("dialog", {
+      name: "Analysis plugins",
+    });
+    await user.selectOptions(
+      within(pipelineDialog).getByLabelText("Recognition"),
+      "ocr_cv",
+    );
+    await user.selectOptions(
+      within(pipelineDialog).getByLabelText("Table layout"),
+      "fortuna",
+    );
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
 
     await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
@@ -13770,12 +13835,25 @@ describe("App", () => {
       "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs/job-123/approve",
+      "http://localhost:8000/api/pipeline",
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs/job-123/benchmark",
       "http://localhost:8000/api/benchmarks/run",
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs/job-123/benchmark",
     ]);
+    const benchmarkRequest = fetchMock().mock.calls.find(
+      ([url]) => url === "http://localhost:8000/api/benchmarks/run",
+    )?.[1];
+    expect(benchmarkRequest).toMatchObject({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parser_provider: "ocr_cv",
+        parser_layout_profile: "fortuna",
+      }),
+      credentials: "include",
+    });
   });
 
   it("imports a parser dataset and enables corpus actions", async () => {

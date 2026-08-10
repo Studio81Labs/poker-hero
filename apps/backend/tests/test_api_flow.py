@@ -4758,6 +4758,67 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
     ]
 
 
+def test_benchmark_scores_an_enabled_selected_parser_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_enabled_providers=["ocr_cv"],
+        parser_enabled_layout_profiles=["fortuna_nations"],
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    parser_settings: list[Settings] = []
+
+    def build_selected_parser(settings: Settings) -> MockParser:
+        parser_settings.append(settings)
+        return MockParser()
+
+    monkeypatch.setattr(api_module, "build_parser", build_selected_parser)
+
+    response = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "fortuna_nations",
+        },
+    )
+
+    assert response.status_code == 200
+    report = response.json()
+    assert report["parser_provider"] == "ocr_cv"
+    assert report["layout_profile"] == "fortuna_nations"
+    assert report["accuracy"] == 1
+    assert len(parser_settings) == 1
+    assert parser_settings[0].parser_provider == "ocr_cv"
+    assert parser_settings[0].parser_layout_profile == "fortuna_nations"
+
+
+def test_benchmark_rejects_a_parser_not_enabled_for_the_deployment(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    response = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "generic",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Parser provider 'ocr_cv' is not enabled for this deployment"
+    )
+    assert client.get("/api/benchmarks").json()["latest_report"] is None
+
+
 def test_benchmark_exposes_recent_summaries_and_historical_report_detail(
     tmp_path: Path,
 ) -> None:

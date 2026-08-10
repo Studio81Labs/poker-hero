@@ -8885,6 +8885,13 @@ export default function App() {
     const requestId = ++benchmarkOverviewRequestRef.current;
     setExpandedBenchmarkCaseId(null);
     setSelectedBenchmarkReport(null);
+    setBenchmarkOverview((current) => current
+      ? {
+          ...current,
+          latest_report: null,
+          recent_reports: [],
+        }
+      : null);
     setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
     void getBenchmarkOverview(pipelineSelection ?? undefined)

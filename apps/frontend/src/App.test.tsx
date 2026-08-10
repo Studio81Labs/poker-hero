@@ -16083,10 +16083,25 @@ describe("App", () => {
     secondOverview.resolve(jsonResponse(genericOverview));
     expect(await within(benchmarkDialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
     expect(within(benchmarkDialog).getByText("OCR + computer vision · generic")).toBeInTheDocument();
+
+    await user.click(within(benchmarkDialog).getByRole("button", { name: "Close parser benchmark" }));
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    fetchMock().mockRejectedValueOnce(new TypeError("Fortuna benchmark unavailable"));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await screen.findByText("Fortuna benchmark unavailable")).toBeInTheDocument();
+    expect(within(benchmarkDialog).queryByLabelText("Benchmark summary")).not.toBeInTheDocument();
+    expect(within(benchmarkDialog).getByText("No benchmark has been run yet.")).toBeInTheDocument();
+    expect(within(benchmarkDialog).queryByText("OCR + computer vision · generic")).not.toBeInTheDocument();
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/pipeline",
       "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
       "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=generic",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
     ]);
   });
 

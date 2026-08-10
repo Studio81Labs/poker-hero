@@ -4901,6 +4901,36 @@ def test_benchmark_overview_rescans_after_a_concurrent_legacy_backfill(
     assert summary_path.exists()
 
 
+def test_benchmark_overview_recovers_only_unindexed_reports_newer_than_history(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=20,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    reports = [client.post("/api/benchmarks/run").json() for _ in range(12)]
+    reports.sort(key=lambda report: (report["created_at"], report["id"]))
+    oldest_summary_path = (
+        tmp_path / "benchmarks" / f"{reports[0]['id']}.summary.json"
+    )
+    newest_summary_path = (
+        tmp_path / "benchmarks" / f"{reports[-1]['id']}.summary.json"
+    )
+    oldest_summary_path.unlink()
+    newest_summary_path.unlink()
+
+    overview = client.get("/api/benchmarks")
+
+    assert overview.status_code == 200
+    assert overview.json()["recent_reports"][0]["id"] == reports[-1]["id"]
+    assert len(overview.json()["recent_reports"]) == 10
+    assert newest_summary_path.exists()
+    assert not oldest_summary_path.exists()
+
+
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

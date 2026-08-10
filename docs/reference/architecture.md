@@ -368,8 +368,10 @@ support trend comparisons, and full archived reports are loaded only when
 selected. Rebuildable per-report summary sidecars keep overview reads independent
 of full case payloads. A legacy store receives sidecars through a newest-first,
 streaming metadata pass that stops once the requested history is populated and
-does not materialize archived case details. For automatic-parser reports, the
-client derives
+does not materialize archived case details. Once history is full, overview reads
+still repair unindexed report files new enough to displace its current cutoff,
+covering interrupted writes and missing sidecars without migrating the older
+archive. For automatic-parser reports, the client derives
 a per-selected-provider accuracy and fallback breakdown from trusted case route
 evidence. Its attribution denominator remains the report's full case count, so
 older or failed cases without route metadata remain visible rather than being

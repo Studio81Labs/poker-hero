@@ -462,12 +462,28 @@ class FileBenchmarkStore:
             parser_provider=parser_provider,
             layout_profile=layout_profile,
         )
-        missing_count = None if limit is None else max(0, limit - len(summaries))
-        if missing_count != 0:
+        summaries.sort(
+            key=lambda summary: (summary.created_at, summary.id),
+            reverse=True,
+        )
+        if limit is None:
+            matching_limit = None
+            modified_since_ns = None
+        elif len(summaries) < limit:
+            matching_limit = limit - len(summaries)
+            modified_since_ns = None
+        else:
+            matching_limit = None
+            modified_since_ns = int(
+                summaries[limit - 1].created_at.timestamp() * 1_000_000_000
+            )
+
+        if matching_limit != 0:
             self._backfill_report_summaries(
                 parser_provider=parser_provider,
                 layout_profile=layout_profile,
-                matching_limit=missing_count,
+                matching_limit=matching_limit,
+                modified_since_ns=modified_since_ns,
             )
             summaries = self._list_report_summaries(
                 parser_provider=parser_provider,
@@ -703,21 +719,31 @@ class FileBenchmarkStore:
         parser_provider: str | None,
         layout_profile: str | None,
         matching_limit: int | None,
+        modified_since_ns: int | None,
     ) -> None:
         if matching_limit == 0:
             return
-        report_paths = sorted(
-            (
-                path
-                for path in self.benchmarks_dir.glob("*.json")
-                if BENCHMARK_ID_PATTERN.fullmatch(path.stem) is not None
-                and not self._report_summary_path(path.stem).exists()
-            ),
-            key=lambda path: path.stat().st_mtime_ns,
-            reverse=True,
-        )
+        report_candidates: list[tuple[int, Path]] = []
+        for path in self.benchmarks_dir.glob("*.json"):
+            if (
+                BENCHMARK_ID_PATTERN.fullmatch(path.stem) is None
+                or self._report_summary_path(path.stem).exists()
+            ):
+                continue
+            try:
+                modified_at_ns = path.stat().st_mtime_ns
+            except FileNotFoundError:
+                continue
+            if (
+                modified_since_ns is not None
+                and modified_at_ns < modified_since_ns
+            ):
+                continue
+            report_candidates.append((modified_at_ns, path))
+
+        report_candidates.sort(key=lambda candidate: candidate[0], reverse=True)
         matching_count = 0
-        for report_path in report_paths:
+        for _, report_path in report_candidates:
             summary = self._read_report_summary_metadata(report_path)
             self._write_summary(summary)
             if (

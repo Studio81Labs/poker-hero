@@ -7,6 +7,7 @@ import {
   benchmarkDatasetUrl,
   deleteJob,
   getBenchmarkDatasetImport,
+  getBenchmarkOverview,
   getHistory,
   getPipelineCapabilities,
   humanReadableMessage,
@@ -301,6 +302,43 @@ describe("runParserBenchmark", () => {
         }),
         credentials: "include",
       },
+    );
+  });
+});
+
+describe("getBenchmarkOverview", () => {
+  it("keeps the deployment-default request backward compatible", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      included_cases: 0,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getBenchmarkOverview();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/benchmarks",
+      { credentials: "include" },
+    );
+  });
+
+  it("scopes report history to the selected parser and layout", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({
+      included_cases: 0,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getBenchmarkOverview({
+      parser_provider: "ocr_cv",
+      parser_layout_profile: "fortuna_nations",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna_nations",
+      { credentials: "include" },
     );
   });
 });

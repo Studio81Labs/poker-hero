@@ -2598,7 +2598,11 @@ function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary
   };
 }
 
-function benchmarkReportOption(summary: BenchmarkReportSummary, latestId: string | undefined): string {
+function benchmarkReportOption(
+  summary: BenchmarkReportSummary,
+  latestId: string | undefined,
+  capabilities: PipelineCapabilities | null,
+): string {
   const createdAt = new Date(summary.created_at);
   const dateLabel = Number.isNaN(createdAt.getTime())
     ? "Previous run"
@@ -2608,7 +2612,14 @@ function benchmarkReportOption(summary: BenchmarkReportSummary, latestId: string
         hour: "2-digit",
         minute: "2-digit",
       });
-  return `${summary.id === latestId ? "Latest" : dateLabel} · ${benchmarkPercent(summary.accuracy)}`;
+  const parserLabel = capabilities?.parser_providers.find(
+    (option) => option.id === summary.parser_provider,
+  )?.label ?? providerLabel(summary.parser_provider);
+  const rawLayoutLabel = capabilities?.parser_layout_profiles.find(
+    (option) => option.id === summary.layout_profile,
+  )?.label ?? providerLabel(summary.layout_profile);
+  const layoutLabel = rawLayoutLabel.charAt(0).toUpperCase() + rawLayoutLabel.slice(1);
+  return `${summary.id === latestId ? "Latest" : dateLabel} · ${parserLabel} · ${layoutLabel} · ${benchmarkPercent(summary.accuracy)}`;
 }
 
 function previousComparableBenchmarkReport(
@@ -8874,7 +8885,7 @@ export default function App() {
     setSelectedBenchmarkReport(null);
     setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
-    void getBenchmarkOverview()
+    void getBenchmarkOverview(pipelineSelection ?? undefined)
       .then((overview) => {
         setBenchmarkOverview(overview);
         setSelectedBenchmarkReport(overview.latest_report);
@@ -8958,7 +8969,7 @@ export default function App() {
     );
     if (!hasImportedLayoutCounts) {
       try {
-        const overview = await getBenchmarkOverview();
+        const overview = await getBenchmarkOverview(pipelineSelection ?? undefined);
         if (appMountedRef.current) {
           setBenchmarkOverview(overview);
         }
@@ -9389,7 +9400,7 @@ export default function App() {
     }
     removeScreenshotFromClient(deletedJob);
     if (benchmarkOverview !== null || deletedJob.benchmark_included) {
-      void getBenchmarkOverview()
+      void getBenchmarkOverview(pipelineSelection ?? undefined)
         .then(setBenchmarkOverview)
         .catch((benchmarkError) => setError(messageFromError(
           benchmarkError,
@@ -12375,7 +12386,11 @@ export default function App() {
                       >
                         {recentBenchmarkReports.map((summary) => (
                           <option key={summary.id} value={summary.id}>
-                            {benchmarkReportOption(summary, benchmarkOverview?.latest_report?.id)}
+                            {benchmarkReportOption(
+                              summary,
+                              benchmarkOverview?.latest_report?.id,
+                              pipelineCapabilities,
+                            )}
                           </option>
                         ))}
                       </select>

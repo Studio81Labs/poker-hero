@@ -13893,13 +13893,13 @@ describe("App", () => {
       "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs/job-123/approve",
       "http://localhost:8000/api/pipeline",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
       "http://localhost:8000/api/jobs/job-123/benchmark",
       "http://localhost:8000/api/benchmarks/run",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
       "http://localhost:8000/api/jobs/job-123/benchmark",
       "http://localhost:8000/api/benchmarks/run",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=generic",
     ]);
     const benchmarkRequest = fetchMock().mock.calls.find(
       ([url]) => url === "http://localhost:8000/api/benchmarks/run",
@@ -15958,6 +15958,9 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     expect(await within(dialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
     expect(within(dialog).getByText("+20 pts vs previous")).toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 90%",
+    })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("hero cards change +50 pts")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("pot size change -50 pts")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("board cards change New")).toBeInTheDocument();

@@ -413,7 +413,13 @@ class FileBenchmarkStore:
             raise BenchmarkNotFoundError(report_id)
         return BenchmarkReport.model_validate_json(path.read_text())
 
-    def list(self, limit: int | None = 10) -> list[BenchmarkReport]:
+    def list(
+        self,
+        limit: int | None = 10,
+        *,
+        parser_provider: str | None = None,
+        layout_profile: str | None = None,
+    ) -> list[BenchmarkReport]:
         if limit is not None and limit <= 0:
             return []
 
@@ -426,13 +432,19 @@ class FileBenchmarkStore:
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
-        if limit is not None:
+        filters_active = parser_provider is not None or layout_profile is not None
+        if limit is not None and not filters_active:
             report_paths = report_paths[:limit]
-        reports = [
-            BenchmarkReport.model_validate_json(path.read_text())
-            for path in report_paths
-        ]
-        return sorted(reports, key=lambda report: report.created_at, reverse=True)
+        reports: list[BenchmarkReport] = []
+        for path in report_paths:
+            report = BenchmarkReport.model_validate_json(path.read_text())
+            if parser_provider is not None and report.parser_provider != parser_provider:
+                continue
+            if layout_profile is not None and report.layout_profile != layout_profile:
+                continue
+            reports.append(report)
+        reports.sort(key=lambda report: report.created_at, reverse=True)
+        return reports[:limit] if limit is not None else reports
 
     def save(self, report: BenchmarkReport) -> BenchmarkReport:
         payload = report.model_dump_json(indent=2)

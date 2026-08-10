@@ -4850,11 +4850,14 @@ def test_benchmark_scores_an_enabled_selected_parser_pipeline(
 
 def test_benchmark_runs_and_exports_layout_corpora_independently(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = make_client(
         tmp_path,
+        parser_enabled_providers=["ocr_cv"],
         parser_enabled_layout_profiles=["pokerstars"],
     )
+    monkeypatch.setattr(api_module, "build_parser", lambda _settings: MockParser())
     generic_id = upload_job(client, filename="generic.png").json()["id"]
     store = FileJobStore(tmp_path)
     legacy_generic = store.get(generic_id)
@@ -4879,6 +4882,28 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
             "parser_layout_profile": "pokerstars",
         },
     ).json()
+    ocr_generic_report = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "generic",
+        },
+    ).json()
+    default_history = client.get("/api/benchmarks").json()
+    pokerstars_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "mock",
+            "parser_layout_profile": "pokerstars",
+        },
+    ).json()
+    ocr_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "generic",
+        },
+    ).json()
     pokerstars_export = client.get(
         "/api/benchmarks/export",
         params={
@@ -4899,6 +4924,35 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
         pokerstars_id
     ]
     assert pokerstars_report["layout_profile"] == "pokerstars"
+    assert default_history["latest_report"]["id"] == generic_report["id"]
+    assert [report["id"] for report in default_history["recent_reports"]] == [
+        generic_report["id"]
+    ]
+    assert pokerstars_history["latest_report"]["id"] == pokerstars_report["id"]
+    assert [report["id"] for report in pokerstars_history["recent_reports"]] == [
+        pokerstars_report["id"]
+    ]
+    assert ocr_history["latest_report"]["id"] == ocr_generic_report["id"]
+    assert [report["id"] for report in ocr_history["recent_reports"]] == [
+        ocr_generic_report["id"]
+    ]
+    for history in (default_history, pokerstars_history, ocr_history):
+        assert history["included_cases"] == 2
+        assert history["included_cases_by_layout"] == {
+            "generic": 1,
+            "pokerstars": 1,
+        }
+    incompatible_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "pokerstars",
+        },
+    )
+    assert incompatible_history.status_code == 400
+    assert incompatible_history.json()["detail"] == (
+        "Layout profile 'pokerstars' is not supported by parser provider 'ocr_cv'"
+    )
     with ZipFile(BytesIO(pokerstars_export.content)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert set(archive.namelist()) == {

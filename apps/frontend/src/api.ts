@@ -624,8 +624,19 @@ export function trainingLessonsExportUrl(
   return `${API_BASE_URL}/api/training/lessons/export${query}`;
 }
 
-export async function getBenchmarkOverview(): Promise<BenchmarkOverview> {
-  const response = await fetch(`${API_BASE_URL}/api/benchmarks`, {
+export async function getBenchmarkOverview(
+  pipeline?: Pick<
+    PipelineSelection,
+    "parser_provider" | "parser_layout_profile"
+  >,
+): Promise<BenchmarkOverview> {
+  const search = new URLSearchParams();
+  if (pipeline) {
+    search.set("parser_provider", pipeline.parser_provider);
+    search.set("parser_layout_profile", pipeline.parser_layout_profile);
+  }
+  const query = search.size > 0 ? `?${search.toString()}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/benchmarks${query}`, {
     credentials: "include",
   });
   return readJson<BenchmarkOverview>(response);

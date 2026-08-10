@@ -361,9 +361,11 @@ The benchmark dialog lets a user explicitly include the current approved hand
 as ground truth, run the active parser across the corpus, and inspect aggregate,
 per-field, and per-case results. Case drill-downs compare expected and detected
 values; selecting Review hand refetches the persisted job before opening it in
-the correction workspace. The overview returns a bounded recent-run summary;
-compact field metrics support trend comparisons, while full archived reports
-are loaded only when selected. For automatic-parser reports, the client derives
+the correction workspace. The overview returns bounded recent-run summaries for
+the requested parser/layout pair, defaulting to the deployment pair when the
+query is omitted. Report controls identify that pair, compact field metrics
+support trend comparisons, and full archived reports are loaded only when
+selected. For automatic-parser reports, the client derives
 a per-selected-provider accuracy and fallback breakdown from trusted case route
 evidence. Its attribution denominator remains the report's full case count, so
 older or failed cases without route metadata remain visible rather than being

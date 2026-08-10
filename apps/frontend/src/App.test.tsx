@@ -4905,8 +4905,9 @@ describe("App", () => {
   });
 
   it("shows the parser selected by automatic routing for the active screenshot", async () => {
-    const baseJob = jobRecord();
+    const baseJob = jobRecord({ id: "a".repeat(32) });
     const routedJob = jobRecord({
+      id: baseJob.id,
       parser_provider: "auto",
       parser_result: {
         ...baseJob.parser_result!,
@@ -4927,12 +4928,26 @@ describe("App", () => {
       JSON.stringify([routedJob]),
     );
     window.localStorage.setItem("poker-training-processing-total-v1", "1");
-    fetchMock().mockResolvedValueOnce(jsonResponse({
-      status: "ok",
-      parser_provider: "auto",
-      recommendation_provider: "local_solver",
-      recommendation_engine: "postflop_solver",
-    }));
+    fetchMock().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/health")) {
+        return Promise.resolve(jsonResponse({
+          status: "ok",
+          parser_provider: "auto",
+          recommendation_provider: "local_solver",
+          recommendation_engine: "postflop_solver",
+        }));
+      }
+      if (url.endsWith("/api/mcp/config")) {
+        return Promise.resolve(jsonResponse({
+          enabled: false,
+          environment: "staging",
+          endpoint: "http://localhost:8000/mcp",
+          writes_enabled: false,
+        }));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${url}`));
+    });
     render(<App />);
     const user = userEvent.setup();
 

@@ -4904,6 +4904,49 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("shows the parser selected by automatic routing for the active screenshot", async () => {
+    const baseJob = jobRecord();
+    const routedJob = jobRecord({
+      parser_provider: "auto",
+      parser_result: {
+        ...baseJob.parser_result!,
+        raw: {
+          provider: "llm_vision",
+          parser_routing: {
+            provider: "auto",
+            selected_provider: "llm_vision",
+            layout_profile: "fortuna_nations",
+            fallback_from: "ocr_cv",
+            fallback_reason: "Capture geometry did not match the table profile",
+          },
+        },
+      },
+    });
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([routedJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      status: "ok",
+      parser_provider: "auto",
+      recommendation_provider: "local_solver",
+      recommendation_engine: "postflop_solver",
+    }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "About this app" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "About Poker Training Analyzer",
+    });
+
+    expect(await within(dialog).findByText("External vision model")).toBeInTheDocument();
+    expect(within(dialog).getByText(
+      "via Automatic recognition · fallback from OCR + computer vision",
+    )).toBeInTheDocument();
+  });
+
   it("keeps the information dialog open until a one-time MCP token is stored", async () => {
     const issuance = deferredResponse();
     fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -14686,6 +14729,54 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/jobs/${benchmarkJobId}`,
     ]);
+  });
+
+  it("shows the selected parser and fallback evidence for benchmark cases", async () => {
+    const benchmarkJobId = "a".repeat(32);
+    const baseOverview = benchmarkOverviewForJob(
+      benchmarkJobId,
+      "automatic-route.png",
+    );
+    const overview = {
+      ...baseOverview,
+      latest_report: {
+        ...baseOverview.latest_report,
+        parser_provider: "auto",
+        cases: baseOverview.latest_report.cases.map((benchmarkCase) => ({
+          ...benchmarkCase,
+          parser_routing: {
+            provider: "auto",
+            selected_provider: "llm_vision",
+            layout_profile: "fortuna_nations",
+            fallback_from: "ocr_cv",
+            fallback_reason: "Capture geometry did not match the table profile",
+          },
+        })),
+      },
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse(overview));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+
+    expect(within(dialog).getByText(
+      "External vision model · All labeled fields matched",
+    )).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle automatic-route.png benchmark details",
+    }));
+    const routing = within(dialog).getByLabelText("Parser routing");
+    expect(within(routing).getByText("External vision model")).toBeInTheDocument();
+    expect(within(routing).getByText(
+      "via Automatic recognition · fallback from OCR + computer vision",
+    )).toBeInTheDocument();
+    expect(within(routing).getByText(
+      "Capture geometry did not match the table profile",
+    )).toBeInTheDocument();
   });
 
   it("restores a provider failure after recommending a pristine benchmark import", async () => {

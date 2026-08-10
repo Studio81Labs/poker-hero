@@ -471,10 +471,11 @@ class FileBenchmarkStore:
             if layout_profile is not None and summary.layout_profile != layout_profile:
                 continue
             summaries.append(summary)
+        missing_count = None if limit is None else max(0, limit - len(summaries))
         summaries.extend(self._backfill_report_summaries(
             parser_provider=parser_provider,
             layout_profile=layout_profile,
-            matching_limit=limit,
+            matching_limit=missing_count,
         ))
         summaries.sort(
             key=lambda summary: (summary.created_at, summary.id),

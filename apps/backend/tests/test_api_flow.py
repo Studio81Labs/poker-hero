@@ -4824,11 +4824,14 @@ def test_benchmark_overview_streams_legacy_summary_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = make_client(tmp_path)
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=20,
+    )
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
     client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
-    for _ in range(3):
+    for _ in range(12):
         assert client.post("/api/benchmarks/run").status_code == 200
 
     for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
@@ -4850,16 +4853,16 @@ def test_benchmark_overview_streams_legacy_summary_metadata(
     first_overview = client.get("/api/benchmarks")
 
     assert first_overview.status_code == 200
-    assert len(first_overview.json()["recent_reports"]) == 3
-    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
+    assert len(first_overview.json()["recent_reports"]) == 10
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 10
     assert len(full_report_reads) == 1
 
     full_report_reads.clear()
     second_overview = client.get("/api/benchmarks")
 
     assert second_overview.status_code == 200
-    assert len(second_overview.json()["recent_reports"]) == 3
-    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
+    assert len(second_overview.json()["recent_reports"]) == 10
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 10
     assert len(full_report_reads) == 1
 
 

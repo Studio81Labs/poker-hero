@@ -1191,6 +1191,119 @@ describe("App", () => {
     expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
   });
 
+  it("ignores a stale deletion refresh after the parser pipeline changes", async () => {
+    const staleBenchmarkJob = approvedJob();
+    staleBenchmarkJob.id = "e".repeat(32);
+    staleBenchmarkJob.original_filename = "stale-delete-refresh.png";
+    staleBenchmarkJob.benchmark_included = true;
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleBenchmarkJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const deletionOverview = deferredResponse();
+    const selectedOverview = deferredResponse();
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return deletionOverview.promise;
+      }
+      if (
+        url
+        === "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna"
+      ) {
+        return selectedOverview.promise;
+      }
+      if (url === "http://localhost:8000/api/pipeline") {
+        return Promise.resolve(jsonResponse({
+          defaults: {
+            parser_provider: "mock",
+            parser_layout_profile: "generic",
+            recommendation_provider: "mock",
+            recommendation_engine: null,
+          },
+          parser_providers: [
+            { id: "mock", label: "Mock parser", available: true, unavailable_reason: null },
+            { id: "ocr_cv", label: "Template OCR", available: true, unavailable_reason: null },
+          ],
+          parser_layout_profiles: [
+            { id: "generic", label: "Generic", available: true, unavailable_reason: null },
+            { id: "fortuna", label: "Fortuna", available: true, unavailable_reason: null },
+          ],
+          parser_layout_compatibility: {
+            mock: ["generic", "fortuna"],
+            ocr_cv: ["generic", "fortuna"],
+          },
+          recommendation_providers: [
+            { id: "mock", label: "Mock recommendation", available: true, unavailable_reason: null },
+          ],
+          recommendation_engines: [],
+        }));
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${staleBenchmarkJob.id}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-stale-benchmark-refresh",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: stale-delete-refresh.png",
+    }));
+    const detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete screenshot",
+    }));
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete permanently",
+    }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/benchmarks",
+      { credentials: "include" },
+    ));
+
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    const pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Recognition"), "ocr_cv");
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    selectedOverview.resolve(jsonResponse({
+      included_cases: 9,
+      included_cases_by_layout: { fortuna: 9 },
+      default_layout_profile: "generic",
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await waitFor(() => expect(benchmarkDialog).toHaveTextContent("9 ground-truth hands"));
+
+    deletionOverview.resolve(jsonResponse({
+      included_cases: 2,
+      included_cases_by_layout: { generic: 2 },
+      default_layout_profile: "generic",
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await deletionOverview.promise;
+    expect(benchmarkDialog).toHaveTextContent("9 ground-truth hands");
+    expect(benchmarkDialog).not.toHaveTextContent("2 ground-truth hands");
+  });
+
   it("permanently removes a saved screenshot from history", async () => {
     const archivedJob = recommendedJob();
     archivedJob.id = "3".repeat(32);

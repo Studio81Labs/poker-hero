@@ -8987,13 +8987,20 @@ export default function App() {
       ) ?? null,
     );
     if (!hasImportedLayoutCounts) {
+      const requestId = benchmarkOverviewRequestRef.current;
       try {
         const overview = await getBenchmarkOverview(pipelineSelection ?? undefined);
-        if (appMountedRef.current) {
+        if (
+          appMountedRef.current
+          && requestId === benchmarkOverviewRequestRef.current
+        ) {
           setBenchmarkOverview(overview);
         }
       } catch (benchmarkError) {
-        if (appMountedRef.current) {
+        if (
+          appMountedRef.current
+          && requestId === benchmarkOverviewRequestRef.current
+        ) {
           setError(messageFromError(
             benchmarkError,
             "Dataset imported, but benchmark counts could not be refreshed",
@@ -9419,12 +9426,21 @@ export default function App() {
     }
     removeScreenshotFromClient(deletedJob);
     if (benchmarkOverview !== null || deletedJob.benchmark_included) {
+      const requestId = benchmarkOverviewRequestRef.current;
       void getBenchmarkOverview(pipelineSelection ?? undefined)
-        .then(setBenchmarkOverview)
-        .catch((benchmarkError) => setError(messageFromError(
-          benchmarkError,
-          "Screenshot removed, but the benchmark count could not refresh",
-        )));
+        .then((overview) => {
+          if (requestId === benchmarkOverviewRequestRef.current) {
+            setBenchmarkOverview(overview);
+          }
+        })
+        .catch((benchmarkError) => {
+          if (requestId === benchmarkOverviewRequestRef.current) {
+            setError(messageFromError(
+              benchmarkError,
+              "Screenshot removed, but the benchmark count could not refresh",
+            ));
+          }
+        });
     }
     setManagedJobId(null);
     setScreenshotDeleteArmed(false);

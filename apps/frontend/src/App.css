@@ -2243,6 +2243,13 @@ button:disabled {
   margin-top: 4px;
 }
 
+.info-provider-grid .info-provider-route {
+  color: var(--muted);
+  display: block;
+  font-size: 10px;
+  margin-top: 3px;
+}
+
 .info-dialog-footer {
   justify-content: flex-end;
 }
@@ -3611,6 +3618,29 @@ button:disabled {
   background: rgba(32, 30, 29, 0.035);
   border-left: 2px solid var(--accent);
   padding: 9px 10px 10px;
+}
+
+.benchmark-case-routing {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  margin-bottom: 8px;
+}
+
+.benchmark-case-routing strong,
+.benchmark-case-routing span,
+.benchmark-case-routing small {
+  font-size: 10px;
+}
+
+.benchmark-case-routing span,
+.benchmark-case-routing small {
+  color: var(--muted);
+}
+
+.benchmark-case-routing small {
+  flex-basis: 100%;
 }
 
 .benchmark-case-error,

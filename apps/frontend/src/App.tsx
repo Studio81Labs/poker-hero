@@ -353,6 +353,14 @@ interface RecommendationEvidence {
   candidates: RecommendationEvidenceCandidate[];
 }
 
+interface ParserRoutingEvidence {
+  provider: string;
+  selectedProvider: string;
+  layoutProfile: string;
+  fallbackFrom: string | null;
+  fallbackReason: string | null;
+}
+
 interface AutomationSettings {
   enabled: boolean;
   autoApprove: boolean;
@@ -382,6 +390,7 @@ const ERROR_TOAST_ID = "poker-training-error";
 const VALIDATION_TOAST_ID = "poker-training-validation";
 
 const PROVIDER_LABELS: Record<string, string> = {
+  auto: "Automatic recognition",
   custom_local: "Custom local solver",
   external_solver: "External solver",
   llm_advice: "LLM adviser",
@@ -540,6 +549,29 @@ function metadataString(value: unknown, maxLength = 320): string | null {
   }
   const normalized = value.trim();
   return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function parserRoutingEvidence(value: unknown): ParserRoutingEvidence | null {
+  const routing = metadataRecord(value);
+  const provider = metadataString(routing?.provider, 64);
+  const selectedProvider = metadataString(routing?.selected_provider, 64);
+  const layoutProfile = metadataString(routing?.layout_profile, 64);
+  if (!routing || !provider || !selectedProvider || !layoutProfile) {
+    return null;
+  }
+  const fallbackFrom = metadataString(routing.fallback_from, 64);
+  const fallbackReason = metadataString(routing.fallback_reason, 320);
+  return {
+    provider,
+    selectedProvider,
+    layoutProfile,
+    fallbackFrom: fallbackFrom && fallbackReason ? fallbackFrom : null,
+    fallbackReason: fallbackFrom && fallbackReason ? fallbackReason : null,
+  };
+}
+
+function parserRoutingFromRaw(value: unknown): ParserRoutingEvidence | null {
+  return parserRoutingEvidence(metadataRecord(value)?.parser_routing);
 }
 
 function metadataExactString(value: unknown): string | null {
@@ -5432,7 +5464,11 @@ export default function App() {
     && !managedJobPersisted
     && localUploadDeletionRequiresRecovery(managedJob),
   );
-  const activeParserProvider = systemInfo?.parser_provider ?? job?.parser_provider ?? null;
+  const activeParserRouting = parserRoutingFromRaw(job?.parser_result?.raw);
+  const activeParserProvider = activeParserRouting?.selectedProvider
+    ?? systemInfo?.parser_provider
+    ?? job?.parser_provider
+    ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
   const recentBenchmarkReports = useMemo(() => {
@@ -10858,6 +10894,14 @@ export default function App() {
                     <div>
                       <small>Recognition</small>
                       <strong>{providerLabel(activeParserProvider)}</strong>
+                      {activeParserRouting ? (
+                        <span className="info-provider-route">
+                          via {providerLabel(activeParserRouting.provider)}
+                          {activeParserRouting.fallbackFrom
+                            ? ` · fallback from ${providerLabel(activeParserRouting.fallbackFrom)}`
+                            : ""}
+                        </span>
+                      ) : null}
                     </div>
                     <div>
                       <small>Recommendation</small>
@@ -12252,6 +12296,7 @@ export default function App() {
                         {benchmarkReport.cases.map((benchmarkCase) => {
                           const expanded = expandedBenchmarkCaseId === benchmarkCase.job_id;
                           const mismatches = benchmarkCase.comparisons.filter((comparison) => !comparison.matched);
+                          const parserRoute = parserRoutingEvidence(benchmarkCase.parser_routing);
                           const detailId = `benchmark-case-${benchmarkCase.job_id}`;
                           return (
                             <div key={benchmarkCase.job_id} className="benchmark-case-row">
@@ -12265,9 +12310,12 @@ export default function App() {
                               >
                                 <span>
                                   <strong>{benchmarkCase.original_filename}</strong>
-                                  <small>{benchmarkCase.error
-                                    ? humanReadableMessage(benchmarkCase.error, "Benchmark failed")
-                                    : benchmarkMismatchLabel(benchmarkCase.comparisons)}</small>
+                                  <small>
+                                    {parserRoute ? `${providerLabel(parserRoute.selectedProvider)} · ` : ""}
+                                    {benchmarkCase.error
+                                      ? humanReadableMessage(benchmarkCase.error, "Benchmark failed")
+                                      : benchmarkMismatchLabel(benchmarkCase.comparisons)}
+                                  </small>
                                 </span>
                                 <strong className={benchmarkCase.status === "error" || mismatches.length > 0 ? "needs-review" : ""}>
                                   {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
@@ -12276,6 +12324,18 @@ export default function App() {
                               </button>
                               {expanded ? (
                                 <div id={detailId} className="benchmark-case-details">
+                                  {parserRoute ? (
+                                    <div className="benchmark-case-routing" aria-label="Parser routing">
+                                      <strong>{providerLabel(parserRoute.selectedProvider)}</strong>
+                                      <span>
+                                        via {providerLabel(parserRoute.provider)}
+                                        {parserRoute.fallbackFrom
+                                          ? ` · fallback from ${providerLabel(parserRoute.fallbackFrom)}`
+                                          : ""}
+                                      </span>
+                                      {parserRoute.fallbackReason ? <small>{parserRoute.fallbackReason}</small> : null}
+                                    </div>
+                                  ) : null}
                                   {benchmarkCase.error ? (
                                     <p className="benchmark-case-error">
                                       {humanReadableMessage(benchmarkCase.error, "Benchmark failed")}

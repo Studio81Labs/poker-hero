@@ -9138,9 +9138,7 @@ export default function App() {
       setSelectedBenchmarkReport(latestReport);
       setBenchmarkOverview((current) => ({
         included_cases: current?.included_cases ?? latestReport.total_cases,
-        included_cases_by_layout: current?.included_cases_by_layout ?? {
-          [latestReport.layout_profile]: latestReport.total_cases,
-        },
+        included_cases_by_layout: current?.included_cases_by_layout,
         default_layout_profile: current?.default_layout_profile
           ?? latestReport.layout_profile,
         latest_report: latestReport,

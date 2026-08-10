@@ -13702,6 +13702,11 @@ describe("App", () => {
         },
       ],
     };
+    const rerunReport = {
+      ...benchmarkReport,
+      id: "benchmark-2",
+      created_at: "2026-07-20T12:05:00Z",
+    };
     const created = jobRecord({ parser_layout_profile: "fortuna" });
     fetchMock()
       .mockResolvedValueOnce(jsonResponse(created, 201))
@@ -13760,7 +13765,9 @@ describe("App", () => {
       .mockReturnValueOnce(pendingInclusion.promise)
       .mockReturnValueOnce(pendingBenchmark.promise)
       .mockResolvedValueOnce(jsonResponse({ included_cases: 2, latest_report: benchmarkReport }))
-      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), benchmark_included: false }));
+      .mockResolvedValueOnce(jsonResponse({ ...approvedJob(), benchmark_included: false }))
+      .mockResolvedValueOnce(jsonResponse(rerunReport))
+      .mockRejectedValueOnce(new TypeError("Legacy overview refresh unavailable"));
     render(<App />);
 
     const user = await uploadScreenshot();
@@ -13847,6 +13854,39 @@ describe("App", () => {
     expect(within(reopenedDialog).getByRole("button", {
       name: "Run benchmark",
     })).toBeEnabled();
+    await user.click(within(reopenedDialog).getByRole("button", {
+      name: "Run benchmark",
+    }));
+    await waitFor(() => expect(within(reopenedDialog).getByRole("button", {
+      name: "Done",
+    })).toBeEnabled());
+    await user.click(within(reopenedDialog).getByRole("button", {
+      name: "Done",
+    }));
+
+    await user.click(screen.getByRole("button", {
+      name: "Configure analysis plugins",
+    }));
+    const reopenedPipelineDialog = await screen.findByRole("dialog", {
+      name: "Analysis plugins",
+    });
+    await user.selectOptions(
+      within(reopenedPipelineDialog).getByLabelText("Table layout"),
+      "generic",
+    );
+    await user.click(within(reopenedPipelineDialog).getByRole("button", {
+      name: "Done",
+    }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const fallbackDialog = await screen.findByRole("dialog", {
+      name: "Parser benchmark",
+    });
+    expect(await screen.findByText(
+      "Legacy overview refresh unavailable",
+    )).toBeInTheDocument();
+    await waitFor(() => expect(within(fallbackDialog).getByRole("button", {
+      name: "Run benchmark",
+    })).toBeEnabled());
 
     expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:8000/api/jobs",
@@ -13858,6 +13898,8 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks/run",
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/jobs/job-123/benchmark",
+      "http://localhost:8000/api/benchmarks/run",
+      "http://localhost:8000/api/benchmarks",
     ]);
     const benchmarkRequest = fetchMock().mock.calls.find(
       ([url]) => url === "http://localhost:8000/api/benchmarks/run",

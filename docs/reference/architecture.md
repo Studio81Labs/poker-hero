@@ -363,7 +363,11 @@ per-field, and per-case results. Case drill-downs compare expected and detected
 values; selecting Review hand refetches the persisted job before opening it in
 the correction workspace. The overview returns a bounded recent-run summary;
 compact field metrics support trend comparisons, while full archived reports
-are loaded only when selected.
+are loaded only when selected. For automatic-parser reports, the client derives
+a per-selected-provider accuracy and fallback breakdown from trusted case route
+evidence. Its attribution denominator remains the report's full case count, so
+older or failed cases without route metadata remain visible rather than being
+silently omitted.
 
 The explicitly selected benchmark corpus can be exported as a ZIP without
 running the parser. `manifest.json` identifies schema version 1, parser/layout

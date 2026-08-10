@@ -14794,21 +14794,54 @@ describe("App", () => {
       benchmarkJobId,
       "automatic-route.png",
     );
+    const baseCase = baseOverview.latest_report.cases[0];
     const overview = {
       ...baseOverview,
       latest_report: {
         ...baseOverview.latest_report,
         parser_provider: "auto",
-        cases: baseOverview.latest_report.cases.map((benchmarkCase) => ({
-          ...benchmarkCase,
-          parser_routing: {
-            provider: "auto",
-            selected_provider: "llm_vision",
-            layout_profile: "fortuna_nations",
-            fallback_from: "ocr_cv",
-            fallback_reason: "Capture geometry did not match the table profile",
+        layout_profile: "fortuna_nations",
+        total_cases: 3,
+        successful_cases: 2,
+        failed_cases: 1,
+        correct_fields: 18,
+        evaluated_fields: 30,
+        accuracy: 0.6,
+        cases: [
+          {
+            ...baseCase,
+            parser_routing: {
+              provider: "auto",
+              selected_provider: "llm_vision",
+              layout_profile: "fortuna_nations",
+              fallback_from: "ocr_cv",
+              fallback_reason: "Capture geometry did not match the table profile",
+            },
           },
-        })),
+          {
+            ...baseCase,
+            job_id: "b".repeat(32),
+            original_filename: "local-route.png",
+            correct_fields: 8,
+            accuracy: 0.8,
+            parser_routing: {
+              provider: "auto",
+              selected_provider: "ocr_cv",
+              layout_profile: "fortuna_nations",
+              fallback_from: null,
+              fallback_reason: null,
+            },
+          },
+          {
+            ...baseCase,
+            job_id: "c".repeat(32),
+            original_filename: "unattributed-error.png",
+            status: "error",
+            correct_fields: 0,
+            accuracy: 0,
+            error: "Automatic recognition could not parse the screenshot",
+          },
+        ],
       },
     };
     fetchMock().mockResolvedValueOnce(jsonResponse(overview));
@@ -14820,6 +14853,20 @@ describe("App", () => {
       name: "Parser benchmark",
     });
 
+    const routes = within(dialog).getByRole("region", {
+      name: "Parser routes",
+    });
+    const externalRoute = within(routes).getByLabelText(
+      "External vision model parser route",
+    );
+    expect(externalRoute).toHaveTextContent("1 case · 10/10 fields · 1 fallback");
+    expect(externalRoute).toHaveTextContent("100%");
+    const localRoute = within(routes).getByLabelText(
+      "OCR + computer vision parser route",
+    );
+    expect(localRoute).toHaveTextContent("1 case · 8/10 fields");
+    expect(localRoute).toHaveTextContent("80%");
+    expect(within(routes).getByText("2 of 3 cases attributed")).toBeInTheDocument();
     expect(within(dialog).getByText(
       "External vision model · All labeled fields matched",
     )).toBeInTheDocument();

@@ -3502,6 +3502,58 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.benchmark-route-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.benchmark-route-list > div {
+  align-items: center;
+  border-top: 1px solid rgba(32, 30, 29, 0.08);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 42px;
+  padding: 6px 10px 6px 0;
+}
+
+.benchmark-route-list > div:nth-child(even) {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 12px;
+}
+
+.benchmark-route-list span,
+.benchmark-route-list span strong,
+.benchmark-route-list span small {
+  display: block;
+  min-width: 0;
+}
+
+.benchmark-route-list span strong,
+.benchmark-route-list > div > strong {
+  font-size: 12px;
+}
+
+.benchmark-route-list span small,
+.benchmark-route-coverage,
+.benchmark-route-empty {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.benchmark-route-list span small {
+  margin-top: 2px;
+}
+
+.benchmark-route-list > div > strong {
+  text-align: right;
+}
+
+.benchmark-route-coverage,
+.benchmark-route-empty {
+  margin: 7px 0 0;
+}
+
 .benchmark-field-list,
 .benchmark-case-list {
   display: grid;

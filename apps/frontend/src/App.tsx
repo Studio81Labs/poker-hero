@@ -361,6 +361,21 @@ interface ParserRoutingEvidence {
   fallbackReason: string | null;
 }
 
+interface BenchmarkParserRouteMetric {
+  provider: string;
+  cases: number;
+  failedCases: number;
+  fallbackCases: number;
+  correctFields: number;
+  evaluatedFields: number;
+  accuracy: number;
+}
+
+interface BenchmarkParserRouteSummary {
+  attributedCases: number;
+  routes: BenchmarkParserRouteMetric[];
+}
+
 interface AutomationSettings {
   enabled: boolean;
   autoApprove: boolean;
@@ -2664,6 +2679,56 @@ function previousBenchmarkFieldMetric(
   previousReport: BenchmarkReportSummary | null,
 ): BenchmarkFieldMetric | null {
   return previousReport?.field_metrics?.find((candidate) => candidate.field === metric.field) ?? null;
+}
+
+function benchmarkParserRouteSummary(
+  report: BenchmarkReport | null,
+): BenchmarkParserRouteSummary {
+  if (!report || report.parser_provider !== "auto") {
+    return { attributedCases: 0, routes: [] };
+  }
+
+  const routes = new Map<string, Omit<BenchmarkParserRouteMetric, "accuracy">>();
+  let attributedCases = 0;
+  for (const benchmarkCase of report.cases) {
+    const routing = parserRoutingEvidence(benchmarkCase.parser_routing);
+    if (
+      !routing
+      || routing.provider !== report.parser_provider
+      || routing.layoutProfile !== report.layout_profile
+    ) {
+      continue;
+    }
+    attributedCases += 1;
+    const current = routes.get(routing.selectedProvider) ?? {
+      provider: routing.selectedProvider,
+      cases: 0,
+      failedCases: 0,
+      fallbackCases: 0,
+      correctFields: 0,
+      evaluatedFields: 0,
+    };
+    current.cases += 1;
+    current.failedCases += benchmarkCase.status === "error" ? 1 : 0;
+    current.fallbackCases += routing.fallbackFrom ? 1 : 0;
+    current.correctFields += benchmarkCase.correct_fields;
+    current.evaluatedFields += benchmarkCase.evaluated_fields;
+    routes.set(routing.selectedProvider, current);
+  }
+
+  return {
+    attributedCases,
+    routes: [...routes.values()]
+      .map((route) => ({
+        ...route,
+        accuracy: route.evaluatedFields > 0
+          ? route.correctFields / route.evaluatedFields
+          : 0,
+      }))
+      .sort((left, right) => providerLabel(left.provider).localeCompare(
+        providerLabel(right.provider),
+      )),
+  };
 }
 
 function benchmarkComparisonValue(value: unknown): string {
@@ -5507,6 +5572,10 @@ export default function App() {
         ? benchmarkPointChange(benchmarkReport.accuracy, previousBenchmarkReport.accuracy)
         : null,
     [benchmarkReport, previousBenchmarkReport],
+  );
+  const benchmarkParserRoutes = useMemo(
+    () => benchmarkParserRouteSummary(benchmarkReport),
+    [benchmarkReport],
   );
   const decisionComparison = useMemo(
     () => (activeRecommendation && activeTrainingDecision
@@ -12259,6 +12328,43 @@ export default function App() {
                   </div>
 
                   <div className="benchmark-results-scroll">
+                    {benchmarkReport.parser_provider === "auto" ? (
+                      <section className="benchmark-result-section" aria-labelledby="benchmark-routes-title">
+                        <h3 id="benchmark-routes-title">Parser routes</h3>
+                        {benchmarkParserRoutes.routes.length > 0 ? (
+                          <div className="benchmark-route-list">
+                            {benchmarkParserRoutes.routes.map((route) => (
+                              <div
+                                key={route.provider}
+                                aria-label={`${providerLabel(route.provider)} parser route`}
+                              >
+                                <span>
+                                  <strong>{providerLabel(route.provider)}</strong>
+                                  <small>
+                                    {route.cases} {route.cases === 1 ? "case" : "cases"}
+                                    {` · ${route.correctFields}/${route.evaluatedFields} fields`}
+                                    {route.fallbackCases > 0
+                                      ? ` · ${route.fallbackCases} ${route.fallbackCases === 1 ? "fallback" : "fallbacks"}`
+                                      : ""}
+                                    {route.failedCases > 0
+                                      ? ` · ${route.failedCases} failed`
+                                      : ""}
+                                  </small>
+                                </span>
+                                <strong className={route.failedCases > 0 ? "needs-review" : ""}>
+                                  {benchmarkPercent(route.accuracy)}
+                                </strong>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="benchmark-route-empty">No parser routes were recorded for this report.</p>
+                        )}
+                        <p className="benchmark-route-coverage">
+                          {benchmarkParserRoutes.attributedCases} of {benchmarkReport.total_cases} cases attributed
+                        </p>
+                      </section>
+                    ) : null}
                     <section className="benchmark-result-section" aria-labelledby="benchmark-fields-title">
                       <h3 id="benchmark-fields-title">Field accuracy</h3>
                       <div className="benchmark-field-list">

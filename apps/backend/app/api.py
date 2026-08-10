@@ -78,7 +78,6 @@ from app.models import (
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
-    BenchmarkReportSummary,
     BenchmarkRunRequest,
     BenchmarkSelectionRequest,
     CanonicalState,
@@ -1628,7 +1627,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             selected_parser = selection.parser_provider
             selected_layout = selection.parser_layout_profile
-        reports = benchmark_store.list(
+        recent_reports = benchmark_store.list_summaries(
             parser_provider=selected_parser,
             layout_profile=selected_layout,
         )
@@ -1639,11 +1638,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 active_settings.parser_layout_profile,
             ),
             default_layout_profile=active_settings.parser_layout_profile,
-            latest_report=reports[0] if reports else None,
-            recent_reports=[
-                BenchmarkReportSummary.from_report(report)
-                for report in reports
-            ],
+            latest_report=(
+                benchmark_store.get(recent_reports[0].id)
+                if recent_reports
+                else None
+            ),
+            recent_reports=recent_reports,
         )
 
     def build_browser_application_backup():

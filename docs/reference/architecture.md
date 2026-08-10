@@ -365,7 +365,10 @@ the correction workspace. The overview returns bounded recent-run summaries for
 the requested parser/layout pair, defaulting to the deployment pair when the
 query is omitted. Report controls identify that pair, compact field metrics
 support trend comparisons, and full archived reports are loaded only when
-selected. For automatic-parser reports, the client derives
+selected. Rebuildable per-report summary sidecars keep overview reads independent
+of full case payloads; legacy report files receive sidecars in bounded,
+newest-first batches across indexed reads after an upgrade. For automatic-parser
+reports, the client derives
 a per-selected-provider accuracy and fallback breakdown from trusted case route
 evidence. Its attribution denominator remains the report's full case count, so
 older or failed cases without route metadata remain visible rather than being

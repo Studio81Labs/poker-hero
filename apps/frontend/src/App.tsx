@@ -5124,6 +5124,7 @@ export default function App() {
   const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
+  const benchmarkOverviewRequestRef = useRef(0);
   const activeRecommendationRequestsRef = useRef(
     new Map<string, ActiveRecommendationRequest>(),
   );
@@ -8881,17 +8882,35 @@ export default function App() {
   }
 
   function openBenchmarkDialog() {
+    const requestId = ++benchmarkOverviewRequestRef.current;
     setExpandedBenchmarkCaseId(null);
     setSelectedBenchmarkReport(null);
     setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
     void getBenchmarkOverview(pipelineSelection ?? undefined)
       .then((overview) => {
+        if (requestId !== benchmarkOverviewRequestRef.current) {
+          return;
+        }
         setBenchmarkOverview(overview);
         setSelectedBenchmarkReport(overview.latest_report);
       })
-      .catch((benchmarkError) => setError(messageFromError(benchmarkError, "Could not load parser benchmark")))
-      .finally(() => setBenchmarkLoading(false));
+      .catch((benchmarkError) => {
+        if (requestId === benchmarkOverviewRequestRef.current) {
+          setError(messageFromError(benchmarkError, "Could not load parser benchmark"));
+        }
+      })
+      .finally(() => {
+        if (requestId === benchmarkOverviewRequestRef.current) {
+          setBenchmarkLoading(false);
+        }
+      });
+  }
+
+  function closeBenchmarkDialog() {
+    benchmarkOverviewRequestRef.current += 1;
+    setBenchmarkLoading(false);
+    setBenchmarkDialogOpen(false);
   }
 
   async function applyBenchmarkDatasetImportResult(
@@ -9187,7 +9206,7 @@ export default function App() {
     try {
       const reviewJob = await getJob(jobId);
       upsertAndActivateJob(reviewJob);
-      setBenchmarkDialogOpen(false);
+      closeBenchmarkDialog();
       setExpandedBenchmarkCaseId(null);
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Could not open benchmark hand"));
@@ -12330,7 +12349,7 @@ export default function App() {
               <button
                 type="button"
                 className="dialog-icon-button"
-                onClick={() => setBenchmarkDialogOpen(false)}
+                onClick={closeBenchmarkDialog}
                 disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
                 aria-label="Close parser benchmark"
               >
@@ -12642,7 +12661,7 @@ export default function App() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => setBenchmarkDialogOpen(false)}
+                onClick={closeBenchmarkDialog}
                 disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
               >
                 Done

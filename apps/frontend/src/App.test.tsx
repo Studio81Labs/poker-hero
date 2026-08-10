@@ -15906,6 +15906,77 @@ describe("App", () => {
     ]);
   });
 
+  it("ignores a stale benchmark overview after the parser pipeline changes", async () => {
+    const firstOverview = deferredResponse();
+    const secondOverview = deferredResponse();
+    const fortunaOverview = benchmarkOverviewForJob("a".repeat(32), "fortuna.png");
+    fortunaOverview.latest_report.id = "benchmark-fortuna";
+    fortunaOverview.latest_report.layout_profile = "fortuna";
+    fortunaOverview.latest_report.accuracy = 0.5;
+    const genericOverview = benchmarkOverviewForJob("b".repeat(32), "generic.png");
+    genericOverview.latest_report.id = "benchmark-generic";
+    genericOverview.latest_report.layout_profile = "generic";
+    genericOverview.latest_report.accuracy = 0.9;
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        defaults: {
+          parser_provider: "mock",
+          parser_layout_profile: "generic",
+          recommendation_provider: "mock",
+          recommendation_engine: null,
+        },
+        parser_providers: [
+          { id: "mock", label: "Mock parser", available: true, unavailable_reason: null },
+          { id: "ocr_cv", label: "Template OCR", available: true, unavailable_reason: null },
+        ],
+        parser_layout_profiles: [
+          { id: "generic", label: "Generic", available: true, unavailable_reason: null },
+          { id: "fortuna", label: "Fortuna", available: true, unavailable_reason: null },
+        ],
+        parser_layout_compatibility: {
+          mock: ["generic", "fortuna"],
+          ocr_cv: ["generic", "fortuna"],
+        },
+        recommendation_providers: [
+          { id: "mock", label: "Mock recommendation", available: true, unavailable_reason: null },
+        ],
+        recommendation_engines: [],
+      }))
+      .mockReturnValueOnce(firstOverview.promise)
+      .mockReturnValueOnce(secondOverview.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    let pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Recognition"), "ocr_cv");
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    let benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(benchmarkDialog).getByRole("button", { name: "Close parser benchmark" }));
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "generic");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    firstOverview.resolve(jsonResponse(fortunaOverview));
+    await waitFor(() => expect(within(benchmarkDialog).getByText("Reading benchmark results...")).toBeInTheDocument());
+    expect(within(benchmarkDialog).queryByLabelText("Benchmark summary")).not.toBeInTheDocument();
+
+    secondOverview.resolve(jsonResponse(genericOverview));
+    expect(await within(benchmarkDialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
+    expect(within(benchmarkDialog).getByText("OCR + computer vision · generic")).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/pipeline",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=generic",
+    ]);
+  });
+
   it("loads historical benchmark reports and compares accuracy", async () => {
     const earlierReport = {
       id: "benchmark-earlier",

@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from app import api as api_module
 from app import dataset_export as dataset_export_module
 from app import dataset_import as dataset_import_module
+from app import storage as storage_module
 from app.api import create_app
 from app.config import Settings
 from app.parsers.base import ParserConfigurationError, ParserError
@@ -4790,7 +4791,21 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
         "user_approved"
     }
     assert FileBenchmarkStore(tmp_path).get_latest().id == report["id"]
+    summary_path = tmp_path / "benchmarks" / f"{report['id']}.summary.json"
+    assert summary_path.exists()
+    summary_path.write_text("not valid JSON")
     overview = client.get("/api/benchmarks").json()
+    assert overview["latest_report"]["id"] == report["id"]
+    assert json.loads(summary_path.read_text())["id"] == report["id"]
+    mismatched_summary = json.loads(summary_path.read_text())
+    mismatched_summary["id"] = "f" * 32
+    summary_path.write_text(json.dumps(mismatched_summary))
+    overview = client.get("/api/benchmarks").json()
+    assert overview["latest_report"]["id"] == report["id"]
+    assert json.loads(summary_path.read_text())["id"] == report["id"]
+    summary_path.unlink()
+    overview = client.get("/api/benchmarks").json()
+    assert summary_path.exists()
     assert overview["latest_report"]["id"] == report["id"]
     assert overview["recent_reports"] == [
         {
@@ -4804,6 +4819,50 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
             "field_metrics": report["field_metrics"],
         }
     ]
+
+
+def test_benchmark_overview_bounds_legacy_summary_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    for _ in range(3):
+        assert client.post("/api/benchmarks/run").status_code == 200
+
+    for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
+        summary_path.unlink()
+    monkeypatch.setattr(storage_module, "BENCHMARK_SUMMARY_BACKFILL_LIMIT", 2)
+    original_read_text = Path.read_text
+    full_report_reads: list[str] = []
+
+    def track_benchmark_reads(path: Path, *args, **kwargs) -> str:
+        if (
+            path.parent == tmp_path / "benchmarks"
+            and path.suffix == ".json"
+            and len(path.stem) == 32
+        ):
+            full_report_reads.append(path.stem)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", track_benchmark_reads)
+
+    first_overview = client.get("/api/benchmarks")
+
+    assert first_overview.status_code == 200
+    assert len(first_overview.json()["recent_reports"]) == 2
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 2
+    assert len(full_report_reads) == 3
+
+    full_report_reads.clear()
+    second_overview = client.get("/api/benchmarks")
+
+    assert second_overview.status_code == 200
+    assert len(second_overview.json()["recent_reports"]) == 3
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
+    assert len(full_report_reads) == 2
 
 
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(
@@ -4889,6 +4948,19 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
             "parser_layout_profile": "generic",
         },
     ).json()
+    original_read_text = Path.read_text
+    full_report_reads: list[str] = []
+
+    def track_benchmark_reads(path: Path, *args, **kwargs) -> str:
+        if (
+            path.parent == tmp_path / "benchmarks"
+            and path.suffix == ".json"
+            and len(path.stem) == 32
+        ):
+            full_report_reads.append(path.stem)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", track_benchmark_reads)
     default_history = client.get("/api/benchmarks").json()
     pokerstars_history = client.get(
         "/api/benchmarks",
@@ -4953,6 +5025,12 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
     assert incompatible_history.json()["detail"] == (
         "Layout profile 'pokerstars' is not supported by parser provider 'ocr_cv'"
     )
+    assert full_report_reads == [
+        generic_report["id"],
+        pokerstars_report["id"],
+        ocr_generic_report["id"],
+    ]
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
     with ZipFile(BytesIO(pokerstars_export.content)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert set(archive.namelist()) == {

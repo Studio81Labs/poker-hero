@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import shutil
@@ -6,19 +8,22 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from app.models import (
     BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkReport,
+    BenchmarkReportSummary,
     CanonicalState,
     JobRecord,
 )
 
 JOB_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 BENCHMARK_ID_PATTERN = JOB_ID_PATTERN
+BENCHMARK_SUMMARY_SUFFIX = ".summary.json"
+BENCHMARK_SUMMARY_BACKFILL_LIMIT = 100
 BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 JOB_RECORD_PAYLOAD_ADAPTER = TypeAdapter(dict[str, Any])
 LEGACY_ACTIONS_WITHOUT_SIZING = frozenset({"fold", "check", "call"})
@@ -413,13 +418,7 @@ class FileBenchmarkStore:
             raise BenchmarkNotFoundError(report_id)
         return BenchmarkReport.model_validate_json(path.read_text())
 
-    def list(
-        self,
-        limit: int | None = 10,
-        *,
-        parser_provider: str | None = None,
-        layout_profile: str | None = None,
-    ) -> list[BenchmarkReport]:
+    def list(self, limit: int | None = 10) -> list[BenchmarkReport]:
         if limit is not None and limit <= 0:
             return []
 
@@ -432,23 +431,48 @@ class FileBenchmarkStore:
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
-        filters_active = parser_provider is not None or layout_profile is not None
-        if limit is not None and not filters_active:
+        if limit is not None:
             report_paths = report_paths[:limit]
-        reports: list[BenchmarkReport] = []
-        for path in report_paths:
-            report = BenchmarkReport.model_validate_json(path.read_text())
-            if parser_provider is not None and report.parser_provider != parser_provider:
+        reports = [
+            BenchmarkReport.model_validate_json(path.read_text())
+            for path in report_paths
+        ]
+        return sorted(reports, key=lambda report: report.created_at, reverse=True)
+
+    def list_summaries(
+        self,
+        limit: int | None = 10,
+        *,
+        parser_provider: str | None = None,
+        layout_profile: str | None = None,
+    ) -> list[BenchmarkReportSummary]:
+        if limit is not None and limit <= 0:
+            return []
+
+        self._backfill_report_summaries(limit=BENCHMARK_SUMMARY_BACKFILL_LIMIT)
+        summaries: list[BenchmarkReportSummary] = []
+        for path in self.benchmarks_dir.glob(f"*{BENCHMARK_SUMMARY_SUFFIX}"):
+            report_id = path.name.removesuffix(BENCHMARK_SUMMARY_SUFFIX)
+            if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
                 continue
-            if layout_profile is not None and report.layout_profile != layout_profile:
+            if not self._report_path(report_id).exists():
                 continue
-            reports.append(report)
-        reports.sort(key=lambda report: report.created_at, reverse=True)
-        return reports[:limit] if limit is not None else reports
+            summary = self._read_report_summary(report_id, path)
+            if parser_provider is not None and summary.parser_provider != parser_provider:
+                continue
+            if layout_profile is not None and summary.layout_profile != layout_profile:
+                continue
+            summaries.append(summary)
+        summaries.sort(
+            key=lambda summary: (summary.created_at, summary.id),
+            reverse=True,
+        )
+        return summaries[:limit] if limit is not None else summaries
 
     def save(self, report: BenchmarkReport) -> BenchmarkReport:
         payload = report.model_dump_json(indent=2)
         self._atomic_write(self.benchmarks_dir / f"{report.id}.json", payload)
+        self._write_report_summary(report)
         self._atomic_write(self.benchmarks_dir / "latest.json", payload)
         return report
 
@@ -478,6 +502,12 @@ class FileBenchmarkStore:
                 ns=(report_timestamp_ns, report_timestamp_ns),
             )
             os.link(temp_path, path)
+            try:
+                self._write_report_summary(report)
+            except OSError:
+                path.unlink(missing_ok=True)
+                self._report_summary_path(report.id).unlink(missing_ok=True)
+                raise
         finally:
             if temp_path is not None and temp_path.exists():
                 try:
@@ -489,19 +519,21 @@ class FileBenchmarkStore:
         return report
 
     def delete(self, report_id: str) -> None:
-        path = self._report_path(report_id)
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            return
+        self._report_path(report_id).unlink(missing_ok=True)
+        self._report_summary_path(report_id).unlink(missing_ok=True)
 
     def refresh_latest(self) -> None:
-        reports = self.list(limit=None)
+        self._backfill_report_summaries(limit=None)
+        summaries = self.list_summaries(limit=None)
         latest_path = self.benchmarks_dir / "latest.json"
-        if not reports:
+        if not summaries:
             latest_path.unlink(missing_ok=True)
             return
-        latest = max(reports, key=lambda report: (report.created_at, report.id))
+        latest_summary = max(
+            summaries,
+            key=lambda summary: (summary.created_at, summary.id),
+        )
+        latest = self.get(latest_summary.id)
         self._atomic_write(latest_path, latest.model_dump_json(indent=2))
 
     def get_import(self, request_id: str) -> BenchmarkDatasetImportReceipt:
@@ -604,6 +636,51 @@ class FileBenchmarkStore:
         if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
             raise BenchmarkNotFoundError(report_id)
         return self.benchmarks_dir / f"{report_id}.json"
+
+    def _report_summary_path(self, report_id: str) -> Path:
+        if BENCHMARK_ID_PATTERN.fullmatch(report_id) is None:
+            raise BenchmarkNotFoundError(report_id)
+        return self.benchmarks_dir / f"{report_id}{BENCHMARK_SUMMARY_SUFFIX}"
+
+    def _write_report_summary(self, report: BenchmarkReport) -> None:
+        summary = BenchmarkReportSummary.from_report(report)
+        self._atomic_write(
+            self._report_summary_path(report.id),
+            summary.model_dump_json(indent=2),
+        )
+
+    def _read_report_summary(
+        self,
+        report_id: str,
+        path: Path,
+    ) -> BenchmarkReportSummary:
+        try:
+            summary = BenchmarkReportSummary.model_validate_json(path.read_text())
+        except ValidationError:
+            summary = None
+        if summary is not None and summary.id == report_id:
+            return summary
+
+        report = self.get(report_id)
+        self._write_report_summary(report)
+        return BenchmarkReportSummary.from_report(report)
+
+    def _backfill_report_summaries(self, limit: int | None) -> None:
+        report_paths = sorted(
+            (
+                path
+                for path in self.benchmarks_dir.glob("*.json")
+                if BENCHMARK_ID_PATTERN.fullmatch(path.stem) is not None
+                and not self._report_summary_path(path.stem).exists()
+            ),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        if limit is not None:
+            report_paths = report_paths[:limit]
+        for report_path in report_paths:
+            report = BenchmarkReport.model_validate_json(report_path.read_text())
+            self._write_report_summary(report)
 
     def _import_dir(self, request_id: str) -> Path:
         if (

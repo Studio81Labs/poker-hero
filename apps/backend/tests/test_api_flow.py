@@ -4866,6 +4866,41 @@ def test_benchmark_overview_streams_legacy_summary_metadata(
     assert len(full_report_reads) == 1
 
 
+def test_benchmark_overview_rescans_after_a_concurrent_legacy_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    report = client.post("/api/benchmarks/run").json()
+    summary_path = tmp_path / "benchmarks" / f"{report['id']}.summary.json"
+    summary_path.unlink()
+    requesting_store = FileBenchmarkStore(tmp_path)
+    concurrent_store = FileBenchmarkStore(tmp_path)
+
+    def run_concurrent_backfill(**_kwargs) -> None:
+        concurrent_store.list_summaries(
+            parser_provider="mock",
+            layout_profile="generic",
+        )
+
+    monkeypatch.setattr(
+        requesting_store,
+        "_backfill_report_summaries",
+        run_concurrent_backfill,
+    )
+
+    summaries = requesting_store.list_summaries(
+        parser_provider="mock",
+        layout_profile="generic",
+    )
+
+    assert [summary.id for summary in summaries] == [report["id"]]
+    assert summary_path.exists()
+
+
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

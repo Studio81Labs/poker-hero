@@ -458,6 +458,33 @@ class FileBenchmarkStore:
         if limit is not None and limit <= 0:
             return []
 
+        summaries = self._list_report_summaries(
+            parser_provider=parser_provider,
+            layout_profile=layout_profile,
+        )
+        missing_count = None if limit is None else max(0, limit - len(summaries))
+        if missing_count != 0:
+            self._backfill_report_summaries(
+                parser_provider=parser_provider,
+                layout_profile=layout_profile,
+                matching_limit=missing_count,
+            )
+            summaries = self._list_report_summaries(
+                parser_provider=parser_provider,
+                layout_profile=layout_profile,
+            )
+        summaries.sort(
+            key=lambda summary: (summary.created_at, summary.id),
+            reverse=True,
+        )
+        return summaries[:limit] if limit is not None else summaries
+
+    def _list_report_summaries(
+        self,
+        *,
+        parser_provider: str | None,
+        layout_profile: str | None,
+    ) -> list[BenchmarkReportSummary]:
         summaries: list[BenchmarkReportSummary] = []
         for path in self.benchmarks_dir.glob(f"*{BENCHMARK_SUMMARY_SUFFIX}"):
             report_id = path.name.removesuffix(BENCHMARK_SUMMARY_SUFFIX)
@@ -471,17 +498,7 @@ class FileBenchmarkStore:
             if layout_profile is not None and summary.layout_profile != layout_profile:
                 continue
             summaries.append(summary)
-        missing_count = None if limit is None else max(0, limit - len(summaries))
-        summaries.extend(self._backfill_report_summaries(
-            parser_provider=parser_provider,
-            layout_profile=layout_profile,
-            matching_limit=missing_count,
-        ))
-        summaries.sort(
-            key=lambda summary: (summary.created_at, summary.id),
-            reverse=True,
-        )
-        return summaries[:limit] if limit is not None else summaries
+        return summaries
 
     def save(self, report: BenchmarkReport) -> BenchmarkReport:
         payload = report.model_dump_json(indent=2)
@@ -686,9 +703,9 @@ class FileBenchmarkStore:
         parser_provider: str | None,
         layout_profile: str | None,
         matching_limit: int | None,
-    ) -> list[BenchmarkReportSummary]:
+    ) -> None:
         if matching_limit == 0:
-            return []
+            return
         report_paths = sorted(
             (
                 path
@@ -699,7 +716,7 @@ class FileBenchmarkStore:
             key=lambda path: path.stat().st_mtime_ns,
             reverse=True,
         )
-        matching_summaries: list[BenchmarkReportSummary] = []
+        matching_count = 0
         for report_path in report_paths:
             summary = self._read_report_summary_metadata(report_path)
             self._write_summary(summary)
@@ -707,13 +724,12 @@ class FileBenchmarkStore:
                 (parser_provider is None or summary.parser_provider == parser_provider)
                 and (layout_profile is None or summary.layout_profile == layout_profile)
             ):
-                matching_summaries.append(summary)
+                matching_count += 1
                 if (
                     matching_limit is not None
-                    and len(matching_summaries) >= matching_limit
+                    and matching_count >= matching_limit
                 ):
                     break
-        return matching_summaries
 
     def _read_report_summary_metadata(self, path: Path) -> BenchmarkReportSummary:
         payload: dict[str, Any] = {"field_metrics": []}

@@ -5466,8 +5466,8 @@ export default function App() {
   );
   const activeParserRouting = parserRoutingFromRaw(job?.parser_result?.raw);
   const activeParserProvider = activeParserRouting?.selectedProvider
-    ?? job?.parser_provider
     ?? systemInfo?.parser_provider
+    ?? job?.parser_provider
     ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;

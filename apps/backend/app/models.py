@@ -1019,6 +1019,7 @@ class BenchmarkDatasetImportResult(BaseModel):
     imported_cases: int = Field(ge=0)
     reused_cases: int = Field(ge=0)
     included_cases: int = Field(ge=0)
+    included_cases_by_layout: dict[str, NonNegativeInteger] | None = None
     job_ids: list[str] = Field(default_factory=list)
 
 
@@ -1426,5 +1427,17 @@ class BenchmarkReportSummary(BaseModel):
 
 class BenchmarkOverview(BaseModel):
     included_cases: NonNegativeInteger
+    included_cases_by_layout: dict[str, NonNegativeInteger]
+    default_layout_profile: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
     latest_report: BenchmarkReport | None = None
     recent_reports: list[BenchmarkReportSummary] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_layout_counts(self) -> Self:
+        if sum(self.included_cases_by_layout.values()) != self.included_cases:
+            raise ValueError("Benchmark layout counts must match included cases")
+        return self

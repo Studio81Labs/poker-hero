@@ -67,8 +67,7 @@ def benchmark_dataset_archive(
                 store,
                 recommendation_provider=settings.recommendation_provider,
                 recommendation_engine=configured_recommendation_engine(settings),
-                parser_provider=settings.parser_provider,
-                layout_profile=settings.parser_layout_profile,
+                default_layout_profile=settings.parser_layout_profile,
                 max_archive_bytes=settings.max_dataset_upload_bytes,
             )
             parser = build_parser(settings)

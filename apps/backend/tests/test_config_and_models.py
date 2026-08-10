@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from app.config import Settings, get_settings
 from app.models import (
     BenchmarkFieldComparison,
+    BenchmarkOverview,
     Card,
     CanonicalState,
     CompletedPostflopAction,
@@ -19,6 +20,15 @@ from app.models import (
     RecommendationResult,
     TrainingDecisionRequest,
 )
+
+
+def test_benchmark_overview_requires_consistent_layout_counts() -> None:
+    with pytest.raises(ValidationError):
+        BenchmarkOverview(
+            included_cases=2,
+            included_cases_by_layout={"generic": 1},
+            default_layout_profile="generic",
+        )
 
 
 @pytest.mark.parametrize(

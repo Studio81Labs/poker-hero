@@ -43,6 +43,12 @@ from app.application_backup import (
     restore_application_backup,
     stream_application_backup,
 )
+from app.benchmark_corpus import (
+    benchmark_jobs_for_layout,
+    benchmark_layout_counts,
+    benchmark_layout_profile,
+)
+from app.benchmarking import run_benchmark
 from app.config import Settings, get_settings
 from app.data_lock import InterprocessDataLock
 from app.error_monitoring import (
@@ -50,7 +56,6 @@ from app.error_monitoring import (
     configure_error_monitoring,
     route_template,
 )
-from app.benchmarking import run_benchmark
 from app.dataset_export import (
     DatasetExportError,
     MAX_DATASET_CASES,
@@ -644,8 +649,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     recommendation_engine=configured_recommendation_engine(
                         active_settings
                     ),
-                    parser_provider=active_settings.parser_provider,
-                    layout_profile=active_settings.parser_layout_profile,
+                    default_layout_profile=active_settings.parser_layout_profile,
                     max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     import_request_id=request_id,
                 )
@@ -1407,18 +1411,22 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         status_code=409,
                         detail=dataset_case_limit_message(MAX_DATASET_CASES),
                     )
-                candidate_jobs = [
-                    candidate
-                    for candidate in store.list()
-                    if candidate.benchmark_included and candidate.id != job.id
-                ]
+                layout_profile = benchmark_layout_profile(
+                    job,
+                    active_settings.parser_layout_profile,
+                )
+                candidate_jobs = benchmark_jobs_for_layout(
+                    store.list(),
+                    layout_profile,
+                    active_settings.parser_layout_profile,
+                )
                 candidate_jobs.append(job)
                 try:
                     candidate_archive = build_parser_dataset_archive(
                         jobs=candidate_jobs,
                         image_path_for=store.image_path,
                         parser_provider=active_settings.parser_provider,
-                        layout_profile=active_settings.parser_layout_profile,
+                        layout_profile=layout_profile,
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
                 except DatasetExportError as exc:
@@ -1590,9 +1598,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
     def get_benchmark_overview() -> BenchmarkOverview:
-        included_cases = sum(job.benchmark_included for job in store.list())
+        jobs = store.list()
+        included_cases = sum(job.benchmark_included for job in jobs)
         return BenchmarkOverview(
             included_cases=included_cases,
+            included_cases_by_layout=benchmark_layout_counts(
+                jobs,
+                active_settings.parser_layout_profile,
+            ),
+            default_layout_profile=active_settings.parser_layout_profile,
             latest_report=benchmark_store.get_latest(),
             recent_reports=[
                 BenchmarkReportSummary.from_report(report)
@@ -1669,21 +1683,61 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         )
 
     @app.get("/api/benchmarks/export")
-    def export_benchmark_dataset() -> StreamingResponse:
+    def export_benchmark_dataset(
+        parser_provider: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        parser_layout_profile: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+    ) -> StreamingResponse:
         with benchmark_corpus_lock:
             ensure_benchmark_corpus_ready()
-            jobs = [job for job in store.list() if job.benchmark_included]
+            export_settings = active_settings
+            if parser_provider is not None or parser_layout_profile is not None:
+                try:
+                    selection = resolve_pipeline_selection(
+                        active_settings,
+                        parser_provider=parser_provider,
+                        parser_layout_profile=parser_layout_profile,
+                        validate_recommendation=False,
+                        validate_availability=False,
+                    )
+                    export_settings = settings_for_selection(
+                        active_settings,
+                        selection,
+                    )
+                except PipelineSelectionError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+            jobs = benchmark_jobs_for_layout(
+                store.list(),
+                export_settings.parser_layout_profile,
+                active_settings.parser_layout_profile,
+            )
             if not jobs:
                 raise HTTPException(
                     status_code=409,
-                    detail="Add at least one approved hand to the benchmark",
+                    detail=(
+                        "Add at least one approved hand to the benchmark"
+                        if parser_provider is None and parser_layout_profile is None
+                        else (
+                            "Add at least one approved hand for layout "
+                            f"'{export_settings.parser_layout_profile}' to the benchmark"
+                        )
+                    ),
                 )
             try:
                 archive_file = build_parser_dataset_archive(
                     jobs=jobs,
                     image_path_for=store.image_path,
-                    parser_provider=active_settings.parser_provider,
-                    layout_profile=active_settings.parser_layout_profile,
+                    parser_provider=export_settings.parser_provider,
+                    layout_profile=export_settings.parser_layout_profile,
                     max_archive_bytes=active_settings.max_dataset_upload_bytes,
                 )
             except DatasetExportError as exc:
@@ -1782,8 +1836,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         recommendation_engine=configured_recommendation_engine(
                             active_settings
                         ),
-                        parser_provider=active_settings.parser_provider,
-                        layout_profile=active_settings.parser_layout_profile,
+                        default_layout_profile=(
+                            active_settings.parser_layout_profile
+                        ),
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
         except DatasetImportError as exc:
@@ -1823,12 +1878,6 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     ) -> BenchmarkReport:
         with benchmark_corpus_lock:
             ensure_benchmark_corpus_ready()
-            jobs = [job for job in store.list() if job.benchmark_included]
-            if not jobs:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Add at least one approved hand to the benchmark",
-                )
             try:
                 benchmark_settings = active_settings
                 if benchmark_request is not None:
@@ -1843,6 +1892,24 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     benchmark_settings = settings_for_selection(
                         active_settings,
                         selection,
+                    )
+                jobs = benchmark_jobs_for_layout(
+                    store.list(),
+                    benchmark_settings.parser_layout_profile,
+                    active_settings.parser_layout_profile,
+                )
+                if not jobs:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Add at least one approved hand to the benchmark"
+                            if benchmark_request is None
+                            else (
+                                "Add at least one approved hand for layout "
+                                f"'{benchmark_settings.parser_layout_profile}' "
+                                "to the benchmark"
+                            )
+                        ),
                     )
                 parser = build_parser(benchmark_settings)
                 report = run_benchmark(

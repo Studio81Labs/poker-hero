@@ -12,7 +12,9 @@ from app.ocr_layouts import (
     OCR_CV_LAYOUT_PROFILE_IDS,
     get_ocr_layout,
 )
+from app.parsers.automatic import AutomaticParser
 from app.parsers.base import ParserConfigurationError, ParserError
+from app.parsers.mock import MockParser
 from app.parsers.ocr_cv import (
     CALL_AMOUNT_BOX,
     POT_BOX,
@@ -60,6 +62,128 @@ def test_registry_builds_mock_parser(tmp_path: Path) -> None:
     assert result.raw["provider"] == "mock"
 
 
+def test_automatic_parser_routes_calibrated_layout_to_local_ocr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = build_parser(
+        Settings(
+            data_dir=tmp_path,
+            parser_provider="auto",
+            parser_layout_profile="fortuna_nations",
+            external_parser_url="https://parser.example.com/parse",
+        )
+    )
+    assert isinstance(parser, AutomaticParser)
+    assert parser._local_parser is not None
+    expected = MockParser().parse(tmp_path / "unused.png")
+    monkeypatch.setattr(parser._local_parser, "parse", lambda _path: expected)
+
+    def unexpected_external(_path: Path):
+        raise AssertionError("External parser must not run when local OCR succeeds")
+
+    monkeypatch.setattr(parser._external_parser, "parse", unexpected_external)
+
+    result = parser.parse(tmp_path / "table.png")
+
+    assert result.raw["parser_routing"] == {
+        "provider": "auto",
+        "selected_provider": "ocr_cv",
+        "layout_profile": "fortuna_nations",
+    }
+
+
+@pytest.mark.parametrize("layout_profile", ["generic", "pokerstars"])
+def test_automatic_parser_routes_non_client_specific_layout_to_external_vision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    layout_profile: str,
+) -> None:
+    parser = AutomaticParser(
+        Settings(
+            data_dir=tmp_path,
+            parser_layout_profile=layout_profile,
+            external_parser_url="https://parser.example.com/parse",
+        )
+    )
+    expected = MockParser().parse(tmp_path / "unused.png")
+    monkeypatch.setattr(parser._external_parser, "parse", lambda _path: expected)
+
+    result = parser.parse(tmp_path / "table.png")
+
+    assert parser._local_parser is None
+    assert result.raw["parser_routing"] == {
+        "provider": "auto",
+        "selected_provider": "llm_vision",
+        "layout_profile": layout_profile,
+    }
+
+
+def test_automatic_parser_falls_back_after_local_ocr_rejects_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = AutomaticParser(
+        Settings(
+            data_dir=tmp_path,
+            parser_layout_profile="fortuna_nations",
+            external_parser_url="https://parser.example.com/parse",
+        )
+    )
+    assert parser._local_parser is not None
+
+    def reject_local(_path: Path):
+        raise ParserError("Screenshot dimensions do not match the selected layout")
+
+    expected = MockParser().parse(tmp_path / "unused.png")
+    monkeypatch.setattr(parser._local_parser, "parse", reject_local)
+    monkeypatch.setattr(parser._external_parser, "parse", lambda _path: expected)
+
+    result = parser.parse(tmp_path / "table.png")
+
+    assert result.warnings == expected.warnings
+    assert result.raw["parser_routing"] == {
+        "provider": "auto",
+        "selected_provider": "llm_vision",
+        "layout_profile": "fortuna_nations",
+        "fallback_from": "ocr_cv",
+        "fallback_reason": "Screenshot dimensions do not match the selected layout",
+    }
+
+
+def test_automatic_parser_reports_both_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parser = AutomaticParser(
+        Settings(
+            data_dir=tmp_path,
+            parser_layout_profile="fortuna_nations",
+            external_parser_url="https://parser.example.com/parse",
+        )
+    )
+    assert parser._local_parser is not None
+
+    def reject_local(_path: Path):
+        raise ParserError("capture does not match local layout")
+
+    def reject_external(_path: Path):
+        raise ParserError("external service is unavailable")
+
+    monkeypatch.setattr(parser._local_parser, "parse", reject_local)
+    monkeypatch.setattr(parser._external_parser, "parse", reject_external)
+
+    with pytest.raises(
+        ParserError,
+        match=(
+            "Automatic recognition could not parse.*"
+            "Local OCR: capture does not match local layout.*"
+            "External vision: external service is unavailable"
+        ),
+    ):
+        parser.parse(tmp_path / "table.png")
+
+
 def test_registry_rejects_unknown_parser(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path, parser_provider="missing")
 
@@ -69,11 +193,12 @@ def test_registry_rejects_unknown_parser(tmp_path: Path) -> None:
 
 def test_parser_plugin_catalog_matches_configuration_allowlist(tmp_path: Path) -> None:
     assert PARSER_PLUGIN_IDS == KNOWN_PARSER_PROVIDERS
-    assert list(PARSER_PLUGINS) == ["mock", "llm_vision", "ocr_cv"]
+    assert list(PARSER_PLUGINS) == ["mock", "llm_vision", "ocr_cv", "auto"]
 
     mock = get_parser_plugin("mock")
     external = get_parser_plugin("llm_vision")
     local_ocr = get_parser_plugin("ocr_cv")
+    automatic = get_parser_plugin("auto")
 
     assert mock.label == "Mock parser"
     assert mock.supports_layout("pokerstars")
@@ -94,6 +219,20 @@ def test_parser_plugin_catalog_matches_configuration_allowlist(tmp_path: Path) -
     assert local_ocr.label == "Template OCR"
     assert local_ocr.supports_layout("fortuna")
     assert not local_ocr.supports_layout("pokerstars")
+    assert automatic.label == "Automatic recognition"
+    assert automatic.supports_layout("pokerstars")
+    assert automatic.unavailable_reason(Settings(data_dir=tmp_path)) == (
+        "External parser URL is required for automatic recognition"
+    )
+    assert (
+        automatic.unavailable_reason(
+            Settings(
+                data_dir=tmp_path,
+                external_parser_url="https://parser.example.com/parse",
+            )
+        )
+        is None
+    )
 
 
 def test_parser_plugin_rejects_factory_identity_mismatch(tmp_path: Path) -> None:

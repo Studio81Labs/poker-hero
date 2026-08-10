@@ -216,6 +216,8 @@ construction and capability discovery must consume that same descriptor.
 
 Parser types:
 
+- `automatic_parser`: routes calibrated layouts through local OCR and uses the
+  configured external vision parser for other layouts or local parser failures.
 - `llm_vision_parser`: external multi-layout parser adapter.
 - `ocr_cv_parser`: deterministic OCR/computer-vision parser with configurable layout profiles.
 - `mock_parser`: predictable parser for tests and UI development.
@@ -924,7 +926,7 @@ Configuration controls the active parser and recommendation provider.
 
 Example configuration concepts:
 
-- `parser.provider`: `mock`, `llm_vision`, or `ocr_cv`.
+- `parser.provider`: `mock`, `llm_vision`, `ocr_cv`, or `auto`.
 - `parser.layoutProfile`: generic or a named poker-client layout profile.
 - Deployment allowlists for additional parser providers and layout profiles;
   users can choose only installed options advertised by the backend for each

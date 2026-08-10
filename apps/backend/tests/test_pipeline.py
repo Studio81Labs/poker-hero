@@ -175,6 +175,47 @@ def test_custom_layout_profiles_are_provider_aware(tmp_path: Path) -> None:
         )
 
 
+def test_automatic_parser_requires_external_fallback_and_supports_all_layouts(
+    tmp_path: Path,
+) -> None:
+    unavailable_settings = Settings(
+        data_dir=tmp_path,
+        parser_provider="mock",
+        parser_enabled_providers=["auto"],
+        parser_layout_profile="generic",
+        parser_enabled_layout_profiles=["pokerstars"],
+    )
+
+    unavailable = pipeline_capabilities(unavailable_settings)
+
+    assert unavailable.parser_providers[1].model_dump() == {
+        "id": "auto",
+        "label": "Automatic recognition",
+        "available": False,
+        "unavailable_reason": (
+            "External parser URL is required for automatic recognition"
+        ),
+    }
+    assert unavailable.parser_layout_compatibility["auto"] == [
+        "generic",
+        "pokerstars",
+    ]
+    with pytest.raises(PipelineSelectionError, match="required for automatic"):
+        resolve_pipeline_selection(unavailable_settings, parser_provider="auto")
+
+    available_settings = unavailable_settings.model_copy(
+        update={"external_parser_url": "https://parser.example.com/parse"}
+    )
+    selected = resolve_pipeline_selection(
+        available_settings,
+        parser_provider="auto",
+        parser_layout_profile="pokerstars",
+    )
+
+    assert selected.parser_provider == "auto"
+    assert selected.parser_layout_profile == "pokerstars"
+
+
 def test_selection_rejects_plugins_not_enabled_for_deployment(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path)
 

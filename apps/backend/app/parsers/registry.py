@@ -7,6 +7,7 @@ from typing import Mapping
 
 from app.config import Settings
 from app.ocr_layouts import OCR_CV_LAYOUT_PROFILE_IDS
+from app.parsers.automatic import AutomaticParser
 from app.parsers.base import ParserConfigurationError, ScreenshotParser
 from app.parsers.http_vision import HttpVisionParser
 from app.parsers.mock import MockParser
@@ -63,9 +64,19 @@ def _build_ocr_cv(settings: Settings) -> ScreenshotParser:
     return OcrCvParser(settings.parser_layout_profile)
 
 
+def _build_automatic(settings: Settings) -> ScreenshotParser:
+    return AutomaticParser(settings)
+
+
 def _external_vision_availability(settings: Settings) -> str | None:
     if not settings.external_parser_url:
         return "External parser URL is not configured"
+    return None
+
+
+def _automatic_availability(settings: Settings) -> str | None:
+    if not settings.external_parser_url:
+        return "External parser URL is required for automatic recognition"
     return None
 
 
@@ -93,6 +104,12 @@ PARSER_PLUGINS = _plugin_catalog(
         label="Template OCR",
         factory=_build_ocr_cv,
         supported_layouts=OCR_CV_LAYOUT_PROFILE_IDS,
+    ),
+    ParserPlugin(
+        id="auto",
+        label="Automatic recognition",
+        factory=_build_automatic,
+        availability_check=_automatic_availability,
     ),
 )
 PARSER_PLUGIN_IDS = frozenset(PARSER_PLUGINS)

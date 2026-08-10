@@ -14,7 +14,7 @@ from app.ocr_layouts import OCR_CV_LAYOUT_PROFILE_IDS
 Threshold = Annotated[float, Field(ge=0, le=1)]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 
-KNOWN_PARSER_PROVIDERS = frozenset({"mock", "llm_vision", "ocr_cv"})
+KNOWN_PARSER_PROVIDERS = frozenset({"mock", "llm_vision", "ocr_cv", "auto"})
 OCR_CV_LAYOUT_PROFILES = OCR_CV_LAYOUT_PROFILE_IDS
 KNOWN_RECOMMENDATION_PROVIDERS = frozenset(
     {"rule_based", "mock", "local_solver", "external_solver", "llm_advice"}

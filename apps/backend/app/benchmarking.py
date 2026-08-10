@@ -7,6 +7,7 @@ from app.models import (
     BenchmarkCaseResult,
     BenchmarkFieldComparison,
     BenchmarkFieldMetric,
+    BenchmarkParserRouting,
     BenchmarkReport,
     CanonicalState,
     DetectedState,
@@ -75,6 +76,11 @@ def _run_case(
     try:
         image_path = image_path_for(job)
         result = parser.parse(image_path)
+        parser_routing = (
+            BenchmarkParserRouting.model_validate(result.raw["parser_routing"])
+            if parser.name == "auto"
+            else None
+        )
     except ParserConfigurationError:
         raise
     except Exception as exc:
@@ -100,6 +106,7 @@ def _run_case(
         evaluated_fields=len(comparisons),
         accuracy=correct / len(comparisons) if comparisons else 0,
         warnings=result.warnings,
+        parser_routing=parser_routing,
         comparisons=comparisons,
     )
 

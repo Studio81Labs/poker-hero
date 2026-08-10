@@ -1,8 +1,27 @@
-export type Rank = "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "T" | "J" | "Q" | "K" | "A";
+export type Rank =
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9"
+  | "T"
+  | "J"
+  | "Q"
+  | "K"
+  | "A";
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Street = "preflop" | "flop" | "turn" | "river";
 export type FacingAction = "bet" | "raise";
-export type PreflopPosition = "utg" | "hijack" | "cutoff" | "button" | "small_blind" | "big_blind";
+export type PreflopPosition =
+  | "utg"
+  | "hijack"
+  | "cutoff"
+  | "button"
+  | "small_blind"
+  | "big_blind";
 export type PreflopActionType = "call" | "raise";
 export type PostflopActor = "oop" | "ip";
 export type PostflopActionType = "check" | "bet" | "raise";
@@ -89,7 +108,12 @@ export interface TrainingDecision {
   recorded_at: string;
 }
 
-export type TrainingOutcome = "match" | "mixed" | "same_action" | "mixed_action" | "different";
+export type TrainingOutcome =
+  | "match"
+  | "mixed"
+  | "same_action"
+  | "mixed_action"
+  | "different";
 export type TrainingReviewOrder = "recent" | "ev_loss";
 export type TrainingReviewStreet = "all" | Street;
 export type TrainingReviewCertainty = TrainingCertainty | "unrated";
@@ -205,25 +229,25 @@ export interface TrainingSolverFallbackSummary {
 
 export type TrainingSolverFilter =
   | {
-    kind: "route" | "fallback";
-    key: string;
-    label: string;
-  }
+      kind: "route" | "fallback";
+      key: string;
+      label: string;
+    }
   | {
-    kind: "unattributed";
-    label: string;
-  };
+      kind: "unattributed";
+      label: string;
+    };
 
 export type TrainingPositionFilter =
   | {
-    kind: "position";
-    position: string;
-    label: string;
-  }
+      kind: "position";
+      position: string;
+      label: string;
+    }
   | {
-    kind: "unpositioned";
-    label: string;
-  };
+      kind: "unpositioned";
+      label: string;
+    };
 
 export interface TrainingStreetFilter {
   street: Street;
@@ -416,6 +440,13 @@ export interface BenchmarkCaseResult {
   accuracy: number;
   warnings: string[];
   error: string | null;
+  parser_routing?: {
+    provider: string;
+    selected_provider: string;
+    layout_profile: string;
+    fallback_from: string | null;
+    fallback_reason: string | null;
+  } | null;
   comparisons: BenchmarkFieldComparison[];
 }
 

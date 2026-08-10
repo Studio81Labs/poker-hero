@@ -6,6 +6,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from app.benchmarking import run_benchmark
 from app.config import Settings
 from app.dataset_benchmark import (
     DatasetBenchmarkError,
@@ -18,13 +19,16 @@ from app.dataset_export import (
     build_parser_dataset_archive_from_cases,
 )
 from app.models import (
+    BenchmarkReport,
     CanonicalState,
     Card,
     CompletedPostflopAction,
     CompletedPostflopStreetHistory,
+    JobRecord,
     PostflopAction,
     PreflopAction,
 )
+from app.parsers.mock import MockParser
 
 
 VALID_PNG = base64.b64decode(
@@ -54,6 +58,61 @@ def expected_mock_state(**overrides: object) -> CanonicalState:
     }
     values.update(overrides)
     return CanonicalState.model_validate(values)
+
+
+def test_benchmark_preserves_automatic_parser_routing(tmp_path: Path) -> None:
+    class RoutedParser:
+        name = "auto"
+
+        def parse(self, image_path: Path):
+            result = MockParser().parse(image_path)
+            return result.model_copy(
+                update={
+                    "raw": {
+                        **result.raw,
+                        "parser_routing": {
+                            "provider": "auto",
+                            "selected_provider": "llm_vision",
+                            "layout_profile": "fortuna_nations",
+                            "fallback_from": "ocr_cv",
+                            "fallback_reason": "capture geometry did not match",
+                        },
+                    }
+                }
+            )
+
+    job = JobRecord(
+        original_filename="table.png",
+        image_filename="original.png",
+        parser_provider="auto",
+        parser_layout_profile="fortuna_nations",
+        recommendation_provider="mock",
+        approved_state=expected_mock_state(),
+        benchmark_included=True,
+    )
+
+    report = run_benchmark(
+        [job],
+        RoutedParser(),
+        lambda _job: tmp_path / "table.png",
+        parser_provider="auto",
+        layout_profile="fortuna_nations",
+    )
+    restored = BenchmarkReport.model_validate_json(report.model_dump_json())
+
+    assert restored.cases[0].parser_routing is not None
+    assert restored.cases[0].parser_routing.model_dump() == {
+        "provider": "auto",
+        "selected_provider": "llm_vision",
+        "layout_profile": "fortuna_nations",
+        "fallback_from": "ocr_cv",
+        "fallback_reason": "capture geometry did not match",
+    }
+
+    incompatible = report.model_dump(mode="json")
+    incompatible["cases"][0]["parser_routing"]["layout_profile"] = "pokerstars"
+    with pytest.raises(ValueError, match="routing layout does not match"):
+        BenchmarkReport.model_validate(incompatible)
 
 
 def write_dataset_archive(

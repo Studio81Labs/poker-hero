@@ -1249,6 +1249,8 @@ Poker Hero is successful when:
   destructive confirmation overlays the dialog footer so the details dialog
   keeps a stable size during the two-step action.
 - Approved screenshots can be explicitly benchmarked against the active parser with persisted field-level results.
+- Automatic-parser benchmark cases persist the selected provider and fallback
+  evidence so local and external recognition quality remain attributable.
 - Explicitly selected ground truth can be exported with its original screenshots and canonical labels.
 - A valid exported dataset can restore the same ground-truth corpus without duplicating exact existing jobs.
 - A valid full backup can restore jobs, screenshots, history, training data,

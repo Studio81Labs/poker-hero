@@ -304,6 +304,7 @@ interface UserGuideDialogProps {
 export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   const [activeTopicId, setActiveTopicId] = useState(GUIDE_TOPICS[0].id);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const topicRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   const activeIndex = Math.max(
     0,
@@ -316,6 +317,12 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    if (topicRef.current) {
+      topicRef.current.scrollTop = 0;
+    }
+  }, [activeTopicId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -415,7 +422,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
             ))}
           </nav>
 
-          <article className="help-topic" aria-live="polite">
+          <article ref={topicRef} className="help-topic" aria-live="polite">
             <span className="help-topic-index">
               Topic {activeIndex + 1} of {GUIDE_TOPICS.length}
             </span>

@@ -5093,10 +5093,13 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", {
       name: "No previous topic",
     })).toBeDisabled();
+    const topicArticle = within(dialog).getByRole("article");
+    topicArticle.scrollTop = 240;
 
     await user.click(within(dialog).getByRole("button", {
       name: "Parser benchmark",
     }));
+    expect(topicArticle.scrollTop).toBe(0);
 
     expect(within(dialog).getByRole("heading", {
       name: "Measure recognition accuracy",

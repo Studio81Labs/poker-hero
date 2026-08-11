@@ -524,12 +524,19 @@ benchmark matcher.
 2. The configured parser returns detected state, confidence, warnings, and raw
    metadata. Field confidence values must be finite JSON numbers between zero
    and one; boolean and string coercion is rejected before automation evaluates
-   them. Detected pot, bet, and stack values must be finite non-negative JSON
-   numbers, detected preflop open size must be positive, and player count must
-   be a positive JSON integer. Boolean and string coercion is rejected.
+   them. The backend records whether the result met the deployment's configured
+   auto-approval thresholds so browser automation can require that decision
+   without duplicating policy. Detected pot, bet, and stack values must be finite
+   non-negative JSON numbers, detected preflop open size must be positive, and
+   player count must be a positive JSON integer. Boolean and string coercion is
+   rejected.
 3. The user or automation approves a canonical state when requirements are met.
    Approved numeric table state follows the same finite-number and integer
    contract as detected state; rejected input leaves the parsed job unchanged.
+   Deployment auto-approval always leaves warning-bearing parser results for
+   browser review. Control-panel automation may pass those warnings only when
+   the user explicitly enables its warning policy and confidence eligibility
+   still passes.
 4. The user may lock an action, optional sizing, and optional self-rated
    certainty before revealing provider output.
 5. The configured provider returns an educational action, sizing, confidence,

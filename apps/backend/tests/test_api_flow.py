@@ -3790,7 +3790,63 @@ def test_upload_auto_approves_when_thresholds_are_met(tmp_path: Path) -> None:
     assert response.status_code == 201
     job = response.json()
     assert job["status"] == "approved"
+    assert job["parser_auto_approval_eligible"] is True
     assert job["approved_state"]["user_approved"] is True
+
+
+def test_upload_reports_threshold_eligibility_when_auto_approval_is_disabled(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_auto_approve_enabled=False,
+        parser_auto_approve_thresholds={
+            "hero_cards": 0.99,
+            "board_cards": 0.98,
+            "street": 1.0,
+        },
+    )
+
+    response = upload_job(client)
+
+    assert response.status_code == 201
+    job = response.json()
+    assert job["status"] == "parsed"
+    assert job["parser_auto_approval_eligible"] is True
+    assert job["approved_state"] is None
+
+
+def test_upload_server_auto_approval_stops_on_parser_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class WarningParser(MockParser):
+        def parse(self, image_path: Path):
+            result = super().parse(image_path)
+            result.warnings = ["Hero cards need manual review"]
+            return result
+
+    monkeypatch.setattr(api_module, "build_parser", lambda _settings: WarningParser())
+    client = make_client(
+        tmp_path,
+        parser_auto_approve_enabled=True,
+        parser_auto_approve_thresholds={
+            "hero_cards": 0.99,
+            "board_cards": 0.98,
+            "street": 1.0,
+        },
+    )
+
+    response = upload_job(client)
+
+    assert response.status_code == 201
+    job = response.json()
+    assert job["status"] == "parsed"
+    assert job["parser_auto_approval_eligible"] is True
+    assert job["parser_result"]["warnings"] == [
+        "Hero cards need manual review"
+    ]
+    assert job["approved_state"] is None
 
 
 def test_upload_stays_parsed_when_auto_approve_threshold_is_not_met(tmp_path: Path) -> None:
@@ -3805,6 +3861,7 @@ def test_upload_stays_parsed_when_auto_approve_threshold_is_not_met(tmp_path: Pa
     assert response.status_code == 201
     job = response.json()
     assert job["status"] == "parsed"
+    assert job["parser_auto_approval_eligible"] is False
     assert job["approved_state"] is None
 
 

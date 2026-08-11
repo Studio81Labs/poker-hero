@@ -329,6 +329,7 @@ export interface JobRecord {
   recommendation_provider: string;
   recommendation_engine?: string | null;
   parser_result: ParserResult | null;
+  parser_auto_approval_eligible?: boolean | null;
   approved_state: CanonicalState | null;
   training_decision: TrainingDecision | null;
   recommendation: RecommendationResult | null;

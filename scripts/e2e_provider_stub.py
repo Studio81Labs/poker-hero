@@ -279,7 +279,7 @@ def build_handler(state: ProviderState) -> type[BaseHTTPRequestHandler]:
                     "confidences": {
                         "hero_cards": 0.99,
                         "board_cards": 0.98,
-                        "pot_size": 0.92,
+                        "pot_size": 0.96,
                         "current_bet": 0.9,
                         "hero_stack": 0.89,
                         "effective_stack": 0.88,

@@ -1,10 +1,11 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
   applicationBackupUrl,
@@ -3519,6 +3520,11 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && typeof candidate.recommendation_provider === "string"
     && isCachedParserResult(candidate.parser_result)
     && (
+      candidate.parser_auto_approval_eligible === undefined
+      || candidate.parser_auto_approval_eligible === null
+      || typeof candidate.parser_auto_approval_eligible === "boolean"
+    )
+    && (
       candidate.approved_state === null
       || isCachedCanonicalState(candidate.approved_state)
     )
@@ -5204,6 +5210,13 @@ function autoApprovalState(job: JobRecord, allowWarnings: boolean): CanonicalSta
   if (!allowWarnings && job.parser_result.warnings.length > 0) {
     throw new Error("Automation stopped: parser warnings need manual review");
   }
+  if (job.parser_auto_approval_eligible !== true) {
+    throw new Error(
+      job.parser_auto_approval_eligible === false
+        ? "Automation stopped: parser confidence is below the configured auto-approval requirements"
+        : "Automation stopped: parser confidence eligibility needs manual review",
+    );
+  }
 
   const state = formToCanonical(stateToForm(toCanonicalState(job.parser_result.state)));
   if (state.hero_cards.length === 0 || !state.street) {
@@ -5348,6 +5361,7 @@ export default function App() {
     readAutomationSettings,
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
   const [pipelineDialogOpen, setPipelineDialogOpen] = useState(false);
   const [pipelineCapabilities, setPipelineCapabilities] = useState<PipelineCapabilities | null>(null);
   const [pipelineSelection, setPipelineSelection] = useState<PipelineSelection | null>(null);
@@ -10343,6 +10357,15 @@ export default function App() {
           >
             <SlidersHorizontal size={18} aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={() => setHelpDialogOpen(true)}
+            title="How to use"
+            aria-label="How to use Poker Training Analyzer"
+          >
+            <CircleHelp size={18} aria-hidden="true" />
+          </button>
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
           </button>
@@ -11719,6 +11742,10 @@ export default function App() {
             </div>
           </div>
         </section>
+      ) : null}
+
+      {helpDialogOpen ? (
+        <UserGuideDialog onClose={() => setHelpDialogOpen(false)} />
       ) : null}
 
       {infoDialogOpen ? (

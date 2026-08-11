@@ -115,6 +115,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
       warnings: [],
       raw: { provider: "mock" },
     },
+    parser_auto_approval_eligible: true,
     approved_state: null,
     training_decision: null,
     recommendation: null,
@@ -5069,6 +5070,83 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("opens the user guide and navigates feature topics", async () => {
+    render(<App />);
+    const user = userEvent.setup();
+
+    const guideTrigger = screen.getByRole("button", {
+      name: "How to use Poker Training Analyzer",
+    });
+    await user.click(guideTrigger);
+    const dialog = screen.getByRole("dialog", {
+      name: "How to use Poker Training Analyzer",
+    });
+    const quickStartTopic = within(dialog).getByRole("button", {
+      name: "Quick start",
+    });
+
+    expect(quickStartTopic).toHaveFocus();
+    expect(within(dialog).getByRole("heading", {
+      name: "Review your first hand",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(/complete review moves from a screenshot/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "No previous topic",
+    })).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", {
+      name: "Automation",
+    }));
+    expect(within(dialog).getByText(
+      /deployment may independently auto-approve confidence-eligible/i,
+    )).toBeInTheDocument();
+    const topicArticle = within(dialog).getByRole("article");
+    topicArticle.scrollTop = 240;
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Parser benchmark",
+    }));
+    expect(topicArticle.scrollTop).toBe(0);
+
+    expect(within(dialog).getByRole("heading", {
+      name: "Measure recognition accuracy",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(/Use current hand as ground truth/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Next topic: Plugins and data",
+    })).toBeEnabled();
+
+    const pluginsTopic = within(dialog).getByRole("button", {
+      name: "Plugins and data",
+    });
+    const scrollPluginsIntoView = vi.fn();
+    Object.defineProperty(pluginsTopic, "scrollIntoView", {
+      configurable: true,
+      value: scrollPluginsIntoView,
+    });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Next topic: Plugins and data",
+    }));
+    expect(scrollPluginsIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
+    const closeButton = within(dialog).getByRole("button", {
+      name: "Close user guide",
+    });
+    const doneButton = within(dialog).getByRole("button", { name: "Done" });
+    doneButton.focus();
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(doneButton).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", {
+      name: "How to use Poker Training Analyzer",
+    })).not.toBeInTheDocument();
+    expect(guideTrigger).toHaveFocus();
+  });
+
   it("shows the parser selected by automatic routing for the active screenshot", async () => {
     const baseJob = jobRecord({ id: "a".repeat(32) });
     const routedJob = jobRecord({
@@ -7098,6 +7176,77 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Capture and parse" }));
 
     expect(await screen.findByText("Automation stopped: parser warnings need manual review")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
+  });
+
+  it("allows threshold-eligible parser warnings when browser automation permits them", async () => {
+    window.localStorage.setItem(
+      "poker-training-automation-v1",
+      JSON.stringify({
+        enabled: true,
+        autoApprove: true,
+        autoRecommend: true,
+        allowWarnings: true,
+      }),
+    );
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        warnings: ["Hero cards need manual review"],
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(recommendedJob()))
+      .mockResolvedValueOnce(processingQueueResponse([recommendedJob()]));
+    render(<App />);
+    const user = userEvent.setup();
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["warning"], "warning.png", { type: "image/png" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([input]) => String(input))).toContain(
+      "http://localhost:8000/api/jobs/job-123/approve",
+    );
+  });
+
+  it("stops automation before approval when parser confidence misses configured requirements", async () => {
+    stubDisplayMedia("window");
+    stubCanvasCapture();
+    const created = jobRecord({
+      parser_auto_approval_eligible: false,
+      parser_result: {
+        state: detectedState,
+        confidences: {
+          ...jobRecord().parser_result!.confidences,
+          hero_cards: 0.2,
+        },
+        warnings: [],
+        raw: {},
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Share window" }));
+    expect(await screen.findByText("Window sharing active")).toBeInTheDocument();
+    setSharedPreviewSize();
+
+    await user.click(screen.getByRole("button", { name: "Capture and parse" }));
+
+    expect(await screen.findByText(
+      "Automation stopped: parser confidence is below the configured auto-approval requirements",
+    )).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
   });

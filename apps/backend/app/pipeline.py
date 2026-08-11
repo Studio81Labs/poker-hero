@@ -245,6 +245,20 @@ def _parser_option(
     )
 
 
+def parser_options_for_layout(
+    settings: Settings,
+    layout_profile: str,
+) -> list[PipelineOption]:
+    return [
+        _parser_option(settings, parser, [layout_profile])
+        for parser in _enabled(
+            settings.parser_provider,
+            settings.parser_enabled_providers,
+        )
+        if parser_supports_layout(parser, layout_profile)
+    ]
+
+
 def _recommendation_option(settings: Settings, value: str) -> PipelineOption:
     plugin = get_recommendation_plugin(value)
     unavailable_reason = plugin.unavailable_reason(settings)

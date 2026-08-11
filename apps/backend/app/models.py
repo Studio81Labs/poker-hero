@@ -1425,6 +1425,26 @@ class BenchmarkReportSummary(BaseModel):
         )
 
 
+class BenchmarkParserPipelineSummary(BaseModel):
+    parser: PipelineOption
+    layout_profile: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9_]+$",
+    )
+    latest_report: BenchmarkReportSummary | None = None
+
+    @model_validator(mode="after")
+    def validate_latest_report_pipeline(self) -> Self:
+        if self.latest_report is None:
+            return self
+        if self.latest_report.parser_provider != self.parser.id:
+            raise ValueError("Latest benchmark report does not match parser")
+        if self.latest_report.layout_profile != self.layout_profile:
+            raise ValueError("Latest benchmark report does not match layout")
+        return self
+
+
 class BenchmarkOverview(BaseModel):
     included_cases: NonNegativeInteger
     included_cases_by_layout: dict[str, NonNegativeInteger]
@@ -1435,9 +1455,15 @@ class BenchmarkOverview(BaseModel):
     )
     latest_report: BenchmarkReport | None = None
     recent_reports: list[BenchmarkReportSummary] = Field(default_factory=list)
+    parser_pipelines: list[BenchmarkParserPipelineSummary] = Field(
+        default_factory=list,
+    )
 
     @model_validator(mode="after")
     def validate_layout_counts(self) -> Self:
         if sum(self.included_cases_by_layout.values()) != self.included_cases:
             raise ValueError("Benchmark layout counts must match included cases")
+        parser_ids = [pipeline.parser.id for pipeline in self.parser_pipelines]
+        if len(parser_ids) != len(set(parser_ids)):
+            raise ValueError("Benchmark parser pipelines must be unique")
         return self

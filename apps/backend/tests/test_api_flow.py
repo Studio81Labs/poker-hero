@@ -3824,6 +3824,18 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
         "default_layout_profile": "generic",
         "latest_report": None,
         "recent_reports": [],
+        "parser_pipelines": [
+            {
+                "parser": {
+                    "id": "mock",
+                    "label": "Mock parser",
+                    "available": True,
+                    "unavailable_reason": None,
+                },
+                "layout_profile": "generic",
+                "latest_report": None,
+            }
+        ],
     }
     export = client.get("/api/benchmarks/export")
     assert export.status_code == 409
@@ -4929,6 +4941,58 @@ def test_benchmark_overview_recovers_only_unindexed_reports_newer_than_history(
     assert len(overview.json()["recent_reports"]) == 10
     assert newest_summary_path.exists()
     assert not oldest_summary_path.exists()
+
+
+def test_benchmark_overview_compares_compatible_parser_plugins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(
+        tmp_path,
+        parser_enabled_providers=["llm_vision", "ocr_cv"],
+        parser_enabled_layout_profiles=["fortuna_nations"],
+        external_parser_url="https://parser.example/api",
+    )
+    monkeypatch.setattr(api_module, "build_parser", lambda _settings: MockParser())
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    mock_report = client.post("/api/benchmarks/run").json()
+    vision_report = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "llm_vision",
+            "parser_layout_profile": "generic",
+        },
+    ).json()
+
+    generic_overview = client.get("/api/benchmarks").json()
+    fortuna_overview = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "mock",
+            "parser_layout_profile": "fortuna_nations",
+        },
+    ).json()
+
+    assert [
+        pipeline["parser"]["id"]
+        for pipeline in generic_overview["parser_pipelines"]
+    ] == ["mock", "llm_vision", "ocr_cv"]
+    assert [
+        pipeline["latest_report"]["id"]
+        if pipeline["latest_report"] is not None
+        else None
+        for pipeline in generic_overview["parser_pipelines"]
+    ] == [mock_report["id"], vision_report["id"], None]
+    assert [
+        pipeline["parser"]["id"]
+        for pipeline in fortuna_overview["parser_pipelines"]
+    ] == ["mock", "llm_vision", "ocr_cv"]
+    assert all(
+        pipeline["latest_report"] is None
+        for pipeline in fortuna_overview["parser_pipelines"]
+    )
 
 
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(

@@ -483,12 +483,19 @@ export interface BenchmarkReportSummary {
   field_metrics?: BenchmarkFieldMetric[];
 }
 
+export interface BenchmarkParserPipelineSummary {
+  parser: PipelineOption;
+  layout_profile: string;
+  latest_report: BenchmarkReportSummary | null;
+}
+
 export interface BenchmarkOverview {
   included_cases: number;
   included_cases_by_layout?: Record<string, number>;
   default_layout_profile?: string;
   latest_report: BenchmarkReport | null;
   recent_reports: BenchmarkReportSummary[];
+  parser_pipelines?: BenchmarkParserPipelineSummary[];
 }
 
 export interface BenchmarkDatasetImportResult {

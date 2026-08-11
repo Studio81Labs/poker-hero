@@ -14073,6 +14073,144 @@ describe("App", () => {
     });
   });
 
+  it("compares compatible parsers and switches benchmark history in place", async () => {
+    const mockReport = {
+      id: "benchmark-mock",
+      parser_provider: "mock",
+      layout_profile: "generic",
+      created_at: "2026-08-11T08:00:00Z",
+      total_cases: 2,
+      successful_cases: 2,
+      failed_cases: 0,
+      correct_fields: 16,
+      evaluated_fields: 20,
+      accuracy: 0.8,
+      field_metrics: [{ field: "hero_cards", correct: 2, total: 2, accuracy: 1 }],
+      cases: [],
+    };
+    const visionReport = {
+      ...mockReport,
+      id: "benchmark-vision",
+      parser_provider: "llm_vision",
+      created_at: "2026-08-11T08:05:00Z",
+      correct_fields: 18,
+      accuracy: 0.9,
+    };
+    const mockSummary = {
+      id: mockReport.id,
+      parser_provider: mockReport.parser_provider,
+      layout_profile: mockReport.layout_profile,
+      created_at: mockReport.created_at,
+      total_cases: mockReport.total_cases,
+      failed_cases: mockReport.failed_cases,
+      accuracy: mockReport.accuracy,
+      field_metrics: mockReport.field_metrics,
+    };
+    const visionSummary = {
+      ...mockSummary,
+      id: visionReport.id,
+      parser_provider: visionReport.parser_provider,
+      created_at: visionReport.created_at,
+      accuracy: visionReport.accuracy,
+    };
+    const parserPipelines = [
+      {
+        parser: {
+          id: "mock",
+          label: "Mock parser",
+          available: true,
+          unavailable_reason: null,
+        },
+        layout_profile: "generic",
+        latest_report: mockSummary,
+      },
+      {
+        parser: {
+          id: "llm_vision",
+          label: "External vision",
+          available: true,
+          unavailable_reason: null,
+        },
+        layout_profile: "generic",
+        latest_report: visionSummary,
+      },
+    ];
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        included_cases_by_layout: { generic: 2 },
+        default_layout_profile: "generic",
+        latest_report: mockReport,
+        recent_reports: [mockSummary],
+        parser_pipelines: parserPipelines,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        defaults: {
+          parser_provider: "mock",
+          parser_layout_profile: "generic",
+          recommendation_provider: "mock",
+          recommendation_engine: null,
+        },
+        parser_providers: parserPipelines.map(({ parser }) => parser),
+        parser_layout_profiles: [{
+          id: "generic",
+          label: "Generic",
+          available: true,
+          unavailable_reason: null,
+        }],
+        parser_layout_compatibility: {
+          mock: ["generic"],
+          llm_vision: ["generic"],
+        },
+        recommendation_providers: [{
+          id: "mock",
+          label: "Mock recommendation",
+          available: true,
+          unavailable_reason: null,
+        }],
+        recommendation_engines: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        included_cases_by_layout: { generic: 2 },
+        default_layout_profile: "generic",
+        latest_report: visionReport,
+        recent_reports: [visionSummary],
+        parser_pipelines: parserPipelines,
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    let dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await within(dialog).findByText("Parser comparison")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Use Mock parser benchmark pipeline",
+    })).toBeDisabled();
+    const useVision = within(dialog).getByRole("button", {
+      name: "Use External vision benchmark pipeline",
+    });
+    expect(useVision).toHaveTextContent("90%");
+    expect(useVision).toBeEnabled();
+
+    await user.click(useVision);
+
+    expect(await within(dialog).findByText("External vision · generic")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("90%");
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      3,
+      "http://localhost:8000/api/benchmarks?parser_provider=llm_vision&parser_layout_profile=generic",
+      { credentials: "include" },
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", {
+      name: "Configure analysis plugins",
+    }));
+    dialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    expect(within(dialog).getByLabelText("Recognition")).toHaveValue("llm_vision");
+  });
+
   it("imports a parser dataset and enables corpus actions", async () => {
     const pendingImport = deferredResponse();
     fetchMock()
@@ -16127,7 +16265,7 @@ describe("App", () => {
 
     secondOverview.resolve(jsonResponse(genericOverview));
     expect(await within(benchmarkDialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
-    expect(within(benchmarkDialog).getByText("OCR + computer vision · generic")).toBeInTheDocument();
+    expect(within(benchmarkDialog).getByText("Template OCR · generic")).toBeInTheDocument();
 
     await user.click(within(benchmarkDialog).getByRole("button", { name: "Close parser benchmark" }));
     await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));

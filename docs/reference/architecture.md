@@ -365,8 +365,12 @@ the correction workspace. The overview returns bounded recent-run summaries for
 the requested parser/layout pair, defaulting to the deployment pair when the
 query is omitted. Report controls identify that pair, compact field metrics
 support trend comparisons, and full archived reports are loaded only when
-selected. Rebuildable per-report summary sidecars keep overview reads independent
-of full case payloads. A legacy store receives sidecars through a newest-first,
+selected. The same overview includes one lightweight latest-run entry for each
+enabled parser plugin compatible with the selected layout. The control panel
+uses those entries to compare accuracy and failures, then switches the active
+parser and scoped report history in place; unavailable plugins remain read-only.
+Rebuildable per-report summary sidecars keep overview reads independent of full
+case payloads. A legacy store receives sidecars through a newest-first,
 streaming metadata pass that stops once the requested history is populated and
 does not materialize archived case details. Once history is full, overview reads
 still repair unindexed report files new enough to displace its current cutoff,

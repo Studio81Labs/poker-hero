@@ -3397,6 +3397,90 @@ button:disabled {
   border-bottom: 2px solid var(--line);
 }
 
+.benchmark-pipeline-comparison {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 11px 0 12px;
+}
+
+.benchmark-pipeline-comparison-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+
+.benchmark-pipeline-comparison-heading h3,
+.benchmark-pipeline-comparison-heading span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.benchmark-pipeline-comparison-heading span {
+  color: var(--muted);
+}
+
+.benchmark-pipeline-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.benchmark-pipeline-list button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-top: 1px solid var(--line-soft);
+  color: var(--text);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 43px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.benchmark-pipeline-list button:nth-child(even) {
+  border-left-color: var(--line-soft);
+}
+
+.benchmark-pipeline-list button.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.benchmark-pipeline-list button:not(:disabled):hover {
+  background: var(--surface-strong);
+}
+
+.benchmark-pipeline-list button:disabled:not(.active) {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.benchmark-pipeline-list button > span,
+.benchmark-pipeline-list button > span > strong,
+.benchmark-pipeline-list button > span > small {
+  display: block;
+  min-width: 0;
+}
+
+.benchmark-pipeline-list button > span > strong,
+.benchmark-pipeline-list button > strong {
+  font-size: 11px;
+}
+
+.benchmark-pipeline-list button > span > small {
+  color: var(--muted);
+  font-size: 9px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .benchmark-report-toolbar {
   align-items: end;
   border-bottom: 1px solid var(--line-soft);
@@ -4426,6 +4510,14 @@ button:disabled {
     align-items: stretch;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .benchmark-pipeline-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .benchmark-pipeline-list button:nth-child(even) {
+    border-left-color: transparent;
   }
 
   .benchmark-report-toolbar select {

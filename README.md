@@ -523,6 +523,11 @@ client/layout so a strong result on one table cannot hide a regression on
 another. Evaluation uses temporary storage and never changes the configured
 `POKER_DATA_DIR` or the source ZIP.
 
+When multiple compatible parser plugins are enabled, the in-app benchmark
+dialog compares each plugin's latest trusted run for the selected layout. A
+comparison row switches both the active recognition plugin and the scoped
+report history without loading full case details for the other plugins.
+
 ### Offline Recommendation Benchmarks
 
 Run the configured recommendation provider against a versioned JSON corpus of

@@ -745,6 +745,10 @@ Recent run summaries are scoped to the parser/layout pair selected in the
 control panel, or to deployment defaults when no pair is supplied, so activity
 for one client cannot crowd another client's comparison history. Report options
 identify their parser and layout, with full historical details loaded on demand.
+The overview also returns the latest lightweight report for every enabled parser
+compatible with the selected layout. The benchmark dialog compares those runs
+and can switch the active recognition plugin and scoped report history without
+closing the dialog; unavailable plugins remain visible but cannot be selected.
 Comparable runs show overall and field-level accuracy changes so parser
 regressions are visible. Automatic-parser
 reports also group attributed cases by the parser that actually handled them,

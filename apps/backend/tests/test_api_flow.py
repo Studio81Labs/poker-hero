@@ -3837,6 +3837,7 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
                 },
                 "layout_profile": "generic",
                 "latest_report": None,
+                "previous_report": None,
             }
         ],
     }
@@ -5098,6 +5099,74 @@ def test_benchmark_overview_compares_compatible_parser_plugins(
         pipeline["latest_report"] is None
         for pipeline in fortuna_overview["parser_pipelines"]
     )
+
+
+def test_benchmark_pipeline_compares_only_same_corpus_runs(tmp_path: Path) -> None:
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=20,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    first_report = client.post("/api/benchmarks/run").json()
+    second_report = client.post("/api/benchmarks/run").json()
+    pipeline = client.get("/api/benchmarks").json()["parser_pipelines"][0]
+
+    assert pipeline["latest_report"]["id"] == second_report["id"]
+    assert pipeline["previous_report"]["id"] == first_report["id"]
+
+    approve_job(
+        client,
+        job_id,
+        {**APPROVED_STATE, "pot_size": 18.0},
+    )
+    changed_report = client.post("/api/benchmarks/run").json()
+    changed_pipeline = client.get("/api/benchmarks").json()[
+        "parser_pipelines"
+    ][0]
+
+    assert changed_pipeline["latest_report"]["id"] == changed_report["id"]
+    assert changed_pipeline["previous_report"] is None
+
+
+def test_benchmark_pipeline_finds_same_corpus_run_beyond_recent_history(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=40,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    first_report = client.post("/api/benchmarks/run").json()
+
+    for pot_size in range(20, 30):
+        approve_job(
+            client,
+            job_id,
+            {**APPROVED_STATE, "pot_size": float(pot_size)},
+        )
+        assert client.post("/api/benchmarks/run").status_code == 200
+
+    first_summary_path = (
+        tmp_path / "benchmarks" / f"{first_report['id']}.summary.json"
+    )
+    first_summary_path.unlink()
+    approve_job(client, job_id)
+    latest_report = client.post("/api/benchmarks/run").json()
+    overview = client.get("/api/benchmarks").json()
+    pipeline = overview["parser_pipelines"][0]
+
+    assert len(overview["recent_reports"]) == 10
+    assert first_report["id"] not in {
+        report["id"] for report in overview["recent_reports"]
+    }
+    assert pipeline["latest_report"]["id"] == latest_report["id"]
+    assert pipeline["previous_report"]["id"] == first_report["id"]
+    assert not first_summary_path.exists()
 
 
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(

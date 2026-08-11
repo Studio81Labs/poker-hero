@@ -745,15 +745,17 @@ Recent run summaries are scoped to the parser/layout pair selected in the
 control panel, or to deployment defaults when no pair is supplied, so activity
 for one client cannot crowd another client's comparison history. Report options
 identify their parser and layout, with full historical details loaded on demand.
-The overview also returns the latest lightweight report for every enabled parser
-compatible with the selected layout. The benchmark dialog compares those runs
+The overview also returns the latest lightweight report and, when available,
+the preceding same-corpus report for every enabled parser compatible with the
+selected layout. The benchmark dialog compares those runs
 and can switch the active recognition plugin and scoped report history without
 closing the dialog; unavailable plugins remain visible but cannot be selected.
 The user can run every available compatible parser as one comparison action.
 Runs execute independently through the existing single-parser contract, expose
 which parser is currently running, retain each successful report immediately,
 and continue after a provider-level failure with one human-readable summary.
-Comparable runs show overall and field-level accuracy changes so parser
+Comparable runs show overall accuracy changes directly in the multi-parser
+comparison and overall and field-level changes in report detail, so parser
 regressions are visible. Every report records a deterministic fingerprint of
 the selected job IDs and benchmarked approved-state fields. The overview
 fingerprints the current layout corpus; reports whose fingerprint differs, or

@@ -1442,15 +1442,38 @@ class BenchmarkParserPipelineSummary(BaseModel):
         pattern=r"^[a-z0-9_]+$",
     )
     latest_report: BenchmarkReportSummary | None = None
+    previous_report: BenchmarkReportSummary | None = None
 
     @model_validator(mode="after")
-    def validate_latest_report_pipeline(self) -> Self:
-        if self.latest_report is None:
+    def validate_report_pipeline(self) -> Self:
+        for label, report in (
+            ("Latest", self.latest_report),
+            ("Previous", self.previous_report),
+        ):
+            if report is None:
+                continue
+            if report.parser_provider != self.parser.id:
+                raise ValueError(f"{label} benchmark report does not match parser")
+            if report.layout_profile != self.layout_profile:
+                raise ValueError(f"{label} benchmark report does not match layout")
+        if self.previous_report is None:
             return self
-        if self.latest_report.parser_provider != self.parser.id:
-            raise ValueError("Latest benchmark report does not match parser")
-        if self.latest_report.layout_profile != self.layout_profile:
-            raise ValueError("Latest benchmark report does not match layout")
+        if self.latest_report is None:
+            raise ValueError("Previous benchmark report requires a latest report")
+        if (
+            self.latest_report.corpus_fingerprint is None
+            or self.previous_report.corpus_fingerprint
+            != self.latest_report.corpus_fingerprint
+        ):
+            raise ValueError("Pipeline benchmark reports must use the same corpus")
+        if (
+            self.previous_report.created_at,
+            self.previous_report.id,
+        ) >= (
+            self.latest_report.created_at,
+            self.latest_report.id,
+        ):
+            raise ValueError("Previous benchmark report must precede latest report")
         return self
 
 

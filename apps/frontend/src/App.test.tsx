@@ -14468,6 +14468,13 @@ describe("App", () => {
       accuracy: 0.8,
       corpus_fingerprint: currentCorpusFingerprint,
     };
+    const previousMockReport = {
+      ...mockReport,
+      id: "benchmark-previous-mock",
+      created_at: "2026-08-11T08:30:00Z",
+      correct_fields: 17,
+      accuracy: 0.85,
+    };
     const visionReport = {
       ...baseReport,
       id: "benchmark-new-vision",
@@ -14476,6 +14483,13 @@ describe("App", () => {
       correct_fields: 19,
       accuracy: 0.95,
       corpus_fingerprint: currentCorpusFingerprint,
+    };
+    const previousVisionReport = {
+      ...visionReport,
+      id: "benchmark-previous-vision",
+      created_at: "2026-08-11T08:32:00Z",
+      correct_fields: 18,
+      accuracy: 0.9,
     };
     const summary = (report: typeof baseReport) => ({
       id: report.id,
@@ -14551,6 +14565,7 @@ describe("App", () => {
             },
             layout_profile: "generic",
             latest_report: summary(mockReport),
+            previous_report: summary(previousMockReport),
           },
           {
             parser: {
@@ -14571,6 +14586,7 @@ describe("App", () => {
             },
             layout_profile: "generic",
             latest_report: summary(visionReport),
+            previous_report: summary(previousVisionReport),
           },
         ],
       }));
@@ -14600,18 +14616,22 @@ describe("App", () => {
     expect(await screen.findByText(
       /Benchmark comparison completed for 2 of 3 parsers/,
     )).toHaveTextContent("Template OCR: OCR worker is temporarily unavailable");
-    expect(within(dialog).getByRole("button", {
+    const mockPipeline = within(dialog).getByRole("button", {
       name: "Use Mock parser benchmark pipeline",
-    })).toHaveTextContent("80%");
+    });
+    expect(mockPipeline).toHaveTextContent("80%");
+    expect(mockPipeline).toHaveTextContent("-5 pts");
     expect(within(dialog).getByRole("button", {
       name: "Use Mock parser benchmark pipeline",
     })).not.toHaveTextContent("not verified");
     expect(within(dialog).getByRole("button", {
       name: "Use Template OCR benchmark pipeline",
     })).toHaveTextContent("--");
-    expect(within(dialog).getByRole("button", {
+    const visionPipeline = within(dialog).getByRole("button", {
       name: "Use External vision benchmark pipeline",
-    })).toHaveTextContent("95%");
+    });
+    expect(visionPipeline).toHaveTextContent("95%");
+    expect(visionPipeline).toHaveTextContent("+5 pts");
     expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("80%");
     expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
     expect(runComparison).toBeEnabled();

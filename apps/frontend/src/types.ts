@@ -489,6 +489,7 @@ export interface BenchmarkParserPipelineSummary {
   parser: PipelineOption;
   layout_profile: string;
   latest_report: BenchmarkReportSummary | null;
+  previous_report?: BenchmarkReportSummary | null;
 }
 
 export interface BenchmarkOverview {

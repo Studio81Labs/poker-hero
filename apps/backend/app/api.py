@@ -1653,10 +1653,19 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     layout_profile=selected_layout,
                 )
             )
+            latest_parser_report = parser_reports[0] if parser_reports else None
+            previous_parser_report = (
+                benchmark_store.find_previous_comparable_summary(
+                    latest_parser_report,
+                )
+                if latest_parser_report is not None
+                else None
+            )
             parser_pipelines.append(BenchmarkParserPipelineSummary(
                 parser=parser_option,
                 layout_profile=selected_layout,
-                latest_report=parser_reports[0] if parser_reports else None,
+                latest_report=latest_parser_report,
+                previous_report=previous_parser_report,
             ))
         return BenchmarkOverview(
             included_cases=included_cases,

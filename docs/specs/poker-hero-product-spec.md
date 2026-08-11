@@ -143,6 +143,9 @@ The frontend is a browser control panel for:
 - Exporting the explicitly selected screenshots and canonical labels as a portable parser dataset.
 - Exporting and restoring all durable application data as a portable,
   versioned backup without replacing divergent current records.
+- Opening an in-app topic guide for capture, review, automation,
+  recommendations, file management, progress, parser benchmarking, plugins,
+  and data recovery without leaving the control panel.
 
 ### Backend API
 

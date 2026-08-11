@@ -5069,6 +5069,45 @@ describe("App", () => {
     expect(screen.getByText("Choose screenshots to add them to the queue.")).toBeInTheDocument();
   });
 
+  it("opens the user guide and navigates feature topics", async () => {
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "How to use Poker Training Analyzer",
+    }));
+    const dialog = screen.getByRole("dialog", {
+      name: "How to use Poker Training Analyzer",
+    });
+
+    expect(within(dialog).getByRole("heading", {
+      name: "Review your first hand",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(/complete review moves from a screenshot/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "No previous topic",
+    })).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Parser benchmark",
+    }));
+
+    expect(within(dialog).getByRole("heading", {
+      name: "Measure recognition accuracy",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText(/Use current hand as ground truth/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Next topic: Plugins and data",
+    })).toBeEnabled();
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Close user guide",
+    }));
+    expect(screen.queryByRole("dialog", {
+      name: "How to use Poker Training Analyzer",
+    })).not.toBeInTheDocument();
+  });
+
   it("shows the parser selected by automatic routing for the active screenshot", async () => {
     const baseJob = jobRecord({ id: "a".repeat(32) });
     const routedJob = jobRecord({

@@ -1,10 +1,11 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
   applicationBackupUrl,
@@ -5348,6 +5349,7 @@ export default function App() {
     readAutomationSettings,
   );
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false);
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
   const [pipelineDialogOpen, setPipelineDialogOpen] = useState(false);
   const [pipelineCapabilities, setPipelineCapabilities] = useState<PipelineCapabilities | null>(null);
   const [pipelineSelection, setPipelineSelection] = useState<PipelineSelection | null>(null);
@@ -10343,6 +10345,15 @@ export default function App() {
           >
             <SlidersHorizontal size={18} aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            className="header-icon-button"
+            onClick={() => setHelpDialogOpen(true)}
+            title="How to use"
+            aria-label="How to use Poker Training Analyzer"
+          >
+            <CircleHelp size={18} aria-hidden="true" />
+          </button>
           <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
           </button>
@@ -11719,6 +11730,10 @@ export default function App() {
             </div>
           </div>
         </section>
+      ) : null}
+
+      {helpDialogOpen ? (
+        <UserGuideDialog onClose={() => setHelpDialogOpen(false)} />
       ) : null}
 
       {infoDialogOpen ? (

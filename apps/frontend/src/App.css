@@ -4705,11 +4705,19 @@ button:disabled {
 
   .help-dialog-footer {
     align-items: center;
-    grid-template-columns: 1fr auto 1fr;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .help-dialog-footer .secondary-button {
     width: auto;
+  }
+
+  .help-dialog-footer > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .screenshot-metadata-fields {
@@ -5041,5 +5049,13 @@ button:disabled {
     height: 34px;
     min-height: 34px;
     width: 34px;
+  }
+
+  .help-dialog-footer {
+    grid-template-columns: auto auto;
+  }
+
+  .help-dialog-footer > span {
+    display: none;
   }
 }

@@ -602,11 +602,15 @@ pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --maximum-metric-regression action_accuracy=0.01 \
   --maximum-metric-regression average_policy_distance=0.02 \
   --maximum-metric-regression average_ev_loss=0.05 \
-  --maximum-metric-regression fallback_rate=0
+  --maximum-metric-regression fallback_rate=0 \
+  --maximum-street-metric-regression river:average_ev_loss=0.02 \
+  --maximum-tag-metric-regression facing-bet:action_accuracy=0.01
 ```
 
-Ratio deltas use `0.01` for one percentage point; EV-loss deltas are BB. JSON
-stdout remains a reusable current report, while gate failures use stderr.
+Street and tag gates use the same direction-aware metric keys and catch scoped
+regressions that aggregate results can hide. Ratio deltas use `0.01` for one
+percentage point; EV-loss deltas are BB. JSON stdout remains a reusable current
+report, while gate failures use stderr.
 
 ## Docker
 

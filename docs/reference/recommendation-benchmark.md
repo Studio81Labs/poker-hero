@@ -46,7 +46,9 @@ pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --maximum-metric-regression line_accuracy=0.01 \
   --maximum-metric-regression average_policy_distance=0.02 \
   --maximum-metric-regression average_ev_loss=0.05 \
-  --maximum-metric-regression fallback_rate=0
+  --maximum-metric-regression fallback_rate=0 \
+  --maximum-street-metric-regression river:average_ev_loss=0.02 \
+  --maximum-tag-metric-regression facing-bet:action_accuracy=0.01
 ```
 
 The dataset fingerprint covers normalized scoring inputs, thresholds, tags,
@@ -66,6 +68,13 @@ Repeat `--maximum-metric-regression METRIC=DELTA` with any of these keys:
 Ratio deltas use `0.01` for one percentage point. EV-loss deltas use BB. Human
 output shows all comparable aggregate changes. JSON mode emits only the current
 report on stdout so it remains reusable, with failures written to stderr.
+
+Use repeatable
+`--maximum-street-metric-regression STREET:METRIC=DELTA` and
+`--maximum-tag-metric-regression TAG:METRIC=DELTA` declarations to protect one
+existing report breakdown from regressions hidden by the aggregate. They accept
+the same metric keys and direction rules. A repeated scope/metric pair or a
+scope absent from the benchmark corpus is a configuration error.
 
 ## Corpus Schema
 

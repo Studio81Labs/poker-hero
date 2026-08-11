@@ -755,6 +755,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 if (
                     active_settings.parser_auto_approve_enabled
                     and current.parser_auto_approval_eligible
+                    and not parser_result.warnings
                 ):
                     current.approved_state = CanonicalState.from_parser_result(
                         parser_result

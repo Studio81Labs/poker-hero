@@ -533,6 +533,10 @@ benchmark matcher.
 3. The user or automation approves a canonical state when requirements are met.
    Approved numeric table state follows the same finite-number and integer
    contract as detected state; rejected input leaves the parsed job unchanged.
+   Deployment auto-approval always leaves warning-bearing parser results for
+   browser review. Control-panel automation may pass those warnings only when
+   the user explicitly enables its warning policy and confidence eligibility
+   still passes.
 4. The user may lock an action, optional sizing, and optional self-rated
    certainty before revealing provider output.
 5. The configured provider returns an educational action, sizing, confidence,

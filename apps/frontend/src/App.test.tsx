@@ -7159,6 +7159,43 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
   });
 
+  it("allows threshold-eligible parser warnings when browser automation permits them", async () => {
+    window.localStorage.setItem(
+      "poker-training-automation-v1",
+      JSON.stringify({
+        enabled: true,
+        autoApprove: true,
+        autoRecommend: true,
+        allowWarnings: true,
+      }),
+    );
+    const created = jobRecord({
+      parser_result: {
+        ...jobRecord().parser_result!,
+        warnings: ["Hero cards need manual review"],
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(jsonResponse(approvedJob()))
+      .mockResolvedValueOnce(jsonResponse(recommendedJob()))
+      .mockResolvedValueOnce(processingQueueResponse([recommendedJob()]));
+    render(<App />);
+    const user = userEvent.setup();
+    await switchToUploadMode(user);
+    await user.upload(
+      screen.getByLabelText("Choose screenshots"),
+      new File(["warning"], "warning.png", { type: "image/png" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Upload and parse" }));
+
+    expect(await screen.findByLabelText("Recommendation")).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([input]) => String(input))).toContain(
+      "http://localhost:8000/api/jobs/job-123/approve",
+    );
+  });
+
   it("stops automation before approval when parser confidence misses configured requirements", async () => {
     stubDisplayMedia("window");
     stubCanvasCapture();

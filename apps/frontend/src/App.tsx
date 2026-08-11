@@ -2664,25 +2664,44 @@ function benchmarkReportOption(
 function previousComparableBenchmarkReport(
   report: BenchmarkReport | null,
   recentReports: BenchmarkReportSummary[],
+  parserPipelines: BenchmarkOverview["parser_pipelines"],
 ): BenchmarkReportSummary | null {
   if (!report) {
     return null;
   }
   const currentIndex = recentReports.findIndex((summary) => summary.id === report.id);
-  if (currentIndex < 0) {
-    return null;
+  const recentMatch = currentIndex < 0
+    ? null
+    : recentReports
+      .slice(currentIndex + 1)
+      .find(
+        (summary) =>
+          summary.parser_provider === report.parser_provider &&
+          summary.layout_profile === report.layout_profile &&
+          !benchmarkCorpusIsUnverified(
+            summary.corpus_fingerprint,
+            report.corpus_fingerprint,
+          ),
+      ) ?? null;
+  if (recentMatch) {
+    return recentMatch;
   }
-  return recentReports
-    .slice(currentIndex + 1)
-    .find(
-      (summary) =>
-        summary.parser_provider === report.parser_provider &&
-        summary.layout_profile === report.layout_profile &&
-        !benchmarkCorpusIsUnverified(
-          summary.corpus_fingerprint,
-          report.corpus_fingerprint,
-        ),
-    ) ?? null;
+  const pipeline = parserPipelines?.find(
+    (candidate) =>
+      candidate.parser.id === report.parser_provider &&
+      candidate.layout_profile === report.layout_profile &&
+      candidate.latest_report?.id === report.id,
+  );
+  const previous = pipeline?.previous_report;
+  return previous &&
+    previous.parser_provider === report.parser_provider &&
+    previous.layout_profile === report.layout_profile &&
+    !benchmarkCorpusIsUnverified(
+      previous.corpus_fingerprint,
+      report.corpus_fingerprint,
+    )
+    ? previous
+    : null;
 }
 
 function benchmarkPointChange(current: number, previous: number): number {
@@ -5708,8 +5727,12 @@ export default function App() {
     benchmarkOperationsLocked ||
     benchmarkIncludedCases === 0;
   const previousBenchmarkReport = useMemo(
-    () => previousComparableBenchmarkReport(benchmarkReport, recentBenchmarkReports),
-    [benchmarkReport, recentBenchmarkReports],
+    () => previousComparableBenchmarkReport(
+      benchmarkReport,
+      recentBenchmarkReports,
+      benchmarkOverview?.parser_pipelines,
+    ),
+    [benchmarkOverview?.parser_pipelines, benchmarkReport, recentBenchmarkReports],
   );
   const benchmarkAccuracyDelta = useMemo(
     () =>

@@ -373,7 +373,9 @@ parser and scoped report history in place; unavailable plugins remain read-only.
 The preceding-run lookup scans persisted summary metadata beyond the bounded
 history response and streams any unindexed legacy metadata without loading case
 payloads or expanding the bounded sidecar backfill, so an older valid baseline
-is not hidden by intervening runs.
+is not hidden by intervening runs. The frontend uses that pipeline baseline for
+the selected latest report's overall and field-level detail trends while keeping
+the report selector itself bounded.
 The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later

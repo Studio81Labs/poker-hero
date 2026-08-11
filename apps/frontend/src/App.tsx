@@ -9216,12 +9216,17 @@ export default function App() {
               ),
             }
           : current?.included_cases_by_layout;
+        const corpusFingerprint = layoutProfile
+          && benchmarkTargetLayoutProfile
+          && layoutProfile !== benchmarkTargetLayoutProfile
+          ? current?.corpus_fingerprint
+          : undefined;
         return current
           ? {
               ...current,
               included_cases: Math.max(0, current.included_cases + change),
               included_cases_by_layout: includedByLayout,
-              corpus_fingerprint: undefined,
+              corpus_fingerprint: corpusFingerprint,
             }
           : {
               included_cases: included ? 1 : 0,

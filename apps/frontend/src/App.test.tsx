@@ -14073,6 +14073,65 @@ describe("App", () => {
     });
   });
 
+  it("preserves the selected corpus fingerprint when another layout changes", async () => {
+    const corpusFingerprint = "a".repeat(64);
+    const activeJob = {
+      ...approvedJob(),
+      id: "9".repeat(32),
+      original_filename: "pokerstars-ground-truth.png",
+      parser_layout_profile: "pokerstars",
+      benchmark_included: false,
+    };
+    const includedJob = {
+      ...activeJob,
+      benchmark_included: true,
+    };
+    const overview = benchmarkOverviewForJob("8".repeat(32), "fortuna-benchmark.png");
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([activeJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        ...overview,
+        included_cases: 3,
+        included_cases_by_layout: { fortuna: 2, pokerstars: 1 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: {
+          ...overview.latest_report,
+          corpus_fingerprint: corpusFingerprint,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse(includedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const groundTruthSwitch = within(dialog).getByRole("switch", {
+      name: /Use current hand as ground truth/,
+    });
+    await waitFor(() => expect(groundTruthSwitch).toBeEnabled());
+    expect(within(dialog).queryByText(
+      "This run is not verified against the current ground truth.",
+    )).not.toBeInTheDocument();
+
+    await user.click(groundTruthSwitch);
+
+    await waitFor(() => expect(groundTruthSwitch).toHaveAttribute(
+      "aria-checked",
+      "true",
+    ));
+    expect(within(dialog).queryByText(
+      "This run is not verified against the current ground truth.",
+    )).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument();
+  });
+
   it("compares compatible parsers and switches benchmark history in place", async () => {
     const mockReport = {
       id: "benchmark-mock",

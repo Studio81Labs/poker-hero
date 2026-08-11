@@ -1,0 +1,61 @@
+.select-control {
+  display: inline-grid;
+  min-width: 0;
+  position: relative;
+  width: 100%;
+}
+
+.select-control-input {
+  appearance: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+  cursor: pointer;
+  min-height: 31px;
+  min-width: 0;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.select-control > .select-control-input {
+  padding-right: 30px;
+}
+
+.select-control-input:hover:not(:disabled) {
+  border-color: var(--text);
+}
+
+.select-control-input:disabled {
+  background: var(--surface);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.select-control-icon {
+  color: var(--muted);
+  pointer-events: none;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.select-control:focus-within .select-control-icon {
+  color: var(--text);
+}
+
+.select-control[data-disabled="true"] .select-control-icon {
+  opacity: 0.55;
+}
+
+.select-control-compact > .select-control-input {
+  min-height: 28px;
+  padding-right: 24px;
+}
+
+.select-control-compact .select-control-icon {
+  height: 12px;
+  right: 6px;
+  width: 12px;
+}

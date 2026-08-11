@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { SelectControl } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10714,13 +10715,13 @@ export default function App() {
                 <input disabled={stateControlsDisabled} value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
               </Field>
               <Field label="Street" confidence={confidenceLabel(confidences.street)} confidenceValue={confidences.street}>
-                <select disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value as StreetOption)}>
+                <SelectControl disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value as StreetOption)}>
                   <option value="">Select street</option>
                   <option value="preflop">Preflop</option>
                   <option value="flop">Flop</option>
                   <option value="turn">Turn</option>
                   <option value="river">River</option>
-                </select>
+                </SelectControl>
               </Field>
               <Field label="Pot" confidence={confidenceLabel(confidences.pot_size)} confidenceValue={confidences.pot_size}>
                 <input disabled={stateControlsDisabled} inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
@@ -10819,11 +10820,11 @@ export default function App() {
                   </Field>
                 ) : null}
               <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
-                <select disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
+                <SelectControl disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
                   <option value="">Select action</option>
                   <option value="bet">Bet</option>
                   <option value="raise">Raise or check-raise</option>
-                </select>
+                </SelectControl>
               </Field>
               {(
                 (form.street !== "" && form.street !== "preflop" && form.facing_action === "raise")
@@ -10861,8 +10862,9 @@ export default function App() {
                       {form.completed_postflop_actions.map((action, index) => (
                         <div className="action-history-row completed-action-history-row" key={index}>
                           <span>{index + 1}</span>
-                          <select
+                          <SelectControl
                             aria-label={`Completed action ${index + 1} street`}
+                            density="compact"
                             disabled={stateControlsDisabled}
                             value={action.street}
                             onChange={(event) => updateCompletedPostflopAction(index, "street", event.target.value)}
@@ -10887,18 +10889,20 @@ export default function App() {
                                 Turn
                               </option>
                             ) : null}
-                          </select>
-                          <select
+                          </SelectControl>
+                          <SelectControl
                             aria-label={`Completed action ${index + 1} actor`}
+                            density="compact"
                             disabled={stateControlsDisabled}
                             value={action.actor}
                             onChange={(event) => updateCompletedPostflopAction(index, "actor", event.target.value)}
                           >
                             <option value="oop">OOP</option>
                             <option value="ip">IP</option>
-                          </select>
-                          <select
+                          </SelectControl>
+                          <SelectControl
                             aria-label={`Completed action ${index + 1} type`}
+                            density="compact"
                             disabled={stateControlsDisabled}
                             value={action.action}
                             onChange={(event) => updateCompletedPostflopAction(index, "action", event.target.value)}
@@ -10907,7 +10911,7 @@ export default function App() {
                             <option value="bet">Bet</option>
                             <option value="raise">Raise to</option>
                             <option value="call">Call to</option>
-                          </select>
+                          </SelectControl>
                           <input
                             aria-label={`Completed action ${index + 1} amount`}
                             disabled={stateControlsDisabled || action.action === "check"}
@@ -10954,17 +10958,19 @@ export default function App() {
                       {form.postflop_action_history.map((action, index) => (
                         <div className="action-history-row" key={index}>
                           <span>{index + 1}</span>
-                          <select
+                          <SelectControl
                             aria-label={`Action ${index + 1} actor`}
+                            density="compact"
                             disabled={stateControlsDisabled}
                             value={action.actor}
                             onChange={(event) => updatePostflopAction(index, "actor", event.target.value)}
                           >
                             <option value="oop">OOP</option>
                             <option value="ip">IP</option>
-                          </select>
-                          <select
+                          </SelectControl>
+                          <SelectControl
                             aria-label={`Action ${index + 1} type`}
+                            density="compact"
                             disabled={stateControlsDisabled}
                             value={action.action}
                             onChange={(event) => updatePostflopAction(index, "action", event.target.value)}
@@ -10972,7 +10978,7 @@ export default function App() {
                             <option value="check">Check</option>
                             <option value="bet">Bet</option>
                             <option value="raise">Raise to</option>
-                          </select>
+                          </SelectControl>
                           <input
                             aria-label={`Action ${index + 1} amount`}
                             disabled={stateControlsDisabled || action.action === "check"}
@@ -11003,7 +11009,7 @@ export default function App() {
                   {form.preflop_action_history.length === 0 ? (
                     <>
                       <Field label="Opener position" confidence="manual">
-                        <select
+                        <SelectControl
                           disabled={stateControlsDisabled}
                           value={form.preflop_opener_position}
                           onChange={(event) => updateForm("preflop_opener_position", event.target.value)}
@@ -11014,7 +11020,7 @@ export default function App() {
                               {position.label}
                             </option>
                           ))}
-                        </select>
+                        </SelectControl>
                       </Field>
                       <Field label="Opening size" confidence="manual">
                         <input
@@ -11047,8 +11053,9 @@ export default function App() {
                         {form.preflop_action_history.map((action, index) => (
                           <div className="action-history-row" key={index}>
                             <span>{index + 1}</span>
-                            <select
+                            <SelectControl
                               aria-label={`Preflop action ${index + 1} actor`}
+                              density="compact"
                               disabled={stateControlsDisabled}
                               value={action.actor}
                               onChange={(event) => updatePreflopAction(index, "actor", event.target.value)}
@@ -11058,16 +11065,17 @@ export default function App() {
                                   {position.label}
                                 </option>
                               ))}
-                            </select>
-                            <select
+                            </SelectControl>
+                            <SelectControl
                               aria-label={`Preflop action ${index + 1} type`}
+                              density="compact"
                               disabled={stateControlsDisabled}
                               value={action.action}
                               onChange={(event) => updatePreflopAction(index, "action", event.target.value)}
                             >
                               <option value="raise">Raise to</option>
                               <option value="call">Call</option>
-                            </select>
+                            </SelectControl>
                             <input
                               aria-label={`Preflop action ${index + 1} amount`}
                               disabled={stateControlsDisabled}
@@ -12596,8 +12604,9 @@ export default function App() {
                           <>
                             <label className="training-review-order">
                               <span>Order</span>
-                              <select
+                              <SelectControl
                                 aria-label="Review order"
+                                density="compact"
                                 value={trainingReviewOrder}
                                 onChange={(event) => void updateTrainingReviewQueue(
                                   event.target.value as TrainingReviewOrder,
@@ -12607,12 +12616,13 @@ export default function App() {
                               >
                                 <option value="recent">Newest</option>
                                 <option value="ev_loss">EV loss</option>
-                              </select>
+                              </SelectControl>
                             </label>
                             <label className="training-review-order">
                               <span>Street</span>
-                              <select
+                              <SelectControl
                                 aria-label="Review street"
+                                density="compact"
                                 value={trainingReviewStreet}
                                 onChange={(event) => void updateTrainingReviewQueue(
                                   trainingReviewOrder,
@@ -12625,12 +12635,13 @@ export default function App() {
                                 <option value="flop">Flop</option>
                                 <option value="turn">Turn</option>
                                 <option value="river">River</option>
-                              </select>
+                              </SelectControl>
                             </label>
                             <label className="training-review-order">
                               <span>Certainty</span>
-                              <select
+                              <SelectControl
                                 aria-label="Review certainty"
+                                density="compact"
                                 value={trainingReviewCertainty}
                                 onChange={(event) => void updateTrainingReviewQueue(
                                   trainingReviewOrder,
@@ -12645,7 +12656,7 @@ export default function App() {
                                 <option value="medium">Medium</option>
                                 <option value="low">Low</option>
                                 <option value="unrated">Unrated</option>
-                              </select>
+                              </SelectControl>
                             </label>
                           </>
                         ) : null}
@@ -12687,8 +12698,9 @@ export default function App() {
                             </form>
                             <label className="training-review-order">
                               <span>Order</span>
-                              <select
+                              <SelectControl
                                 aria-label="Lesson order"
+                                density="compact"
                                 value={trainingLessonOrder}
                                 onChange={(event) => void updateTrainingLessonFilters(
                                   trainingLessonStreet,
@@ -12699,12 +12711,13 @@ export default function App() {
                               >
                                 <option value="recent">Newest</option>
                                 <option value="ev_loss">EV loss</option>
-                              </select>
+                              </SelectControl>
                             </label>
                             <label className="training-review-order">
                               <span>Street</span>
-                              <select
+                              <SelectControl
                                 aria-label="Lesson street"
+                                density="compact"
                                 value={trainingLessonStreet}
                                 onChange={(event) => void updateTrainingLessonFilters(
                                   event.target.value as TrainingReviewStreet,
@@ -12717,7 +12730,7 @@ export default function App() {
                                 <option value="flop">Flop</option>
                                 <option value="turn">Turn</option>
                                 <option value="river">River</option>
-                              </select>
+                              </SelectControl>
                             </label>
                           </>
                         ) : null}
@@ -13210,7 +13223,7 @@ export default function App() {
                   <div className="benchmark-report-toolbar">
                     <label>
                       <span>Report</span>
-                      <select
+                      <SelectControl
                         aria-label="Benchmark report"
                         value={benchmarkReport.id}
                         onChange={(event) => void selectBenchmarkReport(event.target.value)}
@@ -13227,7 +13240,7 @@ export default function App() {
                             )}
                           </option>
                         ))}
-                      </select>
+                      </SelectControl>
                     </label>
                     {benchmarkAccuracyDelta !== null ? (
                       <strong className={benchmarkAccuracyDelta < 0 ? "negative" : ""}>
@@ -13600,13 +13613,13 @@ function PipelineSelect({
           <strong>{label}</strong>
           <small>{description}</small>
         </span>
-        <select id={id} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+        <SelectControl id={id} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
           {options.map((option) => (
             <option key={option.id} value={option.id} disabled={!option.available}>
               {option.label}{option.available ? "" : " (unavailable)"}
             </option>
           ))}
-        </select>
+        </SelectControl>
       </label>
       {unavailableOptions.map((option) => (
         <small key={option.id} className="pipeline-unavailable">

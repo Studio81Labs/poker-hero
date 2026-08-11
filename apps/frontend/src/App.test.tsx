@@ -16954,6 +16954,203 @@ describe("App", () => {
     expect(within(dialog).getAllByRole("option")).toHaveLength(10);
   });
 
+  it("filters regressed and recovered benchmark cases and reuses the baseline report", async () => {
+    const corpusFingerprint = "b".repeat(64);
+    const benchmarkCase = (
+      jobId: string,
+      originalFilename: string,
+      heroCardsMatched: boolean,
+      potSizeMatched = true,
+    ) => ({
+      job_id: jobId,
+      original_filename: originalFilename,
+      status: "completed",
+      correct_fields: Number(heroCardsMatched) + Number(potSizeMatched),
+      evaluated_fields: 2,
+      accuracy: (Number(heroCardsMatched) + Number(potSizeMatched)) / 2,
+      warnings: [],
+      error: null,
+      comparisons: [
+        {
+          field: "hero_cards",
+          expected: ["Ah", "Kd"],
+          detected: heroCardsMatched ? ["Ah", "Kd"] : ["As", "Kh"],
+          matched: heroCardsMatched,
+          confidence: 0.9,
+        },
+        {
+          field: "pot_size",
+          expected: 5,
+          detected: potSizeMatched ? 5 : 4,
+          matched: potSizeMatched,
+          confidence: 0.9,
+        },
+      ],
+    });
+    const previousReport = {
+      id: "benchmark-cases-previous",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      corpus_fingerprint: corpusFingerprint,
+      created_at: "2026-07-19T12:00:00Z",
+      total_cases: 4,
+      successful_cases: 4,
+      failed_cases: 0,
+      correct_fields: 6,
+      evaluated_fields: 8,
+      accuracy: 0.75,
+      field_metrics: [
+        { field: "hero_cards", correct: 3, total: 4, accuracy: 0.75 },
+        { field: "pot_size", correct: 3, total: 4, accuracy: 0.75 },
+      ],
+      cases: [
+        benchmarkCase("1".repeat(32), "regressed.png", true),
+        benchmarkCase("2".repeat(32), "recovered.png", false),
+        benchmarkCase("3".repeat(32), "unchanged.png", true),
+        benchmarkCase("4".repeat(32), "mixed.png", true, false),
+      ],
+    };
+    const latestReport = {
+      ...previousReport,
+      id: "benchmark-cases-latest",
+      created_at: "2026-07-20T12:00:00Z",
+      field_metrics: [
+        { field: "hero_cards", correct: 2, total: 4, accuracy: 0.5 },
+        { field: "pot_size", correct: 4, total: 4, accuracy: 1 },
+      ],
+      cases: [
+        benchmarkCase("1".repeat(32), "regressed.png", false),
+        benchmarkCase("2".repeat(32), "recovered.png", true),
+        benchmarkCase("3".repeat(32), "unchanged.png", true),
+        benchmarkCase("4".repeat(32), "mixed.png", false, true),
+      ],
+    };
+    const summaries = [latestReport, previousReport].map(
+      ({ cases: _cases, correct_fields: _correctFields, evaluated_fields: _evaluatedFields, successful_cases: _successfulCases, ...summary }) => summary,
+    );
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 4,
+        included_cases_by_layout: { fortuna: 4 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: latestReport,
+        recent_reports: summaries,
+      }))
+      .mockResolvedValueOnce(jsonResponse(previousReport));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const caseFilter = await within(dialog).findByRole("group", {
+      name: "Benchmark case filter",
+    });
+
+    expect(within(caseFilter).getByRole("button", { name: "All 4" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(caseFilter).getByRole("button", { name: "Regressed 1" })).toBeInTheDocument();
+    expect(within(caseFilter).getByRole("button", { name: "Recovered 1" })).toBeInTheDocument();
+    expect(within(caseFilter).getByRole("button", { name: "Mixed 1" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Toggle regressed.png benchmark details, regressed",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Toggle recovered.png benchmark details, recovered",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", {
+      name: "Toggle mixed.png benchmark details, mixed",
+    })).toBeInTheDocument();
+
+    await user.click(within(caseFilter).getByRole("button", { name: "Regressed 1" }));
+    expect(within(dialog).getByText("regressed.png")).toBeInTheDocument();
+    expect(within(dialog).queryByText("recovered.png")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("unchanged.png")).not.toBeInTheDocument();
+
+    await user.click(within(caseFilter).getByRole("button", { name: "Recovered 1" }));
+    expect(within(dialog).getByText("recovered.png")).toBeInTheDocument();
+    expect(within(dialog).queryByText("regressed.png")).not.toBeInTheDocument();
+
+    await user.click(within(caseFilter).getByRole("button", { name: "Mixed 1" }));
+    expect(within(dialog).getByText("mixed.png")).toBeInTheDocument();
+    expect(within(dialog).queryByText("recovered.png")).not.toBeInTheDocument();
+
+    await user.selectOptions(
+      within(dialog).getByRole("combobox", { name: "Benchmark report" }),
+      previousReport.id,
+    );
+
+    expect(await within(dialog).findByText("No comparable earlier run")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("group", {
+      name: "Benchmark case filter",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/benchmarks/${previousReport.id}`,
+    ]);
+  });
+
+  it("ignores a case comparison that finishes after the benchmark dialog closes", async () => {
+    const corpusFingerprint = "c".repeat(64);
+    const firstOverview = benchmarkOverviewForJob("5".repeat(32), "first.png");
+    const currentReport = {
+      ...firstOverview.latest_report,
+      id: "benchmark-current-cases",
+      corpus_fingerprint: corpusFingerprint,
+    };
+    const previousReport = {
+      ...currentReport,
+      id: "benchmark-previous-cases",
+      created_at: "2026-07-19T12:00:00Z",
+    };
+    const summary = (report: typeof currentReport) => ({
+      id: report.id,
+      parser_provider: report.parser_provider,
+      layout_profile: report.layout_profile,
+      corpus_fingerprint: report.corpus_fingerprint,
+      created_at: report.created_at,
+      total_cases: report.total_cases,
+      failed_cases: report.failed_cases,
+      accuracy: report.accuracy,
+      field_metrics: report.field_metrics,
+    });
+    const pendingComparison = deferredResponse();
+    const nextOverview = benchmarkOverviewForJob("6".repeat(32), "second.png");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { fortuna: 1 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: currentReport,
+        recent_reports: [summary(currentReport), summary(previousReport)],
+      }))
+      .mockReturnValueOnce(pendingComparison.promise)
+      .mockResolvedValueOnce(jsonResponse(nextOverview));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    let dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("Comparing cases");
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Close parser benchmark",
+    }));
+    pendingComparison.resolve(jsonResponse(previousReport));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await within(dialog).findByText("second.png")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("group", {
+      name: "Benchmark case filter",
+    })).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      `http://localhost:8000/api/benchmarks/${previousReport.id}`,
+      "http://localhost:8000/api/benchmarks",
+    ]);
+  });
+
   it("requires a rerun for legacy benchmark reports without corpus fingerprints", async () => {
     const legacyReport = {
       id: "benchmark-legacy-latest",

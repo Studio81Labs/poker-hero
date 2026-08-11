@@ -375,7 +375,11 @@ history response and streams any unindexed legacy metadata without loading case
 payloads or expanding the bounded sidecar backfill, so an older valid baseline
 is not hidden by intervening runs. The frontend uses that pipeline baseline for
 the selected latest report's overall and field-level detail trends while keeping
-the report selector itself bounded.
+the report selector itself bounded. It retrieves the immutable prior report
+through the existing detail endpoint, validates the parser, layout, and corpus
+identity, then derives per-case regressions, recoveries, and mixed field changes
+in the browser. A small bounded report cache reuses that detail when the user
+selects it.
 The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later

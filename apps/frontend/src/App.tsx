@@ -36,6 +36,7 @@ import {
   uploadScreenshot,
 } from "./api";
 import type {
+  BenchmarkCaseResult,
   BenchmarkDatasetImportResult,
   BenchmarkFieldComparison,
   BenchmarkFieldMetric,
@@ -239,6 +240,8 @@ type TrainingActionDifferenceFocus = {
   label: string;
   reason: string;
 };
+type BenchmarkCaseTrend = "regressed" | "recovered" | "mixed" | "unchanged";
+type BenchmarkCaseFilter = "all" | Exclude<BenchmarkCaseTrend, "unchanged">;
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
 const TRAINING_CERTAINTY_FOCUS_ORDER: readonly TrainingCertainty[] = ["high", "medium", "low"];
@@ -2777,6 +2780,129 @@ function previousBenchmarkFieldMetric(
   return previousReport?.field_metrics?.find((candidate) => candidate.field === metric.field) ?? null;
 }
 
+function benchmarkReportsAreComparable(
+  report: BenchmarkReport,
+  previousReport: BenchmarkReport,
+): boolean {
+  return previousReport.id !== report.id
+    && previousReport.parser_provider === report.parser_provider
+    && previousReport.layout_profile === report.layout_profile
+    && !benchmarkCorpusIsUnverified(
+      previousReport.corpus_fingerprint,
+      report.corpus_fingerprint,
+    );
+}
+
+function benchmarkCaseTrend(
+  benchmarkCase: BenchmarkCaseResult,
+  previousCase: BenchmarkCaseResult,
+): BenchmarkCaseTrend {
+  if (benchmarkCase.status !== previousCase.status) {
+    return benchmarkCase.status === "error" ? "regressed" : "recovered";
+  }
+  if (benchmarkCase.accuracy < previousCase.accuracy) {
+    return "regressed";
+  }
+  if (benchmarkCase.accuracy > previousCase.accuracy) {
+    return "recovered";
+  }
+  const previousComparisons = new Map(
+    previousCase.comparisons.map((comparison) => [comparison.field, comparison]),
+  );
+  let regressed = false;
+  let recovered = false;
+  for (const comparison of benchmarkCase.comparisons) {
+    const previousComparison = previousComparisons.get(comparison.field);
+    if (!previousComparison || comparison.matched === previousComparison.matched) {
+      continue;
+    }
+    if (comparison.matched) {
+      recovered = true;
+    } else {
+      regressed = true;
+    }
+  }
+  if (regressed && recovered) {
+    return "mixed";
+  }
+  if (regressed) {
+    return "regressed";
+  }
+  if (recovered) {
+    return "recovered";
+  }
+  return "unchanged";
+}
+
+function benchmarkCaseTrendMap(
+  report: BenchmarkReport | null,
+  previousReport: BenchmarkReport | null,
+): Map<string, BenchmarkCaseTrend> {
+  const trends = new Map<string, BenchmarkCaseTrend>();
+  if (
+    !report
+    || !previousReport
+    || !benchmarkReportsAreComparable(report, previousReport)
+  ) {
+    return trends;
+  }
+  const previousCases = new Map(
+    previousReport.cases.map((benchmarkCase) => [benchmarkCase.job_id, benchmarkCase]),
+  );
+  for (const benchmarkCase of report.cases) {
+    const previousCase = previousCases.get(benchmarkCase.job_id);
+    if (previousCase) {
+      trends.set(
+        benchmarkCase.job_id,
+        benchmarkCaseTrend(benchmarkCase, previousCase),
+      );
+    }
+  }
+  return trends;
+}
+
+const BENCHMARK_REPORT_CACHE_LIMIT = 20;
+
+function cacheBenchmarkReport(
+  cache: Map<string, BenchmarkReport>,
+  report: BenchmarkReport,
+): BenchmarkReport {
+  cache.delete(report.id);
+  cache.set(report.id, report);
+  while (cache.size > BENCHMARK_REPORT_CACHE_LIMIT) {
+    const oldestId = cache.keys().next().value;
+    if (oldestId === undefined) {
+      break;
+    }
+    cache.delete(oldestId);
+  }
+  return report;
+}
+
+function loadCachedBenchmarkReport(
+  reportId: string,
+  cache: Map<string, BenchmarkReport>,
+  pendingRequests: Map<string, Promise<BenchmarkReport>>,
+): Promise<BenchmarkReport> {
+  const cached = cache.get(reportId);
+  if (cached) {
+    return Promise.resolve(cacheBenchmarkReport(cache, cached));
+  }
+  const pending = pendingRequests.get(reportId);
+  if (pending) {
+    return pending;
+  }
+  const request = getBenchmarkReport(reportId)
+    .then((report) => cacheBenchmarkReport(cache, report))
+    .finally(() => {
+      if (pendingRequests.get(reportId) === request) {
+        pendingRequests.delete(reportId);
+      }
+    });
+  pendingRequests.set(reportId, request);
+  return request;
+}
+
 function benchmarkParserRouteSummary(
   report: BenchmarkReport | null,
 ): BenchmarkParserRouteSummary {
@@ -5200,6 +5326,9 @@ export default function App() {
   const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
   const [benchmarkImporting, setBenchmarkImporting] = useState(false);
   const [selectedBenchmarkReport, setSelectedBenchmarkReport] = useState<BenchmarkReport | null>(null);
+  const [benchmarkComparisonReport, setBenchmarkComparisonReport] = useState<BenchmarkReport | null>(null);
+  const [benchmarkComparisonReportLoading, setBenchmarkComparisonReportLoading] = useState(false);
+  const [benchmarkCaseFilter, setBenchmarkCaseFilter] = useState<BenchmarkCaseFilter>("all");
   const [expandedBenchmarkCaseId, setExpandedBenchmarkCaseId] = useState<string | null>(null);
   const [benchmarkReviewJobId, setBenchmarkReviewJobId] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
@@ -5234,6 +5363,11 @@ export default function App() {
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
   const benchmarkOverviewRequestRef = useRef(0);
+  const benchmarkComparisonReportRequestRef = useRef(0);
+  const benchmarkReportCacheRef = useRef(new Map<string, BenchmarkReport>());
+  const benchmarkReportRequestsRef = useRef(
+    new Map<string, Promise<BenchmarkReport>>(),
+  );
   const activeRecommendationRequestsRef = useRef(
     new Map<string, ActiveRecommendationRequest>(),
   );
@@ -5734,12 +5868,80 @@ export default function App() {
     ),
     [benchmarkOverview?.parser_pipelines, benchmarkReport, recentBenchmarkReports],
   );
+  useEffect(() => {
+    const requestId = ++benchmarkComparisonReportRequestRef.current;
+    setBenchmarkCaseFilter("all");
+    setBenchmarkComparisonReport(null);
+    if (!benchmarkDialogOpen || !benchmarkReport || !previousBenchmarkReport) {
+      setBenchmarkComparisonReportLoading(false);
+      return;
+    }
+    cacheBenchmarkReport(benchmarkReportCacheRef.current, benchmarkReport);
+    setBenchmarkComparisonReportLoading(true);
+    void loadCachedBenchmarkReport(
+      previousBenchmarkReport.id,
+      benchmarkReportCacheRef.current,
+      benchmarkReportRequestsRef.current,
+    )
+      .then((previousReport) => {
+        if (
+          requestId !== benchmarkComparisonReportRequestRef.current
+          || previousReport.id !== previousBenchmarkReport.id
+        ) {
+          return;
+        }
+        if (!benchmarkReportsAreComparable(benchmarkReport, previousReport)) {
+          throw new Error("The previous benchmark report no longer matches this run");
+        }
+        setBenchmarkComparisonReport(previousReport);
+      })
+      .catch((benchmarkError) => {
+        if (requestId === benchmarkComparisonReportRequestRef.current) {
+          toast.warning(messageFromError(
+            benchmarkError,
+            "Could not compare benchmark cases",
+          ));
+        }
+      })
+      .finally(() => {
+        if (requestId === benchmarkComparisonReportRequestRef.current) {
+          setBenchmarkComparisonReportLoading(false);
+        }
+      });
+  }, [benchmarkDialogOpen, benchmarkReport, previousBenchmarkReport]);
   const benchmarkAccuracyDelta = useMemo(
     () =>
       benchmarkReport && previousBenchmarkReport
         ? benchmarkPointChange(benchmarkReport.accuracy, previousBenchmarkReport.accuracy)
         : null,
     [benchmarkReport, previousBenchmarkReport],
+  );
+  const benchmarkCaseTrends = useMemo(
+    () => benchmarkCaseTrendMap(
+      benchmarkReport,
+      benchmarkComparisonReport?.id === previousBenchmarkReport?.id
+        ? benchmarkComparisonReport
+        : null,
+    ),
+    [benchmarkComparisonReport, benchmarkReport, previousBenchmarkReport?.id],
+  );
+  const benchmarkCaseTrendCounts = useMemo(() => {
+    const counts = { regressed: 0, recovered: 0, mixed: 0 };
+    for (const trend of benchmarkCaseTrends.values()) {
+      if (trend !== "unchanged") {
+        counts[trend] += 1;
+      }
+    }
+    return counts;
+  }, [benchmarkCaseTrends]);
+  const visibleBenchmarkCases = useMemo(
+    () => benchmarkCaseFilter === "all"
+      ? benchmarkReport?.cases ?? []
+      : benchmarkReport?.cases.filter(
+        (benchmarkCase) => benchmarkCaseTrends.get(benchmarkCase.job_id)
+          === benchmarkCaseFilter,
+      ) ?? [],
+    [benchmarkCaseFilter, benchmarkCaseTrends, benchmarkReport],
   );
   const benchmarkParserRoutes = useMemo(
     () => benchmarkParserRouteSummary(benchmarkReport),
@@ -9042,7 +9244,11 @@ export default function App() {
     preservePipelineComparison = false,
   ) {
     const requestId = ++benchmarkOverviewRequestRef.current;
+    benchmarkComparisonReportRequestRef.current += 1;
     setExpandedBenchmarkCaseId(null);
+    setBenchmarkCaseFilter("all");
+    setBenchmarkComparisonReport(null);
+    setBenchmarkComparisonReportLoading(false);
     setSelectedBenchmarkReport(null);
     setBenchmarkOverview((current) => current
       ? {
@@ -9059,6 +9265,12 @@ export default function App() {
       .then((overview) => {
         if (requestId !== benchmarkOverviewRequestRef.current) {
           return;
+        }
+        if (overview.latest_report) {
+          cacheBenchmarkReport(
+            benchmarkReportCacheRef.current,
+            overview.latest_report,
+          );
         }
         setBenchmarkOverview(overview);
         setSelectedBenchmarkReport(overview.latest_report);
@@ -9082,7 +9294,9 @@ export default function App() {
 
   function closeBenchmarkDialog() {
     benchmarkOverviewRequestRef.current += 1;
+    benchmarkComparisonReportRequestRef.current += 1;
     setBenchmarkLoading(false);
+    setBenchmarkComparisonReportLoading(false);
     setBenchmarkDialogOpen(false);
   }
 
@@ -9171,6 +9385,12 @@ export default function App() {
           appMountedRef.current
           && requestId === benchmarkOverviewRequestRef.current
         ) {
+          if (overview.latest_report) {
+            cacheBenchmarkReport(
+              benchmarkReportCacheRef.current,
+              overview.latest_report,
+            );
+          }
           setBenchmarkOverview(overview);
         }
       } catch (benchmarkError) {
@@ -9354,6 +9574,7 @@ export default function App() {
     selectReport: boolean,
   ) {
     const latestSummary = benchmarkReportSummary(latestReport);
+    cacheBenchmarkReport(benchmarkReportCacheRef.current, latestReport);
     if (selectReport) {
       setSelectedBenchmarkReport(latestReport);
     }
@@ -9393,6 +9614,12 @@ export default function App() {
         appMountedRef.current
         && requestId === benchmarkOverviewRequestRef.current
       ) {
+        if (overview.latest_report) {
+          cacheBenchmarkReport(
+            benchmarkReportCacheRef.current,
+            overview.latest_report,
+          );
+        }
         setBenchmarkOverview(overview);
       }
     } catch (benchmarkError) {
@@ -9542,7 +9769,11 @@ export default function App() {
     setExpandedBenchmarkCaseId(null);
     setError(null);
     try {
-      setSelectedBenchmarkReport(await getBenchmarkReport(reportId));
+      setSelectedBenchmarkReport(await loadCachedBenchmarkReport(
+        reportId,
+        benchmarkReportCacheRef.current,
+        benchmarkReportRequestsRef.current,
+      ));
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Could not load benchmark report"));
     } finally {
@@ -12997,25 +13228,63 @@ export default function App() {
                       </div>
                     </section>
                     <section className="benchmark-result-section" aria-labelledby="benchmark-cases-title">
-                      <h3 id="benchmark-cases-title">Cases</h3>
+                      <div className="benchmark-case-heading">
+                        <h3 id="benchmark-cases-title">Cases</h3>
+                        {benchmarkComparisonReportLoading ? (
+                          <span role="status">Comparing cases...</span>
+                        ) : benchmarkCaseTrends.size > 0 ? (
+                          <div role="group" aria-label="Benchmark case filter">
+                            {([
+                              ["all", "All", benchmarkReport.cases.length],
+                              ["regressed", "Regressed", benchmarkCaseTrendCounts.regressed],
+                              ["recovered", "Recovered", benchmarkCaseTrendCounts.recovered],
+                              ["mixed", "Mixed", benchmarkCaseTrendCounts.mixed],
+                            ] as const).map(([filter, label, count]) => (
+                              <button
+                                key={filter}
+                                type="button"
+                                className={benchmarkCaseFilter === filter ? "active" : undefined}
+                                aria-pressed={benchmarkCaseFilter === filter}
+                                onClick={() => {
+                                  setBenchmarkCaseFilter(filter);
+                                  setExpandedBenchmarkCaseId(null);
+                                }}
+                              >
+                                {label} {count}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                       <div className="benchmark-case-list">
-                        {benchmarkReport.cases.map((benchmarkCase) => {
+                        {visibleBenchmarkCases.map((benchmarkCase) => {
                           const expanded = expandedBenchmarkCaseId === benchmarkCase.job_id;
                           const mismatches = benchmarkCase.comparisons.filter((comparison) => !comparison.matched);
                           const parserRoute = parserRoutingEvidence(benchmarkCase.parser_routing);
+                          const caseTrend = benchmarkCaseTrends.get(benchmarkCase.job_id);
                           const detailId = `benchmark-case-${benchmarkCase.job_id}`;
                           return (
-                            <div key={benchmarkCase.job_id} className="benchmark-case-row">
+                            <div
+                              key={benchmarkCase.job_id}
+                              className={`benchmark-case-row${caseTrend && caseTrend !== "unchanged" ? ` ${caseTrend}` : ""}`}
+                            >
                               <button
                                 type="button"
                                 className="benchmark-case-summary"
                                 onClick={() => setExpandedBenchmarkCaseId((current) => (current === benchmarkCase.job_id ? null : benchmarkCase.job_id))}
                                 aria-expanded={expanded}
                                 aria-controls={detailId}
-                                aria-label={`Toggle ${benchmarkCase.original_filename} benchmark details`}
+                                aria-label={`Toggle ${benchmarkCase.original_filename} benchmark details${caseTrend && caseTrend !== "unchanged" ? `, ${caseTrend}` : ""}`}
                               >
                                 <span>
-                                  <strong>{benchmarkCase.original_filename}</strong>
+                                  <strong>
+                                    {benchmarkCase.original_filename}
+                                    {caseTrend && caseTrend !== "unchanged" ? (
+                                      <em className={`benchmark-case-trend ${caseTrend}`}>
+                                        {caseTrend}
+                                      </em>
+                                    ) : null}
+                                  </strong>
                                   <small>
                                     {parserRoute ? `${providerLabel(parserRoute.selectedProvider)} · ` : ""}
                                     {benchmarkCase.error
@@ -13082,6 +13351,13 @@ export default function App() {
                             </div>
                           );
                         })}
+                        {visibleBenchmarkCases.length === 0 ? (
+                          <p className="benchmark-case-empty">
+                            {benchmarkCaseFilter === "all"
+                              ? "No benchmark cases in this report."
+                              : `No ${benchmarkCaseFilter} cases in this comparison.`}
+                          </p>
+                        ) : null}
                       </div>
                     </section>
                   </div>

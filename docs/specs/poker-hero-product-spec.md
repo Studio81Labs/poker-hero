@@ -756,7 +756,9 @@ which parser is currently running, retain each successful report immediately,
 and continue after a provider-level failure with one human-readable summary.
 Comparable runs show overall accuracy changes directly in the multi-parser
 comparison and overall and field-level changes in report detail, so parser
-regressions are visible. Every report records a deterministic fingerprint of
+regressions are visible. Detail trends use the authoritative preceding
+same-corpus pipeline summary even when that older run falls outside the bounded
+report selector. Every report records a deterministic fingerprint of
 the selected job IDs and benchmarked approved-state fields. The overview
 fingerprints the current layout corpus; reports whose fingerprint differs, or
 legacy reports without one, are labeled as requiring a rerun and are not used

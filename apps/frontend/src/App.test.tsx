@@ -16851,6 +16851,17 @@ describe("App", () => {
         corpus_fingerprint: corpusFingerprint,
         latest_report: latestReport,
         recent_reports: summaries,
+        parser_pipelines: [{
+          parser: {
+            id: "ocr_cv",
+            label: "OCR + computer vision",
+            available: true,
+            unavailable_reason: null,
+          },
+          layout_profile: "fortuna",
+          latest_report: summaries[0],
+          previous_report: summaries[1],
+        }],
       }))
       .mockResolvedValueOnce(jsonResponse(earlierReport));
     render(<App />);
@@ -16876,6 +16887,71 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/benchmark-earlier",
     ]);
+  });
+
+  it("uses a pipeline baseline outside the visible benchmark history", async () => {
+    const corpusFingerprint = "a".repeat(64);
+    const baseOverview = benchmarkOverviewForJob("4".repeat(32), "latest.png");
+    const latestReport = {
+      ...baseOverview.latest_report,
+      corpus_fingerprint: corpusFingerprint,
+      correct_fields: 18,
+      evaluated_fields: 20,
+      accuracy: 0.9,
+      field_metrics: [
+        { field: "hero_cards", correct: 2, total: 2, accuracy: 1 },
+        { field: "pot_size", correct: 1, total: 2, accuracy: 0.5 },
+      ],
+    };
+    const previousReport = {
+      id: "benchmark-previous",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      corpus_fingerprint: corpusFingerprint,
+      created_at: "2026-07-01T12:00:00Z",
+      total_cases: 2,
+      failed_cases: 0,
+      accuracy: 0.7,
+      field_metrics: [
+        { field: "hero_cards", correct: 1, total: 2, accuracy: 0.5 },
+        { field: "pot_size", correct: 2, total: 2, accuracy: 1 },
+      ],
+    };
+    const unrelatedReports = Array.from({ length: 9 }, (_, index) => ({
+      ...previousReport,
+      id: `benchmark-unrelated-${index}`,
+      corpus_fingerprint: "123456789".charAt(index).repeat(64),
+      created_at: `2026-07-${String(index + 2).padStart(2, "0")}T12:00:00Z`,
+    }));
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      included_cases: 2,
+      included_cases_by_layout: { fortuna: 2 },
+      corpus_fingerprint: corpusFingerprint,
+      default_layout_profile: "fortuna",
+      latest_report: latestReport,
+      recent_reports: [latestReport, ...unrelatedReports],
+      parser_pipelines: [{
+        parser: {
+          id: "ocr_cv",
+          label: "OCR + computer vision",
+          available: true,
+          unavailable_reason: null,
+        },
+        layout_profile: "fortuna",
+        latest_report: latestReport,
+        previous_report: previousReport,
+      }],
+    }));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await within(dialog).findByText("+20 pts vs previous")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("hero cards change +50 pts")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("pot size change -50 pts")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("option")).toHaveLength(10);
   });
 
   it("requires a rerun for legacy benchmark reports without corpus fingerprints", async () => {

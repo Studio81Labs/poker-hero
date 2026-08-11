@@ -2614,6 +2614,18 @@ function benchmarkCorpusIsUnverified(
     || reportFingerprint !== currentFingerprint;
 }
 
+function benchmarkCorpusFingerprintAfterLayoutMutation(
+  currentFingerprint: string | null | undefined,
+  mutatedLayoutProfile: string | null | undefined,
+  selectedLayoutProfile: string | null | undefined,
+): string | null | undefined {
+  return mutatedLayoutProfile
+    && selectedLayoutProfile
+    && mutatedLayoutProfile !== selectedLayoutProfile
+    ? currentFingerprint
+    : undefined;
+}
+
 function benchmarkReportOption(
   summary: BenchmarkReportSummary,
   latestId: string | undefined,
@@ -7275,7 +7287,14 @@ export default function App() {
     setApprovedStateKey(approvalKey(approvedState));
     if (approved.benchmark_included) {
       setBenchmarkOverview((current) => current
-        ? { ...current, corpus_fingerprint: undefined }
+        ? {
+            ...current,
+            corpus_fingerprint: benchmarkCorpusFingerprintAfterLayoutMutation(
+              current.corpus_fingerprint,
+              approved.parser_layout_profile ?? current.default_layout_profile,
+              benchmarkTargetLayoutProfile,
+            ),
+          }
         : current);
     }
   }
@@ -9218,11 +9237,11 @@ export default function App() {
               ),
             }
           : current?.included_cases_by_layout;
-        const corpusFingerprint = layoutProfile
-          && benchmarkTargetLayoutProfile
-          && layoutProfile !== benchmarkTargetLayoutProfile
-          ? current?.corpus_fingerprint
-          : undefined;
+        const corpusFingerprint = benchmarkCorpusFingerprintAfterLayoutMutation(
+          current?.corpus_fingerprint,
+          layoutProfile,
+          benchmarkTargetLayoutProfile,
+        );
         return current
           ? {
               ...current,
@@ -9262,7 +9281,7 @@ export default function App() {
     setBenchmarkOverview((current) => ({
       included_cases: current?.included_cases ?? latestReport.total_cases,
       included_cases_by_layout: current?.included_cases_by_layout,
-      corpus_fingerprint: latestReport.corpus_fingerprint,
+      corpus_fingerprint: undefined,
       default_layout_profile: current?.default_layout_profile
         ?? latestReport.layout_profile,
       latest_report: selectReport
@@ -9285,6 +9304,31 @@ export default function App() {
     }));
   }
 
+  async function revalidateBenchmarkCorpusAfterRun(
+    selection: PipelineSelection | null,
+  ): Promise<void> {
+    const requestId = ++benchmarkOverviewRequestRef.current;
+    try {
+      const overview = await getBenchmarkOverview(selection ?? undefined);
+      if (
+        appMountedRef.current
+        && requestId === benchmarkOverviewRequestRef.current
+      ) {
+        setBenchmarkOverview(overview);
+      }
+    } catch (benchmarkError) {
+      if (
+        appMountedRef.current
+        && requestId === benchmarkOverviewRequestRef.current
+      ) {
+        setError(messageFromError(
+          benchmarkError,
+          "Benchmark completed, but the current corpus could not be verified",
+        ));
+      }
+    }
+  }
+
   async function onRunBenchmark() {
     if (
       benchmarkOperationsLocked
@@ -9299,6 +9343,9 @@ export default function App() {
         pipelineSelection ?? undefined,
       );
       applyBenchmarkReport(latestReport, true);
+      if (latestReport.corpus_fingerprint) {
+        await revalidateBenchmarkCorpusAfterRun(pipelineSelection);
+      }
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Parser benchmark failed"));
     } finally {
@@ -9319,6 +9366,7 @@ export default function App() {
       ?? benchmarkRunnablePipelines[0]?.parser.id;
     const failures: string[] = [];
     let successfulRuns = 0;
+    let corpusRevalidationRequired = false;
     setBenchmarkRunning(true);
     setError(null);
     try {
@@ -9335,6 +9383,7 @@ export default function App() {
           });
           applyBenchmarkReport(report, pipeline.parser.id === selectedParser);
           successfulRuns += 1;
+          corpusRevalidationRequired ||= Boolean(report.corpus_fingerprint);
         } catch (benchmarkError) {
           failures.push(
             `${pipeline.parser.label}: ${messageFromError(
@@ -9343,6 +9392,9 @@ export default function App() {
             )}`,
           );
         }
+      }
+      if (successfulRuns > 0 && corpusRevalidationRequired) {
+        await revalidateBenchmarkCorpusAfterRun(pipelineSelection);
       }
       if (successfulRuns === benchmarkRunnablePipelines.length) {
         toast.success(`Benchmark comparison ready: ${successfulRuns} parsers`);

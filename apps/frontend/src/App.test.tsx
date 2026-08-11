@@ -14132,6 +14132,116 @@ describe("App", () => {
     })).toBeInTheDocument();
   });
 
+  it("preserves the selected corpus fingerprint when another layout is re-approved", async () => {
+    const corpusFingerprint = "b".repeat(64);
+    const activeJob = {
+      ...approvedJob(),
+      id: "6".repeat(32),
+      original_filename: "pokerstars-correction.png",
+      parser_layout_profile: "pokerstars",
+      benchmark_included: true,
+    };
+    const correctedJob = {
+      ...activeJob,
+      approved_state: canonicalState({ pot_size: 20 }),
+    };
+    const baseOverview = benchmarkOverviewForJob("5".repeat(32), "fortuna-benchmark.png");
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([activeJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        ...baseOverview,
+        included_cases: 2,
+        included_cases_by_layout: { fortuna: 1, pokerstars: 1 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: {
+          ...baseOverview.latest_report,
+          corpus_fingerprint: corpusFingerprint,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse(correctedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    const potInput = await screen.findByDisplayValue("12.5");
+    await user.clear(potInput);
+    await user.type(potInput, "20");
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument());
+
+    const approveState = screen.getByRole("button", { name: "Approve state" });
+    await user.click(approveState);
+
+    await waitFor(() => expect(approveState).toBeDisabled());
+    expect(within(dialog).queryByText(
+      "This run is not verified against the current ground truth.",
+    )).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument();
+  });
+
+  it("revalidates the corpus after a benchmark run", async () => {
+    const runFingerprint = "d".repeat(64);
+    const currentFingerprint = "e".repeat(64);
+    const baseOverview = benchmarkOverviewForJob("4".repeat(32), "benchmark-run.png");
+    const previousReport = {
+      ...baseOverview.latest_report,
+      corpus_fingerprint: runFingerprint,
+    };
+    const latestReport = {
+      ...previousReport,
+      id: "benchmark-after-concurrent-correction",
+      created_at: "2026-08-11T10:00:00Z",
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        ...baseOverview,
+        included_cases_by_layout: { fortuna: 1 },
+        corpus_fingerprint: runFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: previousReport,
+        recent_reports: [previousReport],
+      }))
+      .mockResolvedValueOnce(jsonResponse(latestReport))
+      .mockResolvedValueOnce(jsonResponse({
+        ...baseOverview,
+        included_cases_by_layout: { fortuna: 1 },
+        corpus_fingerprint: currentFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: latestReport,
+        recent_reports: [latestReport, previousReport],
+      }));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const runBenchmark = await within(dialog).findByRole("button", {
+      name: "Run benchmark",
+    });
+    await user.click(runBenchmark);
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "This run is not verified against the current ground truth",
+    );
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100% · rerun needed",
+    })).toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks/run",
+      "http://localhost:8000/api/benchmarks",
+    ]);
+  });
+
   it("compares compatible parsers and switches benchmark history in place", async () => {
     const mockReport = {
       id: "benchmark-mock",
@@ -14361,7 +14471,47 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         detail: "OCR worker is temporarily unavailable",
       }, 503))
-      .mockResolvedValueOnce(jsonResponse(visionReport));
+      .mockResolvedValueOnce(jsonResponse(visionReport))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        included_cases_by_layout: { generic: 2 },
+        corpus_fingerprint: currentCorpusFingerprint,
+        default_layout_profile: "generic",
+        latest_report: mockReport,
+        recent_reports: [summary(mockReport), summary(baseReport)],
+        parser_pipelines: [
+          {
+            parser: {
+              id: "mock",
+              label: "Mock parser",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: summary(mockReport),
+          },
+          {
+            parser: {
+              id: "ocr_cv",
+              label: "Template OCR",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: null,
+          },
+          {
+            parser: {
+              id: "llm_vision",
+              label: "External vision",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: summary(visionReport),
+          },
+        ],
+      }));
     render(<App />);
     const user = userEvent.setup();
 
@@ -14404,9 +14554,9 @@ describe("App", () => {
     expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
     expect(runComparison).toBeEnabled();
 
-    const runBodies = fetchMock().mock.calls.slice(1).map(([, request]) =>
-      JSON.parse(String(request?.body))
-    );
+    const runBodies = fetchMock().mock.calls
+      .filter(([url]) => url === "http://localhost:8000/api/benchmarks/run")
+      .map(([, request]) => JSON.parse(String(request?.body)));
     expect(runBodies).toEqual([
       { parser_provider: "mock", parser_layout_profile: "generic" },
       { parser_provider: "ocr_cv", parser_layout_profile: "generic" },

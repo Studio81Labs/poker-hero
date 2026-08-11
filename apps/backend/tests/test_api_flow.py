@@ -4672,6 +4672,64 @@ def test_benchmark_run_waits_for_dataset_import_corpus_update(
     } == {target_job_id, source_job_id}
 
 
+def test_included_hand_correction_waits_for_benchmark_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client, filename="corrected-during-run.png").json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+
+    benchmark_entered = Event()
+    release_benchmark = Event()
+    approval_started = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_run = api_module.run_benchmark
+
+    def paused_run(*args: object, **kwargs: object):
+        benchmark_entered.set()
+        assert release_benchmark.wait(timeout=2)
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "run_benchmark", paused_run)
+
+    def run_benchmark_request() -> None:
+        responses["benchmark"] = client.post("/api/benchmarks/run")
+
+    def run_approval_request() -> None:
+        approval_started.set()
+        responses["approval"] = approve_job(
+            client,
+            job_id,
+            {**APPROVED_STATE, "pot_size": 21.0},
+        )
+        approval_finished.set()
+
+    benchmark_thread = Thread(target=run_benchmark_request)
+    approval_thread = Thread(target=run_approval_request)
+    benchmark_thread.start()
+    try:
+        assert benchmark_entered.wait(timeout=2)
+        approval_thread.start()
+        assert approval_started.wait(timeout=2)
+        assert not approval_finished.wait(timeout=0.1)
+    finally:
+        release_benchmark.set()
+        benchmark_thread.join(timeout=2)
+        approval_thread.join(timeout=2)
+
+    assert not benchmark_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["benchmark"].status_code == 200
+    assert responses["approval"].status_code == 200
+    report = responses["benchmark"].json()
+    overview = client.get("/api/benchmarks").json()
+    assert report["corpus_fingerprint"] != overview["corpus_fingerprint"]
+    assert overview["latest_report"]["id"] == report["id"]
+
+
 def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
     tmp_path: Path,
 ) -> None:

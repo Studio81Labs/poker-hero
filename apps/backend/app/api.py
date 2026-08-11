@@ -1155,7 +1155,8 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
-        with job_lock_for(job_id):
+        with benchmark_corpus_lock, job_lock_for(job_id):
+            ensure_benchmark_corpus_ready()
             job = load_job_or_404(store, job_id)
             if job.recommendation_pending:
                 raise HTTPException(

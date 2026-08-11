@@ -1,8 +1,11 @@
 import argparse
+import json
 import math
 import os
 import sys
+from dataclasses import dataclass
 from decimal import Decimal
+from hashlib import sha256
 from pathlib import Path
 from typing import Annotated, Literal, Self, Sequence, cast, get_args
 
@@ -38,6 +41,7 @@ RECOMMENDATION_BENCHMARK_PREVIOUS_SCHEMA_VERSION = 3
 RECOMMENDATION_BENCHMARK_TAGGED_SCHEMA_VERSION = 2
 RECOMMENDATION_BENCHMARK_LEGACY_SCHEMA_VERSION = 1
 MAX_RECOMMENDATION_BENCHMARK_BYTES = 4 * 1024 * 1024
+MAX_RECOMMENDATION_BENCHMARK_REPORT_BYTES = 16 * 1024 * 1024
 MAX_RECOMMENDATION_BENCHMARK_CASES = 1_000
 MAX_REFERENCE_LINES = 20
 PROVIDER_FREQUENCY_ROUNDING_UNIT = 0.0001
@@ -71,6 +75,72 @@ BenchmarkTag = Annotated[
         pattern=r"^[a-z0-9][a-z0-9-]*$",
     ),
 ]
+
+
+@dataclass(frozen=True)
+class RegressionMetricSpec:
+    attribute: str
+    label: str
+    higher_is_better: bool
+    unit: Literal["percent", "decimal", "bb"]
+
+
+REGRESSION_METRICS = {
+    "action_accuracy": RegressionMetricSpec(
+        "action_accuracy", "Action accuracy", True, "percent"
+    ),
+    "line_accuracy": RegressionMetricSpec(
+        "line_accuracy", "Line accuracy", True, "percent"
+    ),
+    "line_coverage": RegressionMetricSpec(
+        "line_coverage", "Line evaluation coverage", True, "percent"
+    ),
+    "policy_coverage": RegressionMetricSpec(
+        "policy_coverage", "Policy evaluation coverage", True, "percent"
+    ),
+    "average_policy_distance": RegressionMetricSpec(
+        "average_policy_distance", "Average policy distance", False, "decimal"
+    ),
+    "ev_coverage": RegressionMetricSpec(
+        "ev_coverage", "EV evaluation coverage", True, "percent"
+    ),
+    "average_ev_loss": RegressionMetricSpec(
+        "average_reference_ev_loss_bb",
+        "Average reference EV loss",
+        False,
+        "bb",
+    ),
+    "maximum_ev_loss": RegressionMetricSpec(
+        "maximum_reference_ev_loss_bb",
+        "Maximum reference EV loss",
+        False,
+        "bb",
+    ),
+    "conditioning_accuracy": RegressionMetricSpec(
+        "conditioning_accuracy",
+        "Range conditioning agreement",
+        True,
+        "percent",
+    ),
+    "conditioning_coverage": RegressionMetricSpec(
+        "conditioning_coverage",
+        "Range conditioning evidence coverage",
+        True,
+        "percent",
+    ),
+    "range_source_accuracy": RegressionMetricSpec(
+        "range_source_accuracy", "Range source agreement", True, "percent"
+    ),
+    "range_source_coverage": RegressionMetricSpec(
+        "range_source_coverage",
+        "Range source evidence coverage",
+        True,
+        "percent",
+    ),
+    "fallback_rate": RegressionMetricSpec(
+        "fallback_rate", "Fallback rate", False, "percent"
+    ),
+}
 
 
 class RecommendationBenchmarkError(RuntimeError):
@@ -305,6 +375,10 @@ class RecommendationBenchmarkBreakdown(RecommendationBenchmarkMetrics):
 
 class RecommendationBenchmarkReport(RecommendationBenchmarkMetrics):
     dataset_name: str
+    dataset_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     provider: str
     reference_source: RecommendationReferenceSource | None = None
     street_metrics: list[RecommendationBenchmarkBreakdown] = Field(
@@ -312,6 +386,85 @@ class RecommendationBenchmarkReport(RecommendationBenchmarkMetrics):
     )
     tag_metrics: list[RecommendationBenchmarkBreakdown] = Field(default_factory=list)
     cases: list[RecommendationBenchmarkCaseResult] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_report_metrics(self) -> Self:
+        case_ids = [case.case_id for case in self.cases]
+        if len(case_ids) != len(set(case_ids)):
+            raise ValueError("Recommendation benchmark case IDs must be unique")
+        if any(len(case.tags) != len(set(case.tags)) for case in self.cases):
+            raise ValueError("Recommendation benchmark case tags must be unique")
+        expected = _aggregate_metrics(self.cases)
+        if _metrics_payload(self) != expected.model_dump():
+            raise ValueError("Recommendation benchmark aggregate metrics are inconsistent")
+        expected_streets = {
+            street or "unknown": _aggregate_metrics(
+                [case for case in self.cases if case.street == street]
+            ).model_dump()
+            for street in (*get_args(Street), None)
+            if any(case.street == street for case in self.cases)
+        }
+        if _breakdown_payload(self.street_metrics) != expected_streets:
+            raise ValueError("Recommendation benchmark street metrics are inconsistent")
+        expected_tags = {
+            tag: _aggregate_metrics(
+                [case for case in self.cases if tag in case.tags]
+            ).model_dump()
+            for tag in sorted({tag for case in self.cases for tag in case.tags})
+        }
+        if _breakdown_payload(self.tag_metrics) != expected_tags:
+            raise ValueError("Recommendation benchmark tag metrics are inconsistent")
+        return self
+
+
+def recommendation_dataset_fingerprint(
+    dataset: RecommendationBenchmarkDataset,
+) -> str:
+    normalized = dataset.model_dump(mode="json", by_alias=True)
+    normalized.pop("name", None)
+    for case in normalized["cases"]:
+        case.pop("description", None)
+        case["tags"] = sorted(case["tags"])
+        case["reference_lines"] = sorted(
+            case["reference_lines"],
+            key=lambda line: json.dumps(
+                line,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        )
+    normalized["cases"] = sorted(
+        normalized["cases"],
+        key=lambda case: case["id"],
+    )
+    payload = json.dumps(
+        normalized,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return sha256(payload).hexdigest()
+
+
+def _metrics_payload(
+    metrics: RecommendationBenchmarkMetrics,
+) -> dict[str, object]:
+    return metrics.model_dump(
+        include=set(RecommendationBenchmarkMetrics.model_fields)
+    )
+
+
+def _breakdown_payload(
+    breakdowns: list[RecommendationBenchmarkBreakdown],
+) -> dict[str, dict[str, object]]:
+    keys = [breakdown.key for breakdown in breakdowns]
+    if len(keys) != len(set(keys)):
+        raise ValueError("Recommendation benchmark breakdown keys must be unique")
+    return {
+        breakdown.key: _metrics_payload(breakdown)
+        for breakdown in breakdowns
+    }
 
 
 def load_recommendation_benchmark_dataset(
@@ -376,6 +529,7 @@ def run_recommendation_benchmark(
     ]
     return RecommendationBenchmarkReport(
         dataset_name=dataset.name,
+        dataset_fingerprint=recommendation_dataset_fingerprint(dataset),
         provider=provider.name,
         reference_source=dataset.reference_source,
         street_metrics=street_metrics,
@@ -500,8 +654,64 @@ def benchmark_recommendation_file(
         ) from exc
 
 
+def load_recommendation_benchmark_report(
+    path: Path,
+) -> RecommendationBenchmarkReport:
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise RecommendationBenchmarkError(
+            f"Could not read recommendation baseline report: {path}"
+        ) from exc
+    if size > MAX_RECOMMENDATION_BENCHMARK_REPORT_BYTES:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline report exceeds the 16 MiB file limit"
+        )
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise RecommendationBenchmarkError(
+            f"Could not read recommendation baseline report: {path}"
+        ) from exc
+    if len(payload) > MAX_RECOMMENDATION_BENCHMARK_REPORT_BYTES:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline report exceeds the 16 MiB file limit"
+        )
+    try:
+        return RecommendationBenchmarkReport.model_validate_json(payload)
+    except ValidationError as exc:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline report is invalid"
+        ) from exc
+
+
+def validate_comparable_recommendation_baseline(
+    report: RecommendationBenchmarkReport,
+    baseline: RecommendationBenchmarkReport,
+) -> None:
+    if baseline.provider != report.provider:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline provider does not match the benchmark provider"
+        )
+    if baseline.dataset_fingerprint is None:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline does not include a dataset fingerprint"
+        )
+    if baseline.dataset_fingerprint != report.dataset_fingerprint:
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline corpus does not match the benchmark dataset"
+        )
+    if sorted(case.case_id for case in baseline.cases) != sorted(
+        case.case_id for case in report.cases
+    ):
+        raise RecommendationBenchmarkError(
+            "Recommendation baseline cases do not match the benchmark dataset"
+        )
+
+
 def format_recommendation_benchmark_report(
     report: RecommendationBenchmarkReport,
+    baseline: RecommendationBenchmarkReport | None = None,
 ) -> str:
     lines = [
         "Recommendation benchmark",
@@ -592,6 +802,12 @@ def format_recommendation_benchmark_report(
     )
     _append_breakdowns(lines, "Street breakdown", report.street_metrics)
     _append_breakdowns(lines, "Tag breakdown", report.tag_metrics)
+    if baseline is not None:
+        lines.append("Baseline comparison:")
+        for metric, spec in REGRESSION_METRICS.items():
+            lines.append(
+                f"  {spec.label}: {_metric_change(report, baseline, metric)}"
+            )
     cases_needing_review = [
         case
         for case in report.cases
@@ -1055,6 +1271,35 @@ def _nonnegative_number(value: str) -> float:
     return threshold
 
 
+def _metric_regression_threshold(value: str) -> tuple[str, float]:
+    metric, separator, raw_threshold = value.partition("=")
+    if not separator or not metric or not raw_threshold:
+        raise argparse.ArgumentTypeError("must use METRIC=DELTA")
+    spec = REGRESSION_METRICS.get(metric)
+    if spec is None:
+        raise argparse.ArgumentTypeError(
+            f"unknown recommendation benchmark metric: {metric}"
+        )
+    threshold_parser = (
+        _unit_interval if spec.unit in {"percent", "decimal"}
+        else _nonnegative_number
+    )
+    return metric, threshold_parser(raw_threshold)
+
+
+def _regression_requirement_map(
+    requirements: list[tuple[str, float]],
+) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for metric, threshold in requirements:
+        if metric in result:
+            raise RecommendationBenchmarkError(
+                f"--maximum-metric-regression repeats metric {metric}"
+            )
+        result[metric] = threshold
+    return result
+
+
 def _argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -1132,6 +1377,19 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Fail when the corpus does not identify its independent reference source",
     )
     parser.add_argument(
+        "--baseline-report",
+        type=Path,
+        help="Compare with a prior --json report for the same provider and corpus",
+    )
+    parser.add_argument(
+        "--maximum-metric-regression",
+        action="append",
+        type=_metric_regression_threshold,
+        default=[],
+        metavar="METRIC=DELTA",
+        help="Repeat to limit a direction-aware aggregate metric regression",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Write the complete benchmark report as JSON",
@@ -1145,6 +1403,17 @@ def main(
     provider: RecommendationProvider | None = None,
 ) -> int:
     args = _argument_parser().parse_args(argv)
+    try:
+        regression_thresholds = _regression_requirement_map(
+            args.maximum_metric_regression
+        )
+        if args.baseline_report is None and regression_thresholds:
+            raise RecommendationBenchmarkError(
+                "Metric regression thresholds require --baseline-report"
+            )
+    except RecommendationBenchmarkError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     try:
         active_settings = settings or get_settings()
     except ValidationError as exc:
@@ -1160,12 +1429,19 @@ def main(
         active_settings = active_settings.model_copy(
             update={"recommendation_provider": args.provider}
         )
+    baseline: RecommendationBenchmarkReport | None = None
     try:
+        if args.baseline_report is not None:
+            baseline = load_recommendation_benchmark_report(
+                _dataset_path_from_invocation(args.baseline_report)
+            )
         report = benchmark_recommendation_file(
             _dataset_path_from_invocation(args.dataset),
             active_settings,
             provider,
         )
+        if baseline is not None:
+            validate_comparable_recommendation_baseline(report, baseline)
     except RecommendationBenchmarkError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -1173,9 +1449,13 @@ def main(
     print(
         report.model_dump_json(indent=2)
         if args.json
-        else format_recommendation_benchmark_report(report)
+        else format_recommendation_benchmark_report(report, baseline)
     )
     failures = _threshold_failures(report, args)
+    if baseline is not None:
+        failures.extend(
+            _regression_failures(report, baseline, regression_thresholds)
+        )
     for failure in failures:
         print(failure, file=sys.stderr)
     return 1 if failures else 0
@@ -1296,6 +1576,79 @@ def _threshold_failures(
             f" {args.maximum_fallback_rate:.1%}"
         )
     return failures
+
+
+def _regression_failures(
+    report: RecommendationBenchmarkReport,
+    baseline: RecommendationBenchmarkReport,
+    thresholds: dict[str, float],
+) -> list[str]:
+    failures: list[str] = []
+    for metric, threshold in thresholds.items():
+        spec = REGRESSION_METRICS[metric]
+        current = _metric_value(report, spec)
+        previous = _metric_value(baseline, spec)
+        if current is None or previous is None:
+            failures.append(
+                f"{spec.label} was not evaluated in both recommendation reports"
+            )
+            continue
+        regression = previous - current if spec.higher_is_better else current - previous
+        if regression > threshold + 1e-12:
+            failures.append(
+                f"{spec.label} regressed {_format_metric_delta(regression, spec)}"
+                f" ({_format_metric_value(previous, spec)} to"
+                f" {_format_metric_value(current, spec)}), above the maximum"
+                f" {_format_metric_delta(threshold, spec)}"
+            )
+    return failures
+
+
+def _metric_change(
+    report: RecommendationBenchmarkReport,
+    baseline: RecommendationBenchmarkReport,
+    metric: str,
+) -> str:
+    spec = REGRESSION_METRICS[metric]
+    current = _metric_value(report, spec)
+    previous = _metric_value(baseline, spec)
+    if current is None and previous is None:
+        return "not evaluated"
+    if current is None or previous is None:
+        return "not comparable"
+    return _format_metric_delta(current - previous, spec, signed=True)
+
+
+def _metric_value(
+    report: RecommendationBenchmarkReport,
+    spec: RegressionMetricSpec,
+) -> float | None:
+    return cast(float | None, getattr(report, spec.attribute))
+
+
+def _format_metric_delta(
+    value: float,
+    spec: RegressionMetricSpec,
+    *,
+    signed: bool = False,
+) -> str:
+    sign = "+" if signed else ""
+    if spec.unit == "percent":
+        return f"{value * 100:{sign}.1f} pts"
+    if spec.unit == "bb":
+        return f"{value:{sign}.3f} BB"
+    return f"{value:{sign}.3f}"
+
+
+def _format_metric_value(
+    value: float,
+    spec: RegressionMetricSpec,
+) -> str:
+    if spec.unit == "percent":
+        return f"{value:.1%}"
+    if spec.unit == "bb":
+        return f"{value:.3f} BB"
+    return f"{value:.3f}"
 
 
 def _optional_threshold_failure(

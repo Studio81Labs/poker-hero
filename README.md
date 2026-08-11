@@ -588,6 +588,26 @@ policy frequencies and EVs must come from a trusted solver or reviewed strategy
 source rather than the provider being evaluated. See
 [the recommendation benchmark format](./docs/reference/recommendation-benchmark.md).
 
+Capture a trusted report and gate direction-aware metric changes against the
+same provider and normalized reference corpus:
+
+```bash
+pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
+  --provider local_solver \
+  --json > ./local-solver-baseline.json
+
+pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
+  --provider local_solver \
+  --baseline-report ./local-solver-baseline.json \
+  --maximum-metric-regression action_accuracy=0.01 \
+  --maximum-metric-regression average_policy_distance=0.02 \
+  --maximum-metric-regression average_ev_loss=0.05 \
+  --maximum-metric-regression fallback_rate=0
+```
+
+Ratio deltas use `0.01` for one percentage point; EV-loss deltas are BB. JSON
+stdout remains a reusable current report, while gate failures use stderr.
+
 ## Docker
 
 Run the full local stack:

@@ -29,6 +29,44 @@ Add `--json` for the complete machine-readable report. The command exits with
 status `1` when a provider case fails or a configured threshold is missed, and
 status `2` when the corpus or provider configuration is invalid.
 
+## Regression Baselines
+
+Capture a trusted report with `--json`, then compare a later run of the same
+provider and normalized corpus:
+
+```bash
+pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
+  --provider local_solver \
+  --json > ./local-solver-baseline.json
+
+pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
+  --provider local_solver \
+  --baseline-report ./local-solver-baseline.json \
+  --maximum-metric-regression action_accuracy=0.01 \
+  --maximum-metric-regression line_accuracy=0.01 \
+  --maximum-metric-regression average_policy_distance=0.02 \
+  --maximum-metric-regression average_ev_loss=0.05 \
+  --maximum-metric-regression fallback_rate=0
+```
+
+The dataset fingerprint covers normalized scoring inputs, thresholds, tags,
+and reference provenance while ignoring case order, tag order, reference-line
+order, and case descriptions. A changed state, policy, EV label, or other
+scoring input requires an explicitly reviewed replacement baseline. Reports
+without a fingerprint remain readable but cannot be used as a baseline.
+
+Repeat `--maximum-metric-regression METRIC=DELTA` with any of these keys:
+
+- `action_accuracy`, `line_accuracy`, `line_coverage`, `policy_coverage`,
+  `ev_coverage`, `conditioning_accuracy`, `conditioning_coverage`,
+  `range_source_accuracy`, and `range_source_coverage`: fail on excessive drops.
+- `average_policy_distance`, `average_ev_loss`, `maximum_ev_loss`, and
+  `fallback_rate`: fail on excessive increases.
+
+Ratio deltas use `0.01` for one percentage point. EV-loss deltas use BB. Human
+output shows all comparable aggregate changes. JSON mode emits only the current
+report on stdout so it remains reusable, with failures written to stderr.
+
 ## Corpus Schema
 
 ```json

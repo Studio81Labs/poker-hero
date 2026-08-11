@@ -376,6 +376,12 @@ interface BenchmarkParserRouteSummary {
   routes: BenchmarkParserRouteMetric[];
 }
 
+interface BenchmarkComparisonProgress {
+  parserId: string;
+  completed: number;
+  total: number;
+}
+
 interface AutomationSettings {
   enabled: boolean;
   autoApprove: boolean;
@@ -2602,6 +2608,7 @@ function benchmarkReportOption(
   summary: BenchmarkReportSummary,
   latestId: string | undefined,
   capabilities: PipelineCapabilities | null,
+  parserPipelines: BenchmarkOverview["parser_pipelines"],
 ): string {
   const createdAt = new Date(summary.created_at);
   const dateLabel = Number.isNaN(createdAt.getTime())
@@ -2614,7 +2621,9 @@ function benchmarkReportOption(
       });
   const parserLabel = capabilities?.parser_providers.find(
     (option) => option.id === summary.parser_provider,
-  )?.label ?? providerLabel(summary.parser_provider);
+  )?.label ?? parserPipelines?.find(
+    (pipeline) => pipeline.parser.id === summary.parser_provider,
+  )?.parser.label ?? providerLabel(summary.parser_provider);
   const rawLayoutLabel = capabilities?.parser_layout_profiles.find(
     (option) => option.id === summary.layout_profile,
   )?.label ?? providerLabel(summary.layout_profile);
@@ -5088,6 +5097,7 @@ export default function App() {
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
   const [benchmarkReportLoading, setBenchmarkReportLoading] = useState(false);
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
+  const [benchmarkComparisonProgress, setBenchmarkComparisonProgress] = useState<BenchmarkComparisonProgress | null>(null);
   const [benchmarkUpdating, setBenchmarkUpdating] = useState(false);
   const [benchmarkImporting, setBenchmarkImporting] = useState(false);
   const [selectedBenchmarkReport, setSelectedBenchmarkReport] = useState<BenchmarkReport | null>(null);
@@ -5571,7 +5581,9 @@ export default function App() {
   const benchmarkReportParserLabel = benchmarkReport
     ? pipelineCapabilities?.parser_providers.find(
         (option) => option.id === benchmarkReport.parser_provider,
-      )?.label ?? providerLabel(benchmarkReport.parser_provider)
+      )?.label ?? benchmarkOverview?.parser_pipelines?.find(
+        (pipeline) => pipeline.parser.id === benchmarkReport.parser_provider,
+      )?.parser.label ?? providerLabel(benchmarkReport.parser_provider)
     : null;
   const benchmarkImportRecoveryPending =
     benchmarkImportLeaseRequestId(
@@ -5624,6 +5636,9 @@ export default function App() {
     [benchmarkReport],
   );
   const benchmarkParserPipelines = benchmarkOverview?.parser_pipelines ?? [];
+  const benchmarkRunnablePipelines = benchmarkParserPipelines.filter(
+    (pipeline) => pipeline.parser.available,
+  );
   const decisionComparison = useMemo(
     () => (activeRecommendation && activeTrainingDecision
       ? trainingDecisionComparison(
@@ -9193,6 +9208,39 @@ export default function App() {
     }
   }
 
+  function applyBenchmarkReport(
+    latestReport: BenchmarkReport,
+    selectReport: boolean,
+  ) {
+    const latestSummary = benchmarkReportSummary(latestReport);
+    if (selectReport) {
+      setSelectedBenchmarkReport(latestReport);
+    }
+    setBenchmarkOverview((current) => ({
+      included_cases: current?.included_cases ?? latestReport.total_cases,
+      included_cases_by_layout: current?.included_cases_by_layout,
+      default_layout_profile: current?.default_layout_profile
+        ?? latestReport.layout_profile,
+      latest_report: selectReport
+        ? latestReport
+        : current?.latest_report ?? null,
+      recent_reports: selectReport
+        ? [
+            latestSummary,
+            ...(current?.recent_reports ?? []).filter(
+              (summary) => summary.id !== latestReport.id,
+            ),
+          ].slice(0, 10)
+        : current?.recent_reports ?? [],
+      parser_pipelines: current?.parser_pipelines?.map((pipeline) => (
+        pipeline.parser.id === latestReport.parser_provider
+        && pipeline.layout_profile === latestReport.layout_profile
+          ? { ...pipeline, latest_report: latestSummary }
+          : pipeline
+      )),
+    }));
+  }
+
   async function onRunBenchmark() {
     if (
       benchmarkOperationsLocked
@@ -9206,28 +9254,63 @@ export default function App() {
       const latestReport = await runParserBenchmark(
         pipelineSelection ?? undefined,
       );
-      const latestSummary = benchmarkReportSummary(latestReport);
-      setSelectedBenchmarkReport(latestReport);
-      setBenchmarkOverview((current) => ({
-        included_cases: current?.included_cases ?? latestReport.total_cases,
-        included_cases_by_layout: current?.included_cases_by_layout,
-        default_layout_profile: current?.default_layout_profile
-          ?? latestReport.layout_profile,
-        latest_report: latestReport,
-        recent_reports: [
-          latestSummary,
-          ...(current?.recent_reports ?? []).filter((summary) => summary.id !== latestReport.id),
-        ].slice(0, 10),
-        parser_pipelines: current?.parser_pipelines?.map((pipeline) => (
-          pipeline.parser.id === latestReport.parser_provider
-          && pipeline.layout_profile === latestReport.layout_profile
-            ? { ...pipeline, latest_report: latestSummary }
-            : pipeline
-        )),
-      }));
+      applyBenchmarkReport(latestReport, true);
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Parser benchmark failed"));
     } finally {
+      setBenchmarkRunning(false);
+    }
+  }
+
+  async function onRunBenchmarkComparison() {
+    if (
+      benchmarkOperationsLocked
+      || benchmarkRunnablePipelines.length < 2
+      || mutationRecoveryPending(["processing", "history"])
+    ) {
+      return;
+    }
+    const selectedParser = pipelineSelection?.parser_provider
+      ?? benchmarkReport?.parser_provider
+      ?? benchmarkRunnablePipelines[0]?.parser.id;
+    const failures: string[] = [];
+    let successfulRuns = 0;
+    setBenchmarkRunning(true);
+    setError(null);
+    try {
+      for (const [index, pipeline] of benchmarkRunnablePipelines.entries()) {
+        setBenchmarkComparisonProgress({
+          parserId: pipeline.parser.id,
+          completed: index,
+          total: benchmarkRunnablePipelines.length,
+        });
+        try {
+          const report = await runParserBenchmark({
+            parser_provider: pipeline.parser.id,
+            parser_layout_profile: pipeline.layout_profile,
+          });
+          applyBenchmarkReport(report, pipeline.parser.id === selectedParser);
+          successfulRuns += 1;
+        } catch (benchmarkError) {
+          failures.push(
+            `${pipeline.parser.label}: ${messageFromError(
+              benchmarkError,
+              "Benchmark failed",
+            )}`,
+          );
+        }
+      }
+      if (successfulRuns === benchmarkRunnablePipelines.length) {
+        toast.success(`Benchmark comparison ready: ${successfulRuns} parsers`);
+      } else if (successfulRuns > 0) {
+        toast.warning(
+          `Benchmark comparison completed for ${successfulRuns} of ${benchmarkRunnablePipelines.length} parsers. ${failures.join(" ")}`,
+        );
+      } else {
+        setError(`No parser benchmark completed. ${failures.join(" ")}`);
+      }
+    } finally {
+      setBenchmarkComparisonProgress(null);
       setBenchmarkRunning(false);
     }
   }
@@ -12503,7 +12586,25 @@ export default function App() {
                 >
                   <div className="benchmark-pipeline-comparison-heading">
                     <h3 id="benchmark-pipeline-comparison-title">Parser comparison</h3>
-                    <span>Latest trusted run</span>
+                    <div>
+                      <span>Latest trusted run</span>
+                      {benchmarkRunnablePipelines.length > 1 ? (
+                        <button
+                          type="button"
+                          className="benchmark-comparison-run"
+                          onClick={onRunBenchmarkComparison}
+                          disabled={
+                            benchmarkOperationsLocked
+                            || benchmarkIncludedCases === 0
+                          }
+                        >
+                          <Play size={12} aria-hidden="true" />
+                          {benchmarkComparisonProgress
+                            ? `${benchmarkComparisonProgress.completed + 1}/${benchmarkComparisonProgress.total}`
+                            : "Run comparison"}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="benchmark-pipeline-list">
                     {benchmarkParserPipelines.map((pipeline) => {
@@ -12514,11 +12615,25 @@ export default function App() {
                           ?? benchmarkParserPipelines[0]?.parser.id
                         );
                       const report = pipeline.latest_report;
+                      const running = benchmarkComparisonProgress?.parserId
+                        === pipeline.parser.id;
+                      let status = "No benchmark run";
+                      if (running) {
+                        status = "Running benchmark...";
+                      } else if (!pipeline.parser.available) {
+                        status = pipeline.parser.unavailable_reason
+                          ?? "Parser is unavailable";
+                      } else if (report) {
+                        status = `${report.total_cases} ${report.total_cases === 1 ? "case" : "cases"}${report.failed_cases > 0 ? ` · ${report.failed_cases} failed` : ""}`;
+                      }
                       return (
                         <button
                           key={pipeline.parser.id}
                           type="button"
-                          className={selected ? "active" : undefined}
+                          className={[
+                            selected ? "active" : "",
+                            running ? "running" : "",
+                          ].filter(Boolean).join(" ") || undefined}
                           onClick={() => selectBenchmarkParserPipeline(
                             pipeline.parser.id,
                           )}
@@ -12534,13 +12649,7 @@ export default function App() {
                         >
                           <span>
                             <strong>{pipeline.parser.label}</strong>
-                            <small>
-                              {!pipeline.parser.available
-                                ? pipeline.parser.unavailable_reason
-                                : report
-                                  ? `${report.total_cases} ${report.total_cases === 1 ? "case" : "cases"}${report.failed_cases > 0 ? ` · ${report.failed_cases} failed` : ""}`
-                                  : "No benchmark run"}
-                            </small>
+                            <small>{status}</small>
                           </span>
                           <strong className={report?.failed_cases ? "needs-review" : undefined}>
                             {report ? benchmarkPercent(report.accuracy) : "--"}
@@ -12571,6 +12680,7 @@ export default function App() {
                               summary,
                               benchmarkOverview?.latest_report?.id,
                               pipelineCapabilities,
+                              benchmarkOverview?.parser_pipelines,
                             )}
                           </option>
                         ))}

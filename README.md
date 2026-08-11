@@ -526,7 +526,9 @@ another. Evaluation uses temporary storage and never changes the configured
 When multiple compatible parser plugins are enabled, the in-app benchmark
 dialog compares each plugin's latest trusted run for the selected layout. A
 comparison row switches both the active recognition plugin and the scoped
-report history without loading full case details for the other plugins.
+report history without loading full case details for the other plugins. Run
+comparison benchmarks every available compatible parser in sequence; a provider
+failure is reported without discarding successful runs from the same comparison.
 
 ### Offline Recommendation Benchmarks
 

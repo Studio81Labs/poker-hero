@@ -3410,7 +3410,7 @@ button:disabled {
 }
 
 .benchmark-pipeline-comparison-heading h3,
-.benchmark-pipeline-comparison-heading span {
+.benchmark-pipeline-comparison-heading > div > span {
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -3418,8 +3418,32 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.benchmark-pipeline-comparison-heading span {
+.benchmark-pipeline-comparison-heading > div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.benchmark-pipeline-comparison-heading > div > span {
   color: var(--muted);
+}
+
+.benchmark-comparison-run {
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 9px;
+  font-weight: 800;
+  gap: 4px;
+  min-height: 25px;
+  padding: 3px 7px;
+}
+
+.benchmark-comparison-run:hover:not(:disabled) {
+  background: var(--surface-strong);
+  border-color: var(--text);
 }
 
 .benchmark-pipeline-list {
@@ -3451,11 +3475,22 @@ button:disabled {
   border-left-color: var(--accent);
 }
 
+.benchmark-pipeline-list button.running,
+.benchmark-pipeline-list button.running:disabled {
+  background: var(--surface-strong);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  opacity: 1;
+}
+
+.benchmark-pipeline-list button.running > span > small {
+  color: var(--accent);
+}
+
 .benchmark-pipeline-list button:not(:disabled):hover {
   background: var(--surface-strong);
 }
 
-.benchmark-pipeline-list button:disabled:not(.active) {
+.benchmark-pipeline-list button:disabled:not(.active):not(.running) {
   color: var(--muted);
   cursor: not-allowed;
 }
@@ -4518,6 +4553,10 @@ button:disabled {
 
   .benchmark-pipeline-list button:nth-child(even) {
     border-left-color: transparent;
+  }
+
+  .benchmark-pipeline-comparison-heading > div > span {
+    display: none;
   }
 
   .benchmark-report-toolbar select {

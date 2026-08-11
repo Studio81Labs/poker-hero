@@ -824,8 +824,11 @@ selected line has a trusted EV, and recorded fallback use. It records line,
 policy, and EV evaluation coverage and groups the same metrics by street and
 optional scenario tags. The corpus may identify its independent reference
 source, version, and configuration. Human-readable and JSON output support
-optional regression thresholds for every aggregate and can require source
-provenance. Version-3 turn and river cases may require `applied` or `skipped`
+optional absolute thresholds for every aggregate and can require source
+provenance. Reports fingerprint normalized scoring inputs and may gate
+direction-aware aggregate regressions against a prior full JSON report only
+when the provider and corpus match. Version-3 turn and river cases may require
+`applied` or `skipped`
 range-conditioning evidence; the report measures both status agreement and
 evidence coverage so missing provider metadata cannot pass unnoticed. The same
 provider registry and canonical request contract used by the application must

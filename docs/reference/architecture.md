@@ -274,6 +274,12 @@ Version-4 postflop cases may additionally require the exact `raw.range_source`
 selected by the provider. The benchmark validates that value against the
 configured and contextual source registry, then reports independent agreement
 and evidence coverage with optional CI thresholds for both.
+Reports also carry a SHA-256 fingerprint over normalized scoring inputs and
+reference provenance. The CLI can load a full prior JSON report for the same
+provider and fingerprint, display aggregate deltas, and gate direction-aware
+accuracy, coverage, policy-distance, EV-loss, conditioning, range-source, and
+fallback regressions. JSON stdout remains only the current report so it can be
+captured as a later baseline.
 Reference frequencies must sum to one, sizing identities must be
 unambiguous at the configured tolerance, and EV labels cover either every line
 in a case or none.
@@ -387,8 +393,9 @@ available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later
 plugins or roll back earlier results.
 Reports and lightweight summaries persist a SHA-256 fingerprint over the sorted
-selected job IDs and benchmarked approved-state fields. The overview computes
-the same value for the current selected-layout corpus. The client marks a
+selected job IDs, benchmarked approved-state fields, and source screenshot
+bytes. The overview computes the same value for the current selected-layout
+corpus. The client marks a
 different or legacy missing report fingerprint as stale, excludes cross-corpus
 trend comparisons, and clears the warning only after a fresh run followed by an
 authoritative overview read. Metadata that does not participate in parser

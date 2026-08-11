@@ -9011,6 +9011,8 @@ export default function App() {
         || Object.keys(importedLayoutCounts).length > 0
       ),
     );
+    const shouldRefreshOverview = !hasImportedLayoutCounts
+      || Boolean(benchmarkOverview?.corpus_fingerprint);
     setBenchmarkOverview((current) => {
       return {
         included_cases: result.included_cases,
@@ -9063,7 +9065,7 @@ export default function App() {
           : item,
       ) ?? null,
     );
-    if (!hasImportedLayoutCounts) {
+    if (shouldRefreshOverview) {
       const requestId = ++benchmarkOverviewRequestRef.current;
       try {
         const overview = await getBenchmarkOverview(pipelineSelection ?? undefined);

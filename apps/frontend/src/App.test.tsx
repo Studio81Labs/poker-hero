@@ -14481,6 +14481,83 @@ describe("App", () => {
     ));
   });
 
+  it("keeps a verified report current after an idempotent dataset import", async () => {
+    const corpusFingerprint = "c".repeat(64);
+    const activeJob = {
+      ...approvedJob(),
+      id: "7".repeat(32),
+      original_filename: "already-included.png",
+      parser_layout_profile: "fortuna",
+      benchmark_included: true,
+    };
+    const baseOverview = benchmarkOverviewForJob(
+      activeJob.id,
+      activeJob.original_filename,
+    );
+    const overview = {
+      ...baseOverview,
+      included_cases_by_layout: { fortuna: 1 },
+      corpus_fingerprint: corpusFingerprint,
+      default_layout_profile: "fortuna",
+      latest_report: {
+        ...baseOverview.latest_report,
+        corpus_fingerprint: corpusFingerprint,
+      },
+    };
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([activeJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return Promise.resolve(jsonResponse(overview));
+      }
+      if (
+        url === "http://localhost:8000/api/benchmarks/import"
+        && init?.method === "POST"
+      ) {
+        return Promise.resolve(jsonResponse({
+          imported_cases: 0,
+          reused_cases: 1,
+          included_cases: 1,
+          included_cases_by_layout: { fortuna: 1 },
+          job_ids: [activeJob.id],
+        }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([activeJob]));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(
+      within(dialog).getByRole("button", { name: "Import dataset" }),
+    ).toBeEnabled());
+    await user.upload(
+      within(dialog).getByLabelText("Parser dataset ZIP"),
+      new File(["dataset-zip"], "parser-dataset.zip", {
+        type: "application/zip",
+      }),
+    );
+
+    expect(await screen.findByText("Dataset ready: 1 hand")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock().mock.calls.filter(
+      ([url]) => String(url) === "http://localhost:8000/api/benchmarks",
+    )).toHaveLength(2));
+    expect(within(dialog).queryByText(
+      "This run is not verified against the current ground truth.",
+    )).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument();
+  });
+
   it("releases dataset import leases after a deterministic rejection", async () => {
     const benchmarkJobId = "6".repeat(32);
     const pristineImport = {

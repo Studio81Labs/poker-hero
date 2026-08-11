@@ -754,12 +754,19 @@ Runs execute independently through the existing single-parser contract, expose
 which parser is currently running, retain each successful report immediately,
 and continue after a provider-level failure with one human-readable summary.
 Comparable runs show overall and field-level accuracy changes so parser
-regressions are visible. Automatic-parser
+regressions are visible. Every report records a deterministic fingerprint of
+the selected job IDs and benchmarked approved-state fields. The overview
+fingerprints the current layout corpus; reports whose fingerprint differs, or
+legacy reports without one, are labeled as requiring a rerun and are not used
+for trend comparisons against a different corpus. Screenshot metadata and
+fields outside the parser benchmark do not invalidate a run. Automatic-parser
 reports also group attributed cases by the parser that actually handled them,
 showing field accuracy and fallback counts without hiding legacy or failed cases
 that lack route evidence. One failed case must not stop the remaining corpus.
 Runs serialize with corpus inclusion, dataset import, and export so each report
-observes a complete ground-truth set.
+observes a complete ground-truth set. After a run, the control panel treats its
+fingerprint as unverified until a fresh overview read confirms the authoritative
+current-layout corpus.
 After a restart, corpus operations reject while a durable pending import journal
 still requires recovery.
 

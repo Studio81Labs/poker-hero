@@ -44,6 +44,7 @@ from app.application_backup import (
     stream_application_backup,
 )
 from app.benchmark_corpus import (
+    benchmark_corpus_fingerprint,
     benchmark_jobs_for_layout,
     benchmark_layout_counts,
     benchmark_layout_profile,
@@ -1629,6 +1630,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             selected_parser = selection.parser_provider
             selected_layout = selection.parser_layout_profile
+        selected_jobs = benchmark_jobs_for_layout(
+            jobs,
+            selected_layout,
+            active_settings.parser_layout_profile,
+        )
         recent_reports = benchmark_store.list_summaries(
             parser_provider=selected_parser,
             layout_profile=selected_layout,
@@ -1658,6 +1664,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 jobs,
                 active_settings.parser_layout_profile,
             ),
+            corpus_fingerprint=benchmark_corpus_fingerprint(selected_jobs),
             default_layout_profile=active_settings.parser_layout_profile,
             latest_report=(
                 benchmark_store.get(recent_reports[0].id)

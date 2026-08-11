@@ -524,7 +524,10 @@ another. Evaluation uses temporary storage and never changes the configured
 `POKER_DATA_DIR` or the source ZIP.
 
 When multiple compatible parser plugins are enabled, the in-app benchmark
-dialog compares each plugin's latest trusted run for the selected layout. A
+dialog compares each plugin's latest saved run for the selected layout. Reports
+are fingerprinted against their labeled corpus; changed labels, selected hands,
+and legacy reports without a fingerprint are marked for rerun rather than shown
+as current. A
 comparison row switches both the active recognition plugin and the scoped
 report history without loading full case details for the other plugins. Run
 comparison benchmarks every available compatible parser in sequence; a provider

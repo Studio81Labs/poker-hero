@@ -3821,6 +3821,9 @@ def test_benchmark_requires_explicitly_approved_ground_truth(tmp_path: Path) -> 
     assert overview.json() == {
         "included_cases": 0,
         "included_cases_by_layout": {},
+        "corpus_fingerprint": (
+            "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ),
         "default_layout_profile": "generic",
         "latest_report": None,
         "recent_reports": [],
@@ -4669,6 +4672,67 @@ def test_benchmark_run_waits_for_dataset_import_corpus_update(
     } == {target_job_id, source_job_id}
 
 
+def test_unrelated_approval_does_not_wait_for_benchmark_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    benchmark_job_id = upload_job(client, filename="benchmark.png").json()["id"]
+    approve_job(client, benchmark_job_id)
+    client.put(
+        f"/api/jobs/{benchmark_job_id}/benchmark",
+        json={"included": True},
+    )
+    unrelated_job_id = upload_job(client, filename="unrelated.png").json()["id"]
+    approve_job(client, unrelated_job_id)
+
+    benchmark_entered = Event()
+    release_benchmark = Event()
+    approval_finished = Event()
+    responses: dict[str, object] = {}
+    original_run = api_module.run_benchmark
+
+    def paused_run(*args: object, **kwargs: object):
+        benchmark_entered.set()
+        assert release_benchmark.wait(timeout=2)
+        return original_run(*args, **kwargs)
+
+    monkeypatch.setattr(api_module, "run_benchmark", paused_run)
+
+    benchmark_thread = Thread(
+        target=lambda: responses.update(
+            benchmark=client.post("/api/benchmarks/run"),
+        ),
+    )
+
+    def run_approval() -> None:
+        responses["approval"] = approve_job(
+            client,
+            unrelated_job_id,
+            {**APPROVED_STATE, "pot_size": 21.0},
+        )
+        approval_finished.set()
+
+    approval_thread = Thread(target=run_approval)
+    benchmark_thread.start()
+    try:
+        assert benchmark_entered.wait(timeout=2)
+        approval_thread.start()
+        assert approval_finished.wait(timeout=1)
+    finally:
+        release_benchmark.set()
+        benchmark_thread.join(timeout=2)
+        approval_thread.join(timeout=2)
+
+    assert not benchmark_thread.is_alive()
+    assert not approval_thread.is_alive()
+    assert responses["benchmark"].status_code == 200
+    assert responses["approval"].status_code == 200
+    approved_state = FileJobStore(tmp_path).get(unrelated_job_id).approved_state
+    assert approved_state is not None
+    assert approved_state.pot_size == 21
+
+
 def test_benchmark_dataset_import_rejects_invalid_and_oversized_archives(
     tmp_path: Path,
 ) -> None:
@@ -4797,6 +4861,7 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
     assert report["successful_cases"] == 1
     assert report["failed_cases"] == 0
     assert report["accuracy"] == 1
+    assert len(report["corpus_fingerprint"]) == 64
     assert report["correct_fields"] == report["evaluated_fields"]
     assert {metric["field"] for metric in report["field_metrics"]} == set(APPROVED_STATE) - {
         "user_approved"
@@ -4807,6 +4872,7 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
     summary_path.write_text("not valid JSON")
     overview = client.get("/api/benchmarks").json()
     assert overview["latest_report"]["id"] == report["id"]
+    assert overview["corpus_fingerprint"] == report["corpus_fingerprint"]
     assert json.loads(summary_path.read_text())["id"] == report["id"]
     mismatched_summary = json.loads(summary_path.read_text())
     mismatched_summary["id"] = "f" * 32
@@ -4818,6 +4884,7 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
     overview = client.get("/api/benchmarks").json()
     assert summary_path.exists()
     assert overview["latest_report"]["id"] == report["id"]
+
     assert overview["recent_reports"] == [
         {
             "id": report["id"],
@@ -4828,8 +4895,46 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
             "failed_cases": 0,
             "accuracy": 1.0,
             "field_metrics": report["field_metrics"],
+            "corpus_fingerprint": report["corpus_fingerprint"],
         }
     ]
+
+    correction = approve_job(
+        client,
+        job_id,
+        {**APPROVED_STATE, "pot_size": 18.0},
+    )
+    assert correction.status_code == 200
+    changed_overview = client.get("/api/benchmarks").json()
+    assert changed_overview["corpus_fingerprint"] != report["corpus_fingerprint"]
+    assert (
+        changed_overview["latest_report"]["corpus_fingerprint"]
+        == report["corpus_fingerprint"]
+    )
+
+
+def test_benchmark_overview_reads_legacy_report_without_corpus_fingerprint(
+    tmp_path: Path,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    report = client.post("/api/benchmarks/run").json()
+    report_path = tmp_path / "benchmarks" / f"{report['id']}.json"
+    summary_path = tmp_path / "benchmarks" / f"{report['id']}.summary.json"
+    legacy_payload = json.loads(report_path.read_text())
+    legacy_payload.pop("corpus_fingerprint")
+    report_path.write_text(json.dumps(legacy_payload))
+    summary_path.unlink()
+
+    overview = client.get("/api/benchmarks")
+
+    assert overview.status_code == 200
+    assert overview.json()["corpus_fingerprint"] == report["corpus_fingerprint"]
+    assert overview.json()["latest_report"]["corpus_fingerprint"] is None
+    assert overview.json()["recent_reports"][0]["corpus_fingerprint"] is None
+    assert json.loads(summary_path.read_text())["corpus_fingerprint"] is None
 
 
 def test_benchmark_overview_streams_legacy_summary_metadata(

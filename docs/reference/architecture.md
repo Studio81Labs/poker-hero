@@ -373,6 +373,13 @@ The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later
 plugins or roll back earlier results.
+Reports and lightweight summaries persist a SHA-256 fingerprint over the sorted
+selected job IDs and benchmarked approved-state fields. The overview computes
+the same value for the current selected-layout corpus. The client marks a
+different or legacy missing report fingerprint as stale, excludes cross-corpus
+trend comparisons, and clears the warning only after a fresh run followed by an
+authoritative overview read. Metadata that does not participate in parser
+scoring is intentionally excluded from the hash.
 Rebuildable per-report summary sidecars keep overview reads independent of full
 case payloads. A legacy store receives sidecars through a newest-first,
 streaming metadata pass that stops once the requested history is populated and

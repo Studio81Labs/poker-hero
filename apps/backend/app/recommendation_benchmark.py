@@ -1844,7 +1844,11 @@ def _case_metric_value(
             else None
         )
     if metric == "fallback_rate":
-        return float(case.fallback_reason is not None)
+        return (
+            float(case.fallback_reason is not None)
+            if case.status == "completed"
+            else None
+        )
     raise KeyError(metric)
 
 

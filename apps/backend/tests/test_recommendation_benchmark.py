@@ -1952,6 +1952,41 @@ def test_recommendation_benchmark_cli_skips_unevaluated_baseline_case_metric(
     assert captured.err == ""
 
 
+def test_recommendation_benchmark_cli_skips_fallback_for_errored_baseline_case(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("recovered", [reference_line("check")])]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider([RuntimeError("Solver unavailable")]),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-case-metric-regression",
+            "fallback_rate=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider(
+            [recommendation("check", fallback_reason="Recovered with fallback")]
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+
+
 def test_recommendation_benchmark_cli_rejects_unknown_regression_scope(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

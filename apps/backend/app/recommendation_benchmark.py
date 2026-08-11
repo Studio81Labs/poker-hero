@@ -1287,6 +1287,14 @@ def _metric_regression_threshold(value: str) -> tuple[str, float]:
     return metric, threshold_parser(raw_threshold)
 
 
+def _scoped_metric_regression_threshold(value: str) -> tuple[str, str, float]:
+    scope, separator, metric_requirement = value.partition(":")
+    if not separator or not scope or not metric_requirement:
+        raise argparse.ArgumentTypeError("must use KEY:METRIC=DELTA")
+    metric, threshold = _metric_regression_threshold(metric_requirement)
+    return scope, metric, threshold
+
+
 def _regression_requirement_map(
     requirements: list[tuple[str, float]],
 ) -> dict[str, float]:
@@ -1297,6 +1305,22 @@ def _regression_requirement_map(
                 f"--maximum-metric-regression repeats metric {metric}"
             )
         result[metric] = threshold
+    return result
+
+
+def _scoped_regression_requirement_map(
+    requirements: list[tuple[str, str, float]],
+    *,
+    option_name: str,
+) -> dict[str, dict[str, float]]:
+    result: dict[str, dict[str, float]] = {}
+    for scope, metric, threshold in requirements:
+        scope_requirements = result.setdefault(scope, {})
+        if metric in scope_requirements:
+            raise RecommendationBenchmarkError(
+                f"{option_name} repeats metric {metric} for {scope}"
+            )
+        scope_requirements[metric] = threshold
     return result
 
 
@@ -1390,6 +1414,22 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Repeat to limit a direction-aware aggregate metric regression",
     )
     parser.add_argument(
+        "--maximum-street-metric-regression",
+        action="append",
+        type=_scoped_metric_regression_threshold,
+        default=[],
+        metavar="STREET:METRIC=DELTA",
+        help="Repeat to limit a metric regression for one street breakdown",
+    )
+    parser.add_argument(
+        "--maximum-tag-metric-regression",
+        action="append",
+        type=_scoped_metric_regression_threshold,
+        default=[],
+        metavar="TAG:METRIC=DELTA",
+        help="Repeat to limit a metric regression for one tag breakdown",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Write the complete benchmark report as JSON",
@@ -1407,7 +1447,21 @@ def main(
         regression_thresholds = _regression_requirement_map(
             args.maximum_metric_regression
         )
-        if args.baseline_report is None and regression_thresholds:
+        street_regression_thresholds = _scoped_regression_requirement_map(
+            args.maximum_street_metric_regression,
+            option_name="--maximum-street-metric-regression",
+        )
+        tag_regression_thresholds = _scoped_regression_requirement_map(
+            args.maximum_tag_metric_regression,
+            option_name="--maximum-tag-metric-regression",
+        )
+        if args.baseline_report is None and any(
+            (
+                regression_thresholds,
+                street_regression_thresholds,
+                tag_regression_thresholds,
+            )
+        ):
             raise RecommendationBenchmarkError(
                 "Metric regression thresholds require --baseline-report"
             )
@@ -1435,6 +1489,11 @@ def main(
             baseline = load_recommendation_benchmark_report(
                 _dataset_path_from_invocation(args.baseline_report)
             )
+            _validate_scoped_regression_requirements(
+                baseline,
+                street_regression_thresholds,
+                tag_regression_thresholds,
+            )
         report = benchmark_recommendation_file(
             _dataset_path_from_invocation(args.dataset),
             active_settings,
@@ -1455,6 +1514,22 @@ def main(
     if baseline is not None:
         failures.extend(
             _regression_failures(report, baseline, regression_thresholds)
+        )
+        failures.extend(
+            _breakdown_regression_failures(
+                report.street_metrics,
+                baseline.street_metrics,
+                street_regression_thresholds,
+                scope_label="Street",
+            )
+        )
+        failures.extend(
+            _breakdown_regression_failures(
+                report.tag_metrics,
+                baseline.tag_metrics,
+                tag_regression_thresholds,
+                scope_label="Tag",
+            )
         )
     for failure in failures:
         print(failure, file=sys.stderr)
@@ -1579,28 +1654,72 @@ def _threshold_failures(
 
 
 def _regression_failures(
-    report: RecommendationBenchmarkReport,
-    baseline: RecommendationBenchmarkReport,
+    report: RecommendationBenchmarkMetrics,
+    baseline: RecommendationBenchmarkMetrics,
     thresholds: dict[str, float],
+    *,
+    context: str | None = None,
 ) -> list[str]:
     failures: list[str] = []
     for metric, threshold in thresholds.items():
         spec = REGRESSION_METRICS[metric]
         current = _metric_value(report, spec)
         previous = _metric_value(baseline, spec)
+        label = f"{context}: {spec.label}" if context else spec.label
         if current is None or previous is None:
             failures.append(
-                f"{spec.label} was not evaluated in both recommendation reports"
+                f"{label} was not evaluated in both recommendation reports"
             )
             continue
         regression = previous - current if spec.higher_is_better else current - previous
         if regression > threshold + 1e-12:
             failures.append(
-                f"{spec.label} regressed {_format_metric_delta(regression, spec)}"
+                f"{label} regressed {_format_metric_delta(regression, spec)}"
                 f" ({_format_metric_value(previous, spec)} to"
                 f" {_format_metric_value(current, spec)}), above the maximum"
                 f" {_format_metric_delta(threshold, spec)}"
             )
+    return failures
+
+
+def _validate_scoped_regression_requirements(
+    report: RecommendationBenchmarkReport,
+    street_thresholds: dict[str, dict[str, float]],
+    tag_thresholds: dict[str, dict[str, float]],
+) -> None:
+    for scope_label, breakdowns, thresholds in (
+        ("street", report.street_metrics, street_thresholds),
+        ("tag", report.tag_metrics, tag_thresholds),
+    ):
+        missing = sorted(
+            set(thresholds).difference(item.key for item in breakdowns)
+        )
+        if missing:
+            raise RecommendationBenchmarkError(
+                f"Unknown recommendation benchmark {scope_label} regression scope(s):"
+                f" {', '.join(missing)}"
+            )
+
+
+def _breakdown_regression_failures(
+    report: list[RecommendationBenchmarkBreakdown],
+    baseline: list[RecommendationBenchmarkBreakdown],
+    thresholds: dict[str, dict[str, float]],
+    *,
+    scope_label: str,
+) -> list[str]:
+    current_by_key = {item.key: item for item in report}
+    baseline_by_key = {item.key: item for item in baseline}
+    failures: list[str] = []
+    for key, scoped_thresholds in thresholds.items():
+        failures.extend(
+            _regression_failures(
+                current_by_key[key],
+                baseline_by_key[key],
+                scoped_thresholds,
+                context=f"{scope_label} {key}",
+            )
+        )
     return failures
 
 
@@ -1620,7 +1739,7 @@ def _metric_change(
 
 
 def _metric_value(
-    report: RecommendationBenchmarkReport,
+    report: RecommendationBenchmarkMetrics,
     spec: RegressionMetricSpec,
 ) -> float | None:
     return cast(float | None, getattr(report, spec.attribute))

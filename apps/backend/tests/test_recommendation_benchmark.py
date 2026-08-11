@@ -1726,6 +1726,113 @@ def test_recommendation_benchmark_cli_fails_when_regression_metric_disappears(
 
 
 @pytest.mark.parametrize(
+    ("option", "scope", "expected_failure"),
+    [
+        (
+            "--maximum-street-metric-regression",
+            "flop",
+            "Street flop: Action accuracy regressed 100.0 pts",
+        ),
+        (
+            "--maximum-tag-metric-regression",
+            "facing-bet",
+            "Tag facing-bet: Action accuracy regressed 100.0 pts",
+        ),
+    ],
+)
+def test_recommendation_benchmark_cli_gates_scoped_regressions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    scope: str,
+    expected_failure: str,
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "flop",
+                [reference_line("check")],
+                tags=["facing-bet"],
+            ),
+            benchmark_case(
+                "turn",
+                [reference_line("check")],
+                tags=["checked-to"],
+                street="turn",
+                board_cards=[
+                    Card.from_code("Qs"),
+                    Card.from_code("Jc"),
+                    Card.from_code("2h"),
+                    Card.from_code("4d"),
+                ],
+            ),
+        ]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider([recommendation("check"), recommendation("fold")]),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            option,
+            f"{scope}:action_accuracy=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("fold"), recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Action accuracy: +0.0 pts" in captured.out
+    assert expected_failure in captured.err
+
+
+def test_recommendation_benchmark_cli_rejects_unknown_regression_scope(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("action", [reference_line("check")])]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider([recommendation("check")]),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-street-metric-regression",
+            "river:action_accuracy=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert (
+        "Unknown recommendation benchmark street regression scope(s): river"
+        in captured.err
+    )
+
+
+@pytest.mark.parametrize(
     ("updates", "message"),
     [
         (
@@ -1823,6 +1930,18 @@ def test_recommendation_benchmark_cli_requires_baseline_and_unique_metrics(
     exit_code = main(
         [
             str(tmp_path / "unused.json"),
+            "--maximum-street-metric-regression",
+            "flop:action_accuracy=0.1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Metric regression thresholds require --baseline-report" in captured.err
+
+    exit_code = main(
+        [
+            str(tmp_path / "unused.json"),
             "--baseline-report",
             str(tmp_path / "unused-baseline.json"),
             "--maximum-metric-regression",
@@ -1835,6 +1954,25 @@ def test_recommendation_benchmark_cli_requires_baseline_and_unique_metrics(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "repeats metric action_accuracy" in captured.err
+
+    exit_code = main(
+        [
+            str(tmp_path / "unused.json"),
+            "--baseline-report",
+            str(tmp_path / "unused-baseline.json"),
+            "--maximum-tag-metric-regression",
+            "facing-bet:action_accuracy=0.1",
+            "--maximum-tag-metric-regression",
+            "facing-bet:action_accuracy=0.2",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert (
+        "--maximum-tag-metric-regression repeats metric action_accuracy"
+        " for facing-bet"
+    ) in captured.err
 
 
 def test_recommendation_baseline_report_rejects_invalid_and_oversized_files(

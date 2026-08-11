@@ -16433,10 +16433,12 @@ describe("App", () => {
   });
 
   it("loads historical benchmark reports and compares accuracy", async () => {
+    const corpusFingerprint = "a".repeat(64);
     const earlierReport = {
       id: "benchmark-earlier",
       parser_provider: "ocr_cv",
       layout_profile: "fortuna",
+      corpus_fingerprint: corpusFingerprint,
       created_at: "2026-07-19T12:00:00Z",
       total_cases: 2,
       successful_cases: 2,
@@ -16463,10 +16465,11 @@ describe("App", () => {
       ],
     };
     const summaries = [latestReport, earlierReport].map(
-      ({ id, parser_provider, layout_profile, created_at, total_cases, failed_cases, accuracy, field_metrics }) => ({
+      ({ id, parser_provider, layout_profile, corpus_fingerprint, created_at, total_cases, failed_cases, accuracy, field_metrics }) => ({
         id,
         parser_provider,
         layout_profile,
+        corpus_fingerprint,
         created_at,
         total_cases,
         failed_cases,
@@ -16475,7 +16478,12 @@ describe("App", () => {
       }),
     );
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse({ included_cases: 2, latest_report: latestReport, recent_reports: summaries }))
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        corpus_fingerprint: corpusFingerprint,
+        latest_report: latestReport,
+        recent_reports: summaries,
+      }))
       .mockResolvedValueOnce(jsonResponse(earlierReport));
     render(<App />);
 
@@ -16500,6 +16508,55 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       "http://localhost:8000/api/benchmarks/benchmark-earlier",
     ]);
+  });
+
+  it("requires a rerun for legacy benchmark reports without corpus fingerprints", async () => {
+    const legacyReport = {
+      id: "benchmark-legacy-latest",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-20T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 1,
+      evaluated_fields: 1,
+      accuracy: 1,
+      field_metrics: [
+        { field: "hero_cards", correct: 1, total: 1, accuracy: 1 },
+      ],
+      cases: [],
+    };
+    const legacyEarlierSummary = {
+      id: "benchmark-legacy-earlier",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      created_at: "2026-07-19T12:00:00Z",
+      total_cases: 1,
+      failed_cases: 0,
+      accuracy: 0.5,
+      field_metrics: [
+        { field: "hero_cards", correct: 0, total: 1, accuracy: 0 },
+      ],
+    };
+    fetchMock().mockResolvedValueOnce(jsonResponse({
+      included_cases: 1,
+      latest_report: legacyReport,
+      recent_reports: [legacyReport, legacyEarlierSummary],
+    }));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "This run is not verified against the current ground truth",
+    );
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100% · rerun needed",
+    })).toBeInTheDocument();
+    expect(within(dialog).getByText("No comparable earlier run")).toBeInTheDocument();
   });
 
   it("prevents field edits while approval is pending", async () => {

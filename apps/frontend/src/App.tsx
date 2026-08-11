@@ -2605,11 +2605,13 @@ function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary
   };
 }
 
-function benchmarkCorpusChanged(
+function benchmarkCorpusIsUnverified(
   reportFingerprint: string | null | undefined,
   currentFingerprint: string | null | undefined,
 ): boolean {
-  return (reportFingerprint ?? null) !== (currentFingerprint ?? null);
+  return !reportFingerprint
+    || !currentFingerprint
+    || reportFingerprint !== currentFingerprint;
 }
 
 function benchmarkReportOption(
@@ -2637,7 +2639,7 @@ function benchmarkReportOption(
     (option) => option.id === summary.layout_profile,
   )?.label ?? providerLabel(summary.layout_profile);
   const layoutLabel = rawLayoutLabel.charAt(0).toUpperCase() + rawLayoutLabel.slice(1);
-  const staleLabel = benchmarkCorpusChanged(
+  const staleLabel = benchmarkCorpusIsUnverified(
     summary.corpus_fingerprint,
     currentCorpusFingerprint,
   )
@@ -2663,7 +2665,7 @@ function previousComparableBenchmarkReport(
       (summary) =>
         summary.parser_provider === report.parser_provider &&
         summary.layout_profile === report.layout_profile &&
-        !benchmarkCorpusChanged(
+        !benchmarkCorpusIsUnverified(
           summary.corpus_fingerprint,
           report.corpus_fingerprint,
         ),
@@ -5599,7 +5601,7 @@ export default function App() {
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
   const benchmarkReportStale = Boolean(
     benchmarkReport
-    && benchmarkCorpusChanged(
+    && benchmarkCorpusIsUnverified(
       benchmarkReport.corpus_fingerprint,
       benchmarkOverview?.corpus_fingerprint,
     ),
@@ -12654,7 +12656,7 @@ export default function App() {
                         === pipeline.parser.id;
                       const stale = Boolean(
                         report
-                        && benchmarkCorpusChanged(
+                        && benchmarkCorpusIsUnverified(
                           report.corpus_fingerprint,
                           benchmarkOverview?.corpus_fingerprint,
                         ),

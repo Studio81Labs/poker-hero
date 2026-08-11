@@ -370,6 +370,10 @@ nearest preceding same-corpus entry for each enabled parser plugin compatible
 with the selected layout. The control panel uses those entries to compare
 accuracy, same-corpus point changes, and failures, then switches the active
 parser and scoped report history in place; unavailable plugins remain read-only.
+The preceding-run lookup scans persisted summary metadata beyond the bounded
+history response and streams any unindexed legacy metadata without loading case
+payloads or expanding the bounded sidecar backfill, so an older valid baseline
+is not hidden by intervening runs.
 The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later

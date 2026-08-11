@@ -499,6 +499,61 @@ class FileBenchmarkStore:
         )
         return summaries[:limit] if limit is not None else summaries
 
+    def find_previous_comparable_summary(
+        self,
+        latest: BenchmarkReportSummary,
+    ) -> BenchmarkReportSummary | None:
+        if latest.corpus_fingerprint is None:
+            return None
+        latest_key = (latest.created_at, latest.id)
+        previous: BenchmarkReportSummary | None = None
+        for path in self.benchmarks_dir.glob(f"*{BENCHMARK_SUMMARY_SUFFIX}"):
+            report_id = path.name.removesuffix(BENCHMARK_SUMMARY_SUFFIX)
+            if (
+                BENCHMARK_ID_PATTERN.fullmatch(report_id) is None
+                or not self._report_path(report_id).exists()
+            ):
+                continue
+            summary = self._read_report_summary(report_id, path)
+            if (
+                summary.parser_provider != latest.parser_provider
+                or summary.layout_profile != latest.layout_profile
+                or summary.corpus_fingerprint != latest.corpus_fingerprint
+                or (summary.created_at, summary.id) >= latest_key
+            ):
+                continue
+            if previous is None or (
+                summary.created_at,
+                summary.id,
+            ) > (
+                previous.created_at,
+                previous.id,
+            ):
+                previous = summary
+        for path in self.benchmarks_dir.glob("*.json"):
+            if (
+                BENCHMARK_ID_PATTERN.fullmatch(path.stem) is None
+                or self._report_summary_path(path.stem).exists()
+            ):
+                continue
+            summary = self._read_report_summary_metadata(path)
+            if (
+                summary.parser_provider != latest.parser_provider
+                or summary.layout_profile != latest.layout_profile
+                or summary.corpus_fingerprint != latest.corpus_fingerprint
+                or (summary.created_at, summary.id) >= latest_key
+            ):
+                continue
+            if previous is None or (
+                summary.created_at,
+                summary.id,
+            ) > (
+                previous.created_at,
+                previous.id,
+            ):
+                previous = summary
+        return previous
+
     def _list_report_summaries(
         self,
         *,

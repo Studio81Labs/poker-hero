@@ -1127,34 +1127,50 @@ describe("App", () => {
     expect(screen.getByText("Cleared reviewed hands will appear here.")).toBeInTheDocument();
   });
 
-  it("refreshes the benchmark count after deleting a stale labeled screenshot", async () => {
-    const staleBenchmarkJob = approvedJob();
-    staleBenchmarkJob.id = "e".repeat(32);
-    staleBenchmarkJob.original_filename = "stale-benchmark-label.png";
-    staleBenchmarkJob.benchmark_included = true;
+  it("keeps the newest benchmark count after deleting labeled screenshots", async () => {
+    const firstBenchmarkJob = approvedJob();
+    firstBenchmarkJob.id = "d".repeat(32);
+    firstBenchmarkJob.original_filename = "first-benchmark-label.png";
+    firstBenchmarkJob.benchmark_included = true;
+    const secondBenchmarkJob = approvedJob();
+    secondBenchmarkJob.id = "e".repeat(32);
+    secondBenchmarkJob.original_filename = "second-benchmark-label.png";
+    secondBenchmarkJob.benchmark_included = true;
+    const benchmarkJobs = [firstBenchmarkJob, secondBenchmarkJob];
     window.localStorage.setItem(
       "poker-training-processing-v1",
-      JSON.stringify([staleBenchmarkJob]),
+      JSON.stringify(benchmarkJobs),
     );
-    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    window.localStorage.setItem("poker-training-processing-total-v1", "2");
+    const firstDeletionOverview = deferredResponse();
+    const secondDeletionOverview = deferredResponse();
+    const deletedIds = new Set<string>();
     let benchmarkReads = 0;
     fetchMock().mockImplementation((url, options) => {
       if (url === "http://localhost:8000/api/benchmarks") {
         benchmarkReads += 1;
-        return Promise.resolve(jsonResponse({
-          included_cases: 2,
-          latest_report: null,
-          recent_reports: [],
-        }));
+        if (benchmarkReads === 1) {
+          return Promise.resolve(jsonResponse({
+            included_cases: 2,
+            latest_report: null,
+            recent_reports: [],
+          }));
+        }
+        return benchmarkReads === 2
+          ? firstDeletionOverview.promise
+          : secondDeletionOverview.promise;
       }
-      if (
-        url === `http://localhost:8000/api/jobs/${staleBenchmarkJob.id}`
-        && options?.method === "DELETE"
-      ) {
+      const deletedJob = benchmarkJobs.find(
+        (candidate) => url === `http://localhost:8000/api/jobs/${candidate.id}`,
+      );
+      if (deletedJob && options?.method === "DELETE") {
+        deletedIds.add(deletedJob.id);
         return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url === "http://localhost:8000/api/jobs") {
-        return Promise.resolve(processingQueueResponse([]));
+        return Promise.resolve(processingQueueResponse(
+          benchmarkJobs.filter((candidate) => !deletedIds.has(candidate.id)),
+        ));
       }
       if (url === "http://localhost:8000/api/history") {
         return Promise.resolve(jsonResponse({
@@ -1176,7 +1192,121 @@ describe("App", () => {
       "2 ground-truth hands",
     ));
     await user.click(screen.getByRole("button", {
-      name: "Manage screenshot 1: stale-benchmark-label.png",
+      name: "Manage screenshot 1: first-benchmark-label.png",
+    }));
+    let detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete screenshot",
+    }));
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete permanently",
+    }));
+    await waitFor(() => expect(benchmarkReads).toBe(2));
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: second-benchmark-label.png",
+    }));
+    detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete screenshot",
+    }));
+    await user.click(within(detailsDialog).getByRole("button", {
+      name: "Delete permanently",
+    }));
+    await waitFor(() => expect(benchmarkReads).toBe(3));
+
+    secondDeletionOverview.resolve(jsonResponse({
+      included_cases: 0,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await secondDeletionOverview.promise;
+    await waitFor(() => expect(benchmarkDialog).toHaveTextContent(
+      "0 ground-truth hands",
+    ));
+    firstDeletionOverview.resolve(jsonResponse({
+      included_cases: 1,
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await firstDeletionOverview.promise;
+
+    expect(benchmarkDialog).toHaveTextContent("0 ground-truth hands");
+    expect(benchmarkDialog).not.toHaveTextContent("1 ground-truth hand");
+    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+  });
+
+  it("ignores a stale deletion refresh after the parser pipeline changes", async () => {
+    const staleBenchmarkJob = approvedJob();
+    staleBenchmarkJob.id = "e".repeat(32);
+    staleBenchmarkJob.original_filename = "stale-delete-refresh.png";
+    staleBenchmarkJob.benchmark_included = true;
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([staleBenchmarkJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    const deletionOverview = deferredResponse();
+    const selectedOverview = deferredResponse();
+    fetchMock().mockImplementation((url, options) => {
+      if (url === "http://localhost:8000/api/benchmarks") {
+        return deletionOverview.promise;
+      }
+      if (
+        url
+        === "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna"
+      ) {
+        return selectedOverview.promise;
+      }
+      if (url === "http://localhost:8000/api/pipeline") {
+        return Promise.resolve(jsonResponse({
+          defaults: {
+            parser_provider: "mock",
+            parser_layout_profile: "generic",
+            recommendation_provider: "mock",
+            recommendation_engine: null,
+          },
+          parser_providers: [
+            { id: "mock", label: "Mock parser", available: true, unavailable_reason: null },
+            { id: "ocr_cv", label: "Template OCR", available: true, unavailable_reason: null },
+          ],
+          parser_layout_profiles: [
+            { id: "generic", label: "Generic", available: true, unavailable_reason: null },
+            { id: "fortuna", label: "Fortuna", available: true, unavailable_reason: null },
+          ],
+          parser_layout_compatibility: {
+            mock: ["generic", "fortuna"],
+            ocr_cv: ["generic", "fortuna"],
+          },
+          recommendation_providers: [
+            { id: "mock", label: "Mock recommendation", available: true, unavailable_reason: null },
+          ],
+          recommendation_engines: [],
+        }));
+      }
+      if (
+        url === `http://localhost:8000/api/jobs/${staleBenchmarkJob.id}`
+        && options?.method === "DELETE"
+      ) {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      if (url === "http://localhost:8000/api/jobs") {
+        return Promise.resolve(processingQueueResponse([]));
+      }
+      if (url === "http://localhost:8000/api/history") {
+        return Promise.resolve(jsonResponse({
+          total: 0,
+          jobs: [],
+          snapshot_version: "history-after-stale-benchmark-refresh",
+        }));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", {
+      name: "Manage screenshot 1: stale-delete-refresh.png",
     }));
     const detailsDialog = screen.getByRole("dialog", { name: "Screenshot details" });
     await user.click(within(detailsDialog).getByRole("button", {
@@ -1185,10 +1315,38 @@ describe("App", () => {
     await user.click(within(detailsDialog).getByRole("button", {
       name: "Delete permanently",
     }));
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledWith(
+      "http://localhost:8000/api/benchmarks",
+      { credentials: "include" },
+    ));
 
-    await waitFor(() => expect(benchmarkReads).toBe(2));
-    expect(benchmarkDialog).toHaveTextContent("2 ground-truth hands");
-    expect(screen.getByText("No screenshots uploaded or captured yet")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    const pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Recognition"), "ocr_cv");
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    selectedOverview.resolve(jsonResponse({
+      included_cases: 9,
+      included_cases_by_layout: { fortuna: 9 },
+      default_layout_profile: "generic",
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await waitFor(() => expect(benchmarkDialog).toHaveTextContent("9 ground-truth hands"));
+
+    deletionOverview.resolve(jsonResponse({
+      included_cases: 2,
+      included_cases_by_layout: { generic: 2 },
+      default_layout_profile: "generic",
+      latest_report: null,
+      recent_reports: [],
+    }));
+    await deletionOverview.promise;
+    expect(benchmarkDialog).toHaveTextContent("9 ground-truth hands");
+    expect(benchmarkDialog).not.toHaveTextContent("2 ground-truth hands");
   });
 
   it("permanently removes a saved screenshot from history", async () => {
@@ -13893,13 +14051,13 @@ describe("App", () => {
       "http://localhost:8000/api/jobs",
       "http://localhost:8000/api/jobs/job-123/approve",
       "http://localhost:8000/api/pipeline",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
       "http://localhost:8000/api/jobs/job-123/benchmark",
       "http://localhost:8000/api/benchmarks/run",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
       "http://localhost:8000/api/jobs/job-123/benchmark",
       "http://localhost:8000/api/benchmarks/run",
-      "http://localhost:8000/api/benchmarks",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=generic",
     ]);
     const benchmarkRequest = fetchMock().mock.calls.find(
       ([url]) => url === "http://localhost:8000/api/benchmarks/run",
@@ -15906,6 +16064,92 @@ describe("App", () => {
     ]);
   });
 
+  it("ignores a stale benchmark overview after the parser pipeline changes", async () => {
+    const firstOverview = deferredResponse();
+    const secondOverview = deferredResponse();
+    const fortunaOverview = benchmarkOverviewForJob("a".repeat(32), "fortuna.png");
+    fortunaOverview.latest_report.id = "benchmark-fortuna";
+    fortunaOverview.latest_report.layout_profile = "fortuna";
+    fortunaOverview.latest_report.accuracy = 0.5;
+    const genericOverview = benchmarkOverviewForJob("b".repeat(32), "generic.png");
+    genericOverview.latest_report.id = "benchmark-generic";
+    genericOverview.latest_report.layout_profile = "generic";
+    genericOverview.latest_report.accuracy = 0.9;
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        defaults: {
+          parser_provider: "mock",
+          parser_layout_profile: "generic",
+          recommendation_provider: "mock",
+          recommendation_engine: null,
+        },
+        parser_providers: [
+          { id: "mock", label: "Mock parser", available: true, unavailable_reason: null },
+          { id: "ocr_cv", label: "Template OCR", available: true, unavailable_reason: null },
+        ],
+        parser_layout_profiles: [
+          { id: "generic", label: "Generic", available: true, unavailable_reason: null },
+          { id: "fortuna", label: "Fortuna", available: true, unavailable_reason: null },
+        ],
+        parser_layout_compatibility: {
+          mock: ["generic", "fortuna"],
+          ocr_cv: ["generic", "fortuna"],
+        },
+        recommendation_providers: [
+          { id: "mock", label: "Mock recommendation", available: true, unavailable_reason: null },
+        ],
+        recommendation_engines: [],
+      }))
+      .mockReturnValueOnce(firstOverview.promise)
+      .mockReturnValueOnce(secondOverview.promise);
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    let pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Recognition"), "ocr_cv");
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    let benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await user.click(within(benchmarkDialog).getByRole("button", { name: "Close parser benchmark" }));
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "generic");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    firstOverview.resolve(jsonResponse(fortunaOverview));
+    await waitFor(() => expect(within(benchmarkDialog).getByText("Reading benchmark results...")).toBeInTheDocument());
+    expect(within(benchmarkDialog).queryByLabelText("Benchmark summary")).not.toBeInTheDocument();
+
+    secondOverview.resolve(jsonResponse(genericOverview));
+    expect(await within(benchmarkDialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
+    expect(within(benchmarkDialog).getByText("OCR + computer vision · generic")).toBeInTheDocument();
+
+    await user.click(within(benchmarkDialog).getByRole("button", { name: "Close parser benchmark" }));
+    await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
+    pipelineDialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
+    await user.selectOptions(within(pipelineDialog).getByLabelText("Table layout"), "fortuna");
+    await user.click(within(pipelineDialog).getByRole("button", { name: "Done" }));
+    fetchMock().mockRejectedValueOnce(new TypeError("Fortuna benchmark unavailable"));
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    benchmarkDialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+
+    expect(await screen.findByText("Fortuna benchmark unavailable")).toBeInTheDocument();
+    expect(within(benchmarkDialog).queryByLabelText("Benchmark summary")).not.toBeInTheDocument();
+    expect(within(benchmarkDialog).getByText("No benchmark has been run yet.")).toBeInTheDocument();
+    expect(within(benchmarkDialog).queryByText("OCR + computer vision · generic")).not.toBeInTheDocument();
+    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
+      "http://localhost:8000/api/pipeline",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=generic",
+      "http://localhost:8000/api/benchmarks?parser_provider=ocr_cv&parser_layout_profile=fortuna",
+    ]);
+  });
+
   it("loads historical benchmark reports and compares accuracy", async () => {
     const earlierReport = {
       id: "benchmark-earlier",
@@ -15958,6 +16202,9 @@ describe("App", () => {
     const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
     expect(await within(dialog).findByLabelText("Benchmark summary")).toHaveTextContent("90%");
     expect(within(dialog).getByText("+20 pts vs previous")).toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 90%",
+    })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("hero cards change +50 pts")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("pot size change -50 pts")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("board cards change New")).toBeInTheDocument();

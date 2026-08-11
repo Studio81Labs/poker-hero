@@ -741,9 +741,12 @@ include overall accuracy,
 field-level correct/total counts, per-case accuracy, warnings, and isolated
 case errors. Case results expose expected and detected values for mismatched
 fields and can reopen the persisted hand in the review workspace for correction.
-Recent run summaries remain available for parser/layout comparison, with full
-historical report details loaded on demand. Comparable runs show overall and
-field-level accuracy changes so parser regressions are visible. Automatic-parser
+Recent run summaries are scoped to the parser/layout pair selected in the
+control panel, or to deployment defaults when no pair is supplied, so activity
+for one client cannot crowd another client's comparison history. Report options
+identify their parser and layout, with full historical details loaded on demand.
+Comparable runs show overall and field-level accuracy changes so parser
+regressions are visible. Automatic-parser
 reports also group attributed cases by the parser that actually handled them,
 showing field accuracy and fallback counts without hiding legacy or failed cases
 that lack route evidence. One failed case must not stop the remaining corpus.

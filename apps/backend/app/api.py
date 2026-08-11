@@ -78,7 +78,6 @@ from app.models import (
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkReport,
-    BenchmarkReportSummary,
     BenchmarkRunRequest,
     BenchmarkSelectionRequest,
     CanonicalState,
@@ -1597,9 +1596,41 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         )
 
     @app.get("/api/benchmarks", response_model=BenchmarkOverview)
-    def get_benchmark_overview() -> BenchmarkOverview:
+    def get_benchmark_overview(
+        parser_provider: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        parser_layout_profile: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+    ) -> BenchmarkOverview:
         jobs = store.list()
         included_cases = sum(job.benchmark_included for job in jobs)
+        selected_parser = active_settings.parser_provider
+        selected_layout = active_settings.parser_layout_profile
+        if parser_provider is not None or parser_layout_profile is not None:
+            try:
+                selection = resolve_pipeline_selection(
+                    active_settings,
+                    parser_provider=parser_provider,
+                    parser_layout_profile=parser_layout_profile,
+                    validate_recommendation=False,
+                    validate_availability=False,
+                )
+            except PipelineSelectionError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            selected_parser = selection.parser_provider
+            selected_layout = selection.parser_layout_profile
+        recent_reports = benchmark_store.list_summaries(
+            parser_provider=selected_parser,
+            layout_profile=selected_layout,
+        )
         return BenchmarkOverview(
             included_cases=included_cases,
             included_cases_by_layout=benchmark_layout_counts(
@@ -1607,11 +1638,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 active_settings.parser_layout_profile,
             ),
             default_layout_profile=active_settings.parser_layout_profile,
-            latest_report=benchmark_store.get_latest(),
-            recent_reports=[
-                BenchmarkReportSummary.from_report(report)
-                for report in benchmark_store.list()
-            ],
+            latest_report=(
+                benchmark_store.get(recent_reports[0].id)
+                if recent_reports
+                else None
+            ),
+            recent_reports=recent_reports,
         )
 
     def build_browser_application_backup():

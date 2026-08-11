@@ -4790,7 +4790,21 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
         "user_approved"
     }
     assert FileBenchmarkStore(tmp_path).get_latest().id == report["id"]
+    summary_path = tmp_path / "benchmarks" / f"{report['id']}.summary.json"
+    assert summary_path.exists()
+    summary_path.write_text("not valid JSON")
     overview = client.get("/api/benchmarks").json()
+    assert overview["latest_report"]["id"] == report["id"]
+    assert json.loads(summary_path.read_text())["id"] == report["id"]
+    mismatched_summary = json.loads(summary_path.read_text())
+    mismatched_summary["id"] = "f" * 32
+    summary_path.write_text(json.dumps(mismatched_summary))
+    overview = client.get("/api/benchmarks").json()
+    assert overview["latest_report"]["id"] == report["id"]
+    assert json.loads(summary_path.read_text())["id"] == report["id"]
+    summary_path.unlink()
+    overview = client.get("/api/benchmarks").json()
+    assert summary_path.exists()
     assert overview["latest_report"]["id"] == report["id"]
     assert overview["recent_reports"] == [
         {
@@ -4804,6 +4818,117 @@ def test_benchmark_scores_active_parser_and_persists_latest_report(tmp_path: Pat
             "field_metrics": report["field_metrics"],
         }
     ]
+
+
+def test_benchmark_overview_streams_legacy_summary_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=20,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    for _ in range(12):
+        assert client.post("/api/benchmarks/run").status_code == 200
+
+    for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
+        summary_path.unlink()
+    original_read_text = Path.read_text
+    full_report_reads: list[str] = []
+
+    def track_benchmark_reads(path: Path, *args, **kwargs) -> str:
+        if (
+            path.parent == tmp_path / "benchmarks"
+            and path.suffix == ".json"
+            and len(path.stem) == 32
+        ):
+            full_report_reads.append(path.stem)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", track_benchmark_reads)
+
+    first_overview = client.get("/api/benchmarks")
+
+    assert first_overview.status_code == 200
+    assert len(first_overview.json()["recent_reports"]) == 10
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 10
+    assert len(full_report_reads) == 1
+
+    full_report_reads.clear()
+    second_overview = client.get("/api/benchmarks")
+
+    assert second_overview.status_code == 200
+    assert len(second_overview.json()["recent_reports"]) == 10
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 10
+    assert len(full_report_reads) == 1
+
+
+def test_benchmark_overview_rescans_after_a_concurrent_legacy_backfill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = make_client(tmp_path)
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    report = client.post("/api/benchmarks/run").json()
+    summary_path = tmp_path / "benchmarks" / f"{report['id']}.summary.json"
+    summary_path.unlink()
+    requesting_store = FileBenchmarkStore(tmp_path)
+    concurrent_store = FileBenchmarkStore(tmp_path)
+
+    def run_concurrent_backfill(**_kwargs) -> None:
+        concurrent_store.list_summaries(
+            parser_provider="mock",
+            layout_profile="generic",
+        )
+
+    monkeypatch.setattr(
+        requesting_store,
+        "_backfill_report_summaries",
+        run_concurrent_backfill,
+    )
+
+    summaries = requesting_store.list_summaries(
+        parser_provider="mock",
+        layout_profile="generic",
+    )
+
+    assert [summary.id for summary in summaries] == [report["id"]]
+    assert summary_path.exists()
+
+
+def test_benchmark_overview_recovers_only_unindexed_reports_newer_than_history(
+    tmp_path: Path,
+) -> None:
+    client = make_client(
+        tmp_path,
+        api_rate_limit_benchmarks_per_minute=20,
+    )
+    job_id = upload_job(client).json()["id"]
+    approve_job(client, job_id)
+    client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
+    reports = [client.post("/api/benchmarks/run").json() for _ in range(12)]
+    reports.sort(key=lambda report: (report["created_at"], report["id"]))
+    oldest_summary_path = (
+        tmp_path / "benchmarks" / f"{reports[0]['id']}.summary.json"
+    )
+    newest_summary_path = (
+        tmp_path / "benchmarks" / f"{reports[-1]['id']}.summary.json"
+    )
+    oldest_summary_path.unlink()
+    newest_summary_path.unlink()
+
+    overview = client.get("/api/benchmarks")
+
+    assert overview.status_code == 200
+    assert overview.json()["recent_reports"][0]["id"] == reports[-1]["id"]
+    assert len(overview.json()["recent_reports"]) == 10
+    assert newest_summary_path.exists()
+    assert not oldest_summary_path.exists()
 
 
 def test_benchmark_scores_an_enabled_selected_parser_pipeline(
@@ -4850,11 +4975,14 @@ def test_benchmark_scores_an_enabled_selected_parser_pipeline(
 
 def test_benchmark_runs_and_exports_layout_corpora_independently(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = make_client(
         tmp_path,
+        parser_enabled_providers=["ocr_cv"],
         parser_enabled_layout_profiles=["pokerstars"],
     )
+    monkeypatch.setattr(api_module, "build_parser", lambda _settings: MockParser())
     generic_id = upload_job(client, filename="generic.png").json()["id"]
     store = FileJobStore(tmp_path)
     legacy_generic = store.get(generic_id)
@@ -4879,6 +5007,43 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
             "parser_layout_profile": "pokerstars",
         },
     ).json()
+    ocr_generic_report = client.post(
+        "/api/benchmarks/run",
+        json={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "generic",
+        },
+    ).json()
+    for summary_path in (tmp_path / "benchmarks").glob("*.summary.json"):
+        summary_path.unlink()
+    original_read_text = Path.read_text
+    full_report_reads: list[str] = []
+
+    def track_benchmark_reads(path: Path, *args, **kwargs) -> str:
+        if (
+            path.parent == tmp_path / "benchmarks"
+            and path.suffix == ".json"
+            and len(path.stem) == 32
+        ):
+            full_report_reads.append(path.stem)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", track_benchmark_reads)
+    default_history = client.get("/api/benchmarks").json()
+    pokerstars_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "mock",
+            "parser_layout_profile": "pokerstars",
+        },
+    ).json()
+    ocr_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "generic",
+        },
+    ).json()
     pokerstars_export = client.get(
         "/api/benchmarks/export",
         params={
@@ -4899,6 +5064,41 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
         pokerstars_id
     ]
     assert pokerstars_report["layout_profile"] == "pokerstars"
+    assert default_history["latest_report"]["id"] == generic_report["id"]
+    assert [report["id"] for report in default_history["recent_reports"]] == [
+        generic_report["id"]
+    ]
+    assert pokerstars_history["latest_report"]["id"] == pokerstars_report["id"]
+    assert [report["id"] for report in pokerstars_history["recent_reports"]] == [
+        pokerstars_report["id"]
+    ]
+    assert ocr_history["latest_report"]["id"] == ocr_generic_report["id"]
+    assert [report["id"] for report in ocr_history["recent_reports"]] == [
+        ocr_generic_report["id"]
+    ]
+    for history in (default_history, pokerstars_history, ocr_history):
+        assert history["included_cases"] == 2
+        assert history["included_cases_by_layout"] == {
+            "generic": 1,
+            "pokerstars": 1,
+        }
+    incompatible_history = client.get(
+        "/api/benchmarks",
+        params={
+            "parser_provider": "ocr_cv",
+            "parser_layout_profile": "pokerstars",
+        },
+    )
+    assert incompatible_history.status_code == 400
+    assert incompatible_history.json()["detail"] == (
+        "Layout profile 'pokerstars' is not supported by parser provider 'ocr_cv'"
+    )
+    assert full_report_reads == [
+        generic_report["id"],
+        pokerstars_report["id"],
+        ocr_generic_report["id"],
+    ]
+    assert len(list((tmp_path / "benchmarks").glob("*.summary.json"))) == 3
     with ZipFile(BytesIO(pokerstars_export.content)) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert set(archive.namelist()) == {

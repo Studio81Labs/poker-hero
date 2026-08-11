@@ -653,7 +653,7 @@ for the runtime topology.
 - `PUT /api/jobs/{job_id}/benchmark`
 - `GET /api/training/progress`
 - `GET /api/training/lessons/export`
-- `GET /api/benchmarks`
+- `GET /api/benchmarks[?parser_provider=...&parser_layout_profile=...]`
 - `GET /api/backups/export`
 - `POST /api/backups/restore`
 - `GET /api/benchmarks/export`

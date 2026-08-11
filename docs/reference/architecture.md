@@ -223,7 +223,9 @@ failed postflop solves. For multiway fallback aggression, `local_ev` converts
 its per-opponent response estimate into the probability that the entire field
 folds under an explicit independent equal-response assumption. It enumerates
 every possible caller count, estimates equity against that surviving field,
-and weights each branch using its own final pot and continuation value. When
+and weights each branch using its own final pot and continuation value. Each
+branch samples runouts after removing only the opponents present in that
+branch, so cards assigned to non-participating opponents remain available. When
 raising into an outstanding wager already included in the pot, the canonical
 state can record both how many opponents have committed it and their total
 current-street wager. The total wager is distinct from hero's remaining amount

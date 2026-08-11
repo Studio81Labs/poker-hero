@@ -62,7 +62,9 @@ def expected_mock_state(**overrides: object) -> CanonicalState:
     return CanonicalState.model_validate(values)
 
 
-def test_benchmark_corpus_fingerprint_tracks_only_stable_labels() -> None:
+def test_benchmark_corpus_fingerprint_tracks_stable_labels_and_images(
+    tmp_path: Path,
+) -> None:
     first = JobRecord(
         id="1" * 32,
         original_filename="first.png",
@@ -76,7 +78,20 @@ def test_benchmark_corpus_fingerprint_tracks_only_stable_labels() -> None:
         "id": "2" * 32,
         "original_filename": "second.png",
     })
-    baseline = benchmark_corpus_fingerprint([first, second])
+    first_image = tmp_path / "first.png"
+    second_image = tmp_path / "second.png"
+    changed_first_image = tmp_path / "changed-first.png"
+    first_image.write_bytes(b"first image")
+    second_image.write_bytes(b"second image")
+    changed_first_image.write_bytes(b"changed first image")
+    image_paths = {
+        first.id: first_image,
+        second.id: second_image,
+    }
+    baseline = benchmark_corpus_fingerprint(
+        [first, second],
+        lambda job: image_paths[job.id],
+    )
 
     metadata_change = first.model_copy(deep=True, update={
         "notes": "Reviewed during QA",
@@ -91,10 +106,45 @@ def test_benchmark_corpus_fingerprint_tracks_only_stable_labels() -> None:
         "benchmark_included": False,
     })
 
-    assert benchmark_corpus_fingerprint([second, first]) == baseline
-    assert benchmark_corpus_fingerprint([metadata_change, second]) == baseline
-    assert benchmark_corpus_fingerprint([first, second, excluded]) == baseline
-    assert benchmark_corpus_fingerprint([state_change, second]) != baseline
+    assert (
+        benchmark_corpus_fingerprint(
+            [second, first],
+            lambda job: image_paths[job.id],
+        )
+        == baseline
+    )
+    assert (
+        benchmark_corpus_fingerprint(
+            [metadata_change, second],
+            lambda job: image_paths[job.id],
+        )
+        == baseline
+    )
+    assert (
+        benchmark_corpus_fingerprint(
+            [first, second, excluded],
+            lambda job: image_paths[job.id],
+        )
+        == baseline
+    )
+    assert (
+        benchmark_corpus_fingerprint(
+            [state_change, second],
+            lambda job: image_paths[job.id],
+        )
+        != baseline
+    )
+    changed_image_paths = {
+        **image_paths,
+        first.id: changed_first_image,
+    }
+    assert (
+        benchmark_corpus_fingerprint(
+            [first, second],
+            lambda job: changed_image_paths[job.id],
+        )
+        != baseline
+    )
 
 
 def test_benchmark_preserves_automatic_parser_routing(tmp_path: Path) -> None:
@@ -128,10 +178,12 @@ def test_benchmark_preserves_automatic_parser_routing(tmp_path: Path) -> None:
         benchmark_included=True,
     )
 
+    image_path = tmp_path / "table.png"
+    image_path.write_bytes(VALID_PNG)
     report = run_benchmark(
         [job],
         RoutedParser(),
-        lambda _job: tmp_path / "table.png",
+        lambda _job: image_path,
         parser_provider="auto",
         layout_profile="fortuna_nations",
     )

@@ -545,9 +545,10 @@ pnpm backend:benchmark ./poker-hero-parser-dataset.zip \
 Drop values are accuracy ratios, so `0.01` permits one percentage point. The
 human report prints overall and per-field changes; `--json` keeps stdout as the
 current full report while regression failures remain on stderr. A baseline with
-a different parser, layout, or corpus fingerprint is rejected. After changing
-selected hands or approved labels, review the new corpus and deliberately
-capture a replacement baseline.
+a different parser, layout, or corpus fingerprint is rejected. The fingerprint
+includes selected hand IDs, approved labels, and screenshot contents. After
+changing selected hands, screenshots, or approved labels, review the new corpus
+and deliberately capture a replacement baseline.
 
 When multiple compatible parser plugins are enabled, the in-app benchmark
 dialog compares each plugin's latest saved run for the selected layout. Reports

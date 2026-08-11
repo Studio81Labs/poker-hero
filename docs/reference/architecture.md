@@ -445,9 +445,10 @@ archive suitable for CI while exposing missing labels instead of allowing
 well-covered card fields to mask weaker pot, bet, stack, or position parsing.
 It can load a full prior JSON report and enforce maximum overall or per-field
 accuracy drops only after validating parser, layout, and corpus fingerprint
-identity. JSON mode continues to emit only the current report on stdout, keeping
-the output reusable as a later baseline while diagnostics and gate failures use
-stderr.
+identity. The fingerprint covers selected job IDs, approved labels, and source
+screenshot bytes. JSON mode continues to emit only the current report on
+stdout, keeping the output reusable as a later baseline while diagnostics and
+gate failures use stderr.
 Client/layout corpora are benchmarked separately with the parser profile under
 test, keeping coverage and regression ownership explicit.
 

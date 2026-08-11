@@ -54,7 +54,7 @@ def run_benchmark(
     return BenchmarkReport(
         parser_provider=parser_provider,
         layout_profile=layout_profile,
-        corpus_fingerprint=benchmark_corpus_fingerprint(jobs),
+        corpus_fingerprint=benchmark_corpus_fingerprint(jobs, image_path_for),
         total_cases=len(cases),
         successful_cases=len(cases) - failed_cases,
         failed_cases=failed_cases,

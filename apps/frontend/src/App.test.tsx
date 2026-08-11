@@ -5109,9 +5109,21 @@ describe("App", () => {
       name: "Next topic: Plugins and data",
     })).toBeEnabled();
 
-    await user.click(within(dialog).getByRole("button", {
+    const pluginsTopic = within(dialog).getByRole("button", {
       name: "Plugins and data",
+    });
+    const scrollPluginsIntoView = vi.fn();
+    Object.defineProperty(pluginsTopic, "scrollIntoView", {
+      configurable: true,
+      value: scrollPluginsIntoView,
+    });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Next topic: Plugins and data",
     }));
+    expect(scrollPluginsIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "nearest",
+    });
     const closeButton = within(dialog).getByRole("button", {
       name: "Close user guide",
     });

@@ -304,6 +304,7 @@ interface UserGuideDialogProps {
 export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   const [activeTopicId, setActiveTopicId] = useState(GUIDE_TOPICS[0].id);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const topicButtonRefs = useRef(new Map<string, HTMLButtonElement>());
   const topicRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   const activeIndex = Math.max(
@@ -322,6 +323,10 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
     if (topicRef.current) {
       topicRef.current.scrollTop = 0;
     }
+    topicButtonRefs.current.get(activeTopicId)?.scrollIntoView?.({
+      block: "nearest",
+      inline: "nearest",
+    });
   }, [activeTopicId]);
 
   useEffect(() => {
@@ -409,6 +414,13 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
             {GUIDE_TOPICS.map((topic, index) => (
               <button
                 key={topic.id}
+                ref={(button) => {
+                  if (button) {
+                    topicButtonRefs.current.set(topic.id, button);
+                  } else {
+                    topicButtonRefs.current.delete(topic.id);
+                  }
+                }}
                 type="button"
                 className={topic.id === activeTopic.id ? "active" : ""}
                 onClick={() => setActiveTopicId(topic.id)}

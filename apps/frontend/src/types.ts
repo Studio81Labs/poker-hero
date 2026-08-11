@@ -461,6 +461,7 @@ export interface BenchmarkReport {
   id: string;
   parser_provider: string;
   layout_profile: string;
+  corpus_fingerprint?: string | null;
   created_at: string;
   total_cases: number;
   successful_cases: number;
@@ -476,6 +477,7 @@ export interface BenchmarkReportSummary {
   id: string;
   parser_provider: string;
   layout_profile: string;
+  corpus_fingerprint?: string | null;
   created_at: string;
   total_cases: number;
   failed_cases: number;
@@ -492,6 +494,7 @@ export interface BenchmarkParserPipelineSummary {
 export interface BenchmarkOverview {
   included_cases: number;
   included_cases_by_layout?: Record<string, number>;
+  corpus_fingerprint?: string | null;
   default_layout_profile?: string;
   latest_report: BenchmarkReport | null;
   recent_reports: BenchmarkReportSummary[];

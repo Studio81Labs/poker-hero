@@ -3486,6 +3486,14 @@ button:disabled {
   color: var(--accent);
 }
 
+.benchmark-pipeline-list button.stale > span > small {
+  color: #6d5510;
+}
+
+.benchmark-pipeline-list button.stale > strong {
+  color: #8b2d13;
+}
+
 .benchmark-pipeline-list button:not(:disabled):hover {
   background: var(--surface-strong);
 }
@@ -3564,6 +3572,23 @@ button:disabled {
 .benchmark-report-toolbar > span {
   padding-bottom: 8px;
   text-align: right;
+}
+
+.benchmark-corpus-warning {
+  align-items: center;
+  background: #fff7df;
+  border-bottom: 1px solid #d6a900;
+  color: #6d5510;
+  display: flex;
+  font-size: 10px;
+  gap: 8px;
+  padding: 7px 10px;
+}
+
+.benchmark-corpus-warning > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .benchmark-summary {

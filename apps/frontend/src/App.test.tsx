@@ -14213,10 +14213,12 @@ describe("App", () => {
 
   it("runs every available parser comparison independently", async () => {
     const pendingMockRun = deferredResponse();
+    const currentCorpusFingerprint = "a".repeat(64);
     const baseReport = {
       id: "benchmark-old-mock",
       parser_provider: "mock",
       layout_profile: "generic",
+      corpus_fingerprint: "b".repeat(64),
       created_at: "2026-08-11T08:00:00Z",
       total_cases: 2,
       successful_cases: 2,
@@ -14233,6 +14235,7 @@ describe("App", () => {
       created_at: "2026-08-11T09:00:00Z",
       correct_fields: 16,
       accuracy: 0.8,
+      corpus_fingerprint: currentCorpusFingerprint,
     };
     const visionReport = {
       ...baseReport,
@@ -14241,11 +14244,13 @@ describe("App", () => {
       created_at: "2026-08-11T09:02:00Z",
       correct_fields: 19,
       accuracy: 0.95,
+      corpus_fingerprint: currentCorpusFingerprint,
     };
     const summary = (report: typeof baseReport) => ({
       id: report.id,
       parser_provider: report.parser_provider,
       layout_profile: report.layout_profile,
+      corpus_fingerprint: report.corpus_fingerprint,
       created_at: report.created_at,
       total_cases: report.total_cases,
       failed_cases: report.failed_cases,
@@ -14256,6 +14261,7 @@ describe("App", () => {
       .mockResolvedValueOnce(jsonResponse({
         included_cases: 2,
         included_cases_by_layout: { generic: 2 },
+        corpus_fingerprint: currentCorpusFingerprint,
         default_layout_profile: "generic",
         latest_report: baseReport,
         recent_reports: [summary(baseReport)],
@@ -14305,6 +14311,12 @@ describe("App", () => {
     const runComparison = await within(dialog).findByRole("button", {
       name: "Run comparison",
     });
+    expect(within(dialog).getByRole("button", {
+      name: "Use Mock parser benchmark pipeline",
+    })).toHaveTextContent("Current corpus not verified · rerun");
+    expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "This run is not verified against the current ground truth",
+    );
     await user.click(runComparison);
 
     expect(runComparison).toBeDisabled();
@@ -14321,12 +14333,16 @@ describe("App", () => {
       name: "Use Mock parser benchmark pipeline",
     })).toHaveTextContent("80%");
     expect(within(dialog).getByRole("button", {
+      name: "Use Mock parser benchmark pipeline",
+    })).not.toHaveTextContent("not verified");
+    expect(within(dialog).getByRole("button", {
       name: "Use Template OCR benchmark pipeline",
     })).toHaveTextContent("--");
     expect(within(dialog).getByRole("button", {
       name: "Use External vision benchmark pipeline",
     })).toHaveTextContent("95%");
     expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("80%");
+    expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
     expect(runComparison).toBeEnabled();
 
     const runBodies = fetchMock().mock.calls.slice(1).map(([, request]) =>

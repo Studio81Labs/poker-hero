@@ -6,6 +6,7 @@ from zipfile import ZipFile
 
 import pytest
 
+from app.benchmark_corpus import benchmark_corpus_fingerprint
 from app.benchmarking import run_benchmark
 from app.config import Settings
 from app.dataset_benchmark import (
@@ -58,6 +59,41 @@ def expected_mock_state(**overrides: object) -> CanonicalState:
     }
     values.update(overrides)
     return CanonicalState.model_validate(values)
+
+
+def test_benchmark_corpus_fingerprint_tracks_only_stable_labels() -> None:
+    first = JobRecord(
+        id="1" * 32,
+        original_filename="first.png",
+        image_filename="original.png",
+        parser_provider="mock",
+        recommendation_provider="mock",
+        approved_state=expected_mock_state(),
+        benchmark_included=True,
+    )
+    second = first.model_copy(deep=True, update={
+        "id": "2" * 32,
+        "original_filename": "second.png",
+    })
+    baseline = benchmark_corpus_fingerprint([first, second])
+
+    metadata_change = first.model_copy(deep=True, update={
+        "notes": "Reviewed during QA",
+        "tags": ["trusted"],
+        "title": "Flop benchmark",
+    })
+    state_change = first.model_copy(deep=True, update={
+        "approved_state": expected_mock_state(pot_size=13.0),
+    })
+    excluded = second.model_copy(deep=True, update={
+        "id": "3" * 32,
+        "benchmark_included": False,
+    })
+
+    assert benchmark_corpus_fingerprint([second, first]) == baseline
+    assert benchmark_corpus_fingerprint([metadata_change, second]) == baseline
+    assert benchmark_corpus_fingerprint([first, second, excluded]) == baseline
+    assert benchmark_corpus_fingerprint([state_change, second]) != baseline
 
 
 def test_benchmark_preserves_automatic_parser_routing(tmp_path: Path) -> None:

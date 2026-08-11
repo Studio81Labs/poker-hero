@@ -1,6 +1,8 @@
+import json
 from collections import Counter
+from hashlib import sha256
 
-from app.models import JobRecord
+from app.models import BENCHMARK_FIELDS, JobRecord
 
 
 def benchmark_layout_profile(
@@ -36,3 +38,24 @@ def benchmark_layout_counts(
             ).items()
         )
     )
+
+
+def benchmark_corpus_fingerprint(jobs: list[JobRecord]) -> str:
+    cases = [
+        {
+            "approved_state": job.approved_state.model_dump(
+                mode="json",
+                include=set(BENCHMARK_FIELDS),
+            ),
+            "job_id": job.id,
+        }
+        for job in sorted(jobs, key=lambda candidate: candidate.id)
+        if job.benchmark_included and job.approved_state is not None
+    ]
+    payload = json.dumps(
+        cases,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return sha256(payload).hexdigest()

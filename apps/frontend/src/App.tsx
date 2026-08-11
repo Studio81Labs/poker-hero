@@ -2596,6 +2596,7 @@ function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary
     id: report.id,
     parser_provider: report.parser_provider,
     layout_profile: report.layout_profile,
+    corpus_fingerprint: report.corpus_fingerprint,
     created_at: report.created_at,
     total_cases: report.total_cases,
     failed_cases: report.failed_cases,
@@ -2604,11 +2605,19 @@ function benchmarkReportSummary(report: BenchmarkReport): BenchmarkReportSummary
   };
 }
 
+function benchmarkCorpusChanged(
+  reportFingerprint: string | null | undefined,
+  currentFingerprint: string | null | undefined,
+): boolean {
+  return (reportFingerprint ?? null) !== (currentFingerprint ?? null);
+}
+
 function benchmarkReportOption(
   summary: BenchmarkReportSummary,
   latestId: string | undefined,
   capabilities: PipelineCapabilities | null,
   parserPipelines: BenchmarkOverview["parser_pipelines"],
+  currentCorpusFingerprint: string | null | undefined,
 ): string {
   const createdAt = new Date(summary.created_at);
   const dateLabel = Number.isNaN(createdAt.getTime())
@@ -2628,7 +2637,13 @@ function benchmarkReportOption(
     (option) => option.id === summary.layout_profile,
   )?.label ?? providerLabel(summary.layout_profile);
   const layoutLabel = rawLayoutLabel.charAt(0).toUpperCase() + rawLayoutLabel.slice(1);
-  return `${summary.id === latestId ? "Latest" : dateLabel} · ${parserLabel} · ${layoutLabel} · ${benchmarkPercent(summary.accuracy)}`;
+  const staleLabel = benchmarkCorpusChanged(
+    summary.corpus_fingerprint,
+    currentCorpusFingerprint,
+  )
+    ? " · rerun needed"
+    : "";
+  return `${summary.id === latestId ? "Latest" : dateLabel} · ${parserLabel} · ${layoutLabel} · ${benchmarkPercent(summary.accuracy)}${staleLabel}`;
 }
 
 function previousComparableBenchmarkReport(
@@ -2647,7 +2662,11 @@ function previousComparableBenchmarkReport(
     .find(
       (summary) =>
         summary.parser_provider === report.parser_provider &&
-        summary.layout_profile === report.layout_profile,
+        summary.layout_profile === report.layout_profile &&
+        !benchmarkCorpusChanged(
+          summary.corpus_fingerprint,
+          report.corpus_fingerprint,
+        ),
     ) ?? null;
 }
 
@@ -5578,6 +5597,13 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
+  const benchmarkReportStale = Boolean(
+    benchmarkReport
+    && benchmarkCorpusChanged(
+      benchmarkReport.corpus_fingerprint,
+      benchmarkOverview?.corpus_fingerprint,
+    ),
+  );
   const benchmarkReportParserLabel = benchmarkReport
     ? pipelineCapabilities?.parser_providers.find(
         (option) => option.id === benchmarkReport.parser_provider,
@@ -7245,6 +7271,11 @@ export default function App() {
     formDirtyRef.current = false;
     setForm(approvedForm);
     setApprovedStateKey(approvalKey(approvedState));
+    if (approved.benchmark_included) {
+      setBenchmarkOverview((current) => current
+        ? { ...current, corpus_fingerprint: undefined }
+        : current);
+    }
   }
 
   function preserveNewerScreenshotMetadata(incoming: JobRecord): JobRecord {
@@ -8984,6 +9015,7 @@ export default function App() {
         included_cases_by_layout: hasImportedLayoutCounts
           ? importedLayoutCounts ?? undefined
           : undefined,
+        corpus_fingerprint: undefined,
         default_layout_profile: current?.default_layout_profile,
         latest_report: current?.latest_report ?? null,
         recent_reports: current?.recent_reports ?? [],
@@ -9187,10 +9219,12 @@ export default function App() {
               ...current,
               included_cases: Math.max(0, current.included_cases + change),
               included_cases_by_layout: includedByLayout,
+              corpus_fingerprint: undefined,
             }
           : {
               included_cases: included ? 1 : 0,
               included_cases_by_layout: includedByLayout,
+              corpus_fingerprint: undefined,
               default_layout_profile: layoutProfile ?? undefined,
               latest_report: null,
               recent_reports: [],
@@ -9219,6 +9253,7 @@ export default function App() {
     setBenchmarkOverview((current) => ({
       included_cases: current?.included_cases ?? latestReport.total_cases,
       included_cases_by_layout: current?.included_cases_by_layout,
+      corpus_fingerprint: latestReport.corpus_fingerprint,
       default_layout_profile: current?.default_layout_profile
         ?? latestReport.layout_profile,
       latest_report: selectReport
@@ -12587,7 +12622,7 @@ export default function App() {
                   <div className="benchmark-pipeline-comparison-heading">
                     <h3 id="benchmark-pipeline-comparison-title">Parser comparison</h3>
                     <div>
-                      <span>Latest trusted run</span>
+                      <span>Latest saved run</span>
                       {benchmarkRunnablePipelines.length > 1 ? (
                         <button
                           type="button"
@@ -12617,12 +12652,21 @@ export default function App() {
                       const report = pipeline.latest_report;
                       const running = benchmarkComparisonProgress?.parserId
                         === pipeline.parser.id;
+                      const stale = Boolean(
+                        report
+                        && benchmarkCorpusChanged(
+                          report.corpus_fingerprint,
+                          benchmarkOverview?.corpus_fingerprint,
+                        ),
+                      );
                       let status = "No benchmark run";
                       if (running) {
                         status = "Running benchmark...";
                       } else if (!pipeline.parser.available) {
                         status = pipeline.parser.unavailable_reason
                           ?? "Parser is unavailable";
+                      } else if (stale) {
+                        status = "Current corpus not verified · rerun";
                       } else if (report) {
                         status = `${report.total_cases} ${report.total_cases === 1 ? "case" : "cases"}${report.failed_cases > 0 ? ` · ${report.failed_cases} failed` : ""}`;
                       }
@@ -12633,6 +12677,7 @@ export default function App() {
                           className={[
                             selected ? "active" : "",
                             running ? "running" : "",
+                            stale ? "stale" : "",
                           ].filter(Boolean).join(" ") || undefined}
                           onClick={() => selectBenchmarkParserPipeline(
                             pipeline.parser.id,
@@ -12645,13 +12690,16 @@ export default function App() {
                           }
                           aria-current={selected ? "true" : undefined}
                           aria-label={`Use ${pipeline.parser.label} benchmark pipeline`}
-                          title={pipeline.parser.unavailable_reason ?? undefined}
+                          title={pipeline.parser.unavailable_reason
+                            ?? (stale
+                              ? "This benchmark is not verified against the current ground truth"
+                              : undefined)}
                         >
                           <span>
                             <strong>{pipeline.parser.label}</strong>
                             <small>{status}</small>
                           </span>
-                          <strong className={report?.failed_cases ? "needs-review" : undefined}>
+                          <strong className={report?.failed_cases || stale ? "needs-review" : undefined}>
                             {report ? benchmarkPercent(report.accuracy) : "--"}
                           </strong>
                         </button>
@@ -12681,6 +12729,7 @@ export default function App() {
                               benchmarkOverview?.latest_report?.id,
                               pipelineCapabilities,
                               benchmarkOverview?.parser_pipelines,
+                              benchmarkOverview?.corpus_fingerprint,
                             )}
                           </option>
                         ))}
@@ -12694,6 +12743,15 @@ export default function App() {
                       <span>No comparable earlier run</span>
                     )}
                   </div>
+                  {benchmarkReportStale ? (
+                    <div className="benchmark-corpus-warning" role="status">
+                      <AlertTriangle size={14} aria-hidden="true" />
+                      <span>
+                        <strong>This run is not verified against the current ground truth.</strong>
+                        Run the benchmark again before comparing its accuracy.
+                      </span>
+                    </div>
+                  ) : null}
                   <div className="benchmark-summary" aria-label="Benchmark summary">
                     <div>
                       <strong>{benchmarkReport.total_cases}</strong>

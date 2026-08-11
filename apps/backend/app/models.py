@@ -1332,6 +1332,10 @@ class BenchmarkReport(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     parser_provider: str
     layout_profile: str
+    corpus_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     total_cases: NonNegativeInteger
     successful_cases: NonNegativeInteger
@@ -1405,6 +1409,10 @@ class BenchmarkReportSummary(BaseModel):
     id: str
     parser_provider: str
     layout_profile: str
+    corpus_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     created_at: datetime
     total_cases: NonNegativeInteger
     failed_cases: NonNegativeInteger
@@ -1417,6 +1425,7 @@ class BenchmarkReportSummary(BaseModel):
             id=report.id,
             parser_provider=report.parser_provider,
             layout_profile=report.layout_profile,
+            corpus_fingerprint=report.corpus_fingerprint,
             created_at=report.created_at,
             total_cases=report.total_cases,
             failed_cases=report.failed_cases,
@@ -1448,6 +1457,10 @@ class BenchmarkParserPipelineSummary(BaseModel):
 class BenchmarkOverview(BaseModel):
     included_cases: NonNegativeInteger
     included_cases_by_layout: dict[str, NonNegativeInteger]
+    corpus_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     default_layout_profile: str = Field(
         min_length=1,
         max_length=64,

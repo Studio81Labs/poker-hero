@@ -33,6 +33,10 @@ BENCHMARK_SUMMARY_SCALAR_FIELDS = frozenset({
     "failed_cases",
     "accuracy",
 })
+BENCHMARK_SUMMARY_OPTIONAL_SCALAR_FIELDS = frozenset({"corpus_fingerprint"})
+BENCHMARK_SUMMARY_METADATA_FIELDS = (
+    BENCHMARK_SUMMARY_SCALAR_FIELDS | BENCHMARK_SUMMARY_OPTIONAL_SCALAR_FIELDS
+)
 BENCHMARK_IMPORT_REQUEST_ID_RE = re.compile(BENCHMARK_IMPORT_REQUEST_ID_PATTERN)
 JOB_RECORD_PAYLOAD_ADAPTER = TypeAdapter(dict[str, Any])
 LEGACY_ACTIONS_WITHOUT_SIZING = frozenset({"fold", "check", "call"})
@@ -764,7 +768,7 @@ class FileBenchmarkStore:
         with path.open("rb") as report_file:
             for prefix, event, value in ijson.parse(report_file):
                 if (
-                    prefix in BENCHMARK_SUMMARY_SCALAR_FIELDS
+                    prefix in BENCHMARK_SUMMARY_METADATA_FIELDS
                     and event in {"string", "number"}
                 ):
                     payload[prefix] = value

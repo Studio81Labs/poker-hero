@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.benchmark_corpus import benchmark_corpus_fingerprint
 from app.models import (
     BENCHMARK_FIELDS,
     BenchmarkCaseResult,
@@ -53,6 +54,7 @@ def run_benchmark(
     return BenchmarkReport(
         parser_provider=parser_provider,
         layout_profile=layout_profile,
+        corpus_fingerprint=benchmark_corpus_fingerprint(jobs),
         total_cases=len(cases),
         successful_cases=len(cases) - failed_cases,
         failed_cases=failed_cases,

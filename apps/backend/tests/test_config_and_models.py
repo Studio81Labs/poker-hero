@@ -56,6 +56,39 @@ def test_benchmark_overview_requires_pipeline_report_identity() -> None:
         )
 
 
+def test_benchmark_overview_requires_pipeline_reports_from_same_corpus() -> None:
+    latest_report = {
+        "id": "b" * 32,
+        "parser_provider": "mock",
+        "layout_profile": "generic",
+        "corpus_fingerprint": "a" * 64,
+        "created_at": "2026-08-11T09:00:00Z",
+        "total_cases": 1,
+        "failed_cases": 0,
+        "accuracy": 1,
+    }
+    with pytest.raises(ValidationError):
+        BenchmarkOverview(
+            included_cases=0,
+            included_cases_by_layout={},
+            default_layout_profile="generic",
+            parser_pipelines=[{
+                "parser": {
+                    "id": "mock",
+                    "label": "Mock parser",
+                },
+                "layout_profile": "generic",
+                "latest_report": latest_report,
+                "previous_report": {
+                    **latest_report,
+                    "id": "a" * 32,
+                    "corpus_fingerprint": "b" * 64,
+                    "created_at": "2026-08-11T08:00:00Z",
+                },
+            }],
+        )
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [

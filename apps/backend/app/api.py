@@ -1645,18 +1645,33 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             selected_layout,
         ):
             parser_reports = (
-                recent_reports[:1]
+                recent_reports
                 if parser_option.id == selected_parser
                 else benchmark_store.list_summaries(
-                    limit=1,
                     parser_provider=parser_option.id,
                     layout_profile=selected_layout,
                 )
             )
+            latest_parser_report = parser_reports[0] if parser_reports else None
+            previous_parser_report = (
+                next(
+                    (
+                        report
+                        for report in parser_reports[1:]
+                        if latest_parser_report.corpus_fingerprint is not None
+                        and report.corpus_fingerprint
+                        == latest_parser_report.corpus_fingerprint
+                    ),
+                    None,
+                )
+                if latest_parser_report is not None
+                else None
+            )
             parser_pipelines.append(BenchmarkParserPipelineSummary(
                 parser=parser_option,
                 layout_profile=selected_layout,
-                latest_report=parser_reports[0] if parser_reports else None,
+                latest_report=latest_parser_report,
+                previous_report=previous_parser_report,
             ))
         return BenchmarkOverview(
             included_cases=included_cases,

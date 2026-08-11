@@ -40,6 +40,7 @@ import type {
   BenchmarkFieldComparison,
   BenchmarkFieldMetric,
   BenchmarkOverview,
+  BenchmarkParserPipelineSummary,
   BenchmarkReport,
   BenchmarkReportSummary,
   CanonicalState,
@@ -2686,6 +2687,29 @@ function previousComparableBenchmarkReport(
 
 function benchmarkPointChange(current: number, previous: number): number {
   return Math.round((current - previous) * 100);
+}
+
+function benchmarkPipelinePointChange(
+  pipeline: BenchmarkParserPipelineSummary,
+  currentCorpusFingerprint: string | null | undefined,
+): number | null {
+  const latest = pipeline.latest_report;
+  const previous = pipeline.previous_report;
+  if (
+    !latest
+    || !previous
+    || benchmarkCorpusIsUnverified(
+      latest.corpus_fingerprint,
+      currentCorpusFingerprint,
+    )
+    || benchmarkCorpusIsUnverified(
+      previous.corpus_fingerprint,
+      latest.corpus_fingerprint,
+    )
+  ) {
+    return null;
+  }
+  return benchmarkPointChange(latest.accuracy, previous.accuracy);
 }
 
 function normalizePreflopPosition(value: string | null | undefined): PreflopPosition | null {
@@ -12752,6 +12776,13 @@ export default function App() {
                           benchmarkOverview?.corpus_fingerprint,
                         ),
                       );
+                      const accuracyDelta = benchmarkPipelinePointChange(
+                        pipeline,
+                        benchmarkOverview?.corpus_fingerprint,
+                      );
+                      const trendLabel = accuracyDelta === null
+                        ? null
+                        : `${accuracyDelta > 0 ? "+" : ""}${accuracyDelta} pts`;
                       let status = "No benchmark run";
                       if (running) {
                         status = "Running benchmark...";
@@ -12790,7 +12821,16 @@ export default function App() {
                         >
                           <span>
                             <strong>{pipeline.parser.label}</strong>
-                            <small>{status}</small>
+                            <small>
+                              {status}
+                              {trendLabel ? (
+                                <span
+                                  className={`benchmark-pipeline-trend${accuracyDelta !== null && accuracyDelta > 0 ? " positive" : accuracyDelta !== null && accuracyDelta < 0 ? " negative" : ""}`}
+                                >
+                                  {` · ${trendLabel}`}
+                                </span>
+                              ) : null}
+                            </small>
                           </span>
                           <strong className={report?.failed_cases || stale ? "needs-review" : undefined}>
                             {report ? benchmarkPercent(report.accuracy) : "--"}

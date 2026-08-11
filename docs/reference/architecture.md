@@ -365,9 +365,10 @@ the correction workspace. The overview returns bounded recent-run summaries for
 the requested parser/layout pair, defaulting to the deployment pair when the
 query is omitted. Report controls identify that pair, compact field metrics
 support trend comparisons, and full archived reports are loaded only when
-selected. The same overview includes one lightweight latest-run entry for each
-enabled parser plugin compatible with the selected layout. The control panel
-uses those entries to compare accuracy and failures, then switches the active
+selected. The same overview includes one lightweight latest-run entry and the
+nearest preceding same-corpus entry for each enabled parser plugin compatible
+with the selected layout. The control panel uses those entries to compare
+accuracy, same-corpus point changes, and failures, then switches the active
 parser and scoped report history in place; unavailable plugins remain read-only.
 The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report

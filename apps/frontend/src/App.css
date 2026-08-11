@@ -3524,6 +3524,18 @@ button:disabled {
   white-space: nowrap;
 }
 
+.benchmark-pipeline-trend {
+  font-weight: 700;
+}
+
+.benchmark-pipeline-trend.positive {
+  color: #23734d;
+}
+
+.benchmark-pipeline-trend.negative {
+  color: #c8321b;
+}
+
 .benchmark-report-toolbar {
   align-items: end;
   border-bottom: 1px solid var(--line-soft);

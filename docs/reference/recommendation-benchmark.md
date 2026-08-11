@@ -48,7 +48,8 @@ pnpm backend:recommendation-benchmark ./recommendation-benchmark.json \
   --maximum-metric-regression average_ev_loss=0.05 \
   --maximum-metric-regression fallback_rate=0 \
   --maximum-street-metric-regression river:average_ev_loss=0.02 \
-  --maximum-tag-metric-regression facing-bet:action_accuracy=0.01
+  --maximum-tag-metric-regression facing-bet:action_accuracy=0.01 \
+  --maximum-case-metric-regression action_accuracy=0
 ```
 
 The dataset fingerprint covers normalized scoring inputs, thresholds, tags,
@@ -75,6 +76,13 @@ Use repeatable
 existing report breakdown from regressions hidden by the aggregate. They accept
 the same metric keys and direction rules. A repeated scope/metric pair or a
 scope absent from the benchmark corpus is a configuration error.
+
+Use repeatable `--maximum-case-metric-regression METRIC=DELTA` declarations to
+apply a threshold independently to every case. This catches a regression in one
+trusted hand even when a recovery elsewhere leaves aggregate, street, and tag
+metrics unchanged. The case gate accepts the same metric keys. A metric that was
+not evaluated for a baseline case is skipped for that case; if baseline evidence
+was evaluated and disappears from the current run, the case fails explicitly.
 
 ## Corpus Schema
 

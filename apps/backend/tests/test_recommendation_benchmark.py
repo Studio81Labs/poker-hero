@@ -1795,6 +1795,198 @@ def test_recommendation_benchmark_cli_gates_scoped_regressions(
     assert expected_failure in captured.err
 
 
+def test_recommendation_benchmark_cli_gates_case_regression_hidden_by_totals(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "regressed",
+                [reference_line("check")],
+                tags=["single-raised-pot"],
+            ),
+            benchmark_case(
+                "recovered",
+                [reference_line("check")],
+                tags=["single-raised-pot"],
+            ),
+        ]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider(
+                [
+                    recommendation("check"),
+                    recommendation("fold", fallback_reason="Unsupported spot"),
+                ]
+            ),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-case-metric-regression",
+            "action_accuracy=0",
+            "--maximum-case-metric-regression",
+            "fallback_rate=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider(
+            [
+                recommendation("fold", fallback_reason="Unsupported spot"),
+                recommendation("check"),
+            ]
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "Action accuracy: +0.0 pts" in captured.out
+    assert (
+        "Case regressed: Action accuracy regressed 100.0 pts"
+        in captured.err
+    )
+    assert "Case regressed: Fallback rate regressed 100.0 pts" in captured.err
+    assert "Case recovered:" not in captured.err
+
+
+def test_recommendation_benchmark_cli_gates_lost_case_evidence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [
+            benchmark_case(
+                "mixed",
+                [
+                    reference_line("check", frequency=0.5),
+                    reference_line("bet", sizing=5.0, frequency=0.5),
+                ],
+            )
+        ]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider(
+                [
+                    recommendation(
+                        "check",
+                        candidates=[
+                            {
+                                "action": "check",
+                                "sizing": None,
+                                "frequency": 0.5,
+                            },
+                            {
+                                "action": "bet",
+                                "sizing": 5.0,
+                                "frequency": 0.5,
+                            },
+                        ],
+                    )
+                ]
+            ),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-case-metric-regression",
+            "average_policy_distance=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("check")]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert (
+        "Case mixed: Average policy distance is no longer evaluated"
+        " (baseline 0.000)"
+    ) in captured.err
+
+
+def test_recommendation_benchmark_cli_skips_unevaluated_baseline_case_metric(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("action-only", [reference_line("bet")])]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider([recommendation("bet", sizing=5.0)]),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-case-metric-regression",
+            "line_accuracy=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider([recommendation("bet", sizing=5.0)]),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+
+
+def test_recommendation_benchmark_cli_skips_fallback_for_errored_baseline_case(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    dataset = benchmark_dataset(
+        [benchmark_case("recovered", [reference_line("check")])]
+    )
+    dataset_path = write_dataset(tmp_path / "recommendations.json", dataset)
+    baseline_path = write_report(
+        tmp_path / "baseline.json",
+        run_recommendation_benchmark(
+            dataset,
+            SequenceProvider([RuntimeError("Solver unavailable")]),
+        ),
+    )
+
+    exit_code = main(
+        [
+            str(dataset_path),
+            "--baseline-report",
+            str(baseline_path),
+            "--maximum-case-metric-regression",
+            "fallback_rate=0",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+        provider=SequenceProvider(
+            [recommendation("check", fallback_reason="Recovered with fallback")]
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+
+
 def test_recommendation_benchmark_cli_rejects_unknown_regression_scope(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1930,6 +2122,18 @@ def test_recommendation_benchmark_cli_requires_baseline_and_unique_metrics(
     exit_code = main(
         [
             str(tmp_path / "unused.json"),
+            "--maximum-case-metric-regression",
+            "action_accuracy=0.1",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Metric regression thresholds require --baseline-report" in captured.err
+
+    exit_code = main(
+        [
+            str(tmp_path / "unused.json"),
             "--maximum-street-metric-regression",
             "flop:action_accuracy=0.1",
         ],
@@ -1973,6 +2177,25 @@ def test_recommendation_benchmark_cli_requires_baseline_and_unique_metrics(
         "--maximum-tag-metric-regression repeats metric action_accuracy"
         " for facing-bet"
     ) in captured.err
+
+    exit_code = main(
+        [
+            str(tmp_path / "unused.json"),
+            "--baseline-report",
+            str(tmp_path / "unused-baseline.json"),
+            "--maximum-case-metric-regression",
+            "action_accuracy=0.1",
+            "--maximum-case-metric-regression",
+            "action_accuracy=0.2",
+        ],
+        settings=Settings(data_dir=tmp_path / "unused"),
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert (
+        "--maximum-case-metric-regression repeats metric action_accuracy"
+        in captured.err
+    )
 
 
 def test_recommendation_baseline_report_rejects_invalid_and_oversized_files(

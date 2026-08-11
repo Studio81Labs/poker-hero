@@ -141,6 +141,23 @@ REGRESSION_METRICS = {
         "fallback_rate", "Fallback rate", False, "percent"
     ),
 }
+CASE_REGRESSION_METRICS = frozenset(
+    {
+        "action_accuracy",
+        "line_accuracy",
+        "line_coverage",
+        "policy_coverage",
+        "average_policy_distance",
+        "ev_coverage",
+        "average_ev_loss",
+        "maximum_ev_loss",
+        "conditioning_accuracy",
+        "conditioning_coverage",
+        "range_source_accuracy",
+        "range_source_coverage",
+        "fallback_rate",
+    }
+)
 
 
 class RecommendationBenchmarkError(RuntimeError):
@@ -1295,14 +1312,25 @@ def _scoped_metric_regression_threshold(value: str) -> tuple[str, str, float]:
     return scope, metric, threshold
 
 
+def _case_metric_regression_threshold(value: str) -> tuple[str, float]:
+    metric, threshold = _metric_regression_threshold(value)
+    if metric not in CASE_REGRESSION_METRICS:
+        raise argparse.ArgumentTypeError(
+            f"metric is not available for individual cases: {metric}"
+        )
+    return metric, threshold
+
+
 def _regression_requirement_map(
     requirements: list[tuple[str, float]],
+    *,
+    option_name: str = "--maximum-metric-regression",
 ) -> dict[str, float]:
     result: dict[str, float] = {}
     for metric, threshold in requirements:
         if metric in result:
             raise RecommendationBenchmarkError(
-                f"--maximum-metric-regression repeats metric {metric}"
+                f"{option_name} repeats metric {metric}"
             )
         result[metric] = threshold
     return result
@@ -1430,6 +1458,14 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Repeat to limit a metric regression for one tag breakdown",
     )
     parser.add_argument(
+        "--maximum-case-metric-regression",
+        action="append",
+        type=_case_metric_regression_threshold,
+        default=[],
+        metavar="METRIC=DELTA",
+        help="Repeat to limit a metric regression in every benchmark case",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Write the complete benchmark report as JSON",
@@ -1455,11 +1491,16 @@ def main(
             args.maximum_tag_metric_regression,
             option_name="--maximum-tag-metric-regression",
         )
+        case_regression_thresholds = _regression_requirement_map(
+            args.maximum_case_metric_regression,
+            option_name="--maximum-case-metric-regression",
+        )
         if args.baseline_report is None and any(
             (
                 regression_thresholds,
                 street_regression_thresholds,
                 tag_regression_thresholds,
+                case_regression_thresholds,
             )
         ):
             raise RecommendationBenchmarkError(
@@ -1529,6 +1570,13 @@ def main(
                 baseline.tag_metrics,
                 tag_regression_thresholds,
                 scope_label="Tag",
+            )
+        )
+        failures.extend(
+            _case_regression_failures(
+                report,
+                baseline,
+                case_regression_thresholds,
             )
         )
     for failure in failures:
@@ -1721,6 +1769,91 @@ def _breakdown_regression_failures(
             )
         )
     return failures
+
+
+def _case_regression_failures(
+    report: RecommendationBenchmarkReport,
+    baseline: RecommendationBenchmarkReport,
+    thresholds: dict[str, float],
+) -> list[str]:
+    baseline_by_id = {case.case_id: case for case in baseline.cases}
+    failures: list[str] = []
+    for case in report.cases:
+        previous_case = baseline_by_id[case.case_id]
+        for metric, threshold in thresholds.items():
+            spec = REGRESSION_METRICS[metric]
+            current = _case_metric_value(case, metric)
+            previous = _case_metric_value(previous_case, metric)
+            if previous is None:
+                continue
+            label = f"Case {case.case_id}: {spec.label}"
+            if current is None:
+                failures.append(
+                    f"{label} is no longer evaluated"
+                    f" (baseline {_format_metric_value(previous, spec)})"
+                )
+                continue
+            regression = (
+                previous - current
+                if spec.higher_is_better
+                else current - previous
+            )
+            if regression > threshold + 1e-12:
+                failures.append(
+                    f"{label} regressed"
+                    f" {_format_metric_delta(regression, spec)}"
+                    f" ({_format_metric_value(previous, spec)} to"
+                    f" {_format_metric_value(current, spec)}), above the maximum"
+                    f" {_format_metric_delta(threshold, spec)}"
+                )
+    return failures
+
+
+def _case_metric_value(
+    case: RecommendationBenchmarkCaseResult,
+    metric: str,
+) -> float | None:
+    if metric == "action_accuracy":
+        return _boolean_metric_value(case.action_match)
+    if metric == "line_accuracy":
+        return _boolean_metric_value(case.line_match)
+    if metric == "line_coverage":
+        return float(case.line_match is not None)
+    if metric == "policy_coverage":
+        return float(case.policy_distance is not None)
+    if metric == "average_policy_distance":
+        return case.policy_distance
+    if metric == "ev_coverage":
+        return float(case.reference_ev_loss_bb is not None)
+    if metric in {"average_ev_loss", "maximum_ev_loss"}:
+        return case.reference_ev_loss_bb
+    if metric == "conditioning_accuracy":
+        return _boolean_metric_value(case.range_conditioning_match)
+    if metric == "conditioning_coverage":
+        return (
+            float(case.range_conditioning_status is not None)
+            if case.expected_range_conditioning is not None
+            else None
+        )
+    if metric == "range_source_accuracy":
+        return _boolean_metric_value(case.range_source_match)
+    if metric == "range_source_coverage":
+        return (
+            float(case.range_source is not None)
+            if case.expected_range_source is not None
+            else None
+        )
+    if metric == "fallback_rate":
+        return (
+            float(case.fallback_reason is not None)
+            if case.status == "completed"
+            else None
+        )
+    raise KeyError(metric)
+
+
+def _boolean_metric_value(value: bool | None) -> float | None:
+    return float(value) if value is not None else None
 
 
 def _metric_change(

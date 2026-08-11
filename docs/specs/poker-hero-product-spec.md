@@ -826,9 +826,9 @@ optional scenario tags. The corpus may identify its independent reference
 source, version, and configuration. Human-readable and JSON output support
 optional absolute thresholds for every aggregate and can require source
 provenance. Reports fingerprint normalized scoring inputs and may gate
-direction-aware aggregate, street, and tag regressions against a prior full
-JSON report only when the provider and corpus match. Version-3 turn and river
-cases may require
+direction-aware aggregate, street, tag, and individual-case regressions against
+a prior full JSON report only when the provider and corpus match. Version-3 turn
+and river cases may require
 `applied` or `skipped`
 range-conditioning evidence; the report measures both status agreement and
 evidence coverage so missing provider metadata cannot pass unnoticed. The same

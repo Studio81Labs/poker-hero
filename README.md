@@ -523,6 +523,32 @@ client/layout so a strong result on one table cannot hide a regression on
 another. Evaluation uses temporary storage and never changes the configured
 `POKER_DATA_DIR` or the source ZIP.
 
+Capture a trusted full report and use it to gate later runs from the same
+parser, layout, and labeled corpus:
+
+```bash
+pnpm backend:benchmark ./poker-hero-parser-dataset.zip \
+  --parser-provider ocr_cv \
+  --layout-profile fortuna_nations \
+  --json > ./fortuna-ocr-baseline.json
+
+pnpm backend:benchmark ./poker-hero-parser-dataset.zip \
+  --parser-provider ocr_cv \
+  --layout-profile fortuna_nations \
+  --baseline-report ./fortuna-ocr-baseline.json \
+  --maximum-accuracy-drop 0.01 \
+  --maximum-field-accuracy-drop hero_cards=0 \
+  --maximum-field-accuracy-drop board_cards=0 \
+  --maximum-field-accuracy-drop pot_size=0.02
+```
+
+Drop values are accuracy ratios, so `0.01` permits one percentage point. The
+human report prints overall and per-field changes; `--json` keeps stdout as the
+current full report while regression failures remain on stderr. A baseline with
+a different parser, layout, or corpus fingerprint is rejected. After changing
+selected hands or approved labels, review the new corpus and deliberately
+capture a replacement baseline.
+
 When multiple compatible parser plugins are enabled, the in-app benchmark
 dialog compares each plugin's latest saved run for the selected layout. Reports
 are fingerprinted against their labeled corpus; changed labels, selected hands,

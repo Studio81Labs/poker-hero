@@ -5,6 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Sequence, TypeVar
 
+from pydantic import ValidationError
+
 from app.benchmarking import run_benchmark
 from app.config import Settings, get_settings
 from app.dataset_export import MAX_DATASET_EXPANSION_RATIO
@@ -32,6 +34,72 @@ def _dataset_path_from_invocation(dataset_path: Path) -> Path:
         return dataset_path
     invocation_dir = os.environ.get("POKER_BENCHMARK_BASE_DIR")
     return Path(invocation_dir) / dataset_path if invocation_dir else dataset_path
+
+
+def load_baseline_report(
+    report_path: Path,
+    *,
+    max_report_bytes: int,
+) -> BenchmarkReport:
+    try:
+        report_size = report_path.stat().st_size
+    except OSError as exc:
+        raise DatasetBenchmarkError(
+            f"Could not read baseline report: {report_path}"
+        ) from exc
+    if report_size > max_report_bytes:
+        raise DatasetBenchmarkError("Baseline report is too large")
+    try:
+        report_bytes = report_path.read_bytes()
+        if len(report_bytes) > max_report_bytes:
+            raise DatasetBenchmarkError("Baseline report is too large")
+        return BenchmarkReport.model_validate_json(report_bytes)
+    except OSError as exc:
+        raise DatasetBenchmarkError(
+            f"Could not read baseline report: {report_path}"
+        ) from exc
+    except ValidationError as exc:
+        raise DatasetBenchmarkError("Baseline report is invalid") from exc
+
+
+def validate_comparable_baseline(
+    report: BenchmarkReport,
+    baseline: BenchmarkReport,
+) -> None:
+    if baseline.parser_provider != report.parser_provider:
+        raise DatasetBenchmarkError(
+            "Baseline report parser does not match the benchmark parser"
+        )
+    if baseline.layout_profile != report.layout_profile:
+        raise DatasetBenchmarkError(
+            "Baseline report layout does not match the benchmark layout"
+        )
+    if not baseline.corpus_fingerprint:
+        raise DatasetBenchmarkError(
+            "Baseline report does not include a corpus fingerprint"
+        )
+    if baseline.corpus_fingerprint != report.corpus_fingerprint:
+        raise DatasetBenchmarkError(
+            "Baseline report corpus does not match the benchmark dataset"
+        )
+    current_labels = {
+        case.job_id: {
+            comparison.field: comparison.expected
+            for comparison in case.comparisons
+        }
+        for case in report.cases
+    }
+    baseline_labels = {
+        case.job_id: {
+            comparison.field: comparison.expected
+            for comparison in case.comparisons
+        }
+        for case in baseline.cases
+    }
+    if baseline_labels != current_labels:
+        raise DatasetBenchmarkError(
+            "Baseline report cases do not match the benchmark dataset"
+        )
 
 
 def benchmark_dataset_archive(
@@ -84,7 +152,10 @@ def benchmark_dataset_archive(
         raise DatasetBenchmarkError(f"Parser configuration error: {exc}") from exc
 
 
-def format_benchmark_report(report: BenchmarkReport) -> str:
+def format_benchmark_report(
+    report: BenchmarkReport,
+    baseline: BenchmarkReport | None = None,
+) -> str:
     lines = [
         "Parser dataset benchmark",
         f"Parser: {report.parser_provider}",
@@ -104,6 +175,30 @@ def format_benchmark_report(report: BenchmarkReport) -> str:
         for metric in report.field_metrics
     )
 
+    if baseline is not None:
+        lines.extend(
+            [
+                "Baseline comparison:",
+                f"  Report: {baseline.id}",
+                (
+                    "  Accuracy:"
+                    f" {_percentage_point_change(report.accuracy, baseline.accuracy)}"
+                ),
+                "  Fields:",
+            ]
+        )
+        baseline_metrics = {
+            metric.field: metric for metric in baseline.field_metrics
+        }
+        lines.extend(
+            (
+                f"    {metric.field}:"
+                f" {_percentage_point_change(metric.accuracy, baseline_metrics[metric.field].accuracy)}"
+            )
+            for metric in report.field_metrics
+            if metric.field in baseline_metrics
+        )
+
     cases_needing_review = [
         case
         for case in report.cases
@@ -122,6 +217,10 @@ def format_benchmark_report(report: BenchmarkReport) -> str:
                 )
             lines.append(f"  {case.original_filename}: {detail}")
     return "\n".join(lines)
+
+
+def _percentage_point_change(current: float, baseline: float) -> str:
+    return f"{(current - baseline) * 100:+.1f} pts"
 
 
 def _accuracy_threshold(value: str) -> float:
@@ -148,6 +247,15 @@ def _field_accuracy_threshold(value: str) -> tuple[str, float]:
     field, separator, raw_threshold = value.partition("=")
     if not separator or not field or not raw_threshold:
         raise argparse.ArgumentTypeError("must use FIELD=ACCURACY")
+    if field not in BENCHMARK_FIELDS:
+        raise argparse.ArgumentTypeError(f"unknown benchmark field: {field}")
+    return field, _accuracy_threshold(raw_threshold)
+
+
+def _field_accuracy_drop_threshold(value: str) -> tuple[str, float]:
+    field, separator, raw_threshold = value.partition("=")
+    if not separator or not field or not raw_threshold:
+        raise argparse.ArgumentTypeError("must use FIELD=DROP")
     if field not in BENCHMARK_FIELDS:
         raise argparse.ArgumentTypeError(f"unknown benchmark field: {field}")
     return field, _accuracy_threshold(raw_threshold)
@@ -214,6 +322,24 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="Repeat to require enough labeled cases for a specific field",
     )
     parser.add_argument(
+        "--baseline-report",
+        type=Path,
+        help="Compare with a prior --json report for the same parser, layout, and corpus",
+    )
+    parser.add_argument(
+        "--maximum-accuracy-drop",
+        type=_accuracy_threshold,
+        help="Fail when overall accuracy drops by more than this 0-1 ratio",
+    )
+    parser.add_argument(
+        "--maximum-field-accuracy-drop",
+        action="append",
+        type=_field_accuracy_drop_threshold,
+        default=[],
+        metavar="FIELD=DROP",
+        help="Repeat to limit the accuracy drop for a specific labeled field",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Write the complete benchmark report as JSON",
@@ -235,6 +361,17 @@ def main(
             args.minimum_field_cases,
             "--minimum-field-cases",
         )
+        field_accuracy_drop_thresholds = _requirement_map(
+            args.maximum_field_accuracy_drop,
+            "--maximum-field-accuracy-drop",
+        )
+        if args.baseline_report is None and (
+            args.maximum_accuracy_drop is not None
+            or field_accuracy_drop_thresholds
+        ):
+            raise DatasetBenchmarkError(
+                "Regression thresholds require --baseline-report"
+            )
     except DatasetBenchmarkError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -247,11 +384,19 @@ def main(
     if overrides:
         active_settings = active_settings.model_copy(update=overrides)
 
+    baseline: BenchmarkReport | None = None
     try:
+        if args.baseline_report is not None:
+            baseline = load_baseline_report(
+                _dataset_path_from_invocation(args.baseline_report),
+                max_report_bytes=active_settings.max_dataset_upload_bytes,
+            )
         report = benchmark_dataset_archive(
             _dataset_path_from_invocation(args.dataset),
             active_settings,
         )
+        if baseline is not None:
+            validate_comparable_baseline(report, baseline)
     except DatasetBenchmarkError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -259,7 +404,7 @@ def main(
     if args.json:
         print(report.model_dump_json(indent=2))
     else:
-        print(format_benchmark_report(report))
+        print(format_benchmark_report(report, baseline))
 
     failures = _threshold_failures(
         report,
@@ -268,6 +413,15 @@ def main(
         field_accuracy_thresholds=field_accuracy_thresholds,
         field_case_thresholds=field_case_thresholds,
     )
+    if baseline is not None:
+        failures.extend(
+            _regression_failures(
+                report,
+                baseline,
+                maximum_accuracy_drop=args.maximum_accuracy_drop,
+                field_accuracy_drop_thresholds=field_accuracy_drop_thresholds,
+            )
+        )
     for failure in failures:
         print(failure, file=sys.stderr)
     return 1 if failures else 0
@@ -311,6 +465,45 @@ def _threshold_failures(
             failures.append(
                 f"Field {field} accuracy {metric.accuracy:.1%} is below the minimum"
                 f" {threshold:.1%}"
+            )
+    return failures
+
+
+def _regression_failures(
+    report: BenchmarkReport,
+    baseline: BenchmarkReport,
+    *,
+    maximum_accuracy_drop: float | None,
+    field_accuracy_drop_thresholds: dict[str, float],
+) -> list[str]:
+    failures: list[str] = []
+    if maximum_accuracy_drop is not None:
+        accuracy_drop = baseline.accuracy - report.accuracy
+        if accuracy_drop > maximum_accuracy_drop + 1e-12:
+            failures.append(
+                f"Benchmark accuracy dropped {accuracy_drop * 100:.1f} pts"
+                f" ({baseline.accuracy:.1%} to {report.accuracy:.1%}), above"
+                f" the maximum {maximum_accuracy_drop * 100:.1f} pts"
+            )
+
+    metrics = {metric.field: metric for metric in report.field_metrics}
+    baseline_metrics = {
+        metric.field: metric for metric in baseline.field_metrics
+    }
+    for field, threshold in field_accuracy_drop_thresholds.items():
+        metric = metrics.get(field)
+        baseline_metric = baseline_metrics.get(field)
+        if metric is None or baseline_metric is None:
+            failures.append(
+                f"Field {field} accuracy was not evaluated in both reports"
+            )
+            continue
+        accuracy_drop = baseline_metric.accuracy - metric.accuracy
+        if accuracy_drop > threshold + 1e-12:
+            failures.append(
+                f"Field {field} accuracy dropped {accuracy_drop * 100:.1f} pts"
+                f" ({baseline_metric.accuracy:.1%} to {metric.accuracy:.1%}),"
+                f" above the maximum {threshold * 100:.1f} pts"
             )
     return failures
 

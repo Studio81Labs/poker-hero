@@ -242,6 +242,14 @@ type TrainingActionDifferenceFocus = {
 };
 type BenchmarkCaseTrend = "regressed" | "recovered" | "mixed" | "unchanged";
 type BenchmarkCaseFilter = "all" | Exclude<BenchmarkCaseTrend, "unchanged">;
+type BenchmarkCaseChangeTrend = Extract<BenchmarkCaseTrend, "regressed" | "recovered">;
+type BenchmarkCaseChange = {
+  key: string;
+  label: string;
+  trend: BenchmarkCaseChangeTrend;
+  previousValue: unknown;
+  currentValue: unknown;
+};
 
 const TRAINING_STREET_ORDER: readonly Street[] = ["preflop", "flop", "turn", "river"];
 const TRAINING_CERTAINTY_FOCUS_ORDER: readonly TrainingCertainty[] = ["high", "medium", "low"];
@@ -2832,6 +2840,62 @@ function benchmarkCaseTrend(
     return "recovered";
   }
   return "unchanged";
+}
+
+function benchmarkCaseStatusValue(benchmarkCase: BenchmarkCaseResult): string {
+  if (benchmarkCase.status === "error") {
+    return humanReadableMessage(benchmarkCase.error, "Parser failed");
+  }
+  return `Completed at ${benchmarkPercent(benchmarkCase.accuracy)}`;
+}
+
+function benchmarkCaseChanges(
+  benchmarkCase: BenchmarkCaseResult,
+  previousCase: BenchmarkCaseResult,
+): BenchmarkCaseChange[] {
+  if (benchmarkCase.status !== previousCase.status) {
+    return [{
+      key: "parser-status",
+      label: "Parser status",
+      trend: benchmarkCase.status === "error" ? "regressed" : "recovered",
+      previousValue: benchmarkCaseStatusValue(previousCase),
+      currentValue: benchmarkCaseStatusValue(benchmarkCase),
+    }];
+  }
+  const previousComparisons = new Map(
+    previousCase.comparisons.map((comparison) => [comparison.field, comparison]),
+  );
+  const currentFields = new Set<string>();
+  const changes: BenchmarkCaseChange[] = [];
+  for (const comparison of benchmarkCase.comparisons) {
+    currentFields.add(comparison.field);
+    const previousComparison = previousComparisons.get(comparison.field);
+    if (previousComparison?.matched === comparison.matched) {
+      continue;
+    }
+    changes.push({
+      key: comparison.field,
+      label: benchmarkFieldLabel(comparison.field),
+      trend: comparison.matched ? "recovered" : "regressed",
+      previousValue: previousComparison
+        ? previousComparison.detected
+        : "Not evaluated",
+      currentValue: comparison.detected,
+    });
+  }
+  for (const previousComparison of previousCase.comparisons) {
+    if (currentFields.has(previousComparison.field)) {
+      continue;
+    }
+    changes.push({
+      key: previousComparison.field,
+      label: benchmarkFieldLabel(previousComparison.field),
+      trend: "regressed",
+      previousValue: previousComparison.detected,
+      currentValue: "Not evaluated",
+    });
+  }
+  return changes;
 }
 
 function benchmarkCaseTrendMap(
@@ -5925,6 +5989,22 @@ export default function App() {
     ),
     [benchmarkComparisonReport, benchmarkReport, previousBenchmarkReport?.id],
   );
+  const benchmarkComparisonCases = useMemo(() => {
+    if (
+      !benchmarkReport
+      || !benchmarkComparisonReport
+      || !benchmarkReportsAreComparable(benchmarkReport, benchmarkComparisonReport)
+      || benchmarkComparisonReport.id !== previousBenchmarkReport?.id
+    ) {
+      return new Map<string, BenchmarkCaseResult>();
+    }
+    return new Map(
+      benchmarkComparisonReport.cases.map((benchmarkCase) => [
+        benchmarkCase.job_id,
+        benchmarkCase,
+      ]),
+    );
+  }, [benchmarkComparisonReport, benchmarkReport, previousBenchmarkReport?.id]);
   const benchmarkCaseTrendCounts = useMemo(() => {
     const counts = { regressed: 0, recovered: 0, mixed: 0 };
     for (const trend of benchmarkCaseTrends.values()) {
@@ -13262,6 +13342,10 @@ export default function App() {
                           const mismatches = benchmarkCase.comparisons.filter((comparison) => !comparison.matched);
                           const parserRoute = parserRoutingEvidence(benchmarkCase.parser_routing);
                           const caseTrend = benchmarkCaseTrends.get(benchmarkCase.job_id);
+                          const previousCase = benchmarkComparisonCases.get(benchmarkCase.job_id);
+                          const caseChanges = expanded && previousCase
+                            ? benchmarkCaseChanges(benchmarkCase, previousCase)
+                            : [];
                           const detailId = `benchmark-case-${benchmarkCase.job_id}`;
                           return (
                             <div
@@ -13315,6 +13399,36 @@ export default function App() {
                                     <p className="benchmark-case-error">
                                       {humanReadableMessage(benchmarkCase.error, "Benchmark failed")}
                                     </p>
+                                  ) : null}
+                                  {caseChanges.length > 0 ? (
+                                    <div
+                                      className="benchmark-case-changes"
+                                      aria-label={`${benchmarkCase.original_filename} changes since previous run`}
+                                    >
+                                      <strong className="benchmark-case-changes-title">
+                                        Changes since previous run
+                                      </strong>
+                                      {caseChanges.map((change) => (
+                                        <div
+                                          key={change.key}
+                                          className={`benchmark-case-change ${change.trend}`}
+                                          aria-label={`${change.label} ${change.trend}`}
+                                        >
+                                          <span className="benchmark-case-change-field">
+                                            <strong>{change.label}</strong>
+                                            <em>{change.trend}</em>
+                                          </span>
+                                          <span>
+                                            <small>Previous</small>
+                                            <code>{benchmarkComparisonValue(change.previousValue)}</code>
+                                          </span>
+                                          <span>
+                                            <small>Current</small>
+                                            <code>{benchmarkComparisonValue(change.currentValue)}</code>
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
                                   ) : null}
                                   {mismatches.length > 0 ? (
                                     <div className="benchmark-mismatch-list">

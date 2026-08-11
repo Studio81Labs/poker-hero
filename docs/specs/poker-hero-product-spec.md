@@ -761,8 +761,12 @@ same-corpus pipeline summary even when that older run falls outside the bounded
 report selector. The prior full report is loaded on demand so individual
 screenshots can be marked and filtered as regressed, recovered, or mixed when
 equal case accuracy hides offsetting field changes, without expanding the
-overview payload. Every report records a deterministic fingerprint of
-the selected job IDs and benchmarked approved-state fields. The overview
+overview payload. Expanding a changed screenshot identifies each field whose
+match result regressed or recovered and shows its previous and current detected
+values. Parser failures and recoveries appear as status changes while current
+mismatches remain visible alongside the comparison. Every report records a
+deterministic fingerprint of the selected job IDs and benchmarked approved-state
+fields. The overview
 fingerprints the current layout corpus; reports whose fingerprint differs, or
 legacy reports without one, are labeled as requiring a rerun and are not used
 for trend comparisons against a different corpus. Screenshot metadata and

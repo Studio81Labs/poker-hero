@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import type { CanonicalState, DetectedState, JobRecord, RecommendationResult } from "./types";
+import type {
+  BenchmarkCaseResult,
+  BenchmarkReport,
+  CanonicalState,
+  DetectedState,
+  JobRecord,
+  RecommendationResult,
+} from "./types";
 
 const detectedState: DetectedState = {
   hero_cards: [
@@ -17074,6 +17081,19 @@ describe("App", () => {
     expect(within(dialog).getByText("mixed.png")).toBeInTheDocument();
     expect(within(dialog).queryByText("recovered.png")).not.toBeInTheDocument();
 
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle mixed.png benchmark details, mixed",
+    }));
+    const changes = within(dialog).getByLabelText(
+      "mixed.png changes since previous run",
+    );
+    const heroCardsChange = within(changes).getByLabelText("hero cards regressed");
+    expect(within(heroCardsChange).getByText("Ah; Kd")).toBeInTheDocument();
+    expect(within(heroCardsChange).getByText("As; Kh")).toBeInTheDocument();
+    const potSizeChange = within(changes).getByLabelText("pot size recovered");
+    expect(within(potSizeChange).getByText("4")).toBeInTheDocument();
+    expect(within(potSizeChange).getByText("5")).toBeInTheDocument();
+
     await user.selectOptions(
       within(dialog).getByRole("combobox", { name: "Benchmark report" }),
       previousReport.id,
@@ -17087,6 +17107,109 @@ describe("App", () => {
       "http://localhost:8000/api/benchmarks",
       `http://localhost:8000/api/benchmarks/${previousReport.id}`,
     ]);
+  });
+
+  it("shows parser status regressions in benchmark case details", async () => {
+    const jobId = "7".repeat(32);
+    const corpusFingerprint = "d".repeat(64);
+    const completedCase: BenchmarkCaseResult = {
+      job_id: jobId,
+      original_filename: "parser-failed.png",
+      status: "completed",
+      correct_fields: 1,
+      evaluated_fields: 1,
+      accuracy: 1,
+      warnings: [],
+      error: null,
+      comparisons: [{
+        field: "hero_cards",
+        expected: ["Ah", "Kd"],
+        detected: ["Ah", "Kd"],
+        matched: true,
+        confidence: 0.9,
+      }],
+    };
+    const previousReport: BenchmarkReport = {
+      id: "benchmark-status-previous",
+      parser_provider: "ocr_cv",
+      layout_profile: "fortuna",
+      corpus_fingerprint: corpusFingerprint,
+      created_at: "2026-07-19T12:00:00Z",
+      total_cases: 1,
+      successful_cases: 1,
+      failed_cases: 0,
+      correct_fields: 1,
+      evaluated_fields: 1,
+      accuracy: 1,
+      field_metrics: [
+        { field: "hero_cards", correct: 1, total: 1, accuracy: 1 },
+      ],
+      cases: [completedCase],
+    };
+    const latestReport: BenchmarkReport = {
+      ...previousReport,
+      id: "benchmark-status-latest",
+      created_at: "2026-07-20T12:00:00Z",
+      successful_cases: 0,
+      failed_cases: 1,
+      correct_fields: 0,
+      evaluated_fields: 1,
+      accuracy: 0,
+      field_metrics: [
+        { field: "hero_cards", correct: 0, total: 1, accuracy: 0 },
+      ],
+      cases: [{
+        ...completedCase,
+        status: "error",
+        correct_fields: 0,
+        evaluated_fields: 1,
+        accuracy: 0,
+        error: "OCR process exited unexpectedly",
+        comparisons: [{
+          ...completedCase.comparisons[0],
+          detected: null,
+          matched: false,
+          confidence: null,
+        }],
+      }],
+    };
+    const summary = (report: BenchmarkReport) => ({
+      id: report.id,
+      parser_provider: report.parser_provider,
+      layout_profile: report.layout_profile,
+      corpus_fingerprint: report.corpus_fingerprint,
+      created_at: report.created_at,
+      total_cases: report.total_cases,
+      failed_cases: report.failed_cases,
+      accuracy: report.accuracy,
+      field_metrics: report.field_metrics,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 1,
+        included_cases_by_layout: { fortuna: 1 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: latestReport,
+        recent_reports: [summary(latestReport), summary(previousReport)],
+      }))
+      .mockResolvedValueOnce(jsonResponse(previousReport));
+    render(<App />);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await within(dialog).findByRole("group", { name: "Benchmark case filter" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Toggle parser-failed.png benchmark details, regressed",
+    }));
+
+    const changes = within(dialog).getByLabelText(
+      "parser-failed.png changes since previous run",
+    );
+    const statusChange = within(changes).getByLabelText("Parser status regressed");
+    expect(within(statusChange).getByText("Completed at 100%")).toBeInTheDocument();
+    expect(within(statusChange).getByText("OCR process exited unexpectedly")).toBeInTheDocument();
   });
 
   it("ignores a case comparison that finishes after the benchmark dialog closes", async () => {

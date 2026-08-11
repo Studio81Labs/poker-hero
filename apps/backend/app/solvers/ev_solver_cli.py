@@ -405,8 +405,14 @@ def _monte_carlo_equities(
         board_deck = [card for card in deck if card.code not in used]
         if len(board_deck) < board_needed:
             continue
-        final_board = [*board_cards, *rng.sample(board_deck, board_needed)]
-        outcomes = _hero_outcomes(hero_cards, opponent_hands, final_board)
+        outcomes = _sample_prefix_outcomes(
+            hero_cards=hero_cards,
+            board_cards=board_cards,
+            deck=deck,
+            opponent_hands=opponent_hands,
+            board_needed=board_needed,
+            rng=rng,
+        )
         for opponent_count, outcome in outcomes.items():
             equity_totals[opponent_count] += outcome
             if outcome == 1:
@@ -443,6 +449,31 @@ def _monte_carlo_equities(
         )
         for count in range(1, opponents + 1)
     }
+
+
+def _sample_prefix_outcomes(
+    *,
+    hero_cards: list[Card],
+    board_cards: list[Card],
+    deck: list[Card],
+    opponent_hands: list[list[Card]],
+    board_needed: int,
+    rng: random.Random,
+) -> dict[int, float]:
+    used = {card.code for card in [*hero_cards, *board_cards]}
+    outcomes: dict[int, float] = {}
+
+    for opponent_count, opponent_hand in enumerate(opponent_hands, start=1):
+        used.update(card.code for card in opponent_hand)
+        board_deck = [card for card in deck if card.code not in used]
+        final_board = [*board_cards, *rng.sample(board_deck, board_needed)]
+        outcomes[opponent_count] = _hero_outcome(
+            hero_cards,
+            opponent_hands[:opponent_count],
+            final_board,
+        )
+
+    return outcomes
 
 
 def _sample_budget(street: str, opponents: int) -> int:

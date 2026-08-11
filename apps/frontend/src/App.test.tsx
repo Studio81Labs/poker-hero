@@ -5093,6 +5093,12 @@ describe("App", () => {
     expect(within(dialog).getByRole("button", {
       name: "No previous topic",
     })).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", {
+      name: "Automation",
+    }));
+    expect(within(dialog).getByText(
+      /deployment may independently auto-approve confidence-eligible/i,
+    )).toBeInTheDocument();
     const topicArticle = within(dialog).getByRole("article");
     topicArticle.scrollTop = 240;
 

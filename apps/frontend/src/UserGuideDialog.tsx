@@ -121,7 +121,7 @@ const GUIDE_TOPICS: GuideTopic[] = [
       {
         title: "Turn on the master control",
         description:
-          "Use Automation in the header to enable or pause automated processing for new uploads and captured frames.",
+          "Use Automation in the header to enable or pause control-panel automation for new uploads and captured frames. A deployment may independently auto-approve confidence-eligible, warning-free parses even when this browser control is off.",
       },
       {
         title: "Choose automated actions",

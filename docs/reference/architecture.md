@@ -378,10 +378,8 @@ selected job IDs and benchmarked approved-state fields. The overview computes
 the same value for the current selected-layout corpus. The client marks a
 different or legacy missing report fingerprint as stale, excludes cross-corpus
 trend comparisons, and clears the warning only after a fresh run followed by an
-authoritative overview read. Benchmark execution and selected-hand re-approval
-share the corpus lock so a report cannot observe a partially updated label.
-Metadata that does not participate in parser scoring is intentionally excluded
-from the hash.
+authoritative overview read. Metadata that does not participate in parser
+scoring is intentionally excluded from the hash.
 Rebuildable per-report summary sidecars keep overview reads independent of full
 case payloads. A legacy store receives sidecars through a newest-first,
 streaming metadata pass that stops once the requested history is populated and

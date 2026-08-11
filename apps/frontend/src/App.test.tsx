@@ -14188,6 +14188,68 @@ describe("App", () => {
     })).toBeInTheDocument();
   });
 
+  it("preserves the corpus fingerprint when only solver inputs are re-approved", async () => {
+    const corpusFingerprint = "f".repeat(64);
+    const initialState = canonicalState({
+      opponents_at_current_bet: 1,
+      opponent_wager: 2.5,
+    });
+    const activeJob = {
+      ...approvedJob(initialState),
+      id: "3".repeat(32),
+      original_filename: "solver-input-correction.png",
+      parser_layout_profile: "fortuna",
+      benchmark_included: true,
+    };
+    const correctedJob = {
+      ...activeJob,
+      approved_state: canonicalState({
+        opponents_at_current_bet: 2,
+        opponent_wager: 2.5,
+      }),
+    };
+    const baseOverview = benchmarkOverviewForJob(activeJob.id, activeJob.original_filename);
+    window.localStorage.setItem(
+      "poker-training-processing-v1",
+      JSON.stringify([activeJob]),
+    );
+    window.localStorage.setItem("poker-training-processing-total-v1", "1");
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        ...baseOverview,
+        included_cases_by_layout: { fortuna: 1 },
+        corpus_fingerprint: corpusFingerprint,
+        default_layout_profile: "fortuna",
+        latest_report: {
+          ...baseOverview.latest_report,
+          corpus_fingerprint: corpusFingerprint,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse(correctedJob));
+    render(<App />);
+    const user = userEvent.setup();
+
+    const committedOpponents = await screen.findByLabelText(/Opponents at wager/);
+    await user.clear(committedOpponents);
+    await user.type(committedOpponents, "2");
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    await waitFor(() => expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument());
+
+    const approveState = screen.getByRole("button", { name: "Approve state" });
+    await user.click(approveState);
+
+    await waitFor(() => expect(approveState).toBeDisabled());
+    expect(within(dialog).queryByText(
+      "This run is not verified against the current ground truth.",
+    )).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("option", {
+      name: "Latest · OCR + computer vision · Fortuna · 100%",
+    })).toBeInTheDocument();
+  });
+
   it("revalidates the corpus after a benchmark run", async () => {
     const runFingerprint = "d".repeat(64);
     const currentFingerprint = "e".repeat(64);

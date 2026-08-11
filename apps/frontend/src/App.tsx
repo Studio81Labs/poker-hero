@@ -4833,6 +4833,29 @@ function approvalKey(state: CanonicalState): string {
   });
 }
 
+function benchmarkApprovalKey(state: CanonicalState): string {
+  return JSON.stringify({
+    hero_cards: state.hero_cards.map(cardToCode),
+    board_cards: state.board_cards.map(cardToCode),
+    street: state.street,
+    pot_size: state.pot_size,
+    current_bet: state.current_bet,
+    hero_stack: state.hero_stack ?? null,
+    opponent_stack: state.opponent_stack ?? null,
+    effective_stack: state.effective_stack,
+    players_in_hand: state.players_in_hand,
+    hero_position: state.hero_position,
+    opponent_position: state.opponent_position ?? null,
+    preflop_opener_position: state.preflop_opener_position ?? null,
+    preflop_open_size: state.preflop_open_size ?? null,
+    preflop_action_history: state.preflop_action_history ?? [],
+    facing_action: state.facing_action ?? null,
+    postflop_action_history: state.postflop_action_history ?? [],
+    completed_postflop_streets: state.completed_postflop_streets ?? [],
+    action_context: state.action_context,
+  });
+}
+
 function messageFromError(error: unknown, fallback: string): string {
   return humanReadableMessage(error instanceof Error ? error.message : error, fallback);
 }
@@ -7280,6 +7303,13 @@ export default function App() {
   function applyApprovedJob(approved: JobRecord, fallbackState: CanonicalState) {
     const approvedState = approved.approved_state ?? { ...fallbackState, user_approved: true };
     const approvedForm = stateToForm(approvedState);
+    const previousJob = jobsRef.current.find(
+      (candidate) => candidate.id === approved.id,
+    );
+    const benchmarkStateChanged = !previousJob?.benchmark_included
+      || !previousJob.approved_state
+      || benchmarkApprovalKey(previousJob.approved_state)
+        !== benchmarkApprovalKey(approvedState);
     replaceJob(approved);
     formBaselineRef.current = approvedForm;
     formDirtyRef.current = false;
@@ -7289,11 +7319,13 @@ export default function App() {
       setBenchmarkOverview((current) => current
         ? {
             ...current,
-            corpus_fingerprint: benchmarkCorpusFingerprintAfterLayoutMutation(
-              current.corpus_fingerprint,
-              approved.parser_layout_profile ?? current.default_layout_profile,
-              benchmarkTargetLayoutProfile,
-            ),
+            corpus_fingerprint: benchmarkStateChanged
+              ? benchmarkCorpusFingerprintAfterLayoutMutation(
+                  current.corpus_fingerprint,
+                  approved.parser_layout_profile ?? current.default_layout_profile,
+                  benchmarkTargetLayoutProfile,
+                )
+              : current.corpus_fingerprint,
           }
         : current);
     }

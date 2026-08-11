@@ -763,10 +763,10 @@ fields outside the parser benchmark do not invalidate a run. Automatic-parser
 reports also group attributed cases by the parser that actually handled them,
 showing field accuracy and fallback counts without hiding legacy or failed cases
 that lack route evidence. One failed case must not stop the remaining corpus.
-Runs serialize with corpus inclusion, selected-hand re-approval, dataset import,
-and export so each report observes a complete ground-truth set. After a run, the
-control panel treats its fingerprint as unverified until a fresh overview read
-confirms the authoritative current-layout corpus.
+Runs serialize with corpus inclusion, dataset import, and export so each report
+observes a complete ground-truth set. After a run, the control panel treats its
+fingerprint as unverified until a fresh overview read confirms the authoritative
+current-layout corpus.
 After a restart, corpus operations reject while a durable pending import journal
 still requires recovery.
 

@@ -749,6 +749,10 @@ The overview also returns the latest lightweight report for every enabled parser
 compatible with the selected layout. The benchmark dialog compares those runs
 and can switch the active recognition plugin and scoped report history without
 closing the dialog; unavailable plugins remain visible but cannot be selected.
+The user can run every available compatible parser as one comparison action.
+Runs execute independently through the existing single-parser contract, expose
+which parser is currently running, retain each successful report immediately,
+and continue after a provider-level failure with one human-readable summary.
 Comparable runs show overall and field-level accuracy changes so parser
 regressions are visible. Automatic-parser
 reports also group attributed cases by the parser that actually handled them,

@@ -14211,6 +14211,134 @@ describe("App", () => {
     expect(within(dialog).getByLabelText("Recognition")).toHaveValue("llm_vision");
   });
 
+  it("runs every available parser comparison independently", async () => {
+    const pendingMockRun = deferredResponse();
+    const baseReport = {
+      id: "benchmark-old-mock",
+      parser_provider: "mock",
+      layout_profile: "generic",
+      created_at: "2026-08-11T08:00:00Z",
+      total_cases: 2,
+      successful_cases: 2,
+      failed_cases: 0,
+      correct_fields: 14,
+      evaluated_fields: 20,
+      accuracy: 0.7,
+      field_metrics: [{ field: "hero_cards", correct: 2, total: 2, accuracy: 1 }],
+      cases: [],
+    };
+    const mockReport = {
+      ...baseReport,
+      id: "benchmark-new-mock",
+      created_at: "2026-08-11T09:00:00Z",
+      correct_fields: 16,
+      accuracy: 0.8,
+    };
+    const visionReport = {
+      ...baseReport,
+      id: "benchmark-new-vision",
+      parser_provider: "llm_vision",
+      created_at: "2026-08-11T09:02:00Z",
+      correct_fields: 19,
+      accuracy: 0.95,
+    };
+    const summary = (report: typeof baseReport) => ({
+      id: report.id,
+      parser_provider: report.parser_provider,
+      layout_profile: report.layout_profile,
+      created_at: report.created_at,
+      total_cases: report.total_cases,
+      failed_cases: report.failed_cases,
+      accuracy: report.accuracy,
+      field_metrics: report.field_metrics,
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({
+        included_cases: 2,
+        included_cases_by_layout: { generic: 2 },
+        default_layout_profile: "generic",
+        latest_report: baseReport,
+        recent_reports: [summary(baseReport)],
+        parser_pipelines: [
+          {
+            parser: {
+              id: "mock",
+              label: "Mock parser",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: summary(baseReport),
+          },
+          {
+            parser: {
+              id: "ocr_cv",
+              label: "Template OCR",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: null,
+          },
+          {
+            parser: {
+              id: "llm_vision",
+              label: "External vision",
+              available: true,
+              unavailable_reason: null,
+            },
+            layout_profile: "generic",
+            latest_report: null,
+          },
+        ],
+      }))
+      .mockReturnValueOnce(pendingMockRun.promise)
+      .mockResolvedValueOnce(jsonResponse({
+        detail: "OCR worker is temporarily unavailable",
+      }, 503))
+      .mockResolvedValueOnce(jsonResponse(visionReport));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Parser benchmark" }));
+    const dialog = await screen.findByRole("dialog", { name: "Parser benchmark" });
+    const runComparison = await within(dialog).findByRole("button", {
+      name: "Run comparison",
+    });
+    await user.click(runComparison);
+
+    expect(runComparison).toBeDisabled();
+    expect(runComparison).toHaveTextContent("1/3");
+    expect(within(dialog).getByRole("button", {
+      name: "Use Mock parser benchmark pipeline",
+    })).toHaveTextContent("Running benchmark...");
+    pendingMockRun.resolve(jsonResponse(mockReport));
+
+    expect(await screen.findByText(
+      /Benchmark comparison completed for 2 of 3 parsers/,
+    )).toHaveTextContent("Template OCR: OCR worker is temporarily unavailable");
+    expect(within(dialog).getByRole("button", {
+      name: "Use Mock parser benchmark pipeline",
+    })).toHaveTextContent("80%");
+    expect(within(dialog).getByRole("button", {
+      name: "Use Template OCR benchmark pipeline",
+    })).toHaveTextContent("--");
+    expect(within(dialog).getByRole("button", {
+      name: "Use External vision benchmark pipeline",
+    })).toHaveTextContent("95%");
+    expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("80%");
+    expect(runComparison).toBeEnabled();
+
+    const runBodies = fetchMock().mock.calls.slice(1).map(([, request]) =>
+      JSON.parse(String(request?.body))
+    );
+    expect(runBodies).toEqual([
+      { parser_provider: "mock", parser_layout_profile: "generic" },
+      { parser_provider: "ocr_cv", parser_layout_profile: "generic" },
+      { parser_provider: "llm_vision", parser_layout_profile: "generic" },
+    ]);
+  });
+
   it("imports a parser dataset and enables corpus actions", async () => {
     const pendingImport = deferredResponse();
     fetchMock()

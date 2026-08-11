@@ -369,6 +369,10 @@ selected. The same overview includes one lightweight latest-run entry for each
 enabled parser plugin compatible with the selected layout. The control panel
 uses those entries to compare accuracy and failures, then switches the active
 parser and scoped report history in place; unavailable plugins remain read-only.
+The client can sequence the existing single-parser run endpoint across every
+available compatible plugin. Progress identifies the active parser, each report
+is persisted independently, and a provider-level failure does not stop later
+plugins or roll back earlier results.
 Rebuildable per-report summary sidecars keep overview reads independent of full
 case payloads. A legacy store receives sidecars through a newest-first,
 streaming metadata pass that stops once the requested history is populated and

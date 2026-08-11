@@ -1,6 +1,8 @@
 import json
 from collections import Counter
+from collections.abc import Callable
 from hashlib import sha256
+from pathlib import Path
 
 from app.models import BENCHMARK_FIELDS, JobRecord
 
@@ -40,13 +42,17 @@ def benchmark_layout_counts(
     )
 
 
-def benchmark_corpus_fingerprint(jobs: list[JobRecord]) -> str:
+def benchmark_corpus_fingerprint(
+    jobs: list[JobRecord],
+    image_path_for: Callable[[JobRecord], Path],
+) -> str:
     cases = [
         {
             "approved_state": job.approved_state.model_dump(
                 mode="json",
                 include=set(BENCHMARK_FIELDS),
             ),
+            "source_image": _source_image_identity(job, image_path_for),
             "job_id": job.id,
         }
         for job in sorted(jobs, key=lambda candidate: candidate.id)
@@ -59,3 +65,24 @@ def benchmark_corpus_fingerprint(jobs: list[JobRecord]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return sha256(payload).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as image_file:
+        while chunk := image_file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _source_image_identity(
+    job: JobRecord,
+    image_path_for: Callable[[JobRecord], Path],
+) -> dict[str, str | bool]:
+    try:
+        return {"sha256": _file_sha256(image_path_for(job))}
+    except (KeyError, OSError, ValueError):
+        return {
+            "available": False,
+            "image_filename": job.image_filename,
+        }

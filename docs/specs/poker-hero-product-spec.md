@@ -783,8 +783,13 @@ still requires recovery.
 
 The offline dataset runner can fail on a minimum corpus size, minimum labeled
 case count per field, overall accuracy, and individual field accuracy. Field
-requirements are repeatable and reject duplicate declarations. Regression runs
-should keep separate trusted corpora and thresholds for each supported poker
+requirements are repeatable and reject duplicate declarations. It can also
+compare with a prior full JSON report and fail when overall or configured
+per-field accuracy drops beyond allowed ratios. Baselines must match the current
+parser, layout, and corpus fingerprint, which covers selected hand IDs, approved
+labels, and source screenshot bytes. Changed labels, screenshots, or selected
+hands require an explicitly replaced baseline. Regression runs should keep
+separate trusted corpora, baselines, and thresholds for each supported poker
 client/layout, covering cards, street, pot, current bet, stacks, player count,
 and position rather than relying on the overall average alone.
 

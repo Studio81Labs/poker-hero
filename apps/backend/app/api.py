@@ -1673,7 +1673,10 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 jobs,
                 active_settings.parser_layout_profile,
             ),
-            corpus_fingerprint=benchmark_corpus_fingerprint(selected_jobs),
+            corpus_fingerprint=benchmark_corpus_fingerprint(
+                selected_jobs,
+                store.image_path,
+            ),
             default_layout_profile=active_settings.parser_layout_profile,
             latest_report=(
                 benchmark_store.get(recent_reports[0].id)

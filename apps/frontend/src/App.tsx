@@ -3520,6 +3520,11 @@ function isCachedJobRecord(value: unknown): value is JobRecord {
     && typeof candidate.recommendation_provider === "string"
     && isCachedParserResult(candidate.parser_result)
     && (
+      candidate.parser_auto_approval_eligible === undefined
+      || candidate.parser_auto_approval_eligible === null
+      || typeof candidate.parser_auto_approval_eligible === "boolean"
+    )
+    && (
       candidate.approved_state === null
       || isCachedCanonicalState(candidate.approved_state)
     )
@@ -5204,6 +5209,13 @@ function autoApprovalState(job: JobRecord, allowWarnings: boolean): CanonicalSta
   }
   if (!allowWarnings && job.parser_result.warnings.length > 0) {
     throw new Error("Automation stopped: parser warnings need manual review");
+  }
+  if (job.parser_auto_approval_eligible !== true) {
+    throw new Error(
+      job.parser_auto_approval_eligible === false
+        ? "Automation stopped: parser confidence is below the configured auto-approval requirements"
+        : "Automation stopped: parser confidence eligibility needs manual review",
+    );
   }
 
   const state = formToCanonical(stateToForm(toCanonicalState(job.parser_result.state)));

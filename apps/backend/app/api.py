@@ -746,11 +746,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     detail="Upload was deleted while parsing",
                 ) from exc
             current.parser_result = parser_result
+            current.parser_auto_approval_eligible = meets_auto_approve_thresholds(
+                parser_result.confidences,
+                active_settings,
+            )
             if current.approved_state is None:
                 current.status = "parsed"
-                if should_auto_approve(
-                    parser_result.confidences,
-                    active_settings,
+                if (
+                    active_settings.parser_auto_approve_enabled
+                    and current.parser_auto_approval_eligible
                 ):
                     current.approved_state = CanonicalState.from_parser_result(
                         parser_result
@@ -2305,9 +2309,10 @@ def is_supported_image(image_bytes: bytes) -> bool:
         return False
 
 
-def should_auto_approve(confidences: dict[str, float], settings: Settings) -> bool:
-    if not settings.parser_auto_approve_enabled:
-        return False
+def meets_auto_approve_thresholds(
+    confidences: dict[str, float],
+    settings: Settings,
+) -> bool:
     for field_name, threshold in settings.parser_auto_approve_thresholds.items():
         if confidences.get(field_name, 0) < threshold:
             return False

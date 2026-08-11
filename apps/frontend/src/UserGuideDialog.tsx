@@ -139,7 +139,8 @@ const GUIDE_TOPICS: GuideTopic[] = [
           "Use refresh on a processed hand to unlock its state and recommendation controls before making corrections.",
       },
     ],
-    note: "Automation-only hands are not scored in Training progress because no pre-reveal player decision was recorded.",
+    note:
+      "The backend applies its configured confidence requirements before control-panel automation may approve a hand. Automation-only hands are not scored in Training progress because no pre-reveal player decision was recorded.",
   },
   {
     id: "recommendations",

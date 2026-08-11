@@ -924,6 +924,7 @@ class JobRecord(BaseModel):
     recommendation_provider: str
     recommendation_engine: str | None = None
     parser_result: ParserResult | None = None
+    parser_auto_approval_eligible: bool | None = None
     approved_state: CanonicalState | None = None
     training_decision: TrainingDecision | None = None
     recommendation: RecommendationResult | None = None

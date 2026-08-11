@@ -115,6 +115,7 @@ function jobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
       warnings: [],
       raw: { provider: "mock" },
     },
+    parser_auto_approval_eligible: true,
     approved_state: null,
     training_decision: null,
     recommendation: null,
@@ -7154,6 +7155,40 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Capture and parse" }));
 
     expect(await screen.findByText("Automation stopped: parser warnings need manual review")).toBeInTheDocument();
+    expect(fetchMock()).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
+  });
+
+  it("stops automation before approval when parser confidence misses configured requirements", async () => {
+    stubDisplayMedia("window");
+    stubCanvasCapture();
+    const created = jobRecord({
+      parser_auto_approval_eligible: false,
+      parser_result: {
+        state: detectedState,
+        confidences: {
+          ...jobRecord().parser_result!.confidences,
+          hero_cards: 0.2,
+        },
+        warnings: [],
+        raw: {},
+      },
+    });
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse(created, 201))
+      .mockResolvedValueOnce(processingQueueResponse([created]));
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Share window" }));
+    expect(await screen.findByText("Window sharing active")).toBeInTheDocument();
+    setSharedPreviewSize();
+
+    await user.click(screen.getByRole("button", { name: "Capture and parse" }));
+
+    expect(await screen.findByText(
+      "Automation stopped: parser confidence is below the configured auto-approval requirements",
+    )).toBeInTheDocument();
     expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Request recommendation" })).toBeDisabled();
   });

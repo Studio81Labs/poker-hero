@@ -952,7 +952,9 @@ Auto-approve is configurable. It can approve a parser result only when all
 required fields meet configured confidence thresholds. Auto-request can then
 request a recommendation for approved state. Parser warnings may block or be
 allowed by configuration. Automation must preserve parser confidence, raw
-responses, warnings, and approved state for auditability.
+responses, warnings, and approved state for auditability. Every parsed job
+records the backend's threshold-eligibility decision, and control-panel
+automation must require that explicit decision before approving the state.
 
 ## Error Handling And Trust
 

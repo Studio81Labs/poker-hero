@@ -5568,6 +5568,11 @@ export default function App() {
       : [];
   }, [benchmarkOverview]);
   const benchmarkReport = selectedBenchmarkReport ?? benchmarkOverview?.latest_report ?? null;
+  const benchmarkReportParserLabel = benchmarkReport
+    ? pipelineCapabilities?.parser_providers.find(
+        (option) => option.id === benchmarkReport.parser_provider,
+      )?.label ?? providerLabel(benchmarkReport.parser_provider)
+    : null;
   const benchmarkImportRecoveryPending =
     benchmarkImportLeaseRequestId(
       processingMutationLeaseRef.current,
@@ -5618,6 +5623,7 @@ export default function App() {
     () => benchmarkParserRouteSummary(benchmarkReport),
     [benchmarkReport],
   );
+  const benchmarkParserPipelines = benchmarkOverview?.parser_pipelines ?? [];
   const decisionComparison = useMemo(
     () => (activeRecommendation && activeTrainingDecision
       ? trainingDecisionComparison(
@@ -8327,8 +8333,7 @@ export default function App() {
     setAutomationSettings(updater);
   }
 
-  function openPipelineDialog() {
-    setPipelineDialogOpen(true);
+  function loadPipelineCapabilities() {
     if (pipelineCapabilities || pipelineLoading) {
       return;
     }
@@ -8346,6 +8351,11 @@ export default function App() {
         setError(messageFromError(pipelineError, "Could not read analysis plugins"));
       })
       .finally(() => setPipelineLoading(false));
+  }
+
+  function openPipelineDialog() {
+    setPipelineDialogOpen(true);
+    loadPipelineCapabilities();
   }
 
   function updatePipelineSelection(
@@ -8881,7 +8891,10 @@ export default function App() {
     }
   }
 
-  function openBenchmarkDialog() {
+  function loadBenchmarkOverview(
+    selection: PipelineSelection | null,
+    preservePipelineComparison = false,
+  ) {
     const requestId = ++benchmarkOverviewRequestRef.current;
     setExpandedBenchmarkCaseId(null);
     setSelectedBenchmarkReport(null);
@@ -8890,11 +8903,13 @@ export default function App() {
           ...current,
           latest_report: null,
           recent_reports: [],
+          parser_pipelines: preservePipelineComparison
+            ? current.parser_pipelines
+            : [],
         }
       : null);
-    setBenchmarkDialogOpen(true);
     setBenchmarkLoading(true);
-    void getBenchmarkOverview(pipelineSelection ?? undefined)
+    void getBenchmarkOverview(selection ?? undefined)
       .then((overview) => {
         if (requestId !== benchmarkOverviewRequestRef.current) {
           return;
@@ -8912,6 +8927,11 @@ export default function App() {
           setBenchmarkLoading(false);
         }
       });
+  }
+
+  function openBenchmarkDialog() {
+    setBenchmarkDialogOpen(true);
+    loadBenchmarkOverview(pipelineSelection);
   }
 
   function closeBenchmarkDialog() {
@@ -8952,6 +8972,7 @@ export default function App() {
         default_layout_profile: current?.default_layout_profile,
         latest_report: current?.latest_report ?? null,
         recent_reports: current?.recent_reports ?? [],
+        parser_pipelines: current?.parser_pipelines ?? [],
       };
     });
     const nextJobs = jobsRef.current.flatMap((candidate) => {
@@ -9197,12 +9218,62 @@ export default function App() {
           latestSummary,
           ...(current?.recent_reports ?? []).filter((summary) => summary.id !== latestReport.id),
         ].slice(0, 10),
+        parser_pipelines: current?.parser_pipelines?.map((pipeline) => (
+          pipeline.parser.id === latestReport.parser_provider
+          && pipeline.layout_profile === latestReport.layout_profile
+            ? { ...pipeline, latest_report: latestSummary }
+            : pipeline
+        )),
       }));
     } catch (benchmarkError) {
       setError(messageFromError(benchmarkError, "Parser benchmark failed"));
     } finally {
       setBenchmarkRunning(false);
     }
+  }
+
+  async function selectBenchmarkParserPipeline(parserProvider: string) {
+    if (
+      benchmarkOperationsLocked
+      || pipelineLoading
+      || parserProvider === pipelineSelection?.parser_provider
+    ) {
+      return;
+    }
+    let capabilities = pipelineCapabilities;
+    if (!capabilities) {
+      setPipelineLoading(true);
+      setError(null);
+      try {
+        capabilities = await getPipelineCapabilities();
+        setPipelineCapabilities(capabilities);
+      } catch (pipelineError) {
+        setError(messageFromError(
+          pipelineError,
+          "Could not read analysis plugins",
+        ));
+        return;
+      } finally {
+        setPipelineLoading(false);
+      }
+    }
+    const currentSelection = reconcilePipelineSelection(
+      capabilities,
+      pipelineSelection ?? capabilities.defaults,
+    );
+    const nextSelection = reconcilePipelineSelection(capabilities, {
+      ...currentSelection,
+      parser_provider: parserProvider,
+    });
+    if (
+      nextSelection.parser_provider !== parserProvider
+      || nextSelection.parser_layout_profile !== currentSelection.parser_layout_profile
+    ) {
+      setError("That parser is not available for the selected table layout");
+      return;
+    }
+    setPipelineSelection(nextSelection);
+    loadBenchmarkOverview(nextSelection, true);
   }
 
   async function selectBenchmarkReport(reportId: string) {
@@ -12377,7 +12448,7 @@ export default function App() {
                 <h2 id="benchmark-dialog-title">Parser benchmark</h2>
                 <p>
                   {benchmarkReport
-                    ? `${providerLabel(benchmarkReport.parser_provider)} · ${benchmarkReport.layout_profile}`
+                    ? `${benchmarkReportParserLabel} · ${benchmarkReport.layout_profile}`
                     : "Ground-truth recognition checks"}
                 </p>
               </div>
@@ -12424,6 +12495,62 @@ export default function App() {
                   <span />
                 </span>
               </button>
+
+              {!benchmarkLoading && benchmarkParserPipelines.length > 1 ? (
+                <section
+                  className="benchmark-pipeline-comparison"
+                  aria-labelledby="benchmark-pipeline-comparison-title"
+                >
+                  <div className="benchmark-pipeline-comparison-heading">
+                    <h3 id="benchmark-pipeline-comparison-title">Parser comparison</h3>
+                    <span>Latest trusted run</span>
+                  </div>
+                  <div className="benchmark-pipeline-list">
+                    {benchmarkParserPipelines.map((pipeline) => {
+                      const selected = pipeline.parser.id
+                        === (
+                          pipelineSelection?.parser_provider
+                          ?? benchmarkReport?.parser_provider
+                          ?? benchmarkParserPipelines[0]?.parser.id
+                        );
+                      const report = pipeline.latest_report;
+                      return (
+                        <button
+                          key={pipeline.parser.id}
+                          type="button"
+                          className={selected ? "active" : undefined}
+                          onClick={() => selectBenchmarkParserPipeline(
+                            pipeline.parser.id,
+                          )}
+                          disabled={
+                            selected
+                            || pipelineLoading
+                            || !pipeline.parser.available
+                            || benchmarkOperationsLocked
+                          }
+                          aria-current={selected ? "true" : undefined}
+                          aria-label={`Use ${pipeline.parser.label} benchmark pipeline`}
+                          title={pipeline.parser.unavailable_reason ?? undefined}
+                        >
+                          <span>
+                            <strong>{pipeline.parser.label}</strong>
+                            <small>
+                              {!pipeline.parser.available
+                                ? pipeline.parser.unavailable_reason
+                                : report
+                                  ? `${report.total_cases} ${report.total_cases === 1 ? "case" : "cases"}${report.failed_cases > 0 ? ` · ${report.failed_cases} failed` : ""}`
+                                  : "No benchmark run"}
+                            </small>
+                          </span>
+                          <strong className={report?.failed_cases ? "needs-review" : undefined}>
+                            {report ? benchmarkPercent(report.accuracy) : "--"}
+                          </strong>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
 
               {benchmarkLoading ? (
                 <div className="benchmark-empty">Reading benchmark results...</div>

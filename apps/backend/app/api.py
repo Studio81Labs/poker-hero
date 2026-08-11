@@ -77,6 +77,7 @@ from app.models import (
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
+    BenchmarkParserPipelineSummary,
     BenchmarkReport,
     BenchmarkRunRequest,
     BenchmarkSelectionRequest,
@@ -111,6 +112,7 @@ from app.parsers.registry import build_parser
 from app.pipeline import (
     PipelineSelectionError,
     configured_recommendation_engine,
+    parser_options_for_layout,
     pipeline_capabilities,
     resolve_pipeline_selection,
     settings_for_selection,
@@ -1631,6 +1633,25 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             parser_provider=selected_parser,
             layout_profile=selected_layout,
         )
+        parser_pipelines: list[BenchmarkParserPipelineSummary] = []
+        for parser_option in parser_options_for_layout(
+            active_settings,
+            selected_layout,
+        ):
+            parser_reports = (
+                recent_reports[:1]
+                if parser_option.id == selected_parser
+                else benchmark_store.list_summaries(
+                    limit=1,
+                    parser_provider=parser_option.id,
+                    layout_profile=selected_layout,
+                )
+            )
+            parser_pipelines.append(BenchmarkParserPipelineSummary(
+                parser=parser_option,
+                layout_profile=selected_layout,
+                latest_report=parser_reports[0] if parser_reports else None,
+            ))
         return BenchmarkOverview(
             included_cases=included_cases,
             included_cases_by_layout=benchmark_layout_counts(
@@ -1644,6 +1665,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 else None
             ),
             recent_reports=recent_reports,
+            parser_pipelines=parser_pipelines,
         )
 
     def build_browser_application_backup():

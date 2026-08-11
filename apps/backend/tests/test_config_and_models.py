@@ -31,6 +31,31 @@ def test_benchmark_overview_requires_consistent_layout_counts() -> None:
         )
 
 
+def test_benchmark_overview_requires_pipeline_report_identity() -> None:
+    with pytest.raises(ValidationError):
+        BenchmarkOverview(
+            included_cases=0,
+            included_cases_by_layout={},
+            default_layout_profile="generic",
+            parser_pipelines=[{
+                "parser": {
+                    "id": "mock",
+                    "label": "Mock parser",
+                },
+                "layout_profile": "generic",
+                "latest_report": {
+                    "id": "a" * 32,
+                    "parser_provider": "ocr_cv",
+                    "layout_profile": "generic",
+                    "created_at": "2026-08-11T08:00:00Z",
+                    "total_cases": 1,
+                    "failed_cases": 0,
+                    "accuracy": 1,
+                },
+            }],
+        )
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [

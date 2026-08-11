@@ -379,7 +379,9 @@ the report selector itself bounded. It retrieves the immutable prior report
 through the existing detail endpoint, validates the parser, layout, and corpus
 identity, then derives per-case regressions, recoveries, and mixed field changes
 in the browser. A small bounded report cache reuses that detail when the user
-selects it.
+selects it. Expanded changed cases join comparisons by field to expose prior
+and current detections whose match state changed; completed/error transitions
+use the same diagnostic surface without altering persisted reports.
 The client can sequence the existing single-parser run endpoint across every
 available compatible plugin. Progress identifies the active parser, each report
 is persisted independently, and a provider-level failure does not stop later

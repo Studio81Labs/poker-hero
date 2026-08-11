@@ -3945,6 +3945,77 @@ button:disabled {
   color: var(--muted);
 }
 
+.benchmark-case-changes {
+  border: 1px solid var(--line-soft);
+  display: grid;
+}
+
+.benchmark-case-changes-title {
+  background: rgba(32, 30, 29, 0.04);
+  font-size: 9px;
+  padding: 6px 8px;
+  text-transform: uppercase;
+}
+
+.benchmark-case-change {
+  align-items: start;
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 112px minmax(0, 1fr) minmax(0, 1fr);
+  padding: 7px 8px;
+}
+
+.benchmark-case-change.regressed {
+  box-shadow: inset 2px 0 0 var(--accent-dark);
+}
+
+.benchmark-case-change.recovered {
+  box-shadow: inset 2px 0 0 #23734d;
+}
+
+.benchmark-case-change span,
+.benchmark-case-change small,
+.benchmark-case-change code {
+  display: block;
+  min-width: 0;
+}
+
+.benchmark-case-change-field strong {
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.benchmark-case-change-field em {
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.benchmark-case-change.regressed .benchmark-case-change-field em {
+  color: var(--accent-dark);
+}
+
+.benchmark-case-change.recovered .benchmark-case-change-field em {
+  color: #23734d;
+}
+
+.benchmark-case-change small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+}
+
+.benchmark-case-change code {
+  font-family: inherit;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .benchmark-mismatch-list {
   display: grid;
   gap: 8px;
@@ -4707,6 +4778,14 @@ button:disabled {
   .benchmark-field-list > div:nth-child(even) {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .benchmark-case-change {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .benchmark-case-change-field {
+    grid-column: 1 / -1;
   }
 
   .benchmark-mismatch-list > div {

@@ -4621,19 +4621,24 @@ button:disabled {
   }
 }
 
-@media (max-width: 620px) {
+@media (max-width: 720px) {
   .toolbar {
-    padding-inline: 10px;
+    gap: 4px;
+    padding-inline: 6px;
   }
 
   .brand-block {
-    gap: 8px;
+    gap: 0;
+  }
+
+  .brand-block > div:last-child {
+    display: none;
   }
 
   .brand-mark {
-    flex-basis: 30px;
-    height: 30px;
-    width: 30px;
+    flex-basis: 26px;
+    height: 26px;
+    width: 26px;
   }
 
   .toolbar h1 {
@@ -4649,8 +4654,35 @@ button:disabled {
   }
 
   .automation-master {
-    padding-inline: 8px;
+    padding-inline: 6px;
   }
+
+  .toolbar-stats {
+    gap: 4px;
+  }
+
+  .automation-header-control {
+    height: 34px;
+  }
+
+  .automation-master,
+  .automation-config-button {
+    min-height: 32px;
+  }
+
+  .automation-config-button {
+    padding-inline: 7px;
+  }
+
+  .header-icon-button {
+    flex-basis: 34px;
+    height: 34px;
+    min-height: 34px;
+    width: 34px;
+  }
+}
+
+@media (max-width: 620px) {
 
   .automation-dialog-footer {
     align-items: stretch;
@@ -5004,53 +5036,6 @@ button:disabled {
 }
 
 @media (max-width: 400px) {
-  .toolbar {
-    gap: 4px;
-    padding-inline: 6px;
-  }
-
-  .brand-block {
-    gap: 0;
-  }
-
-  .brand-block > div:last-child {
-    display: none;
-  }
-
-  .brand-mark {
-    flex-basis: 26px;
-    height: 26px;
-    width: 26px;
-  }
-
-  .toolbar-stats {
-    gap: 4px;
-  }
-
-  .automation-header-control {
-    height: 34px;
-  }
-
-  .automation-master,
-  .automation-config-button {
-    min-height: 32px;
-  }
-
-  .automation-master {
-    padding-inline: 6px;
-  }
-
-  .automation-config-button {
-    padding-inline: 7px;
-  }
-
-  .header-icon-button {
-    flex-basis: 34px;
-    height: 34px;
-    min-height: 34px;
-    width: 34px;
-  }
-
   .help-dialog-footer {
     grid-template-columns: auto auto;
   }

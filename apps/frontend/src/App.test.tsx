@@ -5073,13 +5073,18 @@ describe("App", () => {
     render(<App />);
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", {
+    const guideTrigger = screen.getByRole("button", {
       name: "How to use Poker Training Analyzer",
-    }));
+    });
+    await user.click(guideTrigger);
     const dialog = screen.getByRole("dialog", {
       name: "How to use Poker Training Analyzer",
     });
+    const quickStartTopic = within(dialog).getByRole("button", {
+      name: "Quick start",
+    });
 
+    expect(quickStartTopic).toHaveFocus();
     expect(within(dialog).getByRole("heading", {
       name: "Review your first hand",
     })).toBeInTheDocument();
@@ -5101,11 +5106,23 @@ describe("App", () => {
     })).toBeEnabled();
 
     await user.click(within(dialog).getByRole("button", {
-      name: "Close user guide",
+      name: "Plugins and data",
     }));
+    const closeButton = within(dialog).getByRole("button", {
+      name: "Close user guide",
+    });
+    const doneButton = within(dialog).getByRole("button", { name: "Done" });
+    doneButton.focus();
+    await user.tab();
+    expect(closeButton).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(doneButton).toHaveFocus();
+
+    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", {
       name: "How to use Poker Training Analyzer",
     })).not.toBeInTheDocument();
+    expect(guideTrigger).toHaveFocus();
   });
 
   it("shows the parser selected by automatic routing for the active screenshot", async () => {

@@ -4994,3 +4994,52 @@ button:disabled {
     width: 100%;
   }
 }
+
+@media (max-width: 360px) {
+  .toolbar {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+
+  .brand-block {
+    gap: 0;
+  }
+
+  .brand-block > div:last-child {
+    display: none;
+  }
+
+  .brand-mark {
+    flex-basis: 26px;
+    height: 26px;
+    width: 26px;
+  }
+
+  .toolbar-stats {
+    gap: 4px;
+  }
+
+  .automation-header-control {
+    height: 34px;
+  }
+
+  .automation-master,
+  .automation-config-button {
+    min-height: 32px;
+  }
+
+  .automation-master {
+    padding-inline: 6px;
+  }
+
+  .automation-config-button {
+    padding-inline: 7px;
+  }
+
+  .header-icon-button {
+    flex-basis: 34px;
+    height: 34px;
+    min-height: 34px;
+    width: 34px;
+  }
+}

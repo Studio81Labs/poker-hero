@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface GuideStep {
   title: string;
@@ -302,6 +302,8 @@ interface UserGuideDialogProps {
 
 export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   const [activeTopicId, setActiveTopicId] = useState(GUIDE_TOPICS[0].id);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
   const activeIndex = Math.max(
     0,
     GUIDE_TOPICS.findIndex((topic) => topic.id === activeTopicId),
@@ -310,9 +312,70 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   const previousTopic = GUIDE_TOPICS[activeIndex - 1] ?? null;
   const nextTopic = GUIDE_TOPICS[activeIndex + 1] ?? null;
 
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    if (!dialog) {
+      return;
+    }
+
+    const focusableElements = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ));
+    const initialFocus = dialog.querySelector<HTMLElement>("[aria-current='page']")
+      ?? focusableElements()[0];
+    initialFocus?.focus();
+
+    function containFocus(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = focusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const focusedIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && focusedIndex <= 0) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && focusedIndex === focusable.length - 1) {
+        event.preventDefault();
+        first.focus();
+      } else if (focusedIndex === -1) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    }
+
+    document.addEventListener("keydown", containFocus, true);
+    return () => {
+      document.removeEventListener("keydown", containFocus, true);
+      if (previousFocus?.isConnected) {
+        previousFocus.focus();
+      }
+    };
+  }, []);
+
   return (
     <section className="modal-backdrop">
       <div
+        ref={dialogRef}
         className="automation-dialog help-dialog"
         role="dialog"
         aria-modal="true"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { SelectControl } from "./FormControls";
 import {
   createMcpPrincipal,
   getMcpAccessConfig,
@@ -277,7 +278,7 @@ export function McpAccessPanel({
             </label>
             <label>
               Access
-              <select
+              <SelectControl
                 value={access}
                 onChange={(event) =>
                   setAccess(event.target.value as "read" | "write")
@@ -287,7 +288,7 @@ export function McpAccessPanel({
                 <option value="write" disabled={!config.writes_enabled}>
                   Read and write
                 </option>
-              </select>
+              </SelectControl>
             </label>
             <label>
               Expires (optional)

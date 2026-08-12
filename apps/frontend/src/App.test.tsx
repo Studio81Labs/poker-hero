@@ -337,7 +337,12 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Configure analysis plugins" }));
     const dialog = await screen.findByRole("dialog", { name: "Analysis plugins" });
 
-    expect(within(dialog).getByLabelText("Recognition")).toHaveValue("mock");
+    const recognitionSelect = within(dialog).getByLabelText("Recognition");
+    expect(recognitionSelect).toHaveValue("mock");
+    expect(recognitionSelect.parentElement).toHaveClass("select-control");
+    expect(recognitionSelect.closest("label")?.firstElementChild).toHaveClass(
+      "pipeline-select-copy",
+    );
     expect(within(dialog).getByLabelText("Table layout")).toHaveValue("pokerstars");
     expect(within(dialog).getByLabelText("Recommendation")).toHaveValue("rule_based");
   });
@@ -5690,6 +5695,11 @@ describe("App", () => {
     expect(screen.getByLabelText(/Action context/)).toHaveValue("");
     await user.click(screen.getByRole("button", { name: "Add action" }));
     await user.selectOptions(screen.getByLabelText("Action 1 type"), "bet");
+    const actionTypeSelect = screen.getByLabelText("Action 1 type");
+    expect(actionTypeSelect.parentElement).toHaveClass("select-control");
+    expect(actionTypeSelect.closest(".action-history-row")?.firstElementChild).toHaveClass(
+      "action-history-index",
+    );
     await user.type(screen.getByLabelText("Action 1 amount"), "5");
     await user.click(screen.getByRole("button", { name: "Add action" }));
     await user.selectOptions(screen.getByLabelText("Action 2 type"), "raise");
@@ -9725,11 +9735,16 @@ describe("App", () => {
 
     pendingStreet.resolve(jsonResponse(focusedProgress));
     await waitFor(() => expect(within(dialog).getByLabelText("Review street")).toHaveValue("turn"));
+    const reviewOrderSelect = within(dialog).getByLabelText("Review order");
+    expect(reviewOrderSelect.parentElement).toHaveClass("select-control");
+    expect(reviewOrderSelect.closest("label")?.firstElementChild).toHaveClass(
+      "training-review-order-label",
+    );
     expect(within(dialog).getByText("1 pending review hand on turn.")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Open low.png training review" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Open high.png training review" })).toBeEnabled();
 
-    await user.selectOptions(within(dialog).getByLabelText("Review order"), "ev_loss");
+    await user.selectOptions(reviewOrderSelect, "ev_loss");
     const reviewHighestLoss = within(dialog).getByRole("button", { name: "Review highest loss" });
     expect(reviewHighestLoss).toBeDisabled();
     expect(within(dialog).getByText("Updating review queue...")).toBeInTheDocument();
@@ -17034,7 +17049,12 @@ describe("App", () => {
     expect(within(dialog).getByLabelText("pot size change -50 pts")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("board cards change New")).toBeInTheDocument();
 
-    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Benchmark report" }), "benchmark-earlier");
+    const reportSelect = within(dialog).getByRole("combobox", { name: "Benchmark report" });
+    expect(reportSelect.parentElement).toHaveClass("select-control");
+    expect(reportSelect.closest("label")?.firstElementChild).toHaveClass(
+      "benchmark-report-label",
+    );
+    await user.selectOptions(reportSelect, "benchmark-earlier");
 
     await waitFor(() => expect(within(dialog).getByLabelText("Benchmark summary")).toHaveTextContent("70%"));
     expect(within(dialog).getByText("No comparable earlier run")).toBeInTheDocument();

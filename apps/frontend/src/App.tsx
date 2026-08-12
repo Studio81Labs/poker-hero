@@ -5,6 +5,7 @@ import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { DetectedStateField } from "./DetectedStateField";
+import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
@@ -11631,14 +11632,14 @@ export default function App() {
               />
             </div>
 
-            <div className="automation-dialog-footer">
+            <DialogFooter>
               <span>
                 Master automation is <strong>{automationEnabled ? "On" : "Off"}</strong>
               </span>
               <ButtonControl variant="secondary" onClick={() => setAutomationDialogOpen(false)}>
                 Done
               </ButtonControl>
-            </div>
+            </DialogFooter>
         </DialogFrame>
       ) : null}
 
@@ -11700,12 +11701,12 @@ export default function App() {
               )}
             </div>
 
-            <div className="automation-dialog-footer pipeline-dialog-footer">
+            <DialogFooter className="pipeline-dialog-footer">
               <span>Existing screenshots keep their original pipeline.</span>
               <ButtonControl variant="secondary" onClick={() => setPipelineDialogOpen(false)}>
                 Done
               </ButtonControl>
-            </div>
+            </DialogFooter>
         </DialogFrame>
       ) : null}
 
@@ -11809,7 +11810,7 @@ export default function App() {
               </section>
             </div>
 
-            <div className="automation-dialog-footer info-dialog-footer">
+            <DialogFooter className="info-dialog-footer">
               <ButtonControl
                 variant="secondary"
                 onClick={closeInfoDialog}
@@ -11817,7 +11818,7 @@ export default function App() {
               >
                 Done
               </ButtonControl>
-            </div>
+            </DialogFooter>
         </DialogFrame>
       ) : null}
 
@@ -12944,7 +12945,7 @@ export default function App() {
               )}
             </div>
 
-            <div className="automation-dialog-footer training-progress-footer">
+            <DialogFooter className="training-progress-footer">
               <span>{reviewQueueStatus}</span>
               {trainingProgressView === "lessons" ? (
                 <a
@@ -12986,7 +12987,7 @@ export default function App() {
               >
                 Done
               </ButtonControl>
-            </div>
+            </DialogFooter>
         </DialogFrame>
       ) : null}
 
@@ -13444,7 +13445,7 @@ export default function App() {
               )}
             </div>
 
-            <div className="automation-dialog-footer benchmark-dialog-footer">
+            <DialogFooter className="benchmark-dialog-footer">
               <span>
                 <strong>{benchmarkIncludedCases}</strong> ground-truth {benchmarkIncludedCases === 1 ? "hand" : "hands"}
                 {benchmarkTargetLayoutLabel ? ` · ${benchmarkTargetLayoutLabel}` : ""}
@@ -13503,7 +13504,7 @@ export default function App() {
               >
                 Done
               </ButtonControl>
-            </div>
+            </DialogFooter>
         </DialogFrame>
       ) : null}
     </main>

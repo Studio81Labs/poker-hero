@@ -1,9 +1,11 @@
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   ButtonControl,
+  DownloadLinkControl,
   SelectControl,
   TextAreaControl,
   TextInput,
@@ -46,6 +48,58 @@ describe("ButtonControl", () => {
       "icon-action",
       "delete-hand",
     );
+  });
+});
+
+describe("DownloadLinkControl", () => {
+  it("preserves native download behavior when enabled", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn((event: ReactMouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+    });
+
+    render(
+      <DownloadLinkControl
+        href="/api/export"
+        download="hands.zip"
+        className="export-link"
+        onClick={onClick}
+      >
+        Export hands
+      </DownloadLinkControl>,
+    );
+
+    const link = screen.getByRole("link", { name: "Export hands" });
+    expect(link).toHaveAttribute("href", "/api/export");
+    expect(link).toHaveAttribute("download", "hands.zip");
+    expect(link).toHaveClass("export-link");
+    expect(link).toHaveAttribute("aria-disabled", "false");
+
+    await user.click(link);
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes disabled downloads from tab order and blocks activation", () => {
+    const onClick = vi.fn();
+
+    render(
+      <DownloadLinkControl href="/api/export" disabled onClick={onClick}>
+        Export disabled hands
+      </DownloadLinkControl>,
+    );
+
+    const link = screen.getByRole("link", { name: "Export disabled hands" });
+    const clickEvent = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    expect(link).toHaveClass("disabled");
+    expect(link).toHaveAttribute("aria-disabled", "true");
+    expect(link).toHaveAttribute("tabindex", "-1");
+    expect(link.dispatchEvent(clickEvent)).toBe(false);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });
 

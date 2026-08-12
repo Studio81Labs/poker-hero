@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import {
   forwardRef,
+  type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type SelectHTMLAttributes,
@@ -22,6 +23,11 @@ export type ButtonControlProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   iconOnly?: boolean;
   variant?: ButtonControlVariant;
 };
+
+export type DownloadLinkControlProps =
+  AnchorHTMLAttributes<HTMLAnchorElement> & {
+    disabled?: boolean;
+  };
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
   appearance?: TextControlAppearance;
@@ -74,6 +80,28 @@ export const ButtonControl = forwardRef<HTMLButtonElement, ButtonControlProps>(
 );
 
 ButtonControl.displayName = "ButtonControl";
+
+export const DownloadLinkControl = forwardRef<
+  HTMLAnchorElement,
+  DownloadLinkControlProps
+>(({ className, disabled = false, onClick, tabIndex, ...props }, ref) => (
+  <a
+    {...props}
+    ref={ref}
+    className={joinClassNames(className, disabled ? "disabled" : undefined)}
+    aria-disabled={disabled}
+    tabIndex={disabled ? -1 : tabIndex}
+    onClick={(event) => {
+      if (disabled) {
+        event.preventDefault();
+        return;
+      }
+      onClick?.(event);
+    }}
+  />
+));
+
+DownloadLinkControl.displayName = "DownloadLinkControl";
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   (

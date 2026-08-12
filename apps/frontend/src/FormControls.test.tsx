@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { createRef, type MouseEvent as ReactMouseEvent } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ButtonControl,
   DownloadLinkControl,
+  FileInputControl,
   SelectControl,
   TextAreaControl,
   TextInput,
@@ -100,6 +101,41 @@ describe("DownloadLinkControl", () => {
     expect(link).toHaveAttribute("tabindex", "-1");
     expect(link.dispatchEvent(clickEvent)).toBe(false);
     expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("FileInputControl", () => {
+  it("provides a hidden file input and forwards native upload behavior", async () => {
+    const user = userEvent.setup();
+    const inputRef = createRef<HTMLInputElement>();
+    const onChange = vi.fn();
+
+    render(
+      <FileInputControl
+        ref={inputRef}
+        aria-label="Import screenshots"
+        accept="image/*"
+        multiple
+        onChange={onChange}
+      />,
+    );
+
+    const input = screen.getByLabelText("Import screenshots");
+    const files = [
+      new File(["first"], "first.png", { type: "image/png" }),
+      new File(["second"], "second.png", { type: "image/png" }),
+    ];
+
+    expect(input).toHaveAttribute("type", "file");
+    expect(input).toHaveAttribute("accept", "image/*");
+    expect(input).toHaveAttribute("multiple");
+    expect(input).toHaveClass("file-input-control");
+    expect(inputRef.current).toBe(input);
+
+    await user.upload(input, files);
+
+    expect(Array.from((input as HTMLInputElement).files ?? [])).toEqual(files);
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -3831,6 +3831,12 @@ test("runs a parser benchmark and verifies its exported dataset", async ({
   await expect(benchmarkDialog).toContainText(
     `${initialOverview.included_cases} ground-truth ${initialOverview.included_cases === 1 ? "hand" : "hands"}`,
   );
+  const importDatasetButton = benchmarkDialog.getByRole("button", {
+    name: "Import dataset",
+  });
+  await expect(importDatasetButton).toHaveCSS("padding-left", "7px");
+  await expect(importDatasetButton).toHaveCSS("padding-right", "7px");
+  await expect(importDatasetButton.locator("svg")).toHaveCSS("width", "14px");
 
   const includeResponsePromise = page.waitForResponse(
     (response) => response.url()

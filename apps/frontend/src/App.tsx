@@ -10837,15 +10837,14 @@ export default function App() {
                     <div>
                       <strong>Completed streets (total BB)</strong>
                     </div>
-                    <button
-                      type="button"
+                    <ButtonControl
                       className="action-history-add"
                       disabled={stateControlsDisabled || completedPostflopActionsAtLimit}
                       onClick={addCompletedPostflopAction}
                     >
                       <Plus size={13} aria-hidden="true" />
                       Add action
-                    </button>
+                    </ButtonControl>
                   </div>
                   {form.completed_postflop_actions.length > 0 ? (
                     <div className="action-history-list">
@@ -10911,15 +10910,15 @@ export default function App() {
                             onChange={(event) => updateCompletedPostflopAction(index, "amount", event.target.value)}
                             placeholder={action.action === "check" ? "-" : "BB"}
                           />
-                          <button
-                            type="button"
+                          <ButtonControl
+                            iconOnly
                             disabled={stateControlsDisabled}
                             onClick={() => removeCompletedPostflopAction(index)}
                             title={`Remove completed action ${index + 1}`}
                             aria-label={`Remove completed action ${index + 1}`}
                           >
                             <X size={13} aria-hidden="true" />
-                          </button>
+                          </ButtonControl>
                         </div>
                       ))}
                     </div>
@@ -10934,15 +10933,14 @@ export default function App() {
                     <div>
                       <strong>Current street history (total BB)</strong>
                     </div>
-                    <button
-                      type="button"
+                    <ButtonControl
                       className="action-history-add"
                       disabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
                       onClick={addPostflopAction}
                     >
                       <Plus size={13} aria-hidden="true" />
                       Add action
-                    </button>
+                    </ButtonControl>
                   </div>
                   {form.postflop_action_history.length > 0 ? (
                     <div className="action-history-list">
@@ -10979,15 +10977,15 @@ export default function App() {
                             onChange={(event) => updatePostflopAction(index, "amount", event.target.value)}
                             placeholder={action.action === "check" ? "-" : "BB"}
                           />
-                          <button
-                            type="button"
+                          <ButtonControl
+                            iconOnly
                             disabled={stateControlsDisabled}
                             onClick={() => removePostflopAction(index)}
                             title={`Remove action ${index + 1}`}
                             aria-label={`Remove action ${index + 1}`}
                           >
                             <X size={13} aria-hidden="true" />
-                          </button>
+                          </ButtonControl>
                         </div>
                       ))}
                     </div>
@@ -11030,15 +11028,14 @@ export default function App() {
                       <div>
                         <strong>Preflop history (total BB)</strong>
                       </div>
-                      <button
-                        type="button"
+                      <ButtonControl
                         className="action-history-add"
                         disabled={stateControlsDisabled || form.preflop_action_history.length >= 8}
                         onClick={addPreflopAction}
                       >
                         <Plus size={13} aria-hidden="true" />
                         Add preflop action
-                      </button>
+                      </ButtonControl>
                     </div>
                     {form.preflop_action_history.length > 0 ? (
                       <div className="action-history-list">
@@ -11077,15 +11074,15 @@ export default function App() {
                               onChange={(event) => updatePreflopAction(index, "amount", event.target.value)}
                               placeholder="BB"
                             />
-                            <button
-                              type="button"
+                            <ButtonControl
+                              iconOnly
                               disabled={stateControlsDisabled}
                               onClick={() => removePreflopAction(index)}
                               title={`Remove preflop action ${index + 1}`}
                               aria-label={`Remove preflop action ${index + 1}`}
                             >
                               <X size={13} aria-hidden="true" />
-                            </button>
+                            </ButtonControl>
                           </div>
                         ))}
                       </div>

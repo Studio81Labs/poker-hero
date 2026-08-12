@@ -1096,7 +1096,7 @@ button:disabled {
   font-weight: 600;
 }
 
-.action-history-add {
+.button-control.action-history-add {
   align-items: center;
   display: inline-flex;
   font-size: 9px;
@@ -1136,11 +1136,13 @@ button:disabled {
   height: 28px;
 }
 
-.action-history-row button {
+.action-history-row .button-control {
   align-items: center;
   display: inline-flex;
+  flex: 0 0 28px;
   height: 28px;
   justify-content: center;
+  min-height: 28px;
   padding: 0;
   width: 28px;
 }

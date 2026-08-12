@@ -5,6 +5,7 @@ import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { DetectedStateField } from "./DetectedStateField";
+import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
@@ -11452,8 +11453,10 @@ export default function App() {
       ) : null}
 
       {managedJob ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog screenshot-details-dialog" role="dialog" aria-modal="true" aria-labelledby="screenshot-details-title">
+        <DialogFrame
+          className="screenshot-details-dialog"
+          titleId="screenshot-details-title"
+        >
             <DialogHeader
               titleId="screenshot-details-title"
               title="Screenshot details"
@@ -11586,13 +11589,11 @@ export default function App() {
                 </span>
               </div>
             </form>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
 
       {automationDialogOpen ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog" role="dialog" aria-modal="true" aria-labelledby="automation-dialog-title">
+        <DialogFrame titleId="automation-dialog-title">
             <DialogHeader
               titleId="automation-dialog-title"
               title="Configure automation"
@@ -11638,13 +11639,11 @@ export default function App() {
                 Done
               </ButtonControl>
             </div>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
 
       {pipelineDialogOpen ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog pipeline-dialog" role="dialog" aria-modal="true" aria-labelledby="pipeline-dialog-title">
+        <DialogFrame className="pipeline-dialog" titleId="pipeline-dialog-title">
             <DialogHeader
               titleId="pipeline-dialog-title"
               title="Analysis plugins"
@@ -11707,8 +11706,7 @@ export default function App() {
                 Done
               </ButtonControl>
             </div>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
 
       {helpDialogOpen ? (
@@ -11716,8 +11714,7 @@ export default function App() {
       ) : null}
 
       {infoDialogOpen ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-dialog-title">
+        <DialogFrame className="info-dialog" titleId="info-dialog-title">
             <DialogHeader
               titleId="info-dialog-title"
               title="About Poker Training Analyzer"
@@ -11821,13 +11818,14 @@ export default function App() {
                 Done
               </ButtonControl>
             </div>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
 
       {trainingDialogOpen ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog training-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="training-progress-title">
+        <DialogFrame
+          className="training-progress-dialog"
+          titleId="training-progress-title"
+        >
             <DialogHeader
               titleId="training-progress-title"
               title="Training progress"
@@ -12989,13 +12987,14 @@ export default function App() {
                 Done
               </ButtonControl>
             </div>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
 
       {benchmarkDialogOpen ? (
-        <section className="modal-backdrop">
-          <div className="automation-dialog benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="benchmark-dialog-title">
+        <DialogFrame
+          className="benchmark-dialog"
+          titleId="benchmark-dialog-title"
+        >
             <DialogHeader
               titleId="benchmark-dialog-title"
               title="Parser benchmark"
@@ -13505,8 +13504,7 @@ export default function App() {
                 Done
               </ButtonControl>
             </div>
-          </div>
-        </section>
+        </DialogFrame>
       ) : null}
     </main>
   );

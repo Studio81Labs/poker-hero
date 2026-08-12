@@ -413,7 +413,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
         <div className="help-dialog-body">
           <nav className="help-topic-nav" aria-label="User guide topics">
             {GUIDE_TOPICS.map((topic, index) => (
-              <button
+              <ButtonControl
                 key={topic.id}
                 ref={(button) => {
                   if (button) {
@@ -422,7 +422,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
                     topicButtonRefs.current.delete(topic.id);
                   }
                 }}
-                type="button"
+                variant="ghost"
                 className={topic.id === activeTopic.id ? "active" : ""}
                 onClick={() => setActiveTopicId(topic.id)}
                 aria-current={topic.id === activeTopic.id ? "page" : undefined}
@@ -431,7 +431,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 {topic.label}
-              </button>
+              </ButtonControl>
             ))}
           </nav>
 

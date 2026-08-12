@@ -2082,7 +2082,7 @@ button:disabled {
   padding: 10px 0;
 }
 
-.help-topic-nav button {
+.help-topic-nav .button-control {
   background: transparent;
   border: 0;
   border-left: 3px solid transparent;
@@ -2095,20 +2095,20 @@ button:disabled {
   width: 100%;
 }
 
-.help-topic-nav button:hover,
-.help-topic-nav button.active {
+.help-topic-nav .button-control:hover,
+.help-topic-nav .button-control.active {
   background: rgba(32, 30, 29, 0.06);
   border-color: transparent transparent transparent var(--accent);
   color: var(--text);
 }
 
-.help-topic-nav button span {
+.help-topic-nav .button-control span {
   color: var(--muted);
   flex: 0 0 22px;
   font-size: 9px;
 }
 
-.help-topic-nav button.active span {
+.help-topic-nav .button-control.active span {
   color: var(--accent);
 }
 
@@ -4449,7 +4449,7 @@ button:disabled {
     padding: 0;
   }
 
-  .help-topic-nav button {
+  .help-topic-nav .button-control {
     border-bottom: 3px solid transparent;
     border-left: 0;
     flex: 0 0 auto;
@@ -4458,8 +4458,8 @@ button:disabled {
     width: auto;
   }
 
-  .help-topic-nav button:hover,
-  .help-topic-nav button.active {
+  .help-topic-nav .button-control:hover,
+  .help-topic-nav .button-control.active {
     border-color: transparent transparent var(--accent);
   }
 

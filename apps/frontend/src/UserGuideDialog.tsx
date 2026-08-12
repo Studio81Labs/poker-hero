@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl } from "./FormControls";
 
@@ -395,14 +396,11 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
   }, []);
 
   return (
-    <section className="modal-backdrop">
-      <div
-        ref={dialogRef}
-        className="automation-dialog help-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="help-dialog-title"
-      >
+    <DialogFrame
+      ref={dialogRef}
+      className="help-dialog"
+      titleId="help-dialog-title"
+    >
         <DialogHeader
           titleId="help-dialog-title"
           title="How to use Poker Training Analyzer"
@@ -491,7 +489,6 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
             </ButtonControl>
           )}
         </div>
-      </div>
-    </section>
+    </DialogFrame>
   );
 }

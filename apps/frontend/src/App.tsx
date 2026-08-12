@@ -11197,22 +11197,22 @@ export default function App() {
                               <Check size={12} aria-hidden="true" />
                               Reviewed
                             </span>
-                            <button
-                              type="button"
+                            <ButtonControl
+                              variant="ghost"
                               onClick={onReopenTrainingReview}
                               disabled={busy || trainingReviewNoteEditing}
                             >
                               <RefreshCcw size={11} aria-hidden="true" />
                               Reopen review
-                            </button>
+                            </ButtonControl>
                           </div>
                         ) : (
-                          <button type="button" onClick={onCompleteTrainingReview} disabled={busy}>
+                          <ButtonControl variant="ghost" onClick={onCompleteTrainingReview} disabled={busy}>
                             <Check size={12} aria-hidden="true" />
                             {trainingReviewQueueJobId === job?.id
                               ? "Mark reviewed & next"
                               : "Mark reviewed"}
-                          </button>
+                          </ButtonControl>
                         )
                       ) : null}
                     </div>
@@ -11239,16 +11239,16 @@ export default function App() {
                             disabled={busy}
                           />
                           <span className="training-review-note-actions">
-                            <button
-                              type="button"
+                            <ButtonControl
+                              variant="secondary"
                               onClick={cancelTrainingReviewNoteEdit}
                               disabled={busy}
                             >
                               <X size={11} aria-hidden="true" />
                               Cancel
-                            </button>
-                            <button
-                              type="button"
+                            </ButtonControl>
+                            <ButtonControl
+                              variant="secondary"
                               onClick={() => void onUpdateTrainingReviewNote()}
                               disabled={
                                 busy
@@ -11257,35 +11257,35 @@ export default function App() {
                             >
                               <Check size={11} aria-hidden="true" />
                               Save note
-                            </button>
+                            </ButtonControl>
                           </span>
                         </label>
                       ) : job.training_review_note ? (
                         <div className="training-review-note-saved" aria-label="Saved training review note">
                           <div>
                             <strong>Review note</strong>
-                            <button
-                              type="button"
+                            <ButtonControl
+                              variant="secondary"
                               onClick={startTrainingReviewNoteEdit}
                               disabled={busy}
                               aria-label="Edit training review note"
                               title="Edit lesson note"
                             >
                               <Pencil size={11} aria-hidden="true" />
-                            </button>
+                            </ButtonControl>
                           </div>
                           <span>{job.training_review_note}</span>
                         </div>
                       ) : (
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="secondary"
                           className="training-review-note-add"
                           onClick={startTrainingReviewNoteEdit}
                           disabled={busy}
                         >
                           <Pencil size={11} aria-hidden="true" />
                           Add lesson note
-                        </button>
+                        </ButtonControl>
                       )
                     ) : (
                       <label className="training-review-note">

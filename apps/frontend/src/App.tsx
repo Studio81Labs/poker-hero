@@ -8,6 +8,7 @@ import { DetectedStateField } from "./DetectedStateField";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { SegmentedControl } from "./SegmentedControl";
 import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -111,6 +112,8 @@ const STREETS = new Set<string>(["preflop", "flop", "turn", "river"]);
 const FACING_ACTIONS = new Set<string>(["bet", "raise"]);
 const TRAINING_ACTIONS: readonly RecommendationAction[] = ["fold", "check", "call", "bet", "raise"];
 const TRAINING_CERTAINTIES: readonly TrainingCertainty[] = ["low", "medium", "high"];
+const TRAINING_ACTION_OPTIONS = TRAINING_ACTIONS.map((value) => ({ value, label: value }));
+const TRAINING_CERTAINTY_OPTIONS = TRAINING_CERTAINTIES.map((value) => ({ value, label: value }));
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const SIZING_MATCH_TOLERANCE = 0.01;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
@@ -157,6 +160,10 @@ type TrainingActionOption = "" | RecommendationAction;
 type TrainingCertaintyOption = "" | TrainingCertainty;
 type ShareMode = "browser" | "window" | "monitor";
 type InputMode = "live" | "upload";
+const INPUT_MODES: readonly { value: InputMode; label: string }[] = [
+  { value: "live", label: "Live" },
+  { value: "upload", label: "Upload" },
+];
 type PersistedJobMutationScope = "processing" | "history";
 type ActiveRecommendationRequest = {
   mutationScope: PersistedJobMutationScope;
@@ -10377,34 +10384,28 @@ export default function App() {
           <section className="input-panel">
             <div className="input-panel-heading">
               <h2>Input</h2>
-              <div className="input-mode-switch" role="group" aria-label="Input mode">
-                <button type="button" className={inputMode === "live" ? "active" : ""} onClick={() => setInputMode("live")} disabled={busy} aria-pressed={inputMode === "live"}>
-                  Live
-                </button>
-                <button type="button" className={inputMode === "upload" ? "active" : ""} onClick={() => setInputMode("upload")} disabled={busy} aria-pressed={inputMode === "upload"}>
-                  Upload
-                </button>
-              </div>
+              <SegmentedControl
+                ariaLabel="Input mode"
+                className="input-mode-switch"
+                options={INPUT_MODES}
+                value={inputMode}
+                onChange={setInputMode}
+                disabled={busy}
+              />
             </div>
 
             <div className="input-source-body">
               {inputMode === "live" ? (
                 <>
                   <span className="input-label">Capture source</span>
-                  <div className="share-mode" role="group" aria-label="Share source type">
-                    {SHARE_MODES.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={shareMode === option.value ? "active" : ""}
-                        onClick={() => setShareMode(option.value)}
-                        disabled={screenSharing || busy}
-                        aria-pressed={shareMode === option.value}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    ariaLabel="Share source type"
+                    className="share-mode"
+                    options={SHARE_MODES}
+                    value={shareMode}
+                    onChange={setShareMode}
+                    disabled={screenSharing || busy}
+                  />
                   <div className="screen-capture-actions">
                     <ButtonControl
                       variant="secondary"
@@ -11095,43 +11096,30 @@ export default function App() {
                   <span>Your decision</span>
                   <small>{activeTrainingDecision ? "Answer locked" : "Optional before reveal"}</small>
                 </div>
-                <div className="training-action-options" role="group" aria-label="Choose your action">
-                  {TRAINING_ACTIONS.map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className={trainingAction === action ? "active" : undefined}
-                      aria-pressed={trainingAction === action}
-                      onClick={() => {
-                        setTrainingAction(action);
-                        if (action !== "bet" && action !== "raise") {
-                          setTrainingSizing("");
-                        }
-                      }}
-                      disabled={busy}
-                    >
-                      {action}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedControl
+                  ariaLabel="Choose your action"
+                  className="training-action-options"
+                  options={TRAINING_ACTION_OPTIONS}
+                  value={trainingAction}
+                  onChange={(action) => {
+                    setTrainingAction(action);
+                    if (action !== "bet" && action !== "raise") {
+                      setTrainingSizing("");
+                    }
+                  }}
+                  disabled={busy}
+                />
                 <div className="training-certainty">
                   <span>How sure?</span>
-                  <div role="group" aria-label="How sure are you?">
-                    {TRAINING_CERTAINTIES.map((certainty) => (
-                      <button
-                        key={certainty}
-                        type="button"
-                        className={trainingCertainty === certainty ? "active" : undefined}
-                        aria-pressed={trainingCertainty === certainty}
-                        onClick={() => setTrainingCertainty(
-                          trainingCertainty === certainty ? "" : certainty,
-                        )}
-                        disabled={busy}
-                      >
-                        {certainty}
-                      </button>
-                    ))}
-                  </div>
+                  <SegmentedControl
+                    ariaLabel="How sure are you?"
+                    options={TRAINING_CERTAINTY_OPTIONS}
+                    value={trainingCertainty}
+                    onChange={(certainty) => setTrainingCertainty(
+                      trainingCertainty === certainty ? "" : certainty,
+                    )}
+                    disabled={busy}
+                  />
                 </div>
                 <div className="training-decision-footer">
                   {trainingAction === "bet" || trainingAction === "raise" ? (

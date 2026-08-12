@@ -12675,11 +12675,23 @@ export default function App() {
                             </label>
                           </>
                         ) : null}
-                        <div className="training-view-switch" role="group" aria-label="Training decision view">
-                          <button
-                            type="button"
-                            className={trainingProgressView === "recent" ? "active" : ""}
-                            onClick={() => {
+                        <SegmentedControl
+                          ariaLabel="Training decision view"
+                          className="training-view-switch"
+                          options={[
+                            { value: "recent", label: "Recent" },
+                            {
+                              value: "review",
+                              label: `Needs review ${trainingProgress.needs_review_hands}`,
+                            },
+                            {
+                              value: "lessons",
+                              label: `Lessons ${trainingProgress.lesson_count ?? trainingProgress.lesson_hands?.length ?? 0}`,
+                            },
+                          ]}
+                          value={trainingProgressView}
+                          onChange={(view) => {
+                            if (view === "recent") {
                               if (trainingSolverFilter) {
                                 void updateTrainingSolverFilter(null);
                               } else if (trainingPositionFilter) {
@@ -12691,15 +12703,9 @@ export default function App() {
                               } else {
                                 setTrainingProgressView("recent");
                               }
-                            }}
-                            aria-pressed={trainingProgressView === "recent"}
-                          >
-                            Recent
-                          </button>
-                          <button
-                            type="button"
-                            className={trainingProgressView === "review" ? "active" : ""}
-                            onClick={() => {
+                              return;
+                            }
+                            if (view === "review") {
                               setTrainingProgressView("review");
                               if (
                                 trainingSolverFilter
@@ -12712,20 +12718,11 @@ export default function App() {
                                   trainingReviewStreet,
                                 );
                               }
-                            }}
-                            aria-pressed={trainingProgressView === "review"}
-                          >
-                            Needs review {trainingProgress.needs_review_hands}
-                          </button>
-                          <button
-                            type="button"
-                            className={trainingProgressView === "lessons" ? "active" : ""}
-                            onClick={() => setTrainingProgressView("lessons")}
-                            aria-pressed={trainingProgressView === "lessons"}
-                          >
-                            Lessons {trainingProgress.lesson_count ?? trainingProgress.lesson_hands?.length ?? 0}
-                          </button>
-                        </div>
+                              return;
+                            }
+                            setTrainingProgressView("lessons");
+                          }}
+                        />
                       </div>
                     </div>
                     {trainingProgressView === "review" && trainingReviewDifference ? (

@@ -498,17 +498,18 @@ button:disabled {
   gap: 7px;
 }
 
-.clear-reviewed-button {
+.button-control.clear-reviewed-button {
   background: transparent;
   border: 0;
   color: var(--muted);
+  flex: 0 0 24px;
   height: 24px;
   min-height: 24px;
   padding: 0;
   width: 24px;
 }
 
-.clear-reviewed-button:hover:not(:disabled) {
+.button-control.clear-reviewed-button:hover:not(:disabled) {
   background: rgba(32, 30, 29, 0.07);
   border-color: transparent;
   color: var(--text);
@@ -550,7 +551,7 @@ button:disabled {
   color: var(--text);
 }
 
-.batch-item-open {
+.button-control.batch-item-open {
   background: transparent;
   border: 0;
   color: var(--text);
@@ -563,7 +564,7 @@ button:disabled {
   text-align: left;
 }
 
-.batch-item-open:hover:not(:disabled) {
+.button-control.batch-item-open:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
   color: var(--text);
@@ -685,22 +686,23 @@ button:disabled {
   padding: 2px 6px;
 }
 
-.history-refresh,
-.history-search-toggle {
+.button-control.history-refresh,
+.button-control.history-search-toggle {
   align-items: center;
   background: transparent;
   border: 1px solid var(--line);
   color: var(--text);
   display: inline-flex;
+  flex: 0 0 22px;
   height: 22px;
   justify-content: center;
   padding: 0;
   width: 22px;
 }
 
-.history-refresh:hover:not(:disabled),
-.history-search-toggle:hover:not(:disabled),
-.history-search-toggle.active {
+.button-control.history-refresh:hover:not(:disabled),
+.button-control.history-search-toggle:hover:not(:disabled),
+.button-control.history-search-toggle.active {
   border-color: var(--accent);
   color: var(--accent-dark);
 }
@@ -725,7 +727,7 @@ button:disabled {
   outline-offset: -1px;
 }
 
-.history-search-form button {
+.history-search-form .button-control {
   align-items: center;
   background: var(--accent);
   border: 1px solid var(--accent);
@@ -763,7 +765,7 @@ button:disabled {
   color: var(--text);
 }
 
-.history-item-open {
+.button-control.history-item-open {
   background: transparent;
   border: 0;
   color: var(--text);
@@ -776,13 +778,13 @@ button:disabled {
   text-align: left;
 }
 
-.history-item-open:hover:not(:disabled) {
+.button-control.history-item-open:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
   color: var(--text);
 }
 
-.screenshot-manage-button {
+.button-control.screenshot-manage-button {
   align-self: stretch;
   background: transparent;
   border: 0;
@@ -793,13 +795,13 @@ button:disabled {
   width: 30px;
 }
 
-.screenshot-manage-button:hover:not(:disabled) {
+.button-control.screenshot-manage-button:hover:not(:disabled) {
   background: rgba(32, 30, 29, 0.07);
   border-color: var(--line-soft);
   color: var(--accent-dark);
 }
 
-.history-load-older {
+.button-control.history-load-older {
   align-items: center;
   background: transparent;
   border: 1px dashed rgba(32, 30, 29, 0.28);
@@ -814,7 +816,7 @@ button:disabled {
   padding: 5px 8px;
 }
 
-.history-load-older:hover:not(:disabled) {
+.button-control.history-load-older:hover:not(:disabled) {
   background: var(--surface);
   border-color: var(--accent);
   color: var(--accent-dark);

@@ -10456,8 +10456,9 @@ export default function App() {
               <span className="sr-only">{filmstripCount} screenshots</span>
               <span className="queue-heading-actions">
                 <strong>{filmstripCount}</strong>
-                <button
-                  type="button"
+                <ButtonControl
+                  variant="ghost"
+                  iconOnly
                   className="clear-reviewed-button"
                   onClick={clearReviewedToHistory}
                   disabled={historyLoading || busy || clearableJobs.length === 0}
@@ -10465,7 +10466,7 @@ export default function App() {
                   aria-label="Clear reviewed"
                 >
                   <Archive size={13} aria-hidden="true" />
-                </button>
+                </ButtonControl>
               </span>
             </div>
             {jobs.length > 0 ? (
@@ -10479,8 +10480,8 @@ export default function App() {
                   ].filter(Boolean).join(" ");
                   return (
                     <div key={candidate.id} className={className}>
-                      <button
-                        type="button"
+                      <ButtonControl
+                        variant="ghost"
                         className={[
                           "batch-item-open",
                           candidate.id === job?.id ? "active" : "",
@@ -10496,16 +10497,16 @@ export default function App() {
                           <small>{queueDetail(candidate, attention)}</small>
                         </span>
                         <StatusPill status={candidate.status} />
-                      </button>
-                      <button
-                        type="button"
+                      </ButtonControl>
+                      <ButtonControl
+                        variant="ghost"
                         className="screenshot-manage-button"
                         onClick={() => openScreenshotDetails(candidate)}
                         title="Edit details or delete screenshot"
                         aria-label={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
                       >
                         <Pencil size={13} aria-hidden="true" />
-                      </button>
+                      </ButtonControl>
                     </div>
                   );
                 })}
@@ -10524,8 +10525,9 @@ export default function App() {
               </span>
               <span className="history-heading-actions">
                 <span className="autosaved-pill">Auto-saved</span>
-                <button
-                  type="button"
+                <ButtonControl
+                  variant="secondary"
+                  iconOnly
                   className={historySearchOpen ? "history-search-toggle active" : "history-search-toggle"}
                   onClick={() => {
                     if (historySearchOpen) {
@@ -10539,9 +10541,10 @@ export default function App() {
                   aria-label={historySearchOpen ? "Close history search" : "Search saved history"}
                 >
                   {historySearchOpen ? <X size={12} aria-hidden="true" /> : <Search size={12} aria-hidden="true" />}
-                </button>
-                <button
-                  type="button"
+                </ButtonControl>
+                <ButtonControl
+                  variant="secondary"
+                  iconOnly
                   className="history-refresh"
                   onClick={() => void refreshVisibleHistory()}
                   disabled={historyLoading || busy}
@@ -10549,7 +10552,7 @@ export default function App() {
                   aria-label={historySearchActive ? "Refresh history search" : "Refresh saved history"}
                 >
                   <RefreshCcw size={12} aria-hidden="true" />
-                </button>
+                </ButtonControl>
               </span>
             </div>
             {historySearchOpen ? (
@@ -10567,14 +10570,15 @@ export default function App() {
                   autoComplete="off"
                   autoFocus
                 />
-                <button
+                <ButtonControl
                   type="submit"
+                  iconOnly
                   disabled={historyLoading || busy || historySearchInput.trim().length === 0}
                   title="Run history search"
                   aria-label="Run history search"
                 >
                   <Search size={12} aria-hidden="true" />
-                </button>
+                </ButtonControl>
               </form>
             ) : null}
             {visibleHistory.length > 0 ? (
@@ -10583,7 +10587,7 @@ export default function App() {
                   const cards = historyCards(item.job);
                   return (
                     <div key={`${item.id}-${item.savedAt}`} className="history-item">
-                      <button type="button" className="history-item-open" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
+                      <ButtonControl variant="ghost" className="history-item-open" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
                         <span className="history-cards">
                           {cards.length > 0 ? (
                             cards.map((card) => (
@@ -10604,22 +10608,22 @@ export default function App() {
                           </small>
                         </span>
                         <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
-                      </button>
-                      <button
-                        type="button"
+                      </ButtonControl>
+                      <ButtonControl
+                        variant="ghost"
                         className="screenshot-manage-button"
                         onClick={() => openScreenshotDetails(item.job)}
                         title="Edit details or delete screenshot"
                         aria-label={`Manage history item ${index + 1}: ${item.job.original_filename}`}
                       >
                         <Pencil size={13} aria-hidden="true" />
-                      </button>
+                      </ButtonControl>
                     </div>
                   );
                 })}
                 {visibleHistory.length < visibleHistoryTotal ? (
-                  <button
-                    type="button"
+                  <ButtonControl
+                    variant="secondary"
                     className="history-load-older"
                     onClick={() => void loadOlderHistory()}
                     disabled={historyLoading || busy}
@@ -10631,7 +10635,7 @@ export default function App() {
                         ? "Loading..."
                         : `Load ${visibleHistoryTotal - visibleHistory.length} older`}
                     </span>
-                  </button>
+                  </ButtonControl>
                 ) : null}
               </div>
             ) : (

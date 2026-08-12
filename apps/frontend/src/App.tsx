@@ -10861,7 +10861,7 @@ export default function App() {
                     <div className="action-history-list">
                       {form.completed_postflop_actions.map((action, index) => (
                         <div className="action-history-row completed-action-history-row" key={index}>
-                          <span>{index + 1}</span>
+                          <span className="action-history-index">{index + 1}</span>
                           <SelectControl
                             aria-label={`Completed action ${index + 1} street`}
                             density="compact"
@@ -10957,7 +10957,7 @@ export default function App() {
                     <div className="action-history-list">
                       {form.postflop_action_history.map((action, index) => (
                         <div className="action-history-row" key={index}>
-                          <span>{index + 1}</span>
+                          <span className="action-history-index">{index + 1}</span>
                           <SelectControl
                             aria-label={`Action ${index + 1} actor`}
                             density="compact"
@@ -11052,7 +11052,7 @@ export default function App() {
                       <div className="action-history-list">
                         {form.preflop_action_history.map((action, index) => (
                           <div className="action-history-row" key={index}>
-                            <span>{index + 1}</span>
+                            <span className="action-history-index">{index + 1}</span>
                             <SelectControl
                               aria-label={`Preflop action ${index + 1} actor`}
                               density="compact"
@@ -12603,7 +12603,7 @@ export default function App() {
                         {trainingProgressView === "review" ? (
                           <>
                             <label className="training-review-order">
-                              <span>Order</span>
+                              <span className="training-review-order-label">Order</span>
                               <SelectControl
                                 aria-label="Review order"
                                 density="compact"
@@ -12619,7 +12619,7 @@ export default function App() {
                               </SelectControl>
                             </label>
                             <label className="training-review-order">
-                              <span>Street</span>
+                              <span className="training-review-order-label">Street</span>
                               <SelectControl
                                 aria-label="Review street"
                                 density="compact"
@@ -12638,7 +12638,7 @@ export default function App() {
                               </SelectControl>
                             </label>
                             <label className="training-review-order">
-                              <span>Certainty</span>
+                              <span className="training-review-order-label">Certainty</span>
                               <SelectControl
                                 aria-label="Review certainty"
                                 density="compact"
@@ -12697,7 +12697,7 @@ export default function App() {
                               </button>
                             </form>
                             <label className="training-review-order">
-                              <span>Order</span>
+                              <span className="training-review-order-label">Order</span>
                               <SelectControl
                                 aria-label="Lesson order"
                                 density="compact"
@@ -12714,7 +12714,7 @@ export default function App() {
                               </SelectControl>
                             </label>
                             <label className="training-review-order">
-                              <span>Street</span>
+                              <span className="training-review-order-label">Street</span>
                               <SelectControl
                                 aria-label="Lesson street"
                                 density="compact"
@@ -13222,7 +13222,7 @@ export default function App() {
                 <>
                   <div className="benchmark-report-toolbar">
                     <label>
-                      <span>Report</span>
+                      <span className="benchmark-report-label">Report</span>
                       <SelectControl
                         aria-label="Benchmark report"
                         value={benchmarkReport.id}
@@ -13609,7 +13609,7 @@ function PipelineSelect({
   return (
     <div className="pipeline-select-row">
       <label htmlFor={id}>
-        <span>
+        <span className="pipeline-select-copy">
           <strong>{label}</strong>
           <small>{description}</small>
         </span>

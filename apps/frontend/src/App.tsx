@@ -11569,8 +11569,8 @@ export default function App() {
                 aria-hidden={screenshotDeleteArmed || undefined}
               >
                 {!screenshotDeleteArmed ? (
-                  <button
-                    type="button"
+                  <ButtonControl
+                    variant="ghost"
                     className="screenshot-delete-button"
                     onClick={() => setScreenshotDeleteArmed(true)}
                     disabled={
@@ -11581,7 +11581,7 @@ export default function App() {
                   >
                     <Trash2 size={14} aria-hidden="true" />
                     Delete screenshot
-                  </button>
+                  </ButtonControl>
                 ) : <span />}
                 <span className="screenshot-details-actions">
                   <ButtonControl variant="secondary" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>

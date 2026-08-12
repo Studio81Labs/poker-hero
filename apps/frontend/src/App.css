@@ -4257,14 +4257,14 @@ button:disabled {
   padding: 14px 22px;
 }
 
-.screenshot-delete-button {
+.button-control.screenshot-delete-button {
   background: transparent;
   border-color: transparent;
   color: var(--accent-dark);
   padding-inline: 0;
 }
 
-.screenshot-delete-button:hover:not(:disabled) {
+.button-control.screenshot-delete-button:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
   color: var(--accent);
@@ -4529,7 +4529,7 @@ button:disabled {
     flex-direction: column;
   }
 
-  .screenshot-delete-button,
+  .button-control.screenshot-delete-button,
   .screenshot-details-actions,
   .screenshot-details-actions > button {
     width: 100%;

@@ -1407,9 +1407,9 @@ button:disabled {
   font-weight: 700;
 }
 
-.training-comparison-result > button,
+.training-comparison-result > .button-control,
 .training-review-complete span,
-.training-review-complete button {
+.training-review-complete .button-control {
   align-items: center;
   background: transparent;
   border: 0;
@@ -1422,7 +1422,8 @@ button:disabled {
   padding: 0;
 }
 
-.training-comparison-result button:hover:not(:disabled) {
+.training-comparison-result .button-control:hover:not(:disabled) {
+  background: transparent;
   color: var(--bg);
 }
 
@@ -1437,7 +1438,7 @@ button:disabled {
   color: #77d6ab;
 }
 
-.training-review-complete button {
+.training-review-complete .button-control {
   color: #d7d3d3;
 }
 
@@ -1476,9 +1477,9 @@ button:disabled {
   justify-content: flex-end;
 }
 
-.training-review-note-actions button,
-.training-review-note-saved button,
-.training-review-note-add {
+.training-review-note-actions .button-control,
+.training-review-note-saved .button-control,
+.button-control.training-review-note-add {
   align-items: center;
   background: transparent;
   border: 1px solid rgba(243, 242, 242, 0.24);
@@ -1491,9 +1492,10 @@ button:disabled {
   padding: 3px 7px;
 }
 
-.training-review-note-actions button:hover:not(:disabled),
-.training-review-note-saved button:hover:not(:disabled),
-.training-review-note-add:hover:not(:disabled) {
+.training-review-note-actions .button-control:hover:not(:disabled),
+.training-review-note-saved .button-control:hover:not(:disabled),
+.button-control.training-review-note-add:hover:not(:disabled) {
+  background: transparent;
   border-color: var(--accent-soft);
   color: var(--bg);
 }
@@ -1517,7 +1519,7 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-.training-review-note-add {
+.button-control.training-review-note-add {
   border-left: 0;
   border-right: 0;
   justify-content: flex-start;

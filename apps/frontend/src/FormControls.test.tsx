@@ -2,7 +2,52 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import {
+  ButtonControl,
+  SelectControl,
+  TextAreaControl,
+  TextInput,
+} from "./FormControls";
+
+describe("ButtonControl", () => {
+  it("defaults to a non-submitting primary button and forwards behavior", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+
+    render(<ButtonControl onClick={onClick}>Analyze</ButtonControl>);
+
+    const button = screen.getByRole("button", { name: "Analyze" });
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).toHaveClass("button-control");
+
+    await user.click(button);
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies semantic variants, icon sizing, and explicit submit behavior", () => {
+    render(
+      <ButtonControl
+        type="submit"
+        variant="danger"
+        iconOnly
+        className="delete-hand"
+        aria-label="Delete hand"
+        disabled
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Delete hand" });
+    expect(button).toHaveAttribute("type", "submit");
+    expect(button).toBeDisabled();
+    expect(button).toHaveClass(
+      "button-control",
+      "danger-button",
+      "icon-action",
+      "delete-hand",
+    );
+  });
+});
 
 describe("text controls", () => {
   it("forwards native input properties and custom classes", () => {
@@ -65,7 +110,11 @@ describe("SelectControl", () => {
     const onChange = vi.fn();
 
     render(
-      <SelectControl aria-label="Street" defaultValue="flop" onChange={onChange}>
+      <SelectControl
+        aria-label="Street"
+        defaultValue="flop"
+        onChange={onChange}
+      >
         <option value="flop">Flop</option>
         <option value="turn">Turn</option>
       </SelectControl>,
@@ -96,7 +145,10 @@ describe("SelectControl", () => {
     const select = screen.getByRole("combobox", { name: "Provider" });
     expect(select).toBeDisabled();
     expect(select).toHaveClass("select-control-input", "provider-select");
-    expect(select.parentElement).toHaveClass("select-control", "provider-control");
+    expect(select.parentElement).toHaveClass(
+      "select-control",
+      "provider-control",
+    );
     expect(select.parentElement).toHaveClass("select-control-compact");
     expect(select.parentElement).toHaveAttribute("data-disabled", "true");
   });

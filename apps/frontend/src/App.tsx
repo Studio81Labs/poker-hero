@@ -1,9 +1,10 @@
 import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { DetectedStateField } from "./DetectedStateField";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
@@ -4686,30 +4687,6 @@ function validateCardState(heroCards: Card[], boardCards: Card[]): void {
     }
     seen.add(code);
   }
-}
-
-function confidenceLabel(value: number | undefined): string {
-  if (value === undefined) {
-    return "not detected";
-  }
-  return `${Math.round(value * 100)}%`;
-}
-
-function confidencePercent(value: number | undefined): number {
-  return value === undefined ? 0 : Math.round(value * 100);
-}
-
-function confidenceTone(value: number | undefined): string {
-  if (value === undefined) {
-    return "missing";
-  }
-  if (value < 0.7) {
-    return "low";
-  }
-  if (value < 0.85) {
-    return "medium";
-  }
-  return "high";
 }
 
 function summarizeConfidences(
@@ -10710,13 +10687,13 @@ export default function App() {
             ) : null}
 
             <div className="field-grid">
-              <Field label="Hero cards" confidence={confidenceLabel(confidences.hero_cards)} confidenceValue={confidences.hero_cards}>
+              <DetectedStateField label="Hero cards" confidence={confidences.hero_cards}>
                 <TextInput disabled={stateControlsDisabled} value={form.hero_cards} onChange={(event) => updateForm("hero_cards", event.target.value)} />
-              </Field>
-              <Field label="Board cards" confidence={confidenceLabel(confidences.board_cards)} confidenceValue={confidences.board_cards}>
+              </DetectedStateField>
+              <DetectedStateField label="Board cards" confidence={confidences.board_cards}>
                 <TextInput disabled={stateControlsDisabled} value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
-              </Field>
-              <Field label="Street" confidence={confidenceLabel(confidences.street)} confidenceValue={confidences.street}>
+              </DetectedStateField>
+              <DetectedStateField label="Street" confidence={confidences.street}>
                 <SelectControl disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value as StreetOption)}>
                   <option value="">Select street</option>
                   <option value="preflop">Preflop</option>
@@ -10724,44 +10701,44 @@ export default function App() {
                   <option value="turn">Turn</option>
                   <option value="river">River</option>
                 </SelectControl>
-              </Field>
-              <Field label="Pot" confidence={confidenceLabel(confidences.pot_size)} confidenceValue={confidences.pot_size}>
+              </DetectedStateField>
+              <DetectedStateField label="Pot" confidence={confidences.pot_size}>
                 <TextInput disabled={stateControlsDisabled} inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
-              </Field>
-              <Field label="Current bet" confidence={confidenceLabel(confidences.current_bet)} confidenceValue={confidences.current_bet}>
+              </DetectedStateField>
+              <DetectedStateField label="Current bet" confidence={confidences.current_bet}>
                 <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.current_bet}
                   onChange={(event) => updateForm("current_bet", event.target.value)}
                 />
-              </Field>
-              <Field label="Effective stack" confidence={confidenceLabel(confidences.effective_stack)} confidenceValue={confidences.effective_stack}>
+              </DetectedStateField>
+              <DetectedStateField label="Effective stack" confidence={confidences.effective_stack}>
                 <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.effective_stack}
                   onChange={(event) => updateForm("effective_stack", event.target.value)}
                 />
-              </Field>
-              <Field label="Hero stack" confidence={confidenceLabel(confidences.hero_stack)} confidenceValue={confidences.hero_stack}>
+              </DetectedStateField>
+              <DetectedStateField label="Hero stack" confidence={confidences.hero_stack}>
                 <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.hero_stack}
                   onChange={(event) => updateForm("hero_stack", event.target.value)}
                 />
-              </Field>
-              <Field label="Players in hand" confidence={confidenceLabel(confidences.players_in_hand)} confidenceValue={confidences.players_in_hand}>
+              </DetectedStateField>
+              <DetectedStateField label="Players in hand" confidence={confidences.players_in_hand}>
                 <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="numeric"
                   value={form.players_in_hand}
                   onChange={(event) => updateForm("players_in_hand", event.target.value)}
                 />
-              </Field>
+              </DetectedStateField>
               {Number(form.current_bet) > 0 && Number(form.players_in_hand) > 2 ? (
-                <Field label="Opponents at wager" confidence="manual">
+                <DetectedStateField label="Opponents at wager" confidenceText="manual">
                   <TextInput
                     disabled={stateControlsDisabled}
                     inputMode="numeric"
@@ -10771,13 +10748,12 @@ export default function App() {
                     onChange={(event) => updateForm("opponents_at_current_bet", event.target.value)}
                     placeholder="Already committed"
                   />
-                </Field>
+                </DetectedStateField>
               ) : null}
               {Number(form.current_bet) > 0 ? (
-                <Field
+                <DetectedStateField
                   label="Opponent wager total"
-                  confidence={confidenceLabel(confidences.opponent_wager)}
-                  confidenceValue={confidences.opponent_wager}
+                  confidence={confidences.opponent_wager}
                 >
                   <TextInput
                     disabled={stateControlsDisabled}
@@ -10787,7 +10763,7 @@ export default function App() {
                     onChange={(event) => updateForm("opponent_wager", event.target.value)}
                     placeholder="Total BB committed"
                   />
-                </Field>
+                </DetectedStateField>
               ) : null}
               {(form.street === "preflop" && Number(form.current_bet) <= 0)
                 || (
@@ -10799,7 +10775,7 @@ export default function App() {
                     || form.opponent_commitment_total !== ""
                   )
                 ) ? (
-                  <Field label="Opponent commitments total" confidence="manual">
+                  <DetectedStateField label="Opponent commitments total" confidenceText="manual">
                     <TextInput
                       disabled={stateControlsDisabled}
                       inputMode="decimal"
@@ -10811,29 +10787,29 @@ export default function App() {
                       )}
                       placeholder="All opponents, BB"
                     />
-                  </Field>
+                  </DetectedStateField>
                 ) : null}
-              <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
+              <DetectedStateField label="Hero position" confidence={confidences.hero_position}>
                 <TextInput disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
-              </Field>
+              </DetectedStateField>
               {requiresOpponentPosition(form) ? (
-                  <Field label="Opponent position" confidence={confidenceLabel(confidences.opponent_position)} confidenceValue={confidences.opponent_position}>
+                  <DetectedStateField label="Opponent position" confidence={confidences.opponent_position}>
                     <TextInput disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
-                  </Field>
+                  </DetectedStateField>
                 ) : null}
-              <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
+              <DetectedStateField label="Facing action" confidence={confidences.facing_action}>
                 <SelectControl disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
                   <option value="">Select action</option>
                   <option value="bet">Bet</option>
                   <option value="raise">Raise or check-raise</option>
                 </SelectControl>
-              </Field>
+              </DetectedStateField>
               {(
                 (form.street !== "" && form.street !== "preflop" && form.facing_action === "raise")
                 || form.street === "turn"
                 || form.street === "river"
               ) ? (
-                <Field label="Opponent stack" confidence="manual">
+                <DetectedStateField label="Opponent stack" confidenceText="manual">
                   <TextInput
                     disabled={stateControlsDisabled}
                     inputMode="decimal"
@@ -10841,7 +10817,7 @@ export default function App() {
                     onChange={(event) => updateForm("opponent_stack", event.target.value)}
                     placeholder="BB behind"
                   />
-                </Field>
+                </DetectedStateField>
               ) : null}
               {form.street === "turn" || form.street === "river" ? (
                 <div className="action-history-field">
@@ -11012,7 +10988,7 @@ export default function App() {
                 <>
                   {form.preflop_action_history.length === 0 ? (
                     <>
-                      <Field label="Opener position" confidence="manual">
+                      <DetectedStateField label="Opener position" confidenceText="manual">
                         <SelectControl
                           disabled={stateControlsDisabled}
                           value={form.preflop_opener_position}
@@ -11025,8 +11001,8 @@ export default function App() {
                             </option>
                           ))}
                         </SelectControl>
-                      </Field>
-                      <Field label="Opening size" confidence="manual">
+                      </DetectedStateField>
+                      <DetectedStateField label="Opening size" confidenceText="manual">
                         <TextInput
                           disabled={stateControlsDisabled}
                           inputMode="decimal"
@@ -11034,7 +11010,7 @@ export default function App() {
                           onChange={(event) => updateForm("preflop_open_size", event.target.value)}
                           placeholder="BB"
                         />
-                      </Field>
+                      </DetectedStateField>
                     </>
                   ) : null}
                   <div className="action-history-field">
@@ -11107,9 +11083,9 @@ export default function App() {
                   </div>
                 </>
               ) : null}
-              <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>
+              <DetectedStateField label="Action context" confidence={confidences.action_context}>
                 <TextAreaControl disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
-              </Field>
+              </DetectedStateField>
             </div>
 
             {currentStateApproved && !activeRecommendation ? (
@@ -13620,23 +13596,6 @@ function AutomationToggle({
         <span />
       </span>
     </button>
-  );
-}
-
-function Field({ label, confidence, confidenceValue, children }: { label: string; confidence: string; confidenceValue?: number; children: ReactNode }) {
-  const percent = confidencePercent(confidenceValue);
-  const tone = confidenceTone(confidenceValue);
-  return (
-    <label className={`field field-${tone}`}>
-      <span className="field-header">
-        <span>{label}</span>
-        <small>{confidence}</small>
-      </span>
-      {children}
-      <span className="confidence-track" aria-hidden="true">
-        <span style={{ width: `${percent}%` }} />
-      </span>
-    </label>
   );
 }
 

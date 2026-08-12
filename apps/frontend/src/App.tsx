@@ -10314,8 +10314,8 @@ export default function App() {
           </div>
           <i aria-hidden="true" />
           <div className="automation-header-control">
-            <button
-              type="button"
+            <ButtonControl
+              variant="secondary"
               className={automationEnabled ? "automation-master active" : "automation-master"}
               onClick={() => updateAutomationSettings((current) => ({
                 ...current,
@@ -10331,10 +10331,10 @@ export default function App() {
                 <strong>Automation</strong>
                 <span>{automationEnabled ? "On" : "Off"}</span>
               </span>
-            </button>
-            <button type="button" className="automation-config-button" onClick={() => setAutomationDialogOpen(true)} aria-label="Configure automation">
+            </ButtonControl>
+            <ButtonControl variant="secondary" className="automation-config-button" onClick={() => setAutomationDialogOpen(true)} aria-label="Configure automation">
               <Settings size={17} aria-hidden="true" />
-            </button>
+            </ButtonControl>
           </div>
           <ButtonControl
             variant="secondary"

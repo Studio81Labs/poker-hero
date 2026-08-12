@@ -8,7 +8,7 @@ import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
-import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import { ButtonControl, DownloadLinkControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
 import { ToggleControl } from "./ToggleControl";
@@ -11772,22 +11772,16 @@ export default function App() {
                 <h3>Data and recovery</h3>
                 <p>Back up screenshots, reviewed hands, lesson notes, training decisions, recommendations, and benchmark reports in one portable ZIP.</p>
                 <div className="data-recovery-actions">
-                  <a
-                    className={`secondary-button${busy ? " disabled" : ""}`}
+                  <DownloadLinkControl
+                    className="secondary-button"
                     href={applicationBackupUrl()}
                     download
                     aria-label="Download application backup"
-                    aria-disabled={busy}
-                    tabIndex={busy ? -1 : undefined}
-                    onClick={(event) => {
-                      if (busy) {
-                        event.preventDefault();
-                      }
-                    }}
+                    disabled={busy}
                   >
                     <Download size={14} aria-hidden="true" />
                     Download backup
-                  </a>
+                  </DownloadLinkControl>
                   <ButtonControl
                     variant="secondary"
                     onClick={() => applicationBackupInputRef.current?.click()}
@@ -12948,25 +12942,19 @@ export default function App() {
             <DialogFooter className="training-progress-footer">
               <span>{reviewQueueStatus}</span>
               {trainingProgressView === "lessons" ? (
-                <a
-                  className={`training-lessons-export${trainingLessonsExportDisabled ? " disabled" : ""}`}
+                <DownloadLinkControl
+                  className="training-lessons-export"
                   href={trainingLessonsExportUrl(
                     trainingLessonStreet,
                     trainingLessonQuery,
                     trainingLessonOrder,
                   )}
                   download="poker-hero-lessons.md"
-                  aria-disabled={trainingLessonsExportDisabled}
-                  tabIndex={trainingLessonsExportDisabled ? -1 : undefined}
-                  onClick={(event) => {
-                    if (trainingLessonsExportDisabled) {
-                      event.preventDefault();
-                    }
-                  }}
+                  disabled={trainingLessonsExportDisabled}
                 >
                   <Download size={14} aria-hidden="true" />
                   Export lessons
-                </a>
+                </DownloadLinkControl>
               ) : null}
               {nextReviewHand ? (
                 <button
@@ -13470,23 +13458,17 @@ export default function App() {
                 disabled={benchmarkOperationsLocked}
                 onChange={(event) => void onBenchmarkDatasetImport(event)}
               />
-              <a
-                className={`secondary-button benchmark-dataset-action benchmark-export-button${benchmarkDatasetExportDisabled ? " disabled" : ""}`}
+              <DownloadLinkControl
+                className="secondary-button benchmark-dataset-action benchmark-export-button"
                 href={benchmarkDatasetUrl(pipelineSelection ?? undefined)}
                 download
                 aria-label="Export dataset"
                 title="Export dataset"
-                aria-disabled={benchmarkDatasetExportDisabled}
-                tabIndex={benchmarkDatasetExportDisabled ? -1 : undefined}
-                onClick={(event) => {
-                  if (benchmarkDatasetExportDisabled) {
-                    event.preventDefault();
-                  }
-                }}
+                disabled={benchmarkDatasetExportDisabled}
               >
                 <Download size={14} aria-hidden="true" />
                 <span>Export dataset</span>
-              </a>
+              </DownloadLinkControl>
               <ButtonControl
                 onClick={onRunBenchmark}
                 disabled={

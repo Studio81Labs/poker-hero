@@ -10336,8 +10336,9 @@ export default function App() {
               <Settings size={17} aria-hidden="true" />
             </button>
           </div>
-          <button
-            type="button"
+          <ButtonControl
+            variant="secondary"
+            iconOnly
             className="header-icon-button"
             onClick={openPipelineDialog}
             disabled={busy}
@@ -10345,21 +10346,23 @@ export default function App() {
             aria-label="Configure analysis plugins"
           >
             <SlidersHorizontal size={18} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
+          </ButtonControl>
+          <ButtonControl
+            variant="secondary"
+            iconOnly
             className="header-icon-button"
             onClick={() => setHelpDialogOpen(true)}
             title="How to use"
             aria-label="How to use Poker Training Analyzer"
           >
             <CircleHelp size={18} aria-hidden="true" />
-          </button>
-          <button type="button" className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
+          </ButtonControl>
+          <ButtonControl variant="secondary" iconOnly className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
             <Info size={18} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
+          </ButtonControl>
+          <ButtonControl
+            variant="secondary"
+            iconOnly
             className="header-icon-button"
             onClick={openTrainingDialog}
             disabled={busy}
@@ -10367,9 +10370,10 @@ export default function App() {
             aria-label="Training progress"
           >
             <Target size={18} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
+          </ButtonControl>
+          <ButtonControl
+            variant="secondary"
+            iconOnly
             className="header-icon-button"
             onClick={openBenchmarkDialog}
             disabled={busy}
@@ -10377,7 +10381,7 @@ export default function App() {
             aria-label="Parser benchmark"
           >
             <FlaskConical size={18} aria-hidden="true" />
-          </button>
+          </ButtonControl>
         </div>
       </section>
 

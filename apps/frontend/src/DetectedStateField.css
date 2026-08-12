@@ -1,0 +1,86 @@
+.field {
+  background: var(--surface);
+  border-left: 3px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 9px;
+}
+
+.field-low {
+  background: #fff6f4;
+  border-left-color: var(--accent);
+}
+
+.field-header {
+  align-items: center;
+  color: #605d5d;
+  display: flex;
+  font-size: 10.5px;
+  font-weight: 600;
+  gap: 5px;
+  justify-content: space-between;
+}
+
+.field-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-header small {
+  background: #d7d3d3;
+  color: #605d5d;
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+}
+
+.field-low .field-header small {
+  background: #ffe0d9;
+  color: var(--accent-dark);
+}
+
+.field-missing .field-header small {
+  background: #e5e2e2;
+  color: var(--muted);
+}
+
+.field .text-input-control,
+.field .select-control-input,
+.field .text-area-control {
+  font-size: 12px;
+}
+
+.field .text-area-control {
+  min-height: 48px;
+}
+
+.field:last-child {
+  grid-column: 1 / -1;
+}
+
+.confidence-track {
+  background: #dcd8d8;
+  display: block;
+  height: 2px;
+  overflow: hidden;
+}
+
+.confidence-track span {
+  background: #2d2b2b;
+  display: block;
+  height: 100%;
+}
+
+.field-medium .confidence-track span,
+.field-missing .confidence-track span {
+  background: var(--muted);
+}
+
+.field-low .confidence-track span {
+  background: var(--accent-dark);
+}

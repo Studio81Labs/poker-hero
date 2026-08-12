@@ -3377,7 +3377,7 @@ button:disabled {
   color: var(--muted);
 }
 
-.benchmark-comparison-run {
+.button-control.benchmark-comparison-run {
   align-items: center;
   background: transparent;
   border: 1px solid var(--line);
@@ -3390,7 +3390,7 @@ button:disabled {
   padding: 3px 7px;
 }
 
-.benchmark-comparison-run:hover:not(:disabled) {
+.button-control.benchmark-comparison-run:hover:not(:disabled) {
   background: var(--surface-strong);
   border-color: var(--text);
 }
@@ -3400,7 +3400,7 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.benchmark-pipeline-list button {
+.benchmark-pipeline-list .button-control {
   align-items: center;
   background: transparent;
   border: 0;
@@ -3415,56 +3415,56 @@ button:disabled {
   text-align: left;
 }
 
-.benchmark-pipeline-list button:nth-child(even) {
+.benchmark-pipeline-list .button-control:nth-child(even) {
   border-left-color: var(--line-soft);
 }
 
-.benchmark-pipeline-list button.active {
+.benchmark-pipeline-list .button-control.active {
   background: var(--accent-soft);
   border-left-color: var(--accent);
 }
 
-.benchmark-pipeline-list button.running,
-.benchmark-pipeline-list button.running:disabled {
+.benchmark-pipeline-list .button-control.running,
+.benchmark-pipeline-list .button-control.running:disabled {
   background: var(--surface-strong);
   box-shadow: inset 0 -2px 0 var(--accent);
   opacity: 1;
 }
 
-.benchmark-pipeline-list button.running > span > small {
+.benchmark-pipeline-list .button-control.running > span > small {
   color: var(--accent);
 }
 
-.benchmark-pipeline-list button.stale > span > small {
+.benchmark-pipeline-list .button-control.stale > span > small {
   color: #6d5510;
 }
 
-.benchmark-pipeline-list button.stale > strong {
+.benchmark-pipeline-list .button-control.stale > strong {
   color: #8b2d13;
 }
 
-.benchmark-pipeline-list button:not(:disabled):hover {
+.benchmark-pipeline-list .button-control:not(:disabled):hover {
   background: var(--surface-strong);
 }
 
-.benchmark-pipeline-list button:disabled:not(.active):not(.running) {
+.benchmark-pipeline-list .button-control:disabled:not(.active):not(.running) {
   color: var(--muted);
   cursor: not-allowed;
 }
 
-.benchmark-pipeline-list button > span,
-.benchmark-pipeline-list button > span > strong,
-.benchmark-pipeline-list button > span > small {
+.benchmark-pipeline-list .button-control > span,
+.benchmark-pipeline-list .button-control > span > strong,
+.benchmark-pipeline-list .button-control > span > small {
   display: block;
   min-width: 0;
 }
 
-.benchmark-pipeline-list button > span > strong,
-.benchmark-pipeline-list button > strong {
+.benchmark-pipeline-list .button-control > span > strong,
+.benchmark-pipeline-list .button-control > strong {
   font-size: 11px;
 }
 
-.benchmark-pipeline-list button > span > small {
+.benchmark-pipeline-list .button-control > span > small {
   color: var(--muted);
   font-size: 9px;
   margin-top: 2px;
@@ -4710,7 +4710,7 @@ button:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .benchmark-pipeline-list button:nth-child(even) {
+  .benchmark-pipeline-list .button-control:nth-child(even) {
     border-left-color: transparent;
   }
 

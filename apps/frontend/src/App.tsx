@@ -13031,8 +13031,8 @@ export default function App() {
                     <div>
                       <span>Latest saved run</span>
                       {benchmarkRunnablePipelines.length > 1 ? (
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="secondary"
                           className="benchmark-comparison-run"
                           onClick={onRunBenchmarkComparison}
                           disabled={
@@ -13044,7 +13044,7 @@ export default function App() {
                           {benchmarkComparisonProgress
                             ? `${benchmarkComparisonProgress.completed + 1}/${benchmarkComparisonProgress.total}`
                             : "Run comparison"}
-                        </button>
+                        </ButtonControl>
                       ) : null}
                     </div>
                   </div>
@@ -13085,9 +13085,9 @@ export default function App() {
                         status = `${report.total_cases} ${report.total_cases === 1 ? "case" : "cases"}${report.failed_cases > 0 ? ` · ${report.failed_cases} failed` : ""}`;
                       }
                       return (
-                        <button
+                        <ButtonControl
                           key={pipeline.parser.id}
-                          type="button"
+                          variant="ghost"
                           className={[
                             selected ? "active" : "",
                             running ? "running" : "",
@@ -13125,7 +13125,7 @@ export default function App() {
                           <strong className={report?.failed_cases || stale ? "needs-review" : undefined}>
                             {report ? benchmarkPercent(report.accuracy) : "--"}
                           </strong>
-                        </button>
+                        </ButtonControl>
                       );
                     })}
                   </div>

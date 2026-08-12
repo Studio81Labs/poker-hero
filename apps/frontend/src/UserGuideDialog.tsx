@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DialogHeader } from "./DialogHeader";
 import { ButtonControl } from "./FormControls";
 
 interface GuideStep {
@@ -402,20 +403,13 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
         aria-modal="true"
         aria-labelledby="help-dialog-title"
       >
-        <div className="automation-dialog-header">
-          <div>
-            <h2 id="help-dialog-title">How to use Poker Training Analyzer</h2>
-            <p>Workflows and reference for the control panel</p>
-          </div>
-          <button
-            type="button"
-            className="dialog-icon-button"
-            onClick={onClose}
-            aria-label="Close user guide"
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
+        <DialogHeader
+          titleId="help-dialog-title"
+          title="How to use Poker Training Analyzer"
+          subtitle="Workflows and reference for the control panel"
+          closeLabel="Close user guide"
+          onClose={onClose}
+        />
 
         <div className="help-dialog-body">
           <nav className="help-topic-nav" aria-label="User guide topics">

@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { UserGuideDialog } from "./UserGuideDialog";
@@ -11488,21 +11489,14 @@ export default function App() {
       {managedJob ? (
         <section className="modal-backdrop">
           <div className="automation-dialog screenshot-details-dialog" role="dialog" aria-modal="true" aria-labelledby="screenshot-details-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="screenshot-details-title">Screenshot details</h2>
-                <p>{managedJob.archived_at ? "Saved history" : "Processing queue"}</p>
-              </div>
-              <button
-                type="button"
-                className="dialog-icon-button"
-                onClick={closeScreenshotDetails}
-                disabled={screenshotMetadataSaving || screenshotDeleting}
-                aria-label="Close screenshot details"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="screenshot-details-title"
+              title="Screenshot details"
+              subtitle={managedJob.archived_at ? "Saved history" : "Processing queue"}
+              closeLabel="Close screenshot details"
+              closeDisabled={screenshotMetadataSaving || screenshotDeleting}
+              onClose={closeScreenshotDetails}
+            />
 
             <form className="screenshot-details-form" onSubmit={(event) => void saveScreenshotMetadata(event)}>
               <div className="screenshot-file-summary">
@@ -11634,15 +11628,13 @@ export default function App() {
       {automationDialogOpen ? (
         <section className="modal-backdrop">
           <div className="automation-dialog" role="dialog" aria-modal="true" aria-labelledby="automation-dialog-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="automation-dialog-title">Configure automation</h2>
-                <p>Applies to every frame you capture or upload</p>
-              </div>
-              <button type="button" className="dialog-icon-button" onClick={() => setAutomationDialogOpen(false)} aria-label="Close automation settings">
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="automation-dialog-title"
+              title="Configure automation"
+              subtitle="Applies to every frame you capture or upload"
+              closeLabel="Close automation settings"
+              onClose={() => setAutomationDialogOpen(false)}
+            />
 
             <div className="automation-dialog-body">
               <AutomationToggle
@@ -11688,15 +11680,13 @@ export default function App() {
       {pipelineDialogOpen ? (
         <section className="modal-backdrop">
           <div className="automation-dialog pipeline-dialog" role="dialog" aria-modal="true" aria-labelledby="pipeline-dialog-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="pipeline-dialog-title">Analysis plugins</h2>
-                <p>Choose the tools used for new uploads and live captures</p>
-              </div>
-              <button type="button" className="dialog-icon-button" onClick={() => setPipelineDialogOpen(false)} aria-label="Close analysis plugin settings">
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="pipeline-dialog-title"
+              title="Analysis plugins"
+              subtitle="Choose the tools used for new uploads and live captures"
+              closeLabel="Close analysis plugin settings"
+              onClose={() => setPipelineDialogOpen(false)}
+            />
 
             <div className="pipeline-dialog-body">
               {pipelineLoading ? (
@@ -11763,21 +11753,14 @@ export default function App() {
       {infoDialogOpen ? (
         <section className="modal-backdrop">
           <div className="automation-dialog info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-dialog-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="info-dialog-title">About Poker Training Analyzer</h2>
-                <p>Post-hand Texas Hold&apos;em review and training</p>
-              </div>
-              <button
-                type="button"
-                className="dialog-icon-button"
-                onClick={closeInfoDialog}
-                disabled={backupRestoring || mcpTokenPending}
-                aria-label="Close app information"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="info-dialog-title"
+              title="About Poker Training Analyzer"
+              subtitle="Post-hand Texas Hold'em review and training"
+              closeLabel="Close app information"
+              closeDisabled={backupRestoring || mcpTokenPending}
+              onClose={closeInfoDialog}
+            />
 
             <div className="info-dialog-body">
               <section className="info-dialog-section active-engines">
@@ -11880,21 +11863,14 @@ export default function App() {
       {trainingDialogOpen ? (
         <section className="modal-backdrop">
           <div className="automation-dialog training-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="training-progress-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="training-progress-title">Training progress</h2>
-                <p>Your locked answers compared with completed recommendations</p>
-              </div>
-              <button
-                type="button"
-                className="dialog-icon-button"
-                onClick={() => setTrainingDialogOpen(false)}
-                disabled={trainingReviewJobId !== null}
-                aria-label="Close training progress"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="training-progress-title"
+              title="Training progress"
+              subtitle="Your locked answers compared with completed recommendations"
+              closeLabel="Close training progress"
+              closeDisabled={trainingReviewJobId !== null}
+              onClose={() => setTrainingDialogOpen(false)}
+            />
 
             <div className="training-progress-body">
               {trainingProgressLoading ? (
@@ -13055,25 +13031,16 @@ export default function App() {
       {benchmarkDialogOpen ? (
         <section className="modal-backdrop">
           <div className="automation-dialog benchmark-dialog" role="dialog" aria-modal="true" aria-labelledby="benchmark-dialog-title">
-            <div className="automation-dialog-header">
-              <div>
-                <h2 id="benchmark-dialog-title">Parser benchmark</h2>
-                <p>
-                  {benchmarkReport
-                    ? `${benchmarkReportParserLabel} · ${benchmarkReport.layout_profile}`
-                    : "Ground-truth recognition checks"}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="dialog-icon-button"
-                onClick={closeBenchmarkDialog}
-                disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
-                aria-label="Close parser benchmark"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
+            <DialogHeader
+              titleId="benchmark-dialog-title"
+              title="Parser benchmark"
+              subtitle={benchmarkReport
+                ? `${benchmarkReportParserLabel} · ${benchmarkReport.layout_profile}`
+                : "Ground-truth recognition checks"}
+              closeLabel="Close parser benchmark"
+              closeDisabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
+              onClose={closeBenchmarkDialog}
+            />
 
             <div className="benchmark-dialog-body">
               <button

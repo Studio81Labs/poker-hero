@@ -12623,8 +12623,10 @@ export default function App() {
                                 onChange={(event) => setTrainingLessonSearch(event.target.value)}
                                 disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                               />
-                              <button
+                              <ButtonControl
                                 type="submit"
+                                variant="ghost"
+                                className="training-lesson-search-submit"
                                 aria-label="Apply lesson search"
                                 title="Search lesson notes"
                                 disabled={
@@ -12635,7 +12637,7 @@ export default function App() {
                                 }
                               >
                                 <Search size={13} aria-hidden="true" />
-                              </button>
+                              </ButtonControl>
                             </form>
                             <label className="training-review-order">
                               <span className="training-review-order-label">Order</span>

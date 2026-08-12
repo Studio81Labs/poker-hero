@@ -1,6 +1,8 @@
 import { RotateCw } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { ButtonControl } from "./FormControls";
+
 type SentryModule = typeof import("@sentry/react");
 type BrowserMonitoringOptions = Parameters<SentryModule["init"]>[0];
 
@@ -181,10 +183,10 @@ export function FatalError() {
       <div className="brand-mark" aria-hidden="true">A</div>
       <h1>Poker Training Analyzer</h1>
       <p>The application stopped unexpectedly.</p>
-      <button type="button" onClick={() => window.location.reload()}>
+      <ButtonControl onClick={() => window.location.reload()}>
         <RotateCw size={16} aria-hidden="true" />
         Reload
-      </button>
+      </ButtonControl>
     </main>
   );
 }

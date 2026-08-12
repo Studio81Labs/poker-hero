@@ -1,3 +1,82 @@
+.text-input-control,
+.text-area-control {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+  min-width: 0;
+  padding: 5px 8px;
+  width: 100%;
+}
+
+.text-input-control {
+  min-height: 31px;
+}
+
+.text-area-control {
+  min-height: 48px;
+  resize: vertical;
+}
+
+.text-input-control.text-control-compact,
+.text-area-control.text-control-compact {
+  min-height: 28px;
+  padding: 3px 5px;
+}
+
+.text-input-control:hover:not(:disabled),
+.text-area-control:hover:not(:disabled) {
+  border-color: var(--text);
+}
+
+.text-input-control:disabled,
+.text-area-control:disabled {
+  background: var(--surface);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.text-input-control::placeholder,
+.text-area-control::placeholder {
+  color: var(--muted);
+}
+
+.text-input-control.text-control-borderless,
+.text-area-control.text-control-borderless,
+.text-input-control.text-control-borderless:hover:not(:disabled),
+.text-area-control.text-control-borderless:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.text-input-control.text-control-borderless:disabled,
+.text-area-control.text-control-borderless:disabled {
+  background: transparent;
+}
+
+.text-input-control.text-control-inverse,
+.text-area-control.text-control-inverse {
+  background: rgba(243, 242, 242, 0.08);
+  border-color: rgba(243, 242, 242, 0.24);
+  color: var(--bg);
+}
+
+.text-input-control.text-control-inverse:hover:not(:disabled),
+.text-area-control.text-control-inverse:hover:not(:disabled) {
+  border-color: #d7d3d3;
+}
+
+.text-input-control.text-control-inverse:disabled,
+.text-area-control.text-control-inverse:disabled {
+  background: rgba(243, 242, 242, 0.08);
+  color: #aaa5a5;
+}
+
+.text-input-control.text-control-inverse::placeholder,
+.text-area-control.text-control-inverse::placeholder {
+  color: #aaa5a5;
+}
+
 .select-control {
   display: inline-grid;
   min-width: 0;

@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
-import { SelectControl } from "./FormControls";
+import { SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10569,7 +10569,8 @@ export default function App() {
             {historySearchOpen ? (
               <form className="history-search-form" onSubmit={(event) => void onSearchHistory(event)}>
                 <label className="sr-only" htmlFor="history-search-query">History search query</label>
-                <input
+                <TextInput
+                  density="compact"
                   id="history-search-query"
                   type="search"
                   value={historySearchInput}
@@ -10709,10 +10710,10 @@ export default function App() {
 
             <div className="field-grid">
               <Field label="Hero cards" confidence={confidenceLabel(confidences.hero_cards)} confidenceValue={confidences.hero_cards}>
-                <input disabled={stateControlsDisabled} value={form.hero_cards} onChange={(event) => updateForm("hero_cards", event.target.value)} />
+                <TextInput disabled={stateControlsDisabled} value={form.hero_cards} onChange={(event) => updateForm("hero_cards", event.target.value)} />
               </Field>
               <Field label="Board cards" confidence={confidenceLabel(confidences.board_cards)} confidenceValue={confidences.board_cards}>
-                <input disabled={stateControlsDisabled} value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
+                <TextInput disabled={stateControlsDisabled} value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
               </Field>
               <Field label="Street" confidence={confidenceLabel(confidences.street)} confidenceValue={confidences.street}>
                 <SelectControl disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value as StreetOption)}>
@@ -10724,10 +10725,10 @@ export default function App() {
                 </SelectControl>
               </Field>
               <Field label="Pot" confidence={confidenceLabel(confidences.pot_size)} confidenceValue={confidences.pot_size}>
-                <input disabled={stateControlsDisabled} inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
+                <TextInput disabled={stateControlsDisabled} inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
               </Field>
               <Field label="Current bet" confidence={confidenceLabel(confidences.current_bet)} confidenceValue={confidences.current_bet}>
-                <input
+                <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.current_bet}
@@ -10735,7 +10736,7 @@ export default function App() {
                 />
               </Field>
               <Field label="Effective stack" confidence={confidenceLabel(confidences.effective_stack)} confidenceValue={confidences.effective_stack}>
-                <input
+                <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.effective_stack}
@@ -10743,7 +10744,7 @@ export default function App() {
                 />
               </Field>
               <Field label="Hero stack" confidence={confidenceLabel(confidences.hero_stack)} confidenceValue={confidences.hero_stack}>
-                <input
+                <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="decimal"
                   value={form.hero_stack}
@@ -10751,7 +10752,7 @@ export default function App() {
                 />
               </Field>
               <Field label="Players in hand" confidence={confidenceLabel(confidences.players_in_hand)} confidenceValue={confidences.players_in_hand}>
-                <input
+                <TextInput
                   disabled={stateControlsDisabled}
                   inputMode="numeric"
                   value={form.players_in_hand}
@@ -10760,7 +10761,7 @@ export default function App() {
               </Field>
               {Number(form.current_bet) > 0 && Number(form.players_in_hand) > 2 ? (
                 <Field label="Opponents at wager" confidence="manual">
-                  <input
+                  <TextInput
                     disabled={stateControlsDisabled}
                     inputMode="numeric"
                     min="1"
@@ -10777,7 +10778,7 @@ export default function App() {
                   confidence={confidenceLabel(confidences.opponent_wager)}
                   confidenceValue={confidences.opponent_wager}
                 >
-                  <input
+                  <TextInput
                     disabled={stateControlsDisabled}
                     inputMode="decimal"
                     min={form.current_bet || "0"}
@@ -10798,7 +10799,7 @@ export default function App() {
                   )
                 ) ? (
                   <Field label="Opponent commitments total" confidence="manual">
-                    <input
+                    <TextInput
                       disabled={stateControlsDisabled}
                       inputMode="decimal"
                       min="0"
@@ -10812,11 +10813,11 @@ export default function App() {
                   </Field>
                 ) : null}
               <Field label="Hero position" confidence={confidenceLabel(confidences.hero_position)} confidenceValue={confidences.hero_position}>
-                <input disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
+                <TextInput disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
               </Field>
               {requiresOpponentPosition(form) ? (
                   <Field label="Opponent position" confidence={confidenceLabel(confidences.opponent_position)} confidenceValue={confidences.opponent_position}>
-                    <input disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
+                    <TextInput disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
                   </Field>
                 ) : null}
               <Field label="Facing action" confidence={confidenceLabel(confidences.facing_action)} confidenceValue={confidences.facing_action}>
@@ -10832,7 +10833,7 @@ export default function App() {
                 || form.street === "river"
               ) ? (
                 <Field label="Opponent stack" confidence="manual">
-                  <input
+                  <TextInput
                     disabled={stateControlsDisabled}
                     inputMode="decimal"
                     value={form.opponent_stack}
@@ -10912,7 +10913,8 @@ export default function App() {
                             <option value="raise">Raise to</option>
                             <option value="call">Call to</option>
                           </SelectControl>
-                          <input
+                          <TextInput
+                            density="compact"
                             aria-label={`Completed action ${index + 1} amount`}
                             disabled={stateControlsDisabled || action.action === "check"}
                             inputMode="decimal"
@@ -10979,7 +10981,8 @@ export default function App() {
                             <option value="bet">Bet</option>
                             <option value="raise">Raise to</option>
                           </SelectControl>
-                          <input
+                          <TextInput
+                            density="compact"
                             aria-label={`Action ${index + 1} amount`}
                             disabled={stateControlsDisabled || action.action === "check"}
                             inputMode="decimal"
@@ -11023,7 +11026,7 @@ export default function App() {
                         </SelectControl>
                       </Field>
                       <Field label="Opening size" confidence="manual">
-                        <input
+                        <TextInput
                           disabled={stateControlsDisabled}
                           inputMode="decimal"
                           value={form.preflop_open_size}
@@ -11076,7 +11079,8 @@ export default function App() {
                               <option value="raise">Raise to</option>
                               <option value="call">Call</option>
                             </SelectControl>
-                            <input
+                            <TextInput
+                              density="compact"
                               aria-label={`Preflop action ${index + 1} amount`}
                               disabled={stateControlsDisabled}
                               inputMode="decimal"
@@ -11103,7 +11107,7 @@ export default function App() {
                 </>
               ) : null}
               <Field label="Action context" confidence={confidenceLabel(confidences.action_context)} confidenceValue={confidences.action_context}>
-                <textarea disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
+                <TextAreaControl disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
               </Field>
             </div>
 
@@ -11155,7 +11159,8 @@ export default function App() {
                   {trainingAction === "bet" || trainingAction === "raise" ? (
                     <label>
                       <span>Size</span>
-                      <input
+                      <TextInput
+                        density="compact"
                         aria-label="Decision sizing in BB"
                         inputMode="decimal"
                         value={trainingSizing}
@@ -11251,7 +11256,8 @@ export default function App() {
                             Lesson note
                             <small>{trainingReviewNote.length}/{MAX_TRAINING_REVIEW_NOTE_LENGTH}</small>
                           </span>
-                          <textarea
+                          <TextAreaControl
+                            appearance="inverse"
                             aria-label="Edit training review note"
                             value={trainingReviewNote}
                             onChange={(event) => setTrainingReviewNote(event.target.value)}
@@ -11315,7 +11321,8 @@ export default function App() {
                           Review note
                           <small>{trainingReviewNote.length}/{MAX_TRAINING_REVIEW_NOTE_LENGTH}</small>
                         </span>
-                        <textarea
+                        <TextAreaControl
+                          appearance="inverse"
                           aria-label="Training review note"
                           value={trainingReviewNote}
                           onChange={(event) => setTrainingReviewNote(event.target.value)}
@@ -11514,7 +11521,7 @@ export default function App() {
                 <div className="screenshot-metadata-fields">
                   <label>
                     <span>Title</span>
-                    <input
+                    <TextInput
                       type="text"
                       value={screenshotTitle}
                       onChange={(event) => setScreenshotTitle(event.target.value)}
@@ -11526,7 +11533,7 @@ export default function App() {
                   </label>
                   <label>
                     <span>Tags</span>
-                    <input
+                    <TextInput
                       type="text"
                       value={screenshotTagInput}
                       onChange={(event) => setScreenshotTagInput(event.target.value)}
@@ -11537,7 +11544,7 @@ export default function App() {
                   </label>
                   <label className="screenshot-notes-field">
                     <span>Notes</span>
-                    <textarea
+                    <TextAreaControl
                       value={screenshotNotes}
                       onChange={(event) => setScreenshotNotes(event.target.value)}
                       maxLength={MAX_SCREENSHOT_NOTES_LENGTH}
@@ -12673,7 +12680,9 @@ export default function App() {
                                 );
                               }}
                             >
-                              <input
+                              <TextInput
+                                appearance="borderless"
+                                density="compact"
                                 type="search"
                                 aria-label="Search saved lesson notes"
                                 placeholder="Search notes"

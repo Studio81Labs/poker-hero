@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { SelectControl } from "./FormControls";
+import { SelectControl, TextInput } from "./FormControls";
 import {
   createMcpPrincipal,
   getMcpAccessConfig,
@@ -200,7 +200,7 @@ export function McpAccessPanel({
         <div className="mcp-unlock-row">
           <label>
             Agent access admin token
-            <input
+            <TextInput
               type="password"
               autoComplete="off"
               value={adminToken}
@@ -269,7 +269,7 @@ export function McpAccessPanel({
           <div className="mcp-create-grid">
             <label>
               Credential name
-              <input
+              <TextInput
                 value={name}
                 maxLength={100}
                 onChange={(event) => setName(event.target.value)}
@@ -292,7 +292,7 @@ export function McpAccessPanel({
             </label>
             <label>
               Expires (optional)
-              <input
+              <TextInput
                 type="datetime-local"
                 value={expiry}
                 onChange={(event) => setExpiry(event.target.value)}

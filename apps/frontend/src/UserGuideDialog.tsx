@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl } from "./FormControls";
@@ -459,7 +460,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
           </article>
         </div>
 
-        <div className="automation-dialog-footer help-dialog-footer">
+        <DialogFooter className="help-dialog-footer">
           <ButtonControl
             variant="secondary"
             disabled={!previousTopic}
@@ -488,7 +489,7 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
               Done
             </ButtonControl>
           )}
-        </div>
+        </DialogFooter>
     </DialogFrame>
   );
 }

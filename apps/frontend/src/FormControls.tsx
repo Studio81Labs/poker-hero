@@ -29,6 +29,11 @@ export type DownloadLinkControlProps =
     disabled?: boolean;
   };
 
+export type FileInputControlProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type"
+>;
+
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
   appearance?: TextControlAppearance;
   density?: TextControlDensity;
@@ -102,6 +107,20 @@ export const DownloadLinkControl = forwardRef<
 ));
 
 DownloadLinkControl.displayName = "DownloadLinkControl";
+
+export const FileInputControl = forwardRef<
+  HTMLInputElement,
+  FileInputControlProps
+>(({ className, ...props }, ref) => (
+  <input
+    {...props}
+    ref={ref}
+    type="file"
+    className={joinClassNames("file-input-control", className)}
+  />
+));
+
+FileInputControl.displayName = "FileInputControl";
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   (

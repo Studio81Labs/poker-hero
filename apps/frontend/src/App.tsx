@@ -8,7 +8,7 @@ import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
-import { ButtonControl, DownloadLinkControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import { ButtonControl, DownloadLinkControl, FileInputControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
 import { ToggleControl } from "./ToggleControl";
@@ -10434,7 +10434,7 @@ export default function App() {
                     <label className="file-picker">
                       <Upload size={15} aria-hidden="true" />
                       <span>{selectedFilesLabel(files)}</span>
-                      <input className="file-input" type="file" accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
+                      <FileInputControl accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
                     </label>
                     <ButtonControl variant="secondary" iconOnly onClick={onUpload} disabled={files.length === 0 || busy} title="Upload and parse" aria-label="Upload and parse">
                       <Upload size={15} aria-hidden="true" />
@@ -11791,10 +11791,8 @@ export default function App() {
                     <Upload size={14} aria-hidden="true" />
                     {backupRestoring ? "Restoring..." : "Restore backup"}
                   </ButtonControl>
-                  <input
+                  <FileInputControl
                     ref={applicationBackupInputRef}
-                    className="sr-only"
-                    type="file"
                     accept=".zip,application/zip"
                     aria-label="Application backup ZIP"
                     disabled={busy || backupRestoring}
@@ -13449,10 +13447,8 @@ export default function App() {
                 <Upload size={14} aria-hidden="true" />
                 <span>{benchmarkImporting ? "Importing..." : "Import dataset"}</span>
               </ButtonControl>
-              <input
+              <FileInputControl
                 ref={benchmarkDatasetInputRef}
-                className="sr-only"
-                type="file"
                 accept=".zip,application/zip"
                 aria-label="Parser dataset ZIP"
                 disabled={benchmarkOperationsLocked}

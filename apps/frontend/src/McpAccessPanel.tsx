@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { SelectControl, TextInput } from "./FormControls";
+import { ButtonControl, SelectControl, TextInput } from "./FormControls";
 import {
   createMcpPrincipal,
   getMcpAccessConfig,
@@ -207,28 +207,26 @@ export function McpAccessPanel({
               onChange={(event) => setAdminToken(event.target.value)}
             />
           </label>
-          <button
-            type="button"
-            className="secondary-button"
+          <ButtonControl
+            variant="secondary"
             disabled={busyId !== null}
             onClick={() => void unlockAdmin()}
           >
             {busyId === "unlock"
               ? "Unlocking..."
               : "Unlock credential management"}
-          </button>
+          </ButtonControl>
         </div>
       ) : (
         <div className="mcp-session-row">
           <span>Credential management unlocked for this browser session.</span>
-          <button
-            type="button"
-            className="secondary-button"
+          <ButtonControl
+            variant="secondary"
             disabled={busyId !== null || tokenPending}
             onClick={lockAdmin}
           >
             Lock
-          </button>
+          </ButtonControl>
         </div>
       )}
 
@@ -246,22 +244,20 @@ export function McpAccessPanel({
               <p>It is shown once and cannot be retrieved later.</p>
               <code>{issued.token}</code>
               <div className="mcp-inline-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
+                <ButtonControl
+                  variant="secondary"
                   onClick={() =>
                     void navigator.clipboard.writeText(issued.token)
                   }
                 >
                   Copy token
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button"
+                </ButtonControl>
+                <ButtonControl
+                  variant="secondary"
                   onClick={() => setIssued(null)}
                 >
                   I stored it
-                </button>
+                </ButtonControl>
               </div>
             </div>
           ) : null}
@@ -298,14 +294,13 @@ export function McpAccessPanel({
                 onChange={(event) => setExpiry(event.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className="secondary-button"
+            <ButtonControl
+              variant="secondary"
               disabled={busyId !== null || tokenPending}
               onClick={() => void createPrincipal()}
             >
               {busyId === "create" ? "Creating..." : "Create credential"}
-            </button>
+            </ButtonControl>
           </div>
 
           <div className="mcp-principal-list">
@@ -327,22 +322,20 @@ export function McpAccessPanel({
                   </div>
                   {principal.status === "active" ? (
                     <div className="mcp-inline-actions">
-                      <button
-                        type="button"
-                        className="secondary-button"
+                      <ButtonControl
+                        variant="secondary"
                         disabled={busyId !== null || tokenPending}
                         onClick={() => void rotate(principal)}
                       >
                         Rotate
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button"
+                      </ButtonControl>
+                      <ButtonControl
+                        variant="secondary"
                         disabled={busyId !== null}
                         onClick={() => void revoke(principal)}
                       >
                         Revoke
-                      </button>
+                      </ButtonControl>
                     </div>
                   ) : null}
                 </div>

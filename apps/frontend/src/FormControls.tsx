@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import {
   forwardRef,
+  type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -13,61 +14,122 @@ export type SelectControlProps = SelectHTMLAttributes<HTMLSelectElement> & {
   density?: "default" | "compact";
 };
 
+type ButtonControlVariant = "primary" | "secondary" | "ghost" | "danger";
 type TextControlAppearance = "default" | "borderless" | "inverse";
 type TextControlDensity = "default" | "compact";
+
+export type ButtonControlProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  iconOnly?: boolean;
+  variant?: ButtonControlVariant;
+};
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
   appearance?: TextControlAppearance;
   density?: TextControlDensity;
 };
 
-export type TextAreaControlProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
-  appearance?: TextControlAppearance;
-  density?: TextControlDensity;
-};
+export type TextAreaControlProps =
+  TextareaHTMLAttributes<HTMLTextAreaElement> & {
+    appearance?: TextControlAppearance;
+    density?: TextControlDensity;
+  };
 
 function joinClassNames(...classNames: Array<string | undefined>) {
   return classNames.filter(Boolean).join(" ");
 }
 
-export const TextInput = forwardRef<
-  HTMLInputElement,
-  TextInputProps
->(({ appearance = "default", className, density = "default", ...props }, ref) => (
-  <input
-    {...props}
-    ref={ref}
-    className={joinClassNames(
-      "text-input-control",
-      appearance !== "default" ? `text-control-${appearance}` : undefined,
-      density === "compact" ? "text-control-compact" : undefined,
+const BUTTON_VARIANT_CLASS_NAMES: Record<
+  ButtonControlVariant,
+  string | undefined
+> = {
+  primary: undefined,
+  secondary: "secondary-button",
+  ghost: "ghost-button",
+  danger: "danger-button",
+};
+
+export const ButtonControl = forwardRef<HTMLButtonElement, ButtonControlProps>(
+  (
+    {
       className,
-    )}
-  />
-));
+      iconOnly = false,
+      type = "button",
+      variant = "primary",
+      ...props
+    },
+    ref,
+  ) => (
+    <button
+      {...props}
+      ref={ref}
+      type={type}
+      className={joinClassNames(
+        "button-control",
+        BUTTON_VARIANT_CLASS_NAMES[variant],
+        iconOnly ? "icon-action" : undefined,
+        className,
+      )}
+    />
+  ),
+);
+
+ButtonControl.displayName = "ButtonControl";
+
+export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
+  (
+    { appearance = "default", className, density = "default", ...props },
+    ref,
+  ) => (
+    <input
+      {...props}
+      ref={ref}
+      className={joinClassNames(
+        "text-input-control",
+        appearance !== "default" ? `text-control-${appearance}` : undefined,
+        density === "compact" ? "text-control-compact" : undefined,
+        className,
+      )}
+    />
+  ),
+);
 
 TextInput.displayName = "TextInput";
 
 export const TextAreaControl = forwardRef<
   HTMLTextAreaElement,
   TextAreaControlProps
->(({ appearance = "default", className, density = "default", ...props }, ref) => (
-  <textarea
-    {...props}
-    ref={ref}
-    className={joinClassNames(
-      "text-area-control",
-      appearance !== "default" ? `text-control-${appearance}` : undefined,
-      density === "compact" ? "text-control-compact" : undefined,
-      className,
-    )}
-  />
-));
+>(
+  (
+    { appearance = "default", className, density = "default", ...props },
+    ref,
+  ) => (
+    <textarea
+      {...props}
+      ref={ref}
+      className={joinClassNames(
+        "text-area-control",
+        appearance !== "default" ? `text-control-${appearance}` : undefined,
+        density === "compact" ? "text-control-compact" : undefined,
+        className,
+      )}
+    />
+  ),
+);
 
 TextAreaControl.displayName = "TextAreaControl";
 
 export const SelectControl = forwardRef<HTMLSelectElement, SelectControlProps>(
-  ({ children, className, containerClassName, density = "default", disabled, ...props }, ref) => (
+  (
+    {
+      children,
+      className,
+      containerClassName,
+      density = "default",
+      disabled,
+      ...props
+    },
+    ref,
+  ) => (
     <span
       className={joinClassNames(
         "select-control",
@@ -84,7 +146,12 @@ export const SelectControl = forwardRef<HTMLSelectElement, SelectControlProps>(
       >
         {children}
       </select>
-      <ChevronDown className="select-control-icon" size={14} strokeWidth={2} aria-hidden="true" />
+      <ChevronDown
+        className="select-control-icon"
+        size={14}
+        strokeWidth={2}
+        aria-hidden="true"
+      />
     </span>
   ),
 );

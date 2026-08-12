@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
-import { SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10427,21 +10427,21 @@ export default function App() {
                     ))}
                   </div>
                   <div className="screen-capture-actions">
-                    <button
-                      type="button"
-                      className="secondary-button share-source-button"
+                    <ButtonControl
+                      variant="secondary"
+                      className="share-source-button"
                       onClick={() => (screenSharing ? setLivePreviewVisible(true) : onStartScreenShare())}
                       disabled={busy || (screenSharing && livePreviewVisible)}
                     >
                       <span className={screenSharing ? "source-indicator active" : "source-indicator"} aria-hidden="true" />
                       {screenSharing ? `View live ${shareModeLabel(shareMode).toLowerCase()}` : `Share ${shareModeLabel(shareMode).toLowerCase()}`}
-                    </button>
-                    <button type="button" className="secondary-button icon-action" onClick={onCaptureScreen} disabled={!screenSharing || busy} title="Capture and parse" aria-label="Capture and parse">
+                    </ButtonControl>
+                    <ButtonControl variant="secondary" iconOnly onClick={onCaptureScreen} disabled={!screenSharing || busy} title="Capture and parse" aria-label="Capture and parse">
                       <Camera size={15} aria-hidden="true" />
-                    </button>
-                    <button type="button" className="secondary-button icon-action" onClick={onStopScreenShare} disabled={!screenSharing || busy} title="Stop sharing" aria-label="Stop sharing">
+                    </ButtonControl>
+                    <ButtonControl variant="secondary" iconOnly onClick={onStopScreenShare} disabled={!screenSharing || busy} title="Stop sharing" aria-label="Stop sharing">
                       <Square size={13} aria-hidden="true" />
-                    </button>
+                    </ButtonControl>
                   </div>
                   <div className="source-hint">{screenSharing ? `${screenSourceLabel ?? "Source"} sharing active` : "Pick a source and share to read frames."}</div>
                 </>
@@ -10454,9 +10454,9 @@ export default function App() {
                       <span>{selectedFilesLabel(files)}</span>
                       <input className="file-input" type="file" accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
                     </label>
-                    <button type="button" className="secondary-button icon-action" onClick={onUpload} disabled={files.length === 0 || busy} title="Upload and parse" aria-label="Upload and parse">
+                    <ButtonControl variant="secondary" iconOnly onClick={onUpload} disabled={files.length === 0 || busy} title="Upload and parse" aria-label="Upload and parse">
                       <Upload size={15} aria-hidden="true" />
-                    </button>
+                    </ButtonControl>
                   </div>
                   <div className="source-hint">{files.length > 0 ? `${files.length} selected for upload` : "Choose screenshots to add them to the queue."}</div>
                 </>
@@ -11177,15 +11177,14 @@ export default function App() {
                         ? "Ready to lock"
                         : "No answer selected"}
                   </span>
-                  <button
-                    type="button"
-                    className="secondary-button"
+                  <ButtonControl
+                    variant="secondary"
                     onClick={onSaveTrainingDecision}
                     disabled={!trainingAction || busy}
                   >
                     <Check size={13} aria-hidden="true" />
                     {activeTrainingDecision ? "Update answer" : "Lock answer"}
-                  </button>
+                  </ButtonControl>
                 </div>
               </section>
             ) : null}
@@ -11426,17 +11425,17 @@ export default function App() {
           </div>
 
           <div className="review-actions">
-            <button type="button" onClick={onApprove} disabled={!canApprove || busy} aria-label="Approve state">
+            <ButtonControl onClick={onApprove} disabled={!canApprove || busy} aria-label="Approve state">
               <Check size={15} aria-hidden="true" />
               Approve
-            </button>
-            <button type="button" className="secondary-button" onClick={onRecommend} disabled={!canRecommend || busy} aria-label="Request recommendation">
+            </ButtonControl>
+            <ButtonControl variant="secondary" onClick={onRecommend} disabled={!canRecommend || busy} aria-label="Request recommendation">
               <Play size={14} aria-hidden="true" />
               Recommend
-            </button>
-            <button type="button" className="ghost-button icon-action" onClick={resetToParser} disabled={!job?.parser_result || busy} title="Reset to parser" aria-label="Reset to parser">
+            </ButtonControl>
+            <ButtonControl variant="ghost" iconOnly onClick={resetToParser} disabled={!job?.parser_result || busy} title="Reset to parser" aria-label="Reset to parser">
               <RefreshCcw size={14} aria-hidden="true" />
-            </button>
+            </ButtonControl>
           </div>
         </section>
       </section>
@@ -11478,10 +11477,10 @@ export default function App() {
               </div>
             </div>
 
-            <button type="button" className="secondary-button" onClick={onAbortQueue} disabled={queueProgress.aborting}>
+            <ButtonControl variant="secondary" onClick={onAbortQueue} disabled={queueProgress.aborting}>
               <Square size={13} aria-hidden="true" />
               Abort and discard unprocessed
-            </button>
+            </ButtonControl>
           </div>
         </section>
       ) : null}
@@ -11573,17 +11572,15 @@ export default function App() {
                       </small>
                     </span>
                   </span>
-                  <button
-                    type="button"
-                    className="secondary-button"
+                  <ButtonControl
+                    variant="secondary"
                     onClick={() => setScreenshotDeleteArmed(false)}
                     disabled={screenshotDeleting}
                   >
                     Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-button"
+                  </ButtonControl>
+                  <ButtonControl
+                    variant="danger"
                     onClick={() => void permanentlyDeleteScreenshot()}
                     disabled={screenshotDeleting || managedLocalUploadRecoveryPending}
                     aria-label={screenshotDeleting ? "Deleting screenshot" : "Delete permanently"}
@@ -11595,7 +11592,7 @@ export default function App() {
                         <span className="screenshot-delete-label-compact">Delete</span>
                       </>
                     )}
-                  </button>
+                  </ButtonControl>
                 </div>
               ) : null}
 
@@ -11619,13 +11616,13 @@ export default function App() {
                   </button>
                 ) : <span />}
                 <span className="screenshot-details-actions">
-                  <button type="button" className="secondary-button" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
+                  <ButtonControl variant="secondary" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                     Close
-                  </button>
+                  </ButtonControl>
                   {managedJobPersisted ? (
-                    <button type="submit" disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
+                    <ButtonControl type="submit" disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
                       {screenshotMetadataSaving ? "Saving..." : "Save details"}
-                    </button>
+                    </ButtonControl>
                   ) : null}
                 </span>
               </div>
@@ -11680,9 +11677,9 @@ export default function App() {
               <span>
                 Master automation is <strong>{automationEnabled ? "On" : "Off"}</strong>
               </span>
-              <button type="button" className="secondary-button" onClick={() => setAutomationDialogOpen(false)}>
+              <ButtonControl variant="secondary" onClick={() => setAutomationDialogOpen(false)}>
                 Done
-              </button>
+              </ButtonControl>
             </div>
           </div>
         </section>
@@ -11751,9 +11748,9 @@ export default function App() {
 
             <div className="automation-dialog-footer pipeline-dialog-footer">
               <span>Existing screenshots keep their original pipeline.</span>
-              <button type="button" className="secondary-button" onClick={() => setPipelineDialogOpen(false)}>
+              <ButtonControl variant="secondary" onClick={() => setPipelineDialogOpen(false)}>
                 Done
-              </button>
+              </ButtonControl>
             </div>
           </div>
         </section>
@@ -11845,16 +11842,15 @@ export default function App() {
                     <Download size={14} aria-hidden="true" />
                     Download backup
                   </a>
-                  <button
-                    type="button"
-                    className="secondary-button"
+                  <ButtonControl
+                    variant="secondary"
                     onClick={() => applicationBackupInputRef.current?.click()}
                     disabled={busy || backupRestoring}
                     aria-label="Restore application backup"
                   >
                     <Upload size={14} aria-hidden="true" />
                     {backupRestoring ? "Restoring..." : "Restore backup"}
-                  </button>
+                  </ButtonControl>
                   <input
                     ref={applicationBackupInputRef}
                     className="sr-only"
@@ -11869,14 +11865,13 @@ export default function App() {
             </div>
 
             <div className="automation-dialog-footer info-dialog-footer">
-              <button
-                type="button"
-                className="secondary-button"
+              <ButtonControl
+                variant="secondary"
                 onClick={closeInfoDialog}
                 disabled={backupRestoring || mcpTokenPending}
               >
                 Done
-              </button>
+              </ButtonControl>
             </div>
           </div>
         </section>
@@ -13045,14 +13040,13 @@ export default function App() {
                     : "Review next"}
                 </button>
               ) : null}
-              <button
-                type="button"
-                className="secondary-button"
+              <ButtonControl
+                variant="secondary"
                 onClick={() => setTrainingDialogOpen(false)}
                 disabled={trainingReviewJobId !== null}
               >
                 Done
-              </button>
+              </ButtonControl>
             </div>
           </div>
         </section>
@@ -13499,15 +13493,14 @@ export default function App() {
                                     <p className="benchmark-case-matched">Every labeled field matched the approved state.</p>
                                   )}
                                   <div className="benchmark-case-actions">
-                                    <button
-                                      type="button"
-                                      className="secondary-button"
+                                    <ButtonControl
+                                      variant="secondary"
                                       onClick={() => void reviewBenchmarkCase(benchmarkCase.job_id)}
                                       disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null || busy}
                                     >
                                       <Eye size={14} aria-hidden="true" />
                                       {benchmarkReviewJobId === benchmarkCase.job_id ? "Opening..." : "Review hand"}
-                                    </button>
+                                    </ButtonControl>
                                   </div>
                                 </div>
                               ) : null}
@@ -13535,9 +13528,9 @@ export default function App() {
                 <strong>{benchmarkIncludedCases}</strong> ground-truth {benchmarkIncludedCases === 1 ? "hand" : "hands"}
                 {benchmarkTargetLayoutLabel ? ` · ${benchmarkTargetLayoutLabel}` : ""}
               </span>
-              <button
-                type="button"
-                className="secondary-button benchmark-dataset-action"
+              <ButtonControl
+                variant="secondary"
+                className="benchmark-dataset-action"
                 onClick={() => benchmarkDatasetInputRef.current?.click()}
                 disabled={benchmarkOperationsLocked}
                 aria-label="Import dataset"
@@ -13545,7 +13538,7 @@ export default function App() {
               >
                 <Upload size={14} aria-hidden="true" />
                 <span>{benchmarkImporting ? "Importing..." : "Import dataset"}</span>
-              </button>
+              </ButtonControl>
               <input
                 ref={benchmarkDatasetInputRef}
                 className="sr-only"
@@ -13572,8 +13565,7 @@ export default function App() {
                 <Download size={14} aria-hidden="true" />
                 <span>Export dataset</span>
               </a>
-              <button
-                type="button"
+              <ButtonControl
                 onClick={onRunBenchmark}
                 disabled={
                   benchmarkOperationsLocked ||
@@ -13582,15 +13574,14 @@ export default function App() {
               >
                 <Play size={14} aria-hidden="true" />
                 {benchmarkRunning ? "Running..." : "Run benchmark"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
+              </ButtonControl>
+              <ButtonControl
+                variant="secondary"
                 onClick={closeBenchmarkDialog}
                 disabled={benchmarkRunning || benchmarkUpdating || benchmarkImporting || benchmarkReportLoading || benchmarkReviewJobId !== null}
               >
                 Done
-              </button>
+              </ButtonControl>
             </div>
           </div>
         </section>

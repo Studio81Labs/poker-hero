@@ -84,33 +84,6 @@ button:disabled {
   opacity: 0.45;
 }
 
-.secondary-button {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--text);
-}
-
-.secondary-button:hover:not(:disabled),
-.ghost-button:hover:not(:disabled) {
-  background: rgba(32, 30, 29, 0.07);
-  border-color: var(--line);
-  color: var(--text);
-}
-
-.ghost-button {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text);
-}
-
-.icon-action {
-  flex: 0 0 34px;
-  height: 34px;
-  min-height: 34px;
-  padding: 0;
-  width: 34px;
-}
-
 .app-shell {
   display: flex;
   flex-direction: column;
@@ -4202,7 +4175,7 @@ button:disabled {
   margin-left: 0;
 }
 
-.benchmark-dataset-action {
+.benchmark-dialog-footer > .benchmark-dataset-action {
   align-items: center;
   border: 1px solid var(--line);
   color: var(--text);
@@ -4217,11 +4190,11 @@ button:disabled {
   width: 34px;
 }
 
-.benchmark-dataset-action > span {
+.benchmark-dialog-footer > .benchmark-dataset-action > span {
   display: none;
 }
 
-.benchmark-dataset-action:hover:not(:disabled):not(.disabled) {
+.benchmark-dialog-footer > .benchmark-dataset-action:hover:not(:disabled):not(.disabled) {
   background: rgba(32, 30, 29, 0.07);
 }
 
@@ -4455,17 +4428,6 @@ button:disabled {
 
 .screenshot-delete-label-compact {
   display: none;
-}
-
-.danger-button {
-  background: var(--accent-dark);
-  border-color: var(--accent-dark);
-  color: #fff;
-}
-
-.danger-button:hover:not(:disabled) {
-  background: #8c1300;
-  border-color: #8c1300;
 }
 
 .screenshot-details-footer {
@@ -4757,7 +4719,7 @@ button:disabled {
     width: 100%;
   }
 
-  .benchmark-dataset-action > span {
+  .benchmark-dialog-footer > .benchmark-dataset-action > span {
     display: inline;
   }
 

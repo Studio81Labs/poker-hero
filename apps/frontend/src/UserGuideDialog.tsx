@@ -1,6 +1,8 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { ButtonControl } from "./FormControls";
+
 interface GuideStep {
   title: string;
   description: string;
@@ -139,8 +141,7 @@ const GUIDE_TOPICS: GuideTopic[] = [
           "Use refresh on a processed hand to unlock its state and recommendation controls before making corrections.",
       },
     ],
-    note:
-      "The backend applies its configured confidence requirements before control-panel automation may approve a hand. Automation-only hands are not scored in Training progress because no pre-reveal player decision was recorded.",
+    note: "The backend applies its configured confidence requirements before control-panel automation may approve a hand. Automation-only hands are not scored in Training progress because no pre-reveal player decision was recorded.",
   },
   {
     id: "recommendations",
@@ -331,18 +332,23 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    const previousFocus = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     if (!dialog) {
       return;
     }
 
-    const focusableElements = () => Array.from(dialog.querySelectorAll<HTMLElement>(
-      "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
-    ));
-    const initialFocus = dialog.querySelector<HTMLElement>("[aria-current='page']")
-      ?? focusableElements()[0];
+    const focusableElements = () =>
+      Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])",
+        ),
+      );
+    const initialFocus =
+      dialog.querySelector<HTMLElement>("[aria-current='page']") ??
+      focusableElements()[0];
     initialFocus?.focus();
 
     function containFocus(event: KeyboardEvent) {
@@ -363,7 +369,9 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const focusedIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      const focusedIndex = focusable.indexOf(
+        document.activeElement as HTMLElement,
+      );
       if (event.shiftKey && focusedIndex <= 0) {
         event.preventDefault();
         last.focus();
@@ -460,9 +468,8 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
         </div>
 
         <div className="automation-dialog-footer help-dialog-footer">
-          <button
-            type="button"
-            className="secondary-button"
+          <ButtonControl
+            variant="secondary"
             disabled={!previousTopic}
             onClick={() => previousTopic && setActiveTopicId(previousTopic.id)}
             aria-label={
@@ -473,26 +480,21 @@ export function UserGuideDialog({ onClose }: UserGuideDialogProps) {
           >
             <ChevronLeft size={15} aria-hidden="true" />
             Previous
-          </button>
+          </ButtonControl>
           <span>{activeTopic.label}</span>
           {nextTopic ? (
-            <button
-              type="button"
-              className="secondary-button"
+            <ButtonControl
+              variant="secondary"
               onClick={() => setActiveTopicId(nextTopic.id)}
               aria-label={`Next topic: ${nextTopic.label}`}
             >
               Next
               <ChevronRight size={15} aria-hidden="true" />
-            </button>
+            </ButtonControl>
           ) : (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onClose}
-            >
+            <ButtonControl variant="secondary" onClick={onClose}>
               Done
-            </button>
+            </ButtonControl>
           )}
         </div>
       </div>

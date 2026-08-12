@@ -772,17 +772,13 @@ button:disabled {
   padding: 0 18px 7px;
 }
 
-.history-search-form input {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--text);
+.history-search-form .text-input-control {
   font-size: 10px;
   height: 28px;
-  min-width: 0;
   padding: 0 8px;
 }
 
-.history-search-form input:focus {
+.history-search-form .text-input-control:focus {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
@@ -1188,23 +1184,14 @@ button:disabled {
   color: var(--muted);
 }
 
-.field input,
-.field select,
-.field textarea {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text);
+.field .text-input-control,
+.field .select-control-input,
+.field .text-area-control {
   font-size: 12px;
-  min-height: 31px;
-  min-width: 0;
-  padding: 5px 8px;
-  width: 100%;
 }
 
-.field textarea {
+.field .text-area-control {
   min-height: 48px;
-  resize: vertical;
 }
 
 .field:last-child {
@@ -1265,17 +1252,10 @@ button:disabled {
   justify-content: center;
 }
 
-.action-history-row input,
-.action-history-row select {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text);
+.action-history-row .text-input-control,
+.action-history-row .select-control-input {
   font-size: 10px;
   height: 28px;
-  min-width: 0;
-  padding: 3px 5px;
-  width: 100%;
 }
 
 .action-history-row button {
@@ -1439,14 +1419,9 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.training-decision-footer input {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--text);
+.training-decision-footer .text-input-control {
   font-size: 11px;
   height: 29px;
-  padding: 4px 6px;
   width: 58px;
 }
 
@@ -1631,22 +1606,11 @@ button:disabled {
   font-size: 8px;
 }
 
-.training-review-note textarea {
-  background: rgba(243, 242, 242, 0.08);
-  border: 1px solid rgba(243, 242, 242, 0.24);
-  border-radius: 0;
-  color: var(--bg);
+.training-review-note .text-area-control {
   font: inherit;
   font-size: 10px;
   line-height: 1.35;
   min-height: 42px;
-  padding: 6px 7px;
-  resize: vertical;
-  width: 100%;
-}
-
-.training-review-note textarea::placeholder {
-  color: #aaa5a5;
 }
 
 .training-review-note > .training-review-note-actions {
@@ -2470,9 +2434,9 @@ button:disabled {
   gap: 4px;
 }
 
-.mcp-unlock-row input,
-.mcp-create-grid input,
-.mcp-create-grid select {
+.mcp-unlock-row .text-input-control,
+.mcp-create-grid .text-input-control,
+.mcp-create-grid .select-control-input {
   min-height: 34px;
 }
 
@@ -3286,18 +3250,14 @@ button:disabled {
   min-height: 29px;
 }
 
-.training-lesson-search input {
-  background: transparent;
-  border: 0;
-  color: var(--text);
+.training-lesson-search .text-input-control {
   font-size: 10px;
   height: 27px;
-  min-width: 0;
   padding: 0 7px;
   width: 118px;
 }
 
-.training-lesson-search input:focus {
+.training-lesson-search .text-input-control:focus {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
@@ -4425,24 +4385,18 @@ button:disabled {
   font-weight: 700;
 }
 
-.screenshot-metadata-fields input,
-.screenshot-metadata-fields textarea {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--text);
+.screenshot-metadata-fields .text-input-control,
+.screenshot-metadata-fields .text-area-control {
   font-size: 12px;
-  min-width: 0;
   padding: 8px 10px;
-  width: 100%;
 }
 
-.screenshot-metadata-fields input {
+.screenshot-metadata-fields .text-input-control {
   height: 36px;
 }
 
-.screenshot-metadata-fields textarea {
+.screenshot-metadata-fields .text-area-control {
   min-height: 88px;
-  resize: vertical;
 }
 
 .screenshot-notes-field {
@@ -4942,7 +4896,7 @@ button:disabled {
     flex: 1;
   }
 
-  .training-lesson-search input {
+  .training-lesson-search .text-input-control {
     flex: 1;
     width: auto;
   }

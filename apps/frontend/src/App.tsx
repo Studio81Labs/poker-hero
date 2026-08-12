@@ -8,6 +8,7 @@ import { DetectedStateField } from "./DetectedStateField";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
@@ -11613,28 +11614,28 @@ export default function App() {
             />
 
             <div className="automation-dialog-body">
-              <AutomationToggle
+              <ToggleControl
                 title="Auto-approve parsed state"
                 description="Skip manual review when confidence is high"
                 checked={automationApprove}
-                onToggle={() => updateAutomationApprove(!automationApprove)}
+                onClick={() => updateAutomationApprove(!automationApprove)}
               />
-              <AutomationToggle
+              <ToggleControl
                 title="Auto-request recommendation"
                 description="Generate a play the moment a frame is approved"
                 checked={automationRecommend}
                 disabled={!automationApprove}
-                onToggle={() => updateAutomationSettings((current) => ({
+                onClick={() => updateAutomationSettings((current) => ({
                   ...current,
                   autoRecommend: !current.autoRecommend,
                 }))}
               />
-              <AutomationToggle
+              <ToggleControl
                 title="Allow parser warnings"
                 description="Continue automation even when fields are flagged"
                 checked={automationAllowWarnings}
                 disabled={!automationApprove}
-                onToggle={() => updateAutomationSettings((current) => ({
+                onClick={() => updateAutomationSettings((current) => ({
                   ...current,
                   allowWarnings: !current.allowWarnings,
                 }))}
@@ -13019,11 +13020,15 @@ export default function App() {
             />
 
             <div className="benchmark-dialog-body">
-              <button
-                type="button"
-                className="automation-toggle-row benchmark-ground-truth"
-                role="switch"
-                aria-checked={job?.benchmark_included ?? false}
+              <ToggleControl
+                className="benchmark-ground-truth"
+                checked={job?.benchmark_included ?? false}
+                title="Use current hand as ground truth"
+                description={job?.approved_state
+                  ? job.original_filename
+                  : job?.benchmark_included
+                    ? "Previous approved state remains included"
+                    : "Approve the current hand first"}
                 onClick={toggleBenchmarkInclusion}
                 disabled={
                   (!job?.approved_state && !job?.benchmark_included) ||
@@ -13035,21 +13040,7 @@ export default function App() {
                   benchmarkImporting ||
                   benchmarkReviewJobId !== null
                 }
-              >
-                <span>
-                  <strong>Use current hand as ground truth</strong>
-                  <small>
-                    {job?.approved_state
-                      ? job.original_filename
-                      : job?.benchmark_included
-                        ? "Previous approved state remains included"
-                        : "Approve the current hand first"}
-                  </small>
-                </span>
-                <span className={job?.benchmark_included ? "switch-control active" : "switch-control"} aria-hidden="true">
-                  <span />
-                </span>
-              </button>
+              />
 
               {!benchmarkLoading && benchmarkParserPipelines.length > 1 ? (
                 <section
@@ -13570,32 +13561,6 @@ function PipelineSelect({
         </small>
       ))}
     </div>
-  );
-}
-
-function AutomationToggle({
-  title,
-  description,
-  checked,
-  disabled = false,
-  onToggle,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button type="button" className="automation-toggle-row" role="switch" aria-checked={checked} onClick={onToggle} disabled={disabled}>
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <span className={checked ? "switch-control active" : "switch-control"} aria-hidden="true">
-        <span />
-      </span>
-    </button>
   );
 }
 

@@ -5,20 +5,21 @@ import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
+import { cardToCode, cardToDisplay, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
 import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { InputSourcePanel, selectedFilesLabel, shareModeLabel, type InputMode, type ShareMode } from "./InputSourcePanel";
+import { HistoryPanel } from "./HistoryPanel";
+import type { HistoryItem } from "./historyPresentation";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
-import { ScreenshotRailItem } from "./ScreenshotRailItem";
-import { StatusBadge } from "./StatusBadge";
 import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
@@ -87,7 +88,6 @@ import type {
   RecommendationAction,
   RecommendationResult,
   Street,
-  Suit,
   SystemInfo,
   TrainingCertainty,
   TrainingCertaintyFilter,
@@ -103,20 +103,6 @@ import type {
   TrainingStreetFilter,
   TrainingTrend,
 } from "./types";
-
-const SUIT_BY_CODE: Record<string, Suit> = {
-  c: "clubs",
-  d: "diamonds",
-  h: "hearts",
-  s: "spades",
-};
-
-const CODE_BY_SUIT: Record<Suit, string> = {
-  clubs: "c",
-  diamonds: "d",
-  hearts: "h",
-  spades: "s",
-};
 
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
 const RANKS = new Set<string>(RANK_VALUES);
@@ -335,12 +321,6 @@ interface PreflopActionForm {
   actor: PreflopPosition;
   action: PreflopActionType;
   amount: string;
-}
-
-interface HistoryItem {
-  id: string;
-  job: JobRecord;
-  savedAt: string;
 }
 
 interface QueueProgress {
@@ -4619,19 +4599,6 @@ function reconcileHistoryItems(
   });
 }
 
-function cardToCode(card: Card): string {
-  return `${card.rank}${CODE_BY_SUIT[card.suit]}`;
-}
-
-function cardToDisplay(card: Card): string {
-  const suit = card.suit === "spades" ? "♠" : card.suit === "hearts" ? "♥" : card.suit === "diamonds" ? "♦" : "♣";
-  return `${card.rank}${suit}`;
-}
-
-function isRedSuit(card: Card): boolean {
-  return card.suit === "hearts" || card.suit === "diamonds";
-}
-
 function isRank(value: string): value is Rank {
   return RANKS.has(value);
 }
@@ -5106,23 +5073,6 @@ function recommendationAttemptMayHavePersistedSideEffect(
     || (error instanceof ApiResponseError && error.status === 422);
 }
 
-function relativeTimeLabel(isoDate: string): string {
-  const elapsedSeconds = Math.max(0, Math.round((Date.now() - new Date(isoDate).getTime()) / 1000));
-  if (elapsedSeconds < 60) {
-    return "just now";
-  }
-  const elapsedMinutes = Math.round(elapsedSeconds / 60);
-  if (elapsedMinutes < 60) {
-    return `${elapsedMinutes} min ago`;
-  }
-  const elapsedHours = Math.round(elapsedMinutes / 60);
-  if (elapsedHours < 24) {
-    return `${elapsedHours} hr ago`;
-  }
-  const elapsedDays = Math.round(elapsedHours / 24);
-  return `${elapsedDays} day${elapsedDays === 1 ? "" : "s"} ago`;
-}
-
 function captureName(): string {
   return `screen-capture-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
 }
@@ -5197,18 +5147,6 @@ function autoApprovalState(job: JobRecord, allowWarnings: boolean): CanonicalSta
     throw new Error("Automation stopped: parser state needs manual review");
   }
   return state;
-}
-
-function historyCards(job: JobRecord): Card[] {
-  const state = job.approved_state ?? job.parser_result?.state ?? EMPTY_STATE;
-  return state.hero_cards.slice(0, 2);
-}
-
-function historyAction(job: JobRecord): string {
-  if (job.recommendation) {
-    return job.recommendation.action;
-  }
-  return job.approved_state ? "approved" : job.status;
 }
 
 function isHistoryReady(job: JobRecord): boolean {
@@ -7422,8 +7360,7 @@ export default function App() {
     setHistorySearchSnapshotVersion(null);
   }
 
-  async function onSearchHistory(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function onSearchHistory() {
     const query = historySearchInput.trim();
     if (!query) {
       clearHistorySearch();
@@ -10369,135 +10306,24 @@ export default function App() {
             pendingFilesLabel={files.length > 0 ? selectedFilesLabel(files) : null}
           />
 
-          <section className="history-panel" aria-label="Session history">
-            <div className="rail-section-heading history-heading">
-              <span>
-                {historySearchActive
-                  ? `History · ${historySearchTotal} ${historySearchTotal === 1 ? "match" : "matches"}`
-                  : "History · reopen"}
-              </span>
-              <span className="history-heading-actions">
-                <StatusBadge density="compact">Auto-saved</StatusBadge>
-                <ButtonControl
-                  variant="secondary"
-                  iconOnly
-                  className={historySearchOpen ? "history-search-toggle active" : "history-search-toggle"}
-                  onClick={() => {
-                    if (historySearchOpen) {
-                      clearHistorySearch();
-                    } else {
-                      setHistorySearchOpen(true);
-                    }
-                  }}
-                  disabled={historyLoading || busy}
-                  title={historySearchOpen ? "Close history search" : "Search saved history"}
-                  aria-label={historySearchOpen ? "Close history search" : "Search saved history"}
-                >
-                  {historySearchOpen ? <X size={12} aria-hidden="true" /> : <Search size={12} aria-hidden="true" />}
-                </ButtonControl>
-                <ButtonControl
-                  variant="secondary"
-                  iconOnly
-                  className="history-refresh"
-                  onClick={() => void refreshVisibleHistory()}
-                  disabled={historyLoading || busy}
-                  title={historySearchActive ? "Refresh history search" : "Refresh saved history"}
-                  aria-label={historySearchActive ? "Refresh history search" : "Refresh saved history"}
-                >
-                  <RefreshCcw size={12} aria-hidden="true" />
-                </ButtonControl>
-              </span>
-            </div>
-            {historySearchOpen ? (
-              <form className="history-search-form" onSubmit={(event) => void onSearchHistory(event)}>
-                <label className="sr-only" htmlFor="history-search-query">History search query</label>
-                <TextInput
-                  density="compact"
-                  id="history-search-query"
-                  type="search"
-                  value={historySearchInput}
-                  onChange={(event) => setHistorySearchInput(event.target.value)}
-                  placeholder="Cards, street, action..."
-                  maxLength={100}
-                  disabled={historyLoading || busy}
-                  autoComplete="off"
-                  autoFocus
-                />
-                <ButtonControl
-                  type="submit"
-                  iconOnly
-                  disabled={historyLoading || busy || historySearchInput.trim().length === 0}
-                  title="Run history search"
-                  aria-label="Run history search"
-                >
-                  <Search size={12} aria-hidden="true" />
-                </ButtonControl>
-              </form>
-            ) : null}
-            {visibleHistory.length > 0 ? (
-              <div className="history-list">
-                {visibleHistory.map((item, index) => {
-                  const cards = historyCards(item.job);
-                  return (
-                    <ScreenshotRailItem
-                      className="history-item"
-                      key={`${item.id}-${item.savedAt}`}
-                      manageLabel={`Manage history item ${index + 1}: ${item.job.original_filename}`}
-                      onManage={() => openScreenshotDetails(item.job)}
-                      onOpen={() => openHistory(item)}
-                      openClassName="history-item-open"
-                      openLabel={`Reopen history item ${index + 1}`}
-                    >
-                        <span className="history-cards">
-                          {cards.length > 0 ? (
-                            cards.map((card) => (
-                              <span key={cardToCode(card)} className={isRedSuit(card) ? "red-card" : ""}>
-                                {cardToDisplay(card)}
-                              </span>
-                            ))
-                          ) : (
-                            <small>No cards</small>
-                          )}
-                        </span>
-                        <span className="history-meta">
-                          <strong className={item.job.title ? "history-title" : ""}>{item.job.title ? screenshotLabel(item.job) : historyAction(item.job)}</strong>
-                          <small>
-                            {item.job.title
-                              ? `${relativeTimeLabel(item.savedAt)} · ${historyAction(item.job)}`
-                              : relativeTimeLabel(item.savedAt)}
-                          </small>
-                        </span>
-                        <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
-                    </ScreenshotRailItem>
-                  );
-                })}
-                {visibleHistory.length < visibleHistoryTotal ? (
-                  <ButtonControl
-                    variant="secondary"
-                    className="history-load-older"
-                    onClick={() => void loadOlderHistory()}
-                    disabled={historyLoading || busy}
-                    aria-label="Load older history"
-                  >
-                    <ChevronDown size={12} aria-hidden="true" />
-                    <span>
-                      {historyLoading
-                        ? "Loading..."
-                        : `Load ${visibleHistoryTotal - visibleHistory.length} older`}
-                    </span>
-                  </ButtonControl>
-                ) : null}
-              </div>
-            ) : (
-              <StateMessage className="history-empty" framed size="compact">
-                {historyLoading
-                  ? "Loading saved history..."
-                  : historySearchActive
-                    ? "No saved hands match this search."
-                    : "Cleared reviewed hands will appear here."}
-              </StateMessage>
-            )}
-          </section>
+          <HistoryPanel
+            busy={busy}
+            items={visibleHistory}
+            loading={historyLoading}
+            onClearSearch={clearHistorySearch}
+            onLoadOlder={() => void loadOlderHistory()}
+            onManageJob={openScreenshotDetails}
+            onOpenItem={openHistory}
+            onOpenSearch={() => setHistorySearchOpen(true)}
+            onRefresh={() => void refreshVisibleHistory()}
+            onSearch={() => void onSearchHistory()}
+            onSearchInputChange={setHistorySearchInput}
+            searchActive={historySearchActive}
+            searchInput={historySearchInput}
+            searchOpen={historySearchOpen}
+            searchTotal={historySearchTotal}
+            total={visibleHistoryTotal}
+          />
         </aside>
 
         <TablePreview

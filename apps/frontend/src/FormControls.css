@@ -80,6 +80,16 @@
   width: 1px;
 }
 
+.form-field-control,
+.form-field-copy {
+  min-width: 0;
+}
+
+.form-field-label,
+.form-field-description {
+  display: block;
+}
+
 .text-input-control,
 .text-area-control {
   background: var(--bg);

@@ -28,6 +28,10 @@ describe("SegmentedControl", () => {
 
     const group = screen.getByRole("group", { name: "Input mode" });
     expect(group).toHaveClass("input-mode-switch");
+    expect(screen.getByRole("button", { name: "Live" })).toHaveClass(
+      "button-control",
+      "active",
+    );
     expect(screen.getByRole("button", { name: "Live" })).toHaveAttribute(
       "aria-pressed",
       "true",

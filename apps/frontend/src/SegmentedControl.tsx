@@ -1,3 +1,5 @@
+import { ButtonControl } from "./FormControls";
+
 type SegmentedControlOption<Value extends string> = {
   disabled?: boolean;
   label: string;
@@ -24,16 +26,15 @@ export function SegmentedControl<Value extends string>({
   return (
     <div className={className} role="group" aria-label={ariaLabel}>
       {options.map((option) => (
-        <button
+        <ButtonControl
           key={option.value}
-          type="button"
           className={value === option.value ? "active" : undefined}
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           disabled={disabled || option.disabled}
         >
           {option.label}
-        </button>
+        </ButtonControl>
       ))}
     </div>
   );

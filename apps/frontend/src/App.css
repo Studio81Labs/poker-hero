@@ -2473,14 +2473,8 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.training-focus-action {
-  align-items: center;
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--text);
-  display: inline-flex;
+.button-control.training-focus-action {
   font-size: 10px;
-  font-weight: 800;
   gap: 6px;
   min-height: 29px;
   padding: 0 9px;

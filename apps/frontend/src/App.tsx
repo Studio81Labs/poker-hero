@@ -13,6 +13,7 @@ import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, Select
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
+import { ScreenshotRailItem } from "./ScreenshotRailItem";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
 import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
@@ -10472,41 +10473,26 @@ export default function App() {
               <div className="batch-list">
                 {jobs.map((candidate, index) => {
                   const attention = jobAttention[candidate.id];
-                  const className = [
-                    "batch-item",
-                    candidate.id === job?.id ? "active" : "",
-                    attention ? "attention" : "",
-                  ].filter(Boolean).join(" ");
                   return (
-                    <div key={candidate.id} className={className}>
-                      <ButtonControl
-                        variant="ghost"
-                        className={[
-                          "batch-item-open",
-                          candidate.id === job?.id ? "active" : "",
-                          attention ? "attention" : "",
-                        ].filter(Boolean).join(" ")}
-                        onClick={() => activateJob(candidate)}
-                        disabled={busy}
-                        aria-label={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-                      >
+                    <ScreenshotRailItem
+                      active={candidate.id === job?.id}
+                      attention={Boolean(attention)}
+                      className="batch-item"
+                      key={candidate.id}
+                      manageLabel={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
+                      onManage={() => openScreenshotDetails(candidate)}
+                      onOpen={() => activateJob(candidate)}
+                      openClassName="batch-item-open"
+                      openDisabled={busy}
+                      openLabel={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
+                    >
                         <span className="batch-number">{index + 1}</span>
                         <span className="batch-text">
                           <span>{screenshotLabel(candidate)}</span>
                           <small>{queueDetail(candidate, attention)}</small>
                         </span>
                         <JobStatusBadge status={candidate.status} />
-                      </ButtonControl>
-                      <ButtonControl
-                        variant="ghost"
-                        className="screenshot-manage-button"
-                        onClick={() => openScreenshotDetails(candidate)}
-                        title="Edit details or delete screenshot"
-                        aria-label={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
-                      >
-                        <Pencil size={13} aria-hidden="true" />
-                      </ButtonControl>
-                    </div>
+                    </ScreenshotRailItem>
                   );
                 })}
               </div>
@@ -10587,8 +10573,15 @@ export default function App() {
                 {visibleHistory.map((item, index) => {
                   const cards = historyCards(item.job);
                   return (
-                    <div key={`${item.id}-${item.savedAt}`} className="history-item">
-                      <ButtonControl variant="ghost" className="history-item-open" onClick={() => openHistory(item)} aria-label={`Reopen history item ${index + 1}`}>
+                    <ScreenshotRailItem
+                      className="history-item"
+                      key={`${item.id}-${item.savedAt}`}
+                      manageLabel={`Manage history item ${index + 1}: ${item.job.original_filename}`}
+                      onManage={() => openScreenshotDetails(item.job)}
+                      onOpen={() => openHistory(item)}
+                      openClassName="history-item-open"
+                      openLabel={`Reopen history item ${index + 1}`}
+                    >
                         <span className="history-cards">
                           {cards.length > 0 ? (
                             cards.map((card) => (
@@ -10609,17 +10602,7 @@ export default function App() {
                           </small>
                         </span>
                         <span className="history-result">{item.job.recommendation ? `${Math.round(item.job.recommendation.confidence * 100)}%` : item.job.status.slice(0, 1).toUpperCase()}</span>
-                      </ButtonControl>
-                      <ButtonControl
-                        variant="ghost"
-                        className="screenshot-manage-button"
-                        onClick={() => openScreenshotDetails(item.job)}
-                        title="Edit details or delete screenshot"
-                        aria-label={`Manage history item ${index + 1}: ${item.job.original_filename}`}
-                      >
-                        <Pencil size={13} aria-hidden="true" />
-                      </ButtonControl>
-                    </div>
+                    </ScreenshotRailItem>
                   );
                 })}
                 {visibleHistory.length < visibleHistoryTotal ? (

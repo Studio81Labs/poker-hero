@@ -3151,11 +3151,8 @@ button:disabled {
   border-top: 0;
 }
 
-.recent-training-open {
-  align-items: center;
-  background: transparent;
+.button-control.recent-training-open {
   border: 0;
-  color: var(--text);
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.2fr) auto 15px;
@@ -3165,21 +3162,15 @@ button:disabled {
   width: 100%;
 }
 
-.recent-training-open:hover:not(:disabled),
-.recent-training-reopen:hover:not(:disabled) {
+.button-control.recent-training-open:hover:not(:disabled),
+.button-control.recent-training-reopen:hover:not(:disabled) {
   background: rgba(32, 30, 29, 0.05);
   border-color: transparent;
   color: var(--text);
 }
 
-.recent-training-reopen {
-  background: transparent;
+.button-control.recent-training-reopen {
   border: 0;
-  color: var(--text);
-  height: 34px;
-  min-height: 34px;
-  padding: 0;
-  width: 34px;
 }
 
 .recent-training-hand,

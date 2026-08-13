@@ -8,7 +8,7 @@ import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
-import { ButtonControl, DownloadLinkControl, FileInputControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
@@ -11131,8 +11131,7 @@ export default function App() {
                 </div>
                 <div className="training-decision-footer">
                   {trainingAction === "bet" || trainingAction === "raise" ? (
-                    <label>
-                      <span>Size</span>
+                    <FormField label="Size">
                       <TextInput
                         density="compact"
                         aria-label="Decision sizing in BB"
@@ -11142,7 +11141,7 @@ export default function App() {
                         placeholder="BB"
                         disabled={busy}
                       />
-                    </label>
+                    </FormField>
                   ) : null}
                   <span className="training-decision-hint">
                     {activeTrainingDecision
@@ -11487,8 +11486,7 @@ export default function App() {
 
               {managedJobPersisted ? (
                 <div className="screenshot-metadata-fields">
-                  <label>
-                    <span>Title</span>
+                  <FormField label="Title">
                     <TextInput
                       type="text"
                       value={screenshotTitle}
@@ -11498,9 +11496,8 @@ export default function App() {
                       placeholder={managedJob.original_filename}
                       autoFocus
                     />
-                  </label>
-                  <label>
-                    <span>Tags</span>
+                  </FormField>
+                  <FormField label="Tags">
                     <TextInput
                       type="text"
                       value={screenshotTagInput}
@@ -11509,9 +11506,8 @@ export default function App() {
                       disabled={screenshotMetadataSaving || screenshotDeleting}
                       placeholder="turn, review, bluff"
                     />
-                  </label>
-                  <label className="screenshot-notes-field">
-                    <span>Notes</span>
+                  </FormField>
+                  <FormField className="screenshot-notes-field" label="Notes">
                     <TextAreaControl
                       value={screenshotNotes}
                       onChange={(event) => setScreenshotNotes(event.target.value)}
@@ -11519,7 +11515,7 @@ export default function App() {
                       disabled={screenshotMetadataSaving || screenshotDeleting}
                       rows={4}
                     />
-                  </label>
+                  </FormField>
                 </div>
               ) : (
                 <p className="local-upload-note">
@@ -12542,8 +12538,7 @@ export default function App() {
                       <div className="training-review-controls">
                         {trainingProgressView === "review" ? (
                           <>
-                            <label className="training-review-order">
-                              <span className="training-review-order-label">Order</span>
+                            <FormField className="training-review-order" label="Order" labelClassName="training-review-order-label">
                               <SelectControl
                                 aria-label="Review order"
                                 density="compact"
@@ -12557,9 +12552,8 @@ export default function App() {
                                 <option value="recent">Newest</option>
                                 <option value="ev_loss">EV loss</option>
                               </SelectControl>
-                            </label>
-                            <label className="training-review-order">
-                              <span className="training-review-order-label">Street</span>
+                            </FormField>
+                            <FormField className="training-review-order" label="Street" labelClassName="training-review-order-label">
                               <SelectControl
                                 aria-label="Review street"
                                 density="compact"
@@ -12576,9 +12570,8 @@ export default function App() {
                                 <option value="turn">Turn</option>
                                 <option value="river">River</option>
                               </SelectControl>
-                            </label>
-                            <label className="training-review-order">
-                              <span className="training-review-order-label">Certainty</span>
+                            </FormField>
+                            <FormField className="training-review-order" label="Certainty" labelClassName="training-review-order-label">
                               <SelectControl
                                 aria-label="Review certainty"
                                 density="compact"
@@ -12597,7 +12590,7 @@ export default function App() {
                                 <option value="low">Low</option>
                                 <option value="unrated">Unrated</option>
                               </SelectControl>
-                            </label>
+                            </FormField>
                           </>
                         ) : null}
                         {trainingProgressView === "lessons" ? (
@@ -12640,8 +12633,7 @@ export default function App() {
                                 <Search size={13} aria-hidden="true" />
                               </ButtonControl>
                             </form>
-                            <label className="training-review-order">
-                              <span className="training-review-order-label">Order</span>
+                            <FormField className="training-review-order" label="Order" labelClassName="training-review-order-label">
                               <SelectControl
                                 aria-label="Lesson order"
                                 density="compact"
@@ -12656,9 +12648,8 @@ export default function App() {
                                 <option value="recent">Newest</option>
                                 <option value="ev_loss">EV loss</option>
                               </SelectControl>
-                            </label>
-                            <label className="training-review-order">
-                              <span className="training-review-order-label">Street</span>
+                            </FormField>
+                            <FormField className="training-review-order" label="Street" labelClassName="training-review-order-label">
                               <SelectControl
                                 aria-label="Lesson street"
                                 density="compact"
@@ -12675,7 +12666,7 @@ export default function App() {
                                 <option value="turn">Turn</option>
                                 <option value="river">River</option>
                               </SelectControl>
-                            </label>
+                            </FormField>
                           </>
                         ) : null}
                         <SegmentedControl
@@ -13143,8 +13134,7 @@ export default function App() {
               ) : benchmarkReport ? (
                 <>
                   <div className="benchmark-report-toolbar">
-                    <label>
-                      <span className="benchmark-report-label">Report</span>
+                    <FormField label="Report" labelClassName="benchmark-report-label">
                       <SelectControl
                         aria-label="Benchmark report"
                         value={benchmarkReport.id}
@@ -13163,7 +13153,7 @@ export default function App() {
                           </option>
                         ))}
                       </SelectControl>
-                    </label>
+                    </FormField>
                     {benchmarkAccuracyDelta !== null ? (
                       <strong className={benchmarkAccuracyDelta < 0 ? "negative" : ""}>
                         {benchmarkAccuracyDelta > 0 ? "+" : ""}{benchmarkAccuracyDelta} pts vs previous
@@ -13512,11 +13502,12 @@ function PipelineSelect({
   const unavailableOptions = options.filter((option) => !option.available);
   return (
     <div className="pipeline-select-row">
-      <label htmlFor={id}>
-        <span className="pipeline-select-copy">
-          <strong>{label}</strong>
-          <small>{description}</small>
-        </span>
+      <FormField
+        description={description}
+        htmlFor={id}
+        label={label}
+        labelClassName="pipeline-select-copy"
+      >
         <SelectControl id={id} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
           {options.map((option) => (
             <option key={option.id} value={option.id} disabled={!option.available}>
@@ -13524,7 +13515,7 @@ function PipelineSelect({
             </option>
           ))}
         </SelectControl>
-      </label>
+      </FormField>
       {unavailableOptions.map((option) => (
         <small key={option.id} className="pipeline-unavailable">
           {option.label}: {option.unavailable_reason ?? "Not configured"}

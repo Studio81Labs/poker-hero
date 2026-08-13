@@ -1232,7 +1232,7 @@ button:disabled {
   min-height: 31px;
 }
 
-.training-decision-footer label {
+.training-decision-footer .form-field-control {
   align-items: center;
   color: var(--muted);
   display: flex;
@@ -1910,14 +1910,14 @@ button:disabled {
   border-bottom: 0;
 }
 
-.pipeline-select-row > label {
+.pipeline-select-row > .form-field-control {
   align-items: center;
   display: grid;
   gap: 18px;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
 }
 
-.pipeline-select-row > label > .pipeline-select-copy,
+.pipeline-select-row > .form-field-control > .pipeline-select-copy,
 .pipeline-select-row strong,
 .pipeline-select-row small {
   display: block;
@@ -2233,8 +2233,8 @@ button:disabled {
   font-size: 12px;
 }
 
-.mcp-unlock-row label,
-.mcp-create-grid label {
+.mcp-unlock-row .form-field-control,
+.mcp-create-grid .form-field-control {
   color: var(--muted);
   display: grid;
   font-size: 10px;
@@ -3436,7 +3436,7 @@ button:disabled {
   padding: 12px 0;
 }
 
-.benchmark-report-toolbar label {
+.benchmark-report-toolbar .form-field-control {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -4102,14 +4102,14 @@ button:disabled {
   padding: 16px 22px;
 }
 
-.screenshot-metadata-fields label {
+.screenshot-metadata-fields .form-field-control {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 0;
 }
 
-.screenshot-metadata-fields label > span {
+.screenshot-metadata-fields .form-field-copy {
   font-size: 11px;
   font-weight: 700;
 }
@@ -4365,7 +4365,7 @@ button:disabled {
     width: 100%;
   }
 
-  .pipeline-select-row > label {
+  .pipeline-select-row > .form-field-control {
     align-items: stretch;
     gap: 8px;
     grid-template-columns: minmax(0, 1fr);

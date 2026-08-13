@@ -1,11 +1,16 @@
 import { ChevronDown } from "lucide-react";
 import {
+  cloneElement,
   forwardRef,
   type AnchorHTMLAttributes,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
+  type LabelHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
+  useId,
 } from "react";
 
 import "./FormControls.css";
@@ -15,7 +20,12 @@ export type SelectControlProps = SelectHTMLAttributes<HTMLSelectElement> & {
   density?: "default" | "compact";
 };
 
-type ButtonControlVariant = "primary" | "secondary" | "ghost" | "danger" | "unstyled";
+type ButtonControlVariant =
+  | "primary"
+  | "secondary"
+  | "ghost"
+  | "danger"
+  | "unstyled";
 type TextControlAppearance = "default" | "borderless" | "inverse";
 type TextControlDensity = "default" | "compact";
 
@@ -33,6 +43,22 @@ export type FileInputControlProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "type"
 >;
+
+type FormFieldControlProps = {
+  "aria-describedby"?: string;
+  id?: string;
+};
+
+export type FormFieldProps = Omit<
+  LabelHTMLAttributes<HTMLLabelElement>,
+  "children"
+> & {
+  children: ReactElement<FormFieldControlProps>;
+  description?: ReactNode;
+  htmlFor?: string;
+  label: ReactNode;
+  labelClassName?: string;
+};
 
 export type TextInputProps = InputHTMLAttributes<HTMLInputElement> & {
   appearance?: TextControlAppearance;
@@ -122,6 +148,50 @@ export const FileInputControl = forwardRef<
 ));
 
 FileInputControl.displayName = "FileInputControl";
+
+export function FormField({
+  children,
+  className,
+  description,
+  htmlFor,
+  label,
+  labelClassName,
+  ...props
+}: FormFieldProps) {
+  const generatedId = useId();
+  const controlId = htmlFor ?? children.props.id ?? `form-field-${generatedId}`;
+  const descriptionId = description ? `${controlId}-description` : undefined;
+  const describedBy =
+    [children.props["aria-describedby"], descriptionId]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  return (
+    <label
+      {...props}
+      htmlFor={controlId}
+      className={joinClassNames("form-field-control", className)}
+    >
+      <span className={joinClassNames("form-field-copy", labelClassName)}>
+        <span className="form-field-label">
+          {description ? <strong>{label}</strong> : label}
+        </span>
+        {description ? (
+          <small
+            aria-hidden="true"
+            className="form-field-description"
+            id={descriptionId}
+          >
+            {description}
+          </small>
+        ) : null}
+      </span>
+      {cloneElement(children, {
+        "aria-describedby": describedBy,
+        id: controlId,
+      })}
+    </label>
+  );
+}
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(
   (

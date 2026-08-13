@@ -7,6 +7,7 @@ import {
   ButtonControl,
   DownloadLinkControl,
   FileInputControl,
+  FormField,
   SelectControl,
   TextAreaControl,
   TextInput,
@@ -145,6 +146,49 @@ describe("FileInputControl", () => {
 
     expect(Array.from((input as HTMLInputElement).files ?? [])).toEqual(files);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("FormField", () => {
+  it("associates a control with shared label and description markup", () => {
+    render(
+      <FormField
+        className="provider-field"
+        description="Used for post-hand analysis"
+        htmlFor="provider"
+        label="Provider"
+        labelClassName="provider-label"
+      >
+        <TextInput id="provider" defaultValue="Local solver" />
+      </FormField>,
+    );
+
+    const provider = screen.getByRole("textbox", { name: "Provider" });
+    expect(provider).toHaveValue("Local solver");
+    expect(provider).toHaveAccessibleDescription("Used for post-hand analysis");
+    expect(screen.getByText("Provider").closest(".form-field-copy")).toHaveClass(
+      "form-field-copy",
+      "provider-label",
+    );
+    expect(screen.getByText("Used for post-hand analysis")).toHaveClass(
+      "form-field-description",
+    );
+    expect(screen.getByText("Provider").closest("label")).toHaveClass(
+      "form-field-control",
+      "provider-field",
+    );
+  });
+
+  it("supports wrapping labels without a description", () => {
+    render(
+      <FormField label="Title">
+        <TextInput defaultValue="Button bluff" />
+      </FormField>,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue(
+      "Button bluff",
+    );
   });
 });
 

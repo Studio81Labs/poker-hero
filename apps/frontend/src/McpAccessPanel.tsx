@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { ButtonControl, SelectControl, TextInput } from "./FormControls";
+import {
+  ButtonControl,
+  FormField,
+  SelectControl,
+  TextInput,
+} from "./FormControls";
 import {
   createMcpPrincipal,
   getMcpAccessConfig,
@@ -198,15 +203,14 @@ export function McpAccessPanel({
         </p>
       ) : !adminUnlocked ? (
         <div className="mcp-unlock-row">
-          <label>
-            Agent access admin token
+          <FormField label="Agent access admin token">
             <TextInput
               type="password"
               autoComplete="off"
               value={adminToken}
               onChange={(event) => setAdminToken(event.target.value)}
             />
-          </label>
+          </FormField>
           <ButtonControl
             variant="secondary"
             disabled={busyId !== null}
@@ -263,17 +267,15 @@ export function McpAccessPanel({
           ) : null}
 
           <div className="mcp-create-grid">
-            <label>
-              Credential name
+            <FormField label="Credential name">
               <TextInput
                 value={name}
                 maxLength={100}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Developer or agent purpose"
               />
-            </label>
-            <label>
-              Access
+            </FormField>
+            <FormField label="Access">
               <SelectControl
                 value={access}
                 onChange={(event) =>
@@ -285,15 +287,14 @@ export function McpAccessPanel({
                   Read and write
                 </option>
               </SelectControl>
-            </label>
-            <label>
-              Expires (optional)
+            </FormField>
+            <FormField label="Expires (optional)">
               <TextInput
                 type="datetime-local"
                 value={expiry}
                 onChange={(event) => setExpiry(event.target.value)}
               />
-            </label>
+            </FormField>
             <ButtonControl
               variant="secondary"
               disabled={busyId !== null || tokenPending}

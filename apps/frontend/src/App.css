@@ -356,14 +356,6 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.queue-panel {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-height: 86px;
-  overflow: hidden;
-}
-
 .rail-section-heading {
   color: var(--muted);
   flex: 0 0 auto;
@@ -378,107 +370,11 @@ button:disabled {
   font-size: 10px;
 }
 
-.queue-heading-actions {
-  align-items: center;
-  display: inline-flex;
-  gap: 7px;
-}
-
-.button-control.clear-reviewed-button {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  flex: 0 0 24px;
-  height: 24px;
-  min-height: 24px;
-  padding: 0;
-  width: 24px;
-}
-
-.button-control.clear-reviewed-button:hover:not(:disabled) {
-  background: rgba(32, 30, 29, 0.07);
-  border-color: transparent;
-  color: var(--text);
-}
-
-.batch-list,
 .history-list {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-}
-
-.batch-list {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 7px;
-  padding: 0 18px 12px;
-}
-
-.batch-item {
-  min-height: 48px;
-}
-
-.button-control.batch-item-open {
-  display: grid;
-  gap: 9px;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  min-height: 46px;
-  padding: 7px 8px;
-}
-
-.batch-number {
-  align-items: center;
-  background: #d7d3d3;
-  color: #605d5d;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 800;
-  height: 22px;
-  justify-content: center;
-  width: 22px;
-}
-
-.batch-item.active .batch-number {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.batch-item.attention:not(.active) .batch-number {
-  background: var(--accent-soft);
-  color: var(--accent-dark);
-}
-
-.batch-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.batch-text > span,
-.batch-text small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.batch-text > span {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.batch-text small {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.pending-files {
-  flex: 1 1 auto;
-  margin: 0 18px 12px;
-  min-height: 54px;
-  padding: 12px;
 }
 
 .history-panel {
@@ -3819,14 +3715,12 @@ button:disabled {
     padding-right: 12px;
   }
 
-  .batch-list,
   .history-list,
   .history-search-form {
     padding-left: 12px;
     padding-right: 12px;
   }
 
-  .pending-files,
   .history-empty {
     margin-left: 12px;
     margin-right: 12px;

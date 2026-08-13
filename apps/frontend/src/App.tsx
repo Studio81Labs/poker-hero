@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -11,11 +11,14 @@ import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { InputSourcePanel, selectedFilesLabel, shareModeLabel, type InputMode, type ShareMode } from "./InputSourcePanel";
+import { JobStatusBadge } from "./JobStatusBadge";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { screenshotLabel } from "./screenshotPresentation";
+import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
 import { ScreenshotRailItem } from "./ScreenshotRailItem";
-import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
+import { StatusBadge } from "./StatusBadge";
 import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
@@ -5255,31 +5258,6 @@ function createLocalErrorJob(
   };
 }
 
-function queueDetail(job: JobRecord, attention: string | undefined): string {
-  if (attention) {
-    return attention;
-  }
-  if (job.status === "error") {
-    return humanReadableMessage(job.error, "Needs attention");
-  }
-  if (job.status === "created") {
-    return "Parsing screenshot";
-  }
-  if (job.recommendation_pending) {
-    return "Recommendation running";
-  }
-  if (job.parser_result && job.parser_result.warnings.length > 0) {
-    return "Review warnings";
-  }
-  return job.parser_result?.state.street ?? "No street";
-}
-
-function screenshotLabel(job: JobRecord): string {
-  return typeof job.title === "string" && job.title.trim()
-    ? job.title.trim()
-    : job.original_filename;
-}
-
 function screenshotTags(job: JobRecord): string[] {
   return Array.isArray(job.tags)
     ? job.tags.filter((tag): tag is string => typeof tag === "string")
@@ -10378,58 +10356,18 @@ export default function App() {
             shareMode={shareMode}
           />
 
-          <section className="queue-panel" aria-label="Screenshots queue">
-            <div className="rail-section-heading">
-              <span>Queued frames</span>
-              <span className="sr-only">{filmstripCount} screenshots</span>
-              <span className="queue-heading-actions">
-                <strong>{filmstripCount}</strong>
-                <ButtonControl
-                  variant="ghost"
-                  iconOnly
-                  className="clear-reviewed-button"
-                  onClick={clearReviewedToHistory}
-                  disabled={historyLoading || busy || clearableJobs.length === 0}
-                  title="Clear reviewed to history"
-                  aria-label="Clear reviewed"
-                >
-                  <Archive size={13} aria-hidden="true" />
-                </ButtonControl>
-              </span>
-            </div>
-            {jobs.length > 0 ? (
-              <div className="batch-list">
-                {jobs.map((candidate, index) => {
-                  const attention = jobAttention[candidate.id];
-                  return (
-                    <ScreenshotRailItem
-                      active={candidate.id === job?.id}
-                      attention={Boolean(attention)}
-                      className="batch-item"
-                      key={candidate.id}
-                      manageLabel={`Manage screenshot ${index + 1}: ${candidate.original_filename}`}
-                      onManage={() => openScreenshotDetails(candidate)}
-                      onOpen={() => activateJob(candidate)}
-                      openClassName="batch-item-open"
-                      openDisabled={busy}
-                      openLabel={`Open screenshot ${index + 1}: ${candidate.original_filename}`}
-                    >
-                        <span className="batch-number">{index + 1}</span>
-                        <span className="batch-text">
-                          <span>{screenshotLabel(candidate)}</span>
-                          <small>{queueDetail(candidate, attention)}</small>
-                        </span>
-                        <JobStatusBadge status={candidate.status} />
-                    </ScreenshotRailItem>
-                  );
-                })}
-              </div>
-            ) : (
-              <StateMessage centered className="pending-files" framed size="compact">
-                {files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}
-              </StateMessage>
-            )}
-          </section>
+          <ScreenshotQueuePanel
+            activeJobId={job?.id ?? null}
+            attentionByJobId={jobAttention}
+            busy={busy}
+            clearDisabled={historyLoading || busy || clearableJobs.length === 0}
+            count={filmstripCount}
+            jobs={jobs}
+            onClearReviewed={clearReviewedToHistory}
+            onManageJob={openScreenshotDetails}
+            onOpenJob={activateJob}
+            pendingFilesLabel={files.length > 0 ? selectedFilesLabel(files) : null}
+          />
 
           <section className="history-panel" aria-label="Session history">
             <div className="rail-section-heading history-heading">
@@ -13361,16 +13299,4 @@ function PipelineSelect({
       ))}
     </div>
   );
-}
-
-const JOB_STATUS_TONES: Record<JobRecord["status"], StatusBadgeTone> = {
-  created: "neutral",
-  parsed: "neutral",
-  approved: "accent",
-  recommended: "accent",
-  error: "attention",
-};
-
-function JobStatusBadge({ status }: { status: JobRecord["status"] }) {
-  return <StatusBadge tone={JOB_STATUS_TONES[status]} uppercase>{status}</StatusBadge>;
 }

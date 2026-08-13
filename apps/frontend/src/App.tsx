@@ -12859,9 +12859,9 @@ export default function App() {
                       <div className="recent-training-list">
                         {visibleTrainingHands.map((hand) => (
                           <div className="recent-training-row" key={hand.job_id}>
-                            <button
+                            <ButtonControl
+                              variant="ghost"
                               className="recent-training-open"
-                              type="button"
                               onClick={() => void reviewTrainingHand(
                                 hand.job_id,
                                 trainingProgressView === "review",
@@ -12896,21 +12896,22 @@ export default function App() {
                                 {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}
                               </em>
                               <Eye size={15} aria-hidden="true" />
-                            </button>
+                            </ButtonControl>
                             {trainingProgressView !== "lessons"
                               && hand.reviewed_at
                               && hand.outcome !== "match"
                               && hand.outcome !== "mixed" ? (
-                              <button
+                              <ButtonControl
+                                variant="ghost"
+                                iconOnly
                                 className="recent-training-reopen"
-                                type="button"
                                 onClick={() => void reopenTrainingReviewFromProgress(hand.job_id)}
                                 disabled={trainingReviewJobId !== null || busy}
                                 aria-label={`Reopen ${hand.original_filename} training review`}
                                 title="Reopen review"
                               >
                                 <RefreshCcw size={14} aria-hidden="true" />
-                              </button>
+                              </ButtonControl>
                             ) : null}
                           </div>
                         ))}
@@ -12965,8 +12966,7 @@ export default function App() {
                 </DownloadLinkControl>
               ) : null}
               {nextReviewHand ? (
-                <button
-                  type="button"
+                <ButtonControl
                   onClick={() => void reviewTrainingHand(nextReviewHand.job_id, true)}
                   disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                 >
@@ -12974,7 +12974,7 @@ export default function App() {
                   {trainingReviewOrder === "ev_loss" && typeof nextReviewHand.ev_loss_bb === "number"
                     ? "Review highest loss"
                     : "Review next"}
-                </button>
+                </ButtonControl>
               ) : null}
               <ButtonControl
                 variant="secondary"

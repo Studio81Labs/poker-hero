@@ -12,6 +12,7 @@ import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, Select
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
+import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
@@ -10508,7 +10509,9 @@ export default function App() {
                 })}
               </div>
             ) : (
-              <div className="pending-files">{files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}</div>
+              <StateMessage centered className="pending-files" framed size="compact">
+                {files.length > 0 ? selectedFilesLabel(files) : "No screenshots uploaded or captured yet"}
+              </StateMessage>
             )}
           </section>
 
@@ -10635,13 +10638,13 @@ export default function App() {
                 ) : null}
               </div>
             ) : (
-              <div className="history-empty">
+              <StateMessage className="history-empty" framed size="compact">
                 {historyLoading
                   ? "Loading saved history..."
                   : historySearchActive
                     ? "No saved hands match this search."
                     : "Cleared reviewed hands will appear here."}
-              </div>
+              </StateMessage>
             )}
           </section>
         </aside>
@@ -10655,7 +10658,7 @@ export default function App() {
           <div className="table-frame-body">
             <video className={screenSharing && livePreviewVisible ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
             {screenshotUrl ? <img className={screenSharing && livePreviewVisible ? "screenshot-preview hidden" : "screenshot-preview"} src={screenshotUrl} alt="Uploaded poker table screenshot" /> : null}
-            {(!screenSharing || !livePreviewVisible) && !screenshotUrl ? <div className="empty-screenshot">No screenshot uploaded</div> : null}
+            {(!screenSharing || !livePreviewVisible) && !screenshotUrl ? <StateMessage centered className="empty-screenshot" tone="inverse">No screenshot uploaded</StateMessage> : null}
           </div>
           <div className="confidence-summary" aria-label="Parser confidence summary">
             <SummaryMetric
@@ -11635,7 +11638,7 @@ export default function App() {
 
             <div className="pipeline-dialog-body">
               {pipelineLoading ? (
-                <p className="pipeline-loading">Reading installed plugins...</p>
+                <StateMessage as="p" className="pipeline-loading">Reading installed plugins...</StateMessage>
               ) : pipelineCapabilities && pipelineSelection ? (
                 <>
                   <PipelineSelect
@@ -11677,7 +11680,7 @@ export default function App() {
                   ) : null}
                 </>
               ) : (
-                <p className="pipeline-loading">Plugin details are unavailable.</p>
+                <StateMessage as="p" className="pipeline-loading">Plugin details are unavailable.</StateMessage>
               )}
             </div>
 
@@ -11810,7 +11813,7 @@ export default function App() {
 
             <div className="training-progress-body">
               {trainingProgressLoading ? (
-                <div className="training-progress-empty">Reading reviewed decisions...</div>
+                <StateMessage centered className="training-progress-empty">Reading reviewed decisions...</StateMessage>
               ) : trainingProgress && trainingProgress.reviewed_hands > 0 ? (
                 <>
                   <div
@@ -12234,12 +12237,15 @@ export default function App() {
                                 {difference.needs_review_hands}
                               </ButtonControl>
                             ) : (
-                              <span
+                              <StateMessage
+                                as="span"
+                                centered
                                 className="training-difference-review-empty"
+                                size="compact"
                                 aria-label={`No pending ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} reviews`}
                               >
                                 —
-                              </span>
+                              </StateMessage>
                             )}
                           </div>
                         ))}
@@ -12870,7 +12876,7 @@ export default function App() {
                         ))}
                       </div>
                     ) : (
-                      <div className="training-review-empty">
+                      <StateMessage centered className="training-review-empty" size="small">
                         {trainingProgressView === "lessons"
                           ? trainingLessonStreet !== "all" || trainingLessonQuery
                             ? "No saved lesson notes match these filters."
@@ -12890,14 +12896,14 @@ export default function App() {
                                 : trainingStreetFilter
                                   ? `No training hands were played on ${trainingStreetFilter.label}.`
                                   : "No recent training decisions."}
-                      </div>
+                      </StateMessage>
                     )}
                   </section>
                 </>
               ) : (
-                <div className="training-progress-empty">
+                <StateMessage centered className="training-progress-empty">
                   Lock an answer before revealing a recommendation to start tracking progress.
-                </div>
+                </StateMessage>
               )}
             </div>
 
@@ -13091,7 +13097,7 @@ export default function App() {
               ) : null}
 
               {benchmarkLoading ? (
-                <div className="benchmark-empty">Reading benchmark results...</div>
+                <StateMessage centered className="benchmark-empty">Reading benchmark results...</StateMessage>
               ) : benchmarkReport ? (
                 <>
                   <div className="benchmark-report-toolbar">
@@ -13170,7 +13176,7 @@ export default function App() {
                             ))}
                           </div>
                         ) : (
-                          <p className="benchmark-route-empty">No parser routes were recorded for this report.</p>
+                          <StateMessage as="p" className="benchmark-route-empty" size="compact">No parser routes were recorded for this report.</StateMessage>
                         )}
                         <p className="benchmark-route-coverage">
                           {benchmarkParserRoutes.attributedCases} of {benchmarkReport.total_cases} cases attributed
@@ -13360,18 +13366,18 @@ export default function App() {
                           );
                         })}
                         {visibleBenchmarkCases.length === 0 ? (
-                          <p className="benchmark-case-empty">
+                          <StateMessage as="p" centered className="benchmark-case-empty" size="compact">
                             {benchmarkCaseFilter === "all"
                               ? "No benchmark cases in this report."
                               : `No ${benchmarkCaseFilter} cases in this comparison.`}
-                          </p>
+                          </StateMessage>
                         ) : null}
                       </div>
                     </section>
                   </div>
                 </>
               ) : (
-                <div className="benchmark-empty">No benchmark has been run yet.</div>
+                <StateMessage centered className="benchmark-empty">No benchmark has been run yet.</StateMessage>
               )}
             </div>
 

@@ -50,6 +50,15 @@ describe("ButtonControl", () => {
       "delete-hand",
     );
   });
+
+  it("supports controls whose consumers own all visual states", () => {
+    render(<ButtonControl variant="unstyled">Segment</ButtonControl>);
+
+    expect(screen.getByRole("button", { name: "Segment" })).toHaveClass(
+      "button-control",
+      "unstyled-button",
+    );
+  });
 });
 
 describe("DownloadLinkControl", () => {

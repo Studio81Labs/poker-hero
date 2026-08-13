@@ -30,6 +30,7 @@ describe("SegmentedControl", () => {
     expect(group).toHaveClass("input-mode-switch");
     expect(screen.getByRole("button", { name: "Live" })).toHaveClass(
       "button-control",
+      "unstyled-button",
       "active",
     );
     expect(screen.getByRole("button", { name: "Live" })).toHaveAttribute(

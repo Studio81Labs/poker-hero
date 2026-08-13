@@ -28,6 +28,7 @@ export function SegmentedControl<Value extends string>({
       {options.map((option) => (
         <ButtonControl
           key={option.value}
+          variant="unstyled"
           className={value === option.value ? "active" : undefined}
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}

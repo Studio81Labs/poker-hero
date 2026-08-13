@@ -12260,8 +12260,8 @@ export default function App() {
                                 : "EV ungraded"}
                             </em>
                             {difference.needs_review_hands > 0 ? (
-                              <button
-                                type="button"
+                              <ButtonControl
+                                variant="secondary"
                                 className="training-difference-review"
                                 onClick={() => void focusTrainingActionDifference(difference)}
                                 disabled={
@@ -12274,7 +12274,7 @@ export default function App() {
                               >
                                 <Target size={12} aria-hidden="true" />
                                 {difference.needs_review_hands}
-                              </button>
+                              </ButtonControl>
                             ) : (
                               <span
                                 className="training-difference-review-empty"
@@ -12409,8 +12409,8 @@ export default function App() {
                             ) : null}
                             {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
                               <span className="training-section-context training-position-context">
-                                <button
-                                  type="button"
+                                <ButtonControl
+                                  variant="ghost"
                                   className="training-position-unrecorded"
                                   onClick={() => void updateTrainingPositionFilter({
                                     kind: "unpositioned",
@@ -12422,7 +12422,7 @@ export default function App() {
                                 >
                                   {trainingProgress.unpositioned_hands} unrecorded
                                   <Eye size={11} aria-hidden="true" />
-                                </button>
+                                </ButtonControl>
                                 {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
                                   <ButtonControl
                                     variant="secondary"

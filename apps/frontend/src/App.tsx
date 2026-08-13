@@ -11,6 +11,7 @@ import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, DownloadLinkControl, FileInputControl, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
+import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
 import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10496,7 +10497,7 @@ export default function App() {
                           <span>{screenshotLabel(candidate)}</span>
                           <small>{queueDetail(candidate, attention)}</small>
                         </span>
-                        <StatusPill status={candidate.status} />
+                        <JobStatusBadge status={candidate.status} />
                       </ButtonControl>
                       <ButtonControl
                         variant="ghost"
@@ -10524,7 +10525,7 @@ export default function App() {
                   : "History · reopen"}
               </span>
               <span className="history-heading-actions">
-                <span className="autosaved-pill">Auto-saved</span>
+                <StatusBadge density="compact">Auto-saved</StatusBadge>
                 <ButtonControl
                   variant="secondary"
                   iconOnly
@@ -10683,7 +10684,7 @@ export default function App() {
         <section className="review-column" aria-label="Hand review">
           <div className="panel-header">
             <h2>Detected state</h2>
-            {job ? <StatusPill status={job.status} /> : null}
+            {job ? <JobStatusBadge status={job.status} /> : null}
           </div>
 
           <div className="review-scroll">
@@ -11481,7 +11482,7 @@ export default function App() {
                   <strong>{managedJob.original_filename}</strong>
                   <small>{managedJob.archived_at ? "History" : "Queue"} · {managedJob.status}</small>
                 </span>
-                <StatusPill status={managedJob.status} />
+                <JobStatusBadge status={managedJob.status} />
               </div>
 
               {managedJobPersisted ? (
@@ -13533,6 +13534,14 @@ function PipelineSelect({
   );
 }
 
-function StatusPill({ status }: { status: JobRecord["status"] }) {
-  return <span className={`status-pill status-${status}`}>{status}</span>;
+const JOB_STATUS_TONES: Record<JobRecord["status"], StatusBadgeTone> = {
+  created: "neutral",
+  parsed: "neutral",
+  approved: "accent",
+  recommended: "accent",
+  error: "attention",
+};
+
+function JobStatusBadge({ status }: { status: JobRecord["status"] }) {
+  return <StatusBadge tone={JOB_STATUS_TONES[status]} uppercase>{status}</StatusBadge>;
 }

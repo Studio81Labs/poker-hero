@@ -12734,8 +12734,9 @@ export default function App() {
                           <ArrowRight size={12} aria-hidden="true" />
                           {trainingDecisionLabel(trainingReviewDifference.recommended_action, null)}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingReviewQueue(
                             trainingReviewOrder,
                             trainingReviewStreet,
@@ -12746,7 +12747,7 @@ export default function App() {
                           title="Clear action-difference filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {trainingProgressView === "review" && trainingReviewPosition ? (
@@ -12758,8 +12759,9 @@ export default function App() {
                           <Target size={12} aria-hidden="true" />
                           {trainingReviewPosition.label}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingReviewQueue(
                             trainingReviewOrder,
                             trainingReviewStreet,
@@ -12772,7 +12774,7 @@ export default function App() {
                           title="Clear review position filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {trainingProgressView === "recent" && trainingSolverFilter ? (
@@ -12787,15 +12789,16 @@ export default function App() {
                           )}
                           {trainingSolverFilter.label}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingSolverFilter(null)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear solver filter"
                           title="Clear solver filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {trainingProgressView === "recent" && trainingPositionFilter ? (
@@ -12804,15 +12807,16 @@ export default function App() {
                           <Target size={12} aria-hidden="true" />
                           {trainingPositionFilter.label}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingPositionFilter(null)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear position filter"
                           title="Clear position filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {trainingProgressView === "recent" && trainingStreetFilter ? (
@@ -12821,15 +12825,16 @@ export default function App() {
                           <Target size={12} aria-hidden="true" />
                           {trainingStreetFilter.label}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingStreetFilter(null)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear street filter"
                           title="Clear street filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {trainingProgressView === "recent" && trainingCertaintyFilter ? (
@@ -12838,15 +12843,16 @@ export default function App() {
                           <Target size={12} aria-hidden="true" />
                           {trainingCertaintyFilter.label}
                         </span>
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="ghost"
+                          iconOnly
                           onClick={() => void updateTrainingCertaintyFilter(null)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
                           aria-label="Clear certainty filter"
                           title="Clear certainty filter"
                         >
                           <X size={12} aria-hidden="true" />
-                        </button>
+                        </ButtonControl>
                       </div>
                     ) : null}
                     {visibleTrainingHands.length > 0 ? (

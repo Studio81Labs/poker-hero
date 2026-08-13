@@ -2882,19 +2882,23 @@ button:disabled {
   gap: 6px;
 }
 
-.training-active-difference button {
+.training-active-difference .button-control {
   align-items: center;
   background: transparent;
   border: 0;
   color: var(--text);
   display: inline-flex;
+  flex: 0 0 24px;
   height: 24px;
   justify-content: center;
+  min-height: 24px;
   padding: 0;
   width: 24px;
 }
 
-.training-active-difference button:hover:not(:disabled) {
+.training-active-difference .button-control:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--accent);
 }
 

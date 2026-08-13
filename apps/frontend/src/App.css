@@ -3105,7 +3105,7 @@ button:disabled {
   outline-offset: -1px;
 }
 
-.training-lesson-search button {
+.button-control.training-lesson-search-submit {
   align-items: center;
   background: transparent;
   border: 0;
@@ -3118,7 +3118,7 @@ button:disabled {
   width: 28px;
 }
 
-.training-lesson-search button:hover:not(:disabled) {
+.button-control.training-lesson-search-submit:hover:not(:disabled) {
   color: var(--accent);
 }
 

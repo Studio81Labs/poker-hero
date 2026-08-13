@@ -12,6 +12,7 @@ import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, Select
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SegmentedControl } from "./SegmentedControl";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
+import { SummaryMetric } from "./SummaryMetric";
 import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10300,15 +10301,9 @@ export default function App() {
           </div>
         </div>
         <div className="toolbar-stats" aria-label="Session status">
-          <div className="toolbar-stat">
-            <strong>{queueCount}</strong>
-            <span>in queue</span>
-          </div>
+          <SummaryMetric className="toolbar-stat" label="in queue" value={queueCount} />
           <i aria-hidden="true" />
-          <div className="toolbar-stat">
-            <strong>{historyTotal}</strong>
-            <span>reviewed</span>
-          </div>
+          <SummaryMetric className="toolbar-stat" label="reviewed" value={historyTotal} />
           <div className={screenSharing ? "source-status active" : "source-status"}>
             <span aria-hidden="true" />
             <strong>{liveStatusLabel}</strong>
@@ -10663,21 +10658,13 @@ export default function App() {
             {(!screenSharing || !livePreviewVisible) && !screenshotUrl ? <div className="empty-screenshot">No screenshot uploaded</div> : null}
           </div>
           <div className="confidence-summary" aria-label="Parser confidence summary">
-            <div>
-              <strong>
-                {confidenceSummary.detectedCount}
-                <span>/{confidenceSummary.fieldTotal}</span>
-              </strong>
-              <small>fields read</small>
-            </div>
-            <div>
-              <strong>{confidenceSummary.averageConfidence}%</strong>
-              <small>avg confidence</small>
-            </div>
-            <div>
-              <strong className={confidenceSummary.reviewCount > 0 ? "needs-review" : ""}>{confidenceSummary.reviewCount}</strong>
-              <small>need review</small>
-            </div>
+            <SummaryMetric
+              label="fields read"
+              labelElement="small"
+              value={<>{confidenceSummary.detectedCount}<span>/{confidenceSummary.fieldTotal}</span></>}
+            />
+            <SummaryMetric label="avg confidence" labelElement="small" value={`${confidenceSummary.averageConfidence}%`} />
+            <SummaryMetric attention={confidenceSummary.reviewCount > 0} label="need review" labelElement="small" value={confidenceSummary.reviewCount} />
           </div>
         </section>
 
@@ -11436,18 +11423,9 @@ export default function App() {
             </div>
 
             <div className="processing-stats">
-              <div>
-                <strong>{queueProgress.completed}</strong>
-                <span>processed</span>
-              </div>
-              <div>
-                <strong>{queueProgress.failed}</strong>
-                <span>attention</span>
-              </div>
-              <div>
-                <strong>{queueProgress.skipped}</strong>
-                <span>discarded</span>
-              </div>
+              <SummaryMetric label="processed" value={queueProgress.completed} />
+              <SummaryMetric label="attention" value={queueProgress.failed} />
+              <SummaryMetric label="discarded" value={queueProgress.skipped} />
             </div>
 
             <ButtonControl variant="secondary" onClick={onAbortQueue} disabled={queueProgress.aborting}>
@@ -11839,30 +11817,13 @@ export default function App() {
                     className={`training-progress-summary${trainingProgress.ev_compared_hands > 0 ? " has-ev" : ""}`}
                     aria-label="Training progress summary"
                   >
-                    <div>
-                      <strong>{trainingProgress.reviewed_hands}</strong>
-                      <span>reviewed</span>
-                    </div>
-                    <div>
-                      <strong>{benchmarkPercent(trainingProgress.action_accuracy)}</strong>
-                      <span>action match</span>
-                    </div>
-                    <div>
-                      <strong>{benchmarkPercent(trainingProgress.exact_accuracy)}</strong>
-                      <span>exact line</span>
-                    </div>
+                    <SummaryMetric label="reviewed" value={trainingProgress.reviewed_hands} />
+                    <SummaryMetric label="action match" value={benchmarkPercent(trainingProgress.action_accuracy)} />
+                    <SummaryMetric label="exact line" value={benchmarkPercent(trainingProgress.exact_accuracy)} />
                     {trainingProgress.ev_compared_hands > 0 && trainingProgress.average_ev_loss_bb !== null ? (
-                      <div>
-                        <strong>{formatEvLossBb(trainingProgress.average_ev_loss_bb)}</strong>
-                        <span>avg EV loss</span>
-                      </div>
+                      <SummaryMetric label="avg EV loss" value={formatEvLossBb(trainingProgress.average_ev_loss_bb)} />
                     ) : null}
-                    <div>
-                      <strong className={trainingProgress.needs_review_hands > 0 ? "needs-review" : ""}>
-                        {trainingProgress.needs_review_hands}
-                      </strong>
-                      <span>needs review</span>
-                    </div>
+                    <SummaryMetric attention={trainingProgress.needs_review_hands > 0} label="needs review" value={trainingProgress.needs_review_hands} />
                   </div>
 
                   {trainingProgress.trend ? (
@@ -13172,22 +13133,10 @@ export default function App() {
                     </div>
                   ) : null}
                   <div className="benchmark-summary" aria-label="Benchmark summary">
-                    <div>
-                      <strong>{benchmarkReport.total_cases}</strong>
-                      <span>cases</span>
-                    </div>
-                    <div>
-                      <strong>{benchmarkReport.correct_fields}/{benchmarkReport.evaluated_fields}</strong>
-                      <span>fields correct</span>
-                    </div>
-                    <div>
-                      <strong>{benchmarkPercent(benchmarkReport.accuracy)}</strong>
-                      <span>accuracy</span>
-                    </div>
-                    <div>
-                      <strong className={benchmarkReport.failed_cases > 0 ? "needs-review" : ""}>{benchmarkReport.failed_cases}</strong>
-                      <span>failed</span>
-                    </div>
+                    <SummaryMetric label="cases" value={benchmarkReport.total_cases} />
+                    <SummaryMetric label="fields correct" value={`${benchmarkReport.correct_fields}/${benchmarkReport.evaluated_fields}`} />
+                    <SummaryMetric label="accuracy" value={benchmarkPercent(benchmarkReport.accuracy)} />
+                    <SummaryMetric attention={benchmarkReport.failed_cases > 0} label="failed" value={benchmarkReport.failed_cases} />
                   </div>
 
                   <div className="benchmark-results-scroll">

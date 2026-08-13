@@ -1,9 +1,10 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, Plus, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
+import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
 import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
@@ -10824,25 +10825,16 @@ export default function App() {
                 </DetectedStateField>
               ) : null}
               {form.street === "turn" || form.street === "river" ? (
-                <div className="action-history-field">
-                  <div className="action-history-header">
-                    <div>
-                      <strong>Completed streets (total BB)</strong>
-                    </div>
-                    <ButtonControl
-                      className="action-history-add"
-                      disabled={stateControlsDisabled || completedPostflopActionsAtLimit}
-                      onClick={addCompletedPostflopAction}
-                    >
-                      <Plus size={13} aria-hidden="true" />
-                      Add action
-                    </ButtonControl>
-                  </div>
-                  {form.completed_postflop_actions.length > 0 ? (
-                    <div className="action-history-list">
+                <ActionHistoryField
+                  addDisabled={stateControlsDisabled || completedPostflopActionsAtLimit}
+                  addLabel="Add action"
+                  emptyMessage="No completed streets recorded"
+                  heading="Completed streets (total BB)"
+                  itemCount={form.completed_postflop_actions.length}
+                  onAdd={addCompletedPostflopAction}
+                >
                       {form.completed_postflop_actions.map((action, index) => (
-                        <div className="action-history-row completed-action-history-row" key={index}>
-                          <span className="action-history-index">{index + 1}</span>
+                        <ActionHistoryRow className="completed-action-history-row" index={index} key={index}>
                           <SelectControl
                             aria-label={`Completed action ${index + 1} street`}
                             density="compact"
@@ -10911,34 +10903,21 @@ export default function App() {
                           >
                             <X size={13} aria-hidden="true" />
                           </ButtonControl>
-                        </div>
+                        </ActionHistoryRow>
                       ))}
-                    </div>
-                  ) : (
-                    <p>No completed streets recorded</p>
-                  )}
-                </div>
+                </ActionHistoryField>
               ) : null}
               {form.street !== "" && form.street !== "preflop" && form.facing_action === "raise" ? (
-                <div className="action-history-field">
-                  <div className="action-history-header">
-                    <div>
-                      <strong>Current street history (total BB)</strong>
-                    </div>
-                    <ButtonControl
-                      className="action-history-add"
-                      disabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
-                      onClick={addPostflopAction}
-                    >
-                      <Plus size={13} aria-hidden="true" />
-                      Add action
-                    </ButtonControl>
-                  </div>
-                  {form.postflop_action_history.length > 0 ? (
-                    <div className="action-history-list">
+                <ActionHistoryField
+                  addDisabled={stateControlsDisabled || form.postflop_action_history.length >= 8}
+                  addLabel="Add action"
+                  emptyMessage="No current-street actions recorded"
+                  heading="Current street history (total BB)"
+                  itemCount={form.postflop_action_history.length}
+                  onAdd={addPostflopAction}
+                >
                       {form.postflop_action_history.map((action, index) => (
-                        <div className="action-history-row" key={index}>
-                          <span className="action-history-index">{index + 1}</span>
+                        <ActionHistoryRow index={index} key={index}>
                           <SelectControl
                             aria-label={`Action ${index + 1} actor`}
                             density="compact"
@@ -10978,13 +10957,9 @@ export default function App() {
                           >
                             <X size={13} aria-hidden="true" />
                           </ButtonControl>
-                        </div>
+                        </ActionHistoryRow>
                       ))}
-                    </div>
-                  ) : (
-                    <p>No current-street actions recorded</p>
-                  )}
-                </div>
+                </ActionHistoryField>
               ) : null}
               {form.street === "preflop" && form.facing_action === "raise" ? (
                 <>
@@ -11015,25 +10990,16 @@ export default function App() {
                       </DetectedStateField>
                     </>
                   ) : null}
-                  <div className="action-history-field">
-                    <div className="action-history-header">
-                      <div>
-                        <strong>Preflop history (total BB)</strong>
-                      </div>
-                      <ButtonControl
-                        className="action-history-add"
-                        disabled={stateControlsDisabled || form.preflop_action_history.length >= 8}
-                        onClick={addPreflopAction}
-                      >
-                        <Plus size={13} aria-hidden="true" />
-                        Add preflop action
-                      </ButtonControl>
-                    </div>
-                    {form.preflop_action_history.length > 0 ? (
-                      <div className="action-history-list">
+                  <ActionHistoryField
+                    addDisabled={stateControlsDisabled || form.preflop_action_history.length >= 8}
+                    addLabel="Add preflop action"
+                    emptyMessage="No actions recorded"
+                    heading="Preflop history (total BB)"
+                    itemCount={form.preflop_action_history.length}
+                    onAdd={addPreflopAction}
+                  >
                         {form.preflop_action_history.map((action, index) => (
-                          <div className="action-history-row" key={index}>
-                            <span className="action-history-index">{index + 1}</span>
+                          <ActionHistoryRow index={index} key={index}>
                             <SelectControl
                               aria-label={`Preflop action ${index + 1} actor`}
                               density="compact"
@@ -11075,13 +11041,9 @@ export default function App() {
                             >
                               <X size={13} aria-hidden="true" />
                             </ButtonControl>
-                          </div>
+                          </ActionHistoryRow>
                         ))}
-                      </div>
-                    ) : (
-                      <p>No actions recorded</p>
-                    )}
-                  </div>
+                  </ActionHistoryField>
                 </>
               ) : null}
               <DetectedStateField label="Action context" confidence={confidences.action_context}>

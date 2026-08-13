@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
 import { cardToCode, cardToDisplay, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
+import { DetectedStateForm } from "./DetectedStateForm";
 import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
@@ -16,6 +17,13 @@ import { HistoryPanel } from "./HistoryPanel";
 import type { HistoryItem } from "./historyPresentation";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { McpAccessPanel } from "./McpAccessPanel";
+import {
+  type CompletedPostflopActionForm,
+  type PostflopActionForm,
+  type PreflopActionForm,
+  requiresOpponentPosition,
+  type StateForm,
+} from "./pokerStateForm";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
@@ -71,7 +79,6 @@ import type {
   CompletedPostflopStreet,
   CompletedPostflopStreetHistory,
   DetectedState,
-  FacingAction,
   JobHistory,
   JobQueue,
   JobRecord,
@@ -79,10 +86,8 @@ import type {
   PipelineOption,
   PipelineSelection,
   PreflopAction,
-  PreflopActionType,
   PreflopPosition,
   PostflopAction,
-  PostflopActionType,
   PostflopActor,
   Rank,
   RecommendationAction,
@@ -153,8 +158,6 @@ const EMPTY_STATE: CanonicalState = {
   user_approved: false,
 };
 
-type StreetOption = "" | Street;
-type FacingActionOption = "" | FacingAction;
 type TrainingActionOption = "" | RecommendationAction;
 type TrainingCertaintyOption = "" | TrainingCertainty;
 type PersistedJobMutationScope = "processing" | "history";
@@ -279,49 +282,6 @@ type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
 type DisplayMediaTrackSettings = MediaTrackSettings & {
   displaySurface?: unknown;
 };
-
-interface StateForm {
-  hero_cards: string;
-  board_cards: string;
-  pot_size: string;
-  current_bet: string;
-  hero_stack: string;
-  opponent_stack: string;
-  effective_stack: string;
-  players_in_hand: string;
-  opponents_at_current_bet: string;
-  opponent_wager: string;
-  opponent_commitment_total: string;
-  hero_position: string;
-  opponent_position: string;
-  preflop_opener_position: string;
-  preflop_open_size: string;
-  preflop_action_history: PreflopActionForm[];
-  street: StreetOption;
-  facing_action: FacingActionOption;
-  postflop_action_history: PostflopActionForm[];
-  completed_postflop_actions: CompletedPostflopActionForm[];
-  action_context: string;
-}
-
-interface PostflopActionForm {
-  actor: PostflopActor;
-  action: PostflopActionType;
-  amount: string;
-}
-
-interface CompletedPostflopActionForm {
-  street: CompletedPostflopStreet;
-  actor: PostflopActor;
-  action: CompletedPostflopActionType;
-  amount: string;
-}
-
-interface PreflopActionForm {
-  actor: PreflopPosition;
-  action: PreflopActionType;
-  amount: string;
-}
 
 interface QueueProgress {
   total: number;
@@ -2743,35 +2703,6 @@ function normalizePreflopPosition(value: string | null | undefined): PreflopPosi
     .replace(/\s+/g, " ")
     .trim();
   return PREFLOP_POSITION_ALIASES[normalized] ?? null;
-}
-
-function requiresOpponentPosition(state: {
-  street: StreetOption | null;
-  players_in_hand: number | string | null;
-  hero_position: string | null | undefined;
-}): boolean {
-  if (
-    state.street === null
-    || state.street === ""
-    || state.street === "preflop"
-    || Number(state.players_in_hand) !== 2
-  ) {
-    return false;
-  }
-  const normalizedHeroPosition = (state.hero_position ?? "")
-    .toLowerCase()
-    .replace(/[_-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return ![
-    "ip",
-    "in position",
-    "oop",
-    "out of position",
-    "button",
-    "btn",
-    "dealer",
-  ].includes(normalizedHeroPosition);
 }
 
 function previousBenchmarkFieldMetric(
@@ -10346,150 +10277,13 @@ export default function App() {
           </div>
 
           <div className="review-scroll">
-            {warnings.length > 0 ? (
-              <div className="parser-warnings">
-                <AlertTriangle size={16} aria-hidden="true" />
-                <ul>
-                  {warnings.map((warning, index) => (
-                    <li key={`${warning}-${index}`}>{warning}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <div className="field-grid">
-              <DetectedStateField label="Hero cards" confidence={confidences.hero_cards}>
-                <TextInput disabled={stateControlsDisabled} value={form.hero_cards} onChange={(event) => updateForm("hero_cards", event.target.value)} />
-              </DetectedStateField>
-              <DetectedStateField label="Board cards" confidence={confidences.board_cards}>
-                <TextInput disabled={stateControlsDisabled} value={form.board_cards} onChange={(event) => updateForm("board_cards", event.target.value)} />
-              </DetectedStateField>
-              <DetectedStateField label="Street" confidence={confidences.street}>
-                <SelectControl disabled={stateControlsDisabled} value={form.street} onChange={(event) => updateForm("street", event.target.value as StreetOption)}>
-                  <option value="">Select street</option>
-                  <option value="preflop">Preflop</option>
-                  <option value="flop">Flop</option>
-                  <option value="turn">Turn</option>
-                  <option value="river">River</option>
-                </SelectControl>
-              </DetectedStateField>
-              <DetectedStateField label="Pot" confidence={confidences.pot_size}>
-                <TextInput disabled={stateControlsDisabled} inputMode="decimal" value={form.pot_size} onChange={(event) => updateForm("pot_size", event.target.value)} />
-              </DetectedStateField>
-              <DetectedStateField label="Current bet" confidence={confidences.current_bet}>
-                <TextInput
-                  disabled={stateControlsDisabled}
-                  inputMode="decimal"
-                  value={form.current_bet}
-                  onChange={(event) => updateForm("current_bet", event.target.value)}
-                />
-              </DetectedStateField>
-              <DetectedStateField label="Effective stack" confidence={confidences.effective_stack}>
-                <TextInput
-                  disabled={stateControlsDisabled}
-                  inputMode="decimal"
-                  value={form.effective_stack}
-                  onChange={(event) => updateForm("effective_stack", event.target.value)}
-                />
-              </DetectedStateField>
-              <DetectedStateField label="Hero stack" confidence={confidences.hero_stack}>
-                <TextInput
-                  disabled={stateControlsDisabled}
-                  inputMode="decimal"
-                  value={form.hero_stack}
-                  onChange={(event) => updateForm("hero_stack", event.target.value)}
-                />
-              </DetectedStateField>
-              <DetectedStateField label="Players in hand" confidence={confidences.players_in_hand}>
-                <TextInput
-                  disabled={stateControlsDisabled}
-                  inputMode="numeric"
-                  value={form.players_in_hand}
-                  onChange={(event) => updateForm("players_in_hand", event.target.value)}
-                />
-              </DetectedStateField>
-              {Number(form.current_bet) > 0 && Number(form.players_in_hand) > 2 ? (
-                <DetectedStateField label="Opponents at wager" confidenceText="manual">
-                  <TextInput
-                    disabled={stateControlsDisabled}
-                    inputMode="numeric"
-                    min="1"
-                    max={Math.max(1, Number(form.players_in_hand) - 1)}
-                    value={form.opponents_at_current_bet}
-                    onChange={(event) => updateForm("opponents_at_current_bet", event.target.value)}
-                    placeholder="Already committed"
-                  />
-                </DetectedStateField>
-              ) : null}
-              {Number(form.current_bet) > 0 ? (
-                <DetectedStateField
-                  label="Opponent wager total"
-                  confidence={confidences.opponent_wager}
-                >
-                  <TextInput
-                    disabled={stateControlsDisabled}
-                    inputMode="decimal"
-                    min={form.current_bet || "0"}
-                    value={form.opponent_wager}
-                    onChange={(event) => updateForm("opponent_wager", event.target.value)}
-                    placeholder="Total BB committed"
-                  />
-                </DetectedStateField>
-              ) : null}
-              {(form.street === "preflop" && Number(form.current_bet) <= 0)
-                || (
-                  Number(form.current_bet) > 0
-                  && Number(form.players_in_hand) > 2
-                  && (
-                    form.street === "preflop"
-                    || form.facing_action === "raise"
-                    || form.opponent_commitment_total !== ""
-                  )
-                ) ? (
-                  <DetectedStateField label="Opponent commitments total" confidenceText="manual">
-                    <TextInput
-                      disabled={stateControlsDisabled}
-                      inputMode="decimal"
-                      min="0"
-                      value={form.opponent_commitment_total}
-                      onChange={(event) => updateForm(
-                        "opponent_commitment_total",
-                        event.target.value,
-                      )}
-                      placeholder="All opponents, BB"
-                    />
-                  </DetectedStateField>
-                ) : null}
-              <DetectedStateField label="Hero position" confidence={confidences.hero_position}>
-                <TextInput disabled={stateControlsDisabled} value={form.hero_position} onChange={(event) => updateForm("hero_position", event.target.value)} />
-              </DetectedStateField>
-              {requiresOpponentPosition(form) ? (
-                  <DetectedStateField label="Opponent position" confidence={confidences.opponent_position}>
-                    <TextInput disabled={stateControlsDisabled} value={form.opponent_position} onChange={(event) => updateForm("opponent_position", event.target.value)} />
-                  </DetectedStateField>
-                ) : null}
-              <DetectedStateField label="Facing action" confidence={confidences.facing_action}>
-                <SelectControl disabled={stateControlsDisabled} value={form.facing_action} onChange={(event) => updateForm("facing_action", event.target.value as FacingActionOption)}>
-                  <option value="">Select action</option>
-                  <option value="bet">Bet</option>
-                  <option value="raise">Raise or check-raise</option>
-                </SelectControl>
-              </DetectedStateField>
-              {(
-                (form.street !== "" && form.street !== "preflop" && form.facing_action === "raise")
-                || form.street === "turn"
-                || form.street === "river"
-              ) ? (
-                <DetectedStateField label="Opponent stack" confidenceText="manual">
-                  <TextInput
-                    disabled={stateControlsDisabled}
-                    inputMode="decimal"
-                    value={form.opponent_stack}
-                    onChange={(event) => updateForm("opponent_stack", event.target.value)}
-                    placeholder="BB behind"
-                  />
-                </DetectedStateField>
-              ) : null}
+            <DetectedStateForm
+              confidences={confidences}
+              disabled={stateControlsDisabled}
+              form={form}
+              onChange={updateForm}
+              warnings={warnings}
+            >
               {form.street === "turn" || form.street === "river" ? (
                 <ActionHistoryField
                   addDisabled={stateControlsDisabled || completedPostflopActionsAtLimit}
@@ -10712,10 +10506,7 @@ export default function App() {
                   </ActionHistoryField>
                 </>
               ) : null}
-              <DetectedStateField label="Action context" confidence={confidences.action_context}>
-                <TextAreaControl disabled={stateControlsDisabled} value={form.action_context} onChange={(event) => updateForm("action_context", event.target.value)} />
-              </DetectedStateField>
-            </div>
+            </DetectedStateForm>
 
             {currentStateApproved && !activeRecommendation ? (
               <section className="training-decision" aria-label="Your training decision">

@@ -2618,12 +2618,9 @@ button:disabled {
   color: var(--accent);
 }
 
-.training-position-unrecorded {
-  align-items: center;
-  background: transparent;
+.button-control.training-position-unrecorded {
   border: 0;
   color: inherit;
-  display: inline-flex;
   font: inherit;
   font-weight: inherit;
   gap: 3px;
@@ -2631,7 +2628,9 @@ button:disabled {
   text-transform: inherit;
 }
 
-.training-position-unrecorded:hover:not(:disabled) {
+.button-control.training-position-unrecorded:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--accent);
 }
 
@@ -2828,17 +2827,11 @@ button:disabled {
   text-align: right;
 }
 
-.training-difference-review {
-  align-items: center;
-  background: transparent;
-  border: 1px solid var(--line);
-  color: var(--text);
-  display: inline-flex;
+.button-control.training-difference-review {
   font-size: 10px;
-  font-weight: 800;
   gap: 4px;
   height: 28px;
-  justify-content: center;
+  min-height: 28px;
   min-width: 28px;
   padding: 0 6px;
 }
@@ -2849,7 +2842,7 @@ button:disabled {
   text-align: center;
 }
 
-.training-difference-review:hover:not(:disabled) {
+.button-control.training-difference-review:hover:not(:disabled) {
   background: var(--surface);
   border-color: var(--line);
   color: var(--accent);

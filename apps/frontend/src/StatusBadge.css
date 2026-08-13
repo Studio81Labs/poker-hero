@@ -1,0 +1,31 @@
+.status-badge {
+  align-items: center;
+  display: inline-flex;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 3px 7px;
+}
+
+.status-badge-uppercase {
+  text-transform: uppercase;
+}
+
+.status-badge-compact {
+  padding: 2px 6px;
+}
+
+.status-badge-neutral {
+  background: #d7d3d3;
+  color: #605d5d;
+}
+
+.status-badge-accent {
+  background: var(--accent);
+  color: #fff;
+}
+
+.status-badge-attention {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}

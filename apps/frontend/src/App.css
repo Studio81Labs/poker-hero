@@ -2543,9 +2543,7 @@ button:disabled {
   width: 40%;
 }
 
-.training-solver-route {
-  align-items: center;
-  background: transparent;
+.button-control.training-solver-route {
   border: 0;
   color: inherit;
   display: grid;
@@ -2593,7 +2591,9 @@ button:disabled {
   color: var(--accent);
 }
 
-.training-solver-route:hover:not(:disabled) {
+.button-control.training-solver-route:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--accent);
 }
 
@@ -2602,12 +2602,9 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.training-solver-unattributed {
-  align-items: center;
-  background: transparent;
+.button-control.training-solver-unattributed {
   border: 0;
   color: inherit;
-  display: inline-flex;
   font: inherit;
   font-weight: inherit;
   gap: 3px;
@@ -2615,7 +2612,9 @@ button:disabled {
   text-transform: inherit;
 }
 
-.training-solver-unattributed:hover:not(:disabled) {
+.button-control.training-solver-unattributed:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
   color: var(--accent);
 }
 
@@ -2714,12 +2713,9 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.training-solver-fallback {
-  align-items: center;
-  background: transparent;
+.button-control.training-solver-fallback {
   border: 0;
   border-top: 1px solid var(--line-soft);
-  color: var(--text);
   display: grid;
   font-size: 10px;
   gap: 12px;
@@ -2730,8 +2726,10 @@ button:disabled {
   width: 100%;
 }
 
-.training-solver-fallback:hover:not(:disabled) {
+.button-control.training-solver-fallback:hover:not(:disabled) {
   background: rgba(32, 30, 29, 0.04);
+  border-color: transparent;
+  border-top-color: var(--line-soft);
 }
 
 .training-solver-fallback > span {

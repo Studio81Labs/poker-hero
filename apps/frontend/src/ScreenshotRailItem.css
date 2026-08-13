@@ -1,0 +1,53 @@
+.screenshot-rail-item {
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid rgba(32, 30, 29, 0.16);
+  color: var(--text);
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  padding: 0;
+  width: 100%;
+}
+
+.screenshot-rail-item:hover,
+.screenshot-rail-item.active {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.screenshot-rail-item.attention {
+  border-color: var(--accent);
+}
+
+.button-control.screenshot-rail-item-open {
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  min-width: 0;
+  text-align: left;
+}
+
+.button-control.screenshot-rail-item-open:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text);
+}
+
+.button-control.screenshot-manage-button {
+  align-self: stretch;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line-soft);
+  color: var(--muted);
+  min-height: 100%;
+  padding: 0;
+  width: 30px;
+}
+
+.button-control.screenshot-manage-button:hover:not(:disabled) {
+  background: rgba(32, 30, 29, 0.07);
+  border-color: var(--line-soft);
+  color: var(--accent-dark);
+}

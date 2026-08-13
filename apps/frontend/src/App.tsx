@@ -1,4 +1,4 @@
-import { AlertTriangle, Archive, ArrowRight, Camera, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -10,6 +10,7 @@ import { DialogFooter } from "./DialogFooter";
 import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, SelectControl, TextAreaControl, TextInput } from "./FormControls";
+import { InputSourcePanel, selectedFilesLabel, shareModeLabel, type InputMode, type ShareMode } from "./InputSourcePanel";
 import { McpAccessPanel } from "./McpAccessPanel";
 import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
@@ -166,12 +167,6 @@ type StreetOption = "" | Street;
 type FacingActionOption = "" | FacingAction;
 type TrainingActionOption = "" | RecommendationAction;
 type TrainingCertaintyOption = "" | TrainingCertainty;
-type ShareMode = "browser" | "window" | "monitor";
-type InputMode = "live" | "upload";
-const INPUT_MODES: readonly { value: InputMode; label: string }[] = [
-  { value: "live", label: "Live" },
-  { value: "upload", label: "Upload" },
-];
 type PersistedJobMutationScope = "processing" | "history";
 type ActiveRecommendationRequest = {
   mutationScope: PersistedJobMutationScope;
@@ -469,12 +464,6 @@ const POSTFLOP_RANGE_SOURCE_LABELS: Record<string, string> = {
   preflop_chart_four_bet_pot: "Preflop chart · 4-bet pot",
   preflop_chart_cold_four_bet_pot: "Preflop chart · cold 4-bet pot",
 };
-
-const SHARE_MODES: readonly { value: ShareMode; label: string }[] = [
-  { value: "browser", label: "Tab" },
-  { value: "window", label: "Window" },
-  { value: "monitor", label: "Screen" },
-];
 
 const PREFLOP_POSITIONS = [
   { value: "utg", label: "UTG" },
@@ -5113,16 +5102,6 @@ function recommendationAttemptMayHavePersistedSideEffect(
     || (error instanceof ApiResponseError && error.status === 422);
 }
 
-function selectedFilesLabel(files: File[]): string {
-  if (files.length === 0) {
-    return "Choose screenshots";
-  }
-  if (files.length === 1) {
-    return files[0].name;
-  }
-  return `${files.length} screenshots selected`;
-}
-
 function relativeTimeLabel(isoDate: string): string {
   const elapsedSeconds = Math.max(0, Math.round((Date.now() - new Date(isoDate).getTime()) / 1000));
   if (elapsedSeconds < 60) {
@@ -5142,10 +5121,6 @@ function relativeTimeLabel(isoDate: string): string {
 
 function captureName(): string {
   return `screen-capture-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
-}
-
-function shareModeLabel(mode: ShareMode): string {
-  return SHARE_MODES.find((option) => option.value === mode)?.label ?? "Window";
 }
 
 function displaySurfaceLabel(displaySurface: unknown): string | null {
@@ -7136,10 +7111,6 @@ export default function App() {
     }
     toast.dismiss(VALIDATION_TOAST_ID);
   }, [job, validation.error]);
-
-  function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setFiles(Array.from(event.target.files ?? []));
-  }
 
   function alignWorkspaceToJob(nextJob: JobRecord | null) {
     const nextState = nextJob ? stateFromJob(nextJob) : EMPTY_STATE;
@@ -10387,68 +10358,24 @@ export default function App() {
 
       <section className="app-workspace">
         <aside className="control-rail" aria-label="Capture, queue and history">
-          <section className="input-panel">
-            <div className="input-panel-heading">
-              <h2>Input</h2>
-              <SegmentedControl
-                ariaLabel="Input mode"
-                className="input-mode-switch"
-                options={INPUT_MODES}
-                value={inputMode}
-                onChange={setInputMode}
-                disabled={busy}
-              />
-            </div>
-
-            <div className="input-source-body">
-              {inputMode === "live" ? (
-                <>
-                  <span className="input-label">Capture source</span>
-                  <SegmentedControl
-                    ariaLabel="Share source type"
-                    className="share-mode"
-                    options={SHARE_MODES}
-                    value={shareMode}
-                    onChange={setShareMode}
-                    disabled={screenSharing || busy}
-                  />
-                  <div className="screen-capture-actions">
-                    <ButtonControl
-                      variant="secondary"
-                      className="share-source-button"
-                      onClick={() => (screenSharing ? setLivePreviewVisible(true) : onStartScreenShare())}
-                      disabled={busy || (screenSharing && livePreviewVisible)}
-                    >
-                      <span className={screenSharing ? "source-indicator active" : "source-indicator"} aria-hidden="true" />
-                      {screenSharing ? `View live ${shareModeLabel(shareMode).toLowerCase()}` : `Share ${shareModeLabel(shareMode).toLowerCase()}`}
-                    </ButtonControl>
-                    <ButtonControl variant="secondary" iconOnly onClick={onCaptureScreen} disabled={!screenSharing || busy} title="Capture and parse" aria-label="Capture and parse">
-                      <Camera size={15} aria-hidden="true" />
-                    </ButtonControl>
-                    <ButtonControl variant="secondary" iconOnly onClick={onStopScreenShare} disabled={!screenSharing || busy} title="Stop sharing" aria-label="Stop sharing">
-                      <Square size={13} aria-hidden="true" />
-                    </ButtonControl>
-                  </div>
-                  <div className="source-hint">{screenSharing ? `${screenSourceLabel ?? "Source"} sharing active` : "Pick a source and share to read frames."}</div>
-                </>
-              ) : (
-                <>
-                  <span className="input-label">Screenshot files</span>
-                  <div className="upload-source-row">
-                    <label className="file-picker">
-                      <Upload size={15} aria-hidden="true" />
-                      <span>{selectedFilesLabel(files)}</span>
-                      <FileInputControl accept="image/*" multiple aria-label="Choose screenshots" onChange={onFileChange} />
-                    </label>
-                    <ButtonControl variant="secondary" iconOnly onClick={onUpload} disabled={files.length === 0 || busy} title="Upload and parse" aria-label="Upload and parse">
-                      <Upload size={15} aria-hidden="true" />
-                    </ButtonControl>
-                  </div>
-                  <div className="source-hint">{files.length > 0 ? `${files.length} selected for upload` : "Choose screenshots to add them to the queue."}</div>
-                </>
-              )}
-            </div>
-          </section>
+          <InputSourcePanel
+            busy={busy}
+            files={files}
+            inputMode={inputMode}
+            livePreviewVisible={livePreviewVisible}
+            onCapture={onCaptureScreen}
+            onFilesChange={setFiles}
+            onInputModeChange={setInputMode}
+            onShareModeChange={setShareMode}
+            onStartOrViewShare={() => (
+              screenSharing ? setLivePreviewVisible(true) : onStartScreenShare()
+            )}
+            onStopShare={onStopScreenShare}
+            onUpload={onUpload}
+            screenSharing={screenSharing}
+            screenSourceLabel={screenSourceLabel}
+            shareMode={shareMode}
+          />
 
           <section className="queue-panel" aria-label="Screenshots queue">
             <div className="rail-section-heading">

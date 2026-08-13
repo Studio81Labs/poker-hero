@@ -6,6 +6,7 @@ import { Toaster, toast } from "sonner";
 import "./App.css";
 import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
 import { AppToolbar } from "./AppToolbar";
+import { AutomationDialog } from "./AutomationDialog";
 import { cardToCode, cardToDisplay, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
 import { DetectedStateForm } from "./DetectedStateForm";
 import { DetectedStateField } from "./DetectedStateField";
@@ -10926,53 +10927,22 @@ export default function App() {
       ) : null}
 
       {automationDialogOpen ? (
-        <DialogFrame titleId="automation-dialog-title">
-            <DialogHeader
-              titleId="automation-dialog-title"
-              title="Configure automation"
-              subtitle="Applies to every frame you capture or upload"
-              closeLabel="Close automation settings"
-              onClose={() => setAutomationDialogOpen(false)}
-            />
-
-            <div className="automation-dialog-body">
-              <ToggleControl
-                title="Auto-approve parsed state"
-                description="Skip manual review when confidence is high"
-                checked={automationApprove}
-                onClick={() => updateAutomationApprove(!automationApprove)}
-              />
-              <ToggleControl
-                title="Auto-request recommendation"
-                description="Generate a play the moment a frame is approved"
-                checked={automationRecommend}
-                disabled={!automationApprove}
-                onClick={() => updateAutomationSettings((current) => ({
-                  ...current,
-                  autoRecommend: !current.autoRecommend,
-                }))}
-              />
-              <ToggleControl
-                title="Allow parser warnings"
-                description="Continue automation even when fields are flagged"
-                checked={automationAllowWarnings}
-                disabled={!automationApprove}
-                onClick={() => updateAutomationSettings((current) => ({
-                  ...current,
-                  allowWarnings: !current.allowWarnings,
-                }))}
-              />
-            </div>
-
-            <DialogFooter>
-              <span>
-                Master automation is <strong>{automationEnabled ? "On" : "Off"}</strong>
-              </span>
-              <ButtonControl variant="secondary" onClick={() => setAutomationDialogOpen(false)}>
-                Done
-              </ButtonControl>
-            </DialogFooter>
-        </DialogFrame>
+        <AutomationDialog
+          allowWarnings={automationAllowWarnings}
+          autoApprove={automationApprove}
+          autoRecommend={automationRecommend}
+          enabled={automationEnabled}
+          onAllowWarningsChange={(value) => updateAutomationSettings((current) => ({
+            ...current,
+            allowWarnings: value,
+          }))}
+          onAutoApproveChange={updateAutomationApprove}
+          onAutoRecommendChange={(value) => updateAutomationSettings((current) => ({
+            ...current,
+            autoRecommend: value,
+          }))}
+          onClose={() => setAutomationDialogOpen(false)}
+        />
       ) : null}
 
       {pipelineDialogOpen ? (

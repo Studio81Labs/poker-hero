@@ -983,10 +983,6 @@ button:disabled {
   padding: 18px 22px;
 }
 
-.automation-dialog-body {
-  padding: 6px 22px 8px;
-}
-
 .pipeline-dialog {
   max-width: 590px;
 }

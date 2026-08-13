@@ -2,6 +2,7 @@
   border: 0;
   border-bottom: 1px solid rgba(32, 30, 29, 0.12);
   display: flex;
+  font-weight: 400;
   gap: 16px;
   justify-content: space-between;
   padding: 14px 0;
@@ -30,6 +31,7 @@
   color: var(--muted);
   display: block;
   font-size: 12px;
+  font-weight: 400;
   margin-top: 2px;
 }
 

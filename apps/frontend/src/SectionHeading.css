@@ -1,0 +1,11 @@
+.section-heading {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+
+.section-heading > h3 {
+  margin: 0;
+}

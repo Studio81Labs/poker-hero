@@ -11922,8 +11922,8 @@ export default function App() {
                           {trainingProgress.solver_coverage.tracked_hands} attributed
                           {" · "}
                           {trainingProgress.solver_coverage.unattributed_hands > 0 ? (
-                            <button
-                              type="button"
+                            <ButtonControl
+                              variant="ghost"
                               className="training-solver-unattributed"
                               onClick={() => void updateTrainingSolverFilter({
                                 kind: "unattributed",
@@ -11935,7 +11935,7 @@ export default function App() {
                             >
                               {trainingProgress.solver_coverage.unattributed_hands} unattributed
                               <Eye size={11} aria-hidden="true" />
-                            </button>
+                            </ButtonControl>
                           ) : (
                             <>0 unattributed</>
                           )}
@@ -12001,8 +12001,8 @@ export default function App() {
                             {trainingProgress.solver_coverage.routes.map((route) => (
                               <tr key={route.key}>
                                 <th scope="row">
-                                  <button
-                                    type="button"
+                                  <ButtonControl
+                                    variant="ghost"
                                     className="training-solver-route"
                                     onClick={() => void updateTrainingSolverFilter({
                                       kind: "route",
@@ -12021,7 +12021,7 @@ export default function App() {
                                     </span>
                                     <Eye size={12} aria-hidden="true" />
                                     <SolverPerformance summary={route} />
-                                  </button>
+                                  </ButtonControl>
                                 </th>
                                 <td>{route.hands}</td>
                                 <td>
@@ -12043,9 +12043,9 @@ export default function App() {
                         <div className="training-solver-fallbacks">
                           <h4>Fallback reasons</h4>
                           {trainingProgress.solver_coverage.fallback_reasons.map((fallback) => (
-                            <button
+                            <ButtonControl
                               key={fallback.key}
-                              type="button"
+                              variant="ghost"
                               className="training-solver-fallback"
                               onClick={() => void updateTrainingSolverFilter({
                                 kind: "fallback",
@@ -12064,7 +12064,7 @@ export default function App() {
                               <SolverPerformance summary={fallback} />
                               <strong>{fallback.hands}</strong>
                               <Eye size={13} aria-hidden="true" />
-                            </button>
+                            </ButtonControl>
                           ))}
                         </div>
                       ) : null}

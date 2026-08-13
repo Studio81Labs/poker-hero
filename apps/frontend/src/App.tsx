@@ -13274,27 +13274,21 @@ export default function App() {
                         {benchmarkComparisonReportLoading ? (
                           <span role="status">Comparing cases...</span>
                         ) : benchmarkCaseTrends.size > 0 ? (
-                          <div role="group" aria-label="Benchmark case filter">
-                            {([
-                              ["all", "All", benchmarkReport.cases.length],
-                              ["regressed", "Regressed", benchmarkCaseTrendCounts.regressed],
-                              ["recovered", "Recovered", benchmarkCaseTrendCounts.recovered],
-                              ["mixed", "Mixed", benchmarkCaseTrendCounts.mixed],
-                            ] as const).map(([filter, label, count]) => (
-                              <button
-                                key={filter}
-                                type="button"
-                                className={benchmarkCaseFilter === filter ? "active" : undefined}
-                                aria-pressed={benchmarkCaseFilter === filter}
-                                onClick={() => {
-                                  setBenchmarkCaseFilter(filter);
-                                  setExpandedBenchmarkCaseId(null);
-                                }}
-                              >
-                                {label} {count}
-                              </button>
-                            ))}
-                          </div>
+                          <SegmentedControl
+                            ariaLabel="Benchmark case filter"
+                            className="benchmark-case-filter"
+                            options={[
+                              { value: "all", label: `All ${benchmarkReport.cases.length}` },
+                              { value: "regressed", label: `Regressed ${benchmarkCaseTrendCounts.regressed}` },
+                              { value: "recovered", label: `Recovered ${benchmarkCaseTrendCounts.recovered}` },
+                              { value: "mixed", label: `Mixed ${benchmarkCaseTrendCounts.mixed}` },
+                            ]}
+                            value={benchmarkCaseFilter}
+                            onChange={(filter) => {
+                              setBenchmarkCaseFilter(filter);
+                              setExpandedBenchmarkCaseId(null);
+                            }}
+                          />
                         ) : null}
                       </div>
                       <div className="benchmark-case-list">
@@ -13313,8 +13307,8 @@ export default function App() {
                               key={benchmarkCase.job_id}
                               className={`benchmark-case-row${caseTrend && caseTrend !== "unchanged" ? ` ${caseTrend}` : ""}`}
                             >
-                              <button
-                                type="button"
+                              <ButtonControl
+                                variant="ghost"
                                 className="benchmark-case-summary"
                                 onClick={() => setExpandedBenchmarkCaseId((current) => (current === benchmarkCase.job_id ? null : benchmarkCase.job_id))}
                                 aria-expanded={expanded}
@@ -13341,7 +13335,7 @@ export default function App() {
                                   {benchmarkCase.status === "error" ? "Error" : benchmarkPercent(benchmarkCase.accuracy)}
                                 </strong>
                                 <ChevronDown size={15} aria-hidden="true" />
-                              </button>
+                              </ButtonControl>
                               {expanded ? (
                                 <div id={detailId} className="benchmark-case-details">
                                   {parserRoute ? (

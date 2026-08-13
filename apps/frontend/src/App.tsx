@@ -12080,8 +12080,8 @@ export default function App() {
                       <div className="training-section-heading">
                         <h3 id="training-certainty-title">Confidence calibration</h3>
                         {trainingProgressView === "recent" && certaintyFocus ? (
-                          <button
-                            type="button"
+                          <ButtonControl
+                            variant="secondary"
                             className="training-focus-action"
                             onClick={() => void focusTrainingReviewCertainty(certaintyFocus.certainty)}
                             disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
@@ -12090,7 +12090,7 @@ export default function App() {
                           >
                             <Target size={13} aria-hidden="true" />
                             Focus {certaintyFocus.label}
-                          </button>
+                          </ButtonControl>
                         ) : (
                           <span className="training-section-context">Self-rated before reveal</span>
                         )}
@@ -12220,8 +12220,8 @@ export default function App() {
                             Unsupported action choices
                           </span>
                           {trainingProgressView === "recent" && actionDifferenceFocus ? (
-                            <button
-                              type="button"
+                            <ButtonControl
+                              variant="secondary"
                               className="training-focus-action"
                               onClick={() => void focusTrainingActionDifference(
                                 actionDifferenceFocus.difference,
@@ -12236,7 +12236,7 @@ export default function App() {
                             >
                               <Target size={13} aria-hidden="true" />
                               Focus {actionDifferenceFocus.label}
-                            </button>
+                            </ButtonControl>
                           ) : null}
                         </span>
                       </div>
@@ -12293,8 +12293,8 @@ export default function App() {
                     <div className="training-section-heading">
                       <h3 id="training-streets-title">By street</h3>
                       {trainingProgressView === "recent" && trainingFocus ? (
-                        <button
-                          type="button"
+                        <ButtonControl
+                          variant="secondary"
                           className="training-focus-action"
                           onClick={() => void focusTrainingReviewStreet(trainingFocus.street)}
                           disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
@@ -12303,7 +12303,7 @@ export default function App() {
                         >
                           <Target size={13} aria-hidden="true" />
                           Focus {trainingFocus.street}
-                        </button>
+                        </ButtonControl>
                       ) : null}
                     </div>
                     <table className="training-street-table">
@@ -12395,8 +12395,8 @@ export default function App() {
                           || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
                           <span className="training-position-heading-actions">
                             {trainingProgressView === "recent" && positionFocus ? (
-                              <button
-                                type="button"
+                              <ButtonControl
+                                variant="secondary"
                                 className="training-focus-action"
                                 onClick={() => void focusTrainingReviewPosition(positionFocus.filter)}
                                 disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
@@ -12405,7 +12405,7 @@ export default function App() {
                               >
                                 <Target size={13} aria-hidden="true" />
                                 Focus {positionFocus.label}
-                              </button>
+                              </ButtonControl>
                             ) : null}
                             {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
                               <span className="training-section-context training-position-context">

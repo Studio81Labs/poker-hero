@@ -1,0 +1,131 @@
+.table-column {
+  background: var(--dark);
+  border-right: 2px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.table-frame-bar {
+  align-items: center;
+  background: #2d2b2b;
+  border-bottom: 1px solid rgba(243, 242, 242, 0.1);
+  color: #d7d3d3;
+  display: flex;
+  flex: 0 0 38px;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 16px;
+}
+
+.table-frame-bar > span:nth-child(2) {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-frame-bar strong {
+  color: var(--muted-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  margin-left: auto;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.live-dot {
+  background: var(--muted-2);
+  border-radius: 50%;
+  flex: 0 0 8px;
+  height: 8px;
+  width: 8px;
+}
+
+.live-dot.active {
+  animation: pulse 1.6s ease-in-out infinite;
+  background: var(--accent);
+}
+
+.table-frame-body {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.shared-preview,
+.screenshot-preview {
+  height: 100%;
+  inset: 0;
+  object-fit: contain;
+  position: absolute;
+  width: 100%;
+}
+
+.shared-preview {
+  display: none;
+}
+
+.shared-preview.active {
+  display: block;
+}
+
+.screenshot-preview.hidden {
+  display: none;
+}
+
+.empty-screenshot {
+  height: 100%;
+  width: 100%;
+}
+
+.confidence-summary {
+  background: #2d2b2b;
+  border-top: 1px solid rgba(243, 242, 242, 0.1);
+  color: var(--bg);
+  display: grid;
+  flex: 0 0 58px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.confidence-summary div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 16px;
+}
+
+.confidence-summary div + div {
+  border-left: 1px solid rgba(243, 242, 242, 0.1);
+}
+
+.confidence-summary strong {
+  display: block;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.confidence-summary strong span {
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
+.confidence-summary small {
+  color: var(--muted-2);
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.confidence-summary .needs-review {
+  color: #ff9783;
+}

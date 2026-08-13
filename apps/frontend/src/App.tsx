@@ -18,6 +18,7 @@ import { ScreenshotRailItem } from "./ScreenshotRailItem";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
 import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
+import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
@@ -10561,27 +10562,18 @@ export default function App() {
           </section>
         </aside>
 
-        <section className="table-column" aria-label="Poker table preview">
-          <div className="table-frame-bar">
-            <span className={screenSharing ? "live-dot active" : "live-dot"} aria-hidden="true" />
-            <span>{frameLabel}</span>
-            <strong>{frameStreet}</strong>
-          </div>
-          <div className="table-frame-body">
-            <video className={screenSharing && livePreviewVisible ? "shared-preview active" : "shared-preview"} ref={videoRef} muted playsInline aria-label="Shared screen preview" />
-            {screenshotUrl ? <img className={screenSharing && livePreviewVisible ? "screenshot-preview hidden" : "screenshot-preview"} src={screenshotUrl} alt="Uploaded poker table screenshot" /> : null}
-            {(!screenSharing || !livePreviewVisible) && !screenshotUrl ? <StateMessage centered className="empty-screenshot" tone="inverse">No screenshot uploaded</StateMessage> : null}
-          </div>
-          <div className="confidence-summary" aria-label="Parser confidence summary">
-            <SummaryMetric
-              label="fields read"
-              labelElement="small"
-              value={<>{confidenceSummary.detectedCount}<span>/{confidenceSummary.fieldTotal}</span></>}
-            />
-            <SummaryMetric label="avg confidence" labelElement="small" value={`${confidenceSummary.averageConfidence}%`} />
-            <SummaryMetric attention={confidenceSummary.reviewCount > 0} label="need review" labelElement="small" value={confidenceSummary.reviewCount} />
-          </div>
-        </section>
+        <TablePreview
+          averageConfidence={confidenceSummary.averageConfidence}
+          detectedFieldCount={confidenceSummary.detectedCount}
+          fieldCount={confidenceSummary.fieldTotal}
+          frameLabel={frameLabel}
+          frameStreet={frameStreet}
+          livePreviewVisible={livePreviewVisible}
+          ref={videoRef}
+          reviewCount={confidenceSummary.reviewCount}
+          screenSharing={screenSharing}
+          screenshotUrl={screenshotUrl}
+        />
 
         <section className="review-column" aria-label="Hand review">
           <div className="panel-header">

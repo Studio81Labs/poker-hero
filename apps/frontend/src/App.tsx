@@ -12141,8 +12141,8 @@ export default function App() {
                                 </td>
                                 <td>
                                   {(summary.needs_review_hands ?? 0) > 0 ? (
-                                    <button
-                                      type="button"
+                                    <ButtonControl
+                                      variant="secondary"
                                       className="training-certainty-review"
                                       onClick={() => void focusTrainingReviewCertainty(summary.certainty)}
                                       disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
@@ -12151,7 +12151,7 @@ export default function App() {
                                     >
                                       <Target size={12} aria-hidden="true" />
                                       {summary.needs_review_hands}
-                                    </button>
+                                    </ButtonControl>
                                   ) : "—"}
                                 </td>
                               </tr>
@@ -12188,8 +12188,8 @@ export default function App() {
                               <td>—</td>
                               <td>
                                 {(trainingProgress.unrated_needs_review_hands ?? 0) > 0 ? (
-                                  <button
-                                    type="button"
+                                  <ButtonControl
+                                    variant="secondary"
                                     className="training-certainty-review"
                                     onClick={() => void focusTrainingReviewCertainty("unrated")}
                                     disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
@@ -12198,7 +12198,7 @@ export default function App() {
                                   >
                                     <Target size={12} aria-hidden="true" />
                                     {trainingProgress.unrated_needs_review_hands}
-                                  </button>
+                                  </ButtonControl>
                                 ) : "—"}
                               </td>
                             </tr>
@@ -12351,8 +12351,8 @@ export default function App() {
                                 </td>
                                 <td>
                                   {pendingReviews > 0 ? (
-                                    <button
-                                      type="button"
+                                    <ButtonControl
+                                      variant="secondary"
                                       className="training-certainty-review"
                                       onClick={() => void focusTrainingReviewStreet(summary.street)}
                                       disabled={
@@ -12365,7 +12365,7 @@ export default function App() {
                                     >
                                       <Target size={12} aria-hidden="true" />
                                       {pendingReviews}
-                                    </button>
+                                    </ButtonControl>
                                   ) : "—"}
                                 </td>
                               </tr>
@@ -12424,8 +12424,8 @@ export default function App() {
                                   <Eye size={11} aria-hidden="true" />
                                 </button>
                                 {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
-                                  <button
-                                    type="button"
+                                  <ButtonControl
+                                    variant="secondary"
                                     className="training-certainty-review"
                                     onClick={() => void focusTrainingReviewPosition({
                                       kind: "unpositioned",
@@ -12437,7 +12437,7 @@ export default function App() {
                                   >
                                     <Target size={11} aria-hidden="true" />
                                     {trainingProgress.unpositioned_needs_review_hands}
-                                  </button>
+                                  </ButtonControl>
                                 ) : null}
                               </span>
                             ) : null}
@@ -12493,8 +12493,8 @@ export default function App() {
                                   </td>
                                   <td>
                                     {(summary.needs_review_hands ?? 0) > 0 ? (
-                                      <button
-                                        type="button"
+                                      <ButtonControl
+                                        variant="secondary"
                                         className="training-certainty-review"
                                         onClick={() => void focusTrainingReviewPosition({
                                           kind: "position",
@@ -12507,7 +12507,7 @@ export default function App() {
                                       >
                                         <Target size={11} aria-hidden="true" />
                                         {summary.needs_review_hands}
-                                      </button>
+                                      </ButtonControl>
                                     ) : "—"}
                                   </td>
                                 </tr>

@@ -340,14 +340,6 @@ button:disabled {
   min-width: 0;
 }
 
-.input-panel {
-  border-bottom: 1px solid var(--line-soft);
-  flex: 0 0 194px;
-  min-height: 194px;
-  padding: 14px 18px;
-}
-
-.input-panel-heading,
 .panel-header,
 .review-actions,
 .rail-section-heading {
@@ -357,117 +349,11 @@ button:disabled {
   justify-content: space-between;
 }
 
-.input-panel-heading {
-  margin-bottom: 11px;
-}
-
-.input-panel-heading h2,
 .panel-header h2 {
   font-size: 13px;
   letter-spacing: 0.02em;
   margin: 0;
   text-transform: uppercase;
-}
-
-.input-mode-switch,
-.share-mode {
-  border: 1px solid var(--line);
-  display: inline-flex;
-  flex: 0 0 auto;
-}
-
-.input-mode-switch button,
-.share-mode button {
-  background: transparent;
-  border: 0;
-  border-right: 1px solid var(--line);
-  color: var(--text);
-  font-size: 12px;
-  min-height: 30px;
-  padding: 5px 12px;
-}
-
-.input-mode-switch button:last-child,
-.share-mode button:last-child {
-  border-right: 0;
-}
-
-.input-mode-switch button.active,
-.share-mode button.active {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.input-source-body {
-  display: flex;
-  flex-direction: column;
-  height: 125px;
-  min-height: 0;
-}
-
-.input-label {
-  color: var(--muted);
-  display: block;
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  margin-bottom: 6px;
-  text-transform: uppercase;
-}
-
-.share-mode {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: 100%;
-}
-
-.share-mode button {
-  min-width: 0;
-  padding-inline: 6px;
-}
-
-.screen-capture-actions,
-.upload-source-row {
-  display: flex;
-  gap: 7px;
-  margin-top: 9px;
-  min-width: 0;
-}
-
-.share-source-button {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.source-hint {
-  color: var(--muted);
-  font-size: 10.5px;
-  line-height: 1.25;
-  margin-top: 7px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-picker {
-  align-items: center;
-  border: 1px solid var(--line);
-  color: var(--text);
-  cursor: pointer;
-  display: inline-flex;
-  flex: 1 1 auto;
-  font-size: 11px;
-  font-weight: 700;
-  gap: 7px;
-  height: 34px;
-  min-width: 0;
-  padding: 6px 10px;
-  position: relative;
-}
-
-.file-picker span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .queue-panel {
@@ -4057,7 +3943,6 @@ button:disabled {
     display: none;
   }
 
-  .input-panel,
   .rail-section-heading,
   .panel-header,
   .review-scroll,

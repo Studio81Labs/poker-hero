@@ -13,7 +13,7 @@
   padding: 7px 12px;
 }
 
-.button-control:hover:not(:disabled) {
+.button-control:hover:not(:disabled):not(.unstyled-button) {
   background: #dd2b0f;
   border-color: #dd2b0f;
 }

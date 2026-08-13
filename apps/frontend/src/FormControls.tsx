@@ -15,7 +15,7 @@ export type SelectControlProps = SelectHTMLAttributes<HTMLSelectElement> & {
   density?: "default" | "compact";
 };
 
-type ButtonControlVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonControlVariant = "primary" | "secondary" | "ghost" | "danger" | "unstyled";
 type TextControlAppearance = "default" | "borderless" | "inverse";
 type TextControlDensity = "default" | "compact";
 
@@ -57,6 +57,7 @@ const BUTTON_VARIANT_CLASS_NAMES: Record<
   secondary: "secondary-button",
   ghost: "ghost-button",
   danger: "danger-button",
+  unstyled: "unstyled-button",
 };
 
 export const ButtonControl = forwardRef<HTMLButtonElement, ButtonControlProps>(

@@ -23,6 +23,7 @@ describe("ToggleControl", () => {
     const toggle = screen.getByRole("switch", {
       name: /Auto-approve parsed state\s*Skip manual review/i,
     });
+    expect(toggle).toHaveClass("button-control", "unstyled-button", "toggle-control");
     expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(toggle).toHaveAttribute("type", "button");
     expect(toggle.querySelector(".switch-control")).toHaveClass("active");

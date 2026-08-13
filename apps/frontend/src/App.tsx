@@ -10,6 +10,7 @@ import { DialogFrame } from "./DialogFrame";
 import { DialogHeader } from "./DialogHeader";
 import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, SelectControl, TextAreaControl, TextInput } from "./FormControls";
 import { McpAccessPanel } from "./McpAccessPanel";
+import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
 import { StatusBadge, type StatusBadgeTone } from "./StatusBadge";
 import { StateMessage } from "./StateMessage";
@@ -11831,12 +11832,15 @@ export default function App() {
 
                   {trainingProgress.trend ? (
                     <section className="training-progress-section training-trend-section" aria-labelledby="training-trend-title">
-                      <div className="training-section-heading training-trend-heading">
-                        <h3 id="training-trend-title">Recent trend</h3>
+                      <SectionHeading
+                        className="training-section-heading training-trend-heading"
+                        heading="Recent trend"
+                        headingId="training-trend-title"
+                      >
                         <span>
                           Last {trainingProgress.trend.window_hands} vs previous {trainingProgress.trend.window_hands}
                         </span>
-                      </div>
+                      </SectionHeading>
                       <div
                         className={`training-trend-grid${trainingProgress.trend.average_ev_loss_delta_bb !== null ? " has-ev" : ""}`}
                       >
@@ -11877,8 +11881,11 @@ export default function App() {
                       className="training-progress-section training-solver-section"
                       aria-labelledby="training-solver-title"
                     >
-                      <div className="training-section-heading">
-                        <h3 id="training-solver-title">Solver coverage</h3>
+                      <SectionHeading
+                        className="training-section-heading"
+                        heading="Solver coverage"
+                        headingId="training-solver-title"
+                      >
                         <span className="training-section-context">
                           {trainingProgress.solver_coverage.tracked_hands} attributed
                           {" · "}
@@ -11906,7 +11913,7 @@ export default function App() {
                           {benchmarkPercent(trainingProgress.solver_coverage.fallback_rate)}
                           )
                         </span>
-                      </div>
+                      </SectionHeading>
                       {trainingProgress.solver_coverage.trend ? (
                         <div className="training-solver-trend" aria-label="Solver coverage trend">
                           <span>
@@ -12038,8 +12045,11 @@ export default function App() {
                       className="training-progress-section training-certainty-section"
                       aria-labelledby="training-certainty-title"
                     >
-                      <div className="training-section-heading">
-                        <h3 id="training-certainty-title">Confidence calibration</h3>
+                      <SectionHeading
+                        className="training-section-heading"
+                        heading="Confidence calibration"
+                        headingId="training-certainty-title"
+                      >
                         {trainingProgressView === "recent" && certaintyFocus ? (
                           <ButtonControl
                             variant="secondary"
@@ -12055,7 +12065,7 @@ export default function App() {
                         ) : (
                           <span className="training-section-context">Self-rated before reveal</span>
                         )}
-                      </div>
+                      </SectionHeading>
                       <table className="training-street-table training-certainty-table">
                         <thead>
                           <tr>
@@ -12174,8 +12184,11 @@ export default function App() {
                       className="training-progress-section training-differences-section"
                       aria-labelledby="training-differences-title"
                     >
-                      <div className="training-section-heading training-differences-heading">
-                        <h3 id="training-differences-title">Common differences</h3>
+                      <SectionHeading
+                        className="training-section-heading training-differences-heading"
+                        heading="Common differences"
+                        headingId="training-differences-title"
+                      >
                         <span className="training-differences-heading-actions">
                           <span className="training-differences-context">
                             Unsupported action choices
@@ -12200,7 +12213,7 @@ export default function App() {
                             </ButtonControl>
                           ) : null}
                         </span>
-                      </div>
+                      </SectionHeading>
                       <div className="training-differences-list">
                         {trainingProgress.action_differences?.slice(0, 3).map((difference) => (
                           <div
@@ -12254,8 +12267,11 @@ export default function App() {
                   ) : null}
 
                   <section className="training-progress-section" aria-labelledby="training-streets-title">
-                    <div className="training-section-heading">
-                      <h3 id="training-streets-title">By street</h3>
+                    <SectionHeading
+                      className="training-section-heading"
+                      heading="By street"
+                      headingId="training-streets-title"
+                    >
                       {trainingProgressView === "recent" && trainingFocus ? (
                         <ButtonControl
                           variant="secondary"
@@ -12269,7 +12285,7 @@ export default function App() {
                           Focus {trainingFocus.street}
                         </ButtonControl>
                       ) : null}
-                    </div>
+                    </SectionHeading>
                     <table className="training-street-table">
                       <thead>
                         <tr>
@@ -12353,8 +12369,11 @@ export default function App() {
                       className="training-progress-section"
                       aria-labelledby="training-positions-title"
                     >
-                      <div className="training-section-heading">
-                        <h3 id="training-positions-title">By position</h3>
+                      <SectionHeading
+                        className="training-section-heading"
+                        heading="By position"
+                        headingId="training-positions-title"
+                      >
                         {(trainingProgressView === "recent" && positionFocus)
                           || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
                           <span className="training-position-heading-actions">
@@ -12407,7 +12426,7 @@ export default function App() {
                             ) : null}
                           </span>
                         ) : null}
-                      </div>
+                      </SectionHeading>
                       {(trainingProgress.position_summaries?.length ?? 0) > 0 ? (
                         <table className="training-street-table training-position-table">
                           <thead>

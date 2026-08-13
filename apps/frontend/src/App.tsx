@@ -1,10 +1,11 @@
-import { AlertTriangle, ArrowRight, Check, ChevronDown, CircleHelp, Download, Eye, FlaskConical, Info, Pencil, Play, RefreshCcw, Search, Settings, SlidersHorizontal, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
 import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
+import { AppToolbar } from "./AppToolbar";
 import { cardToCode, cardToDisplay, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
 import { DetectedStateForm } from "./DetectedStateForm";
 import { DetectedStateField } from "./DetectedStateField";
@@ -10112,96 +10113,24 @@ export default function App() {
           duration: 6000,
         }}
       />
-      <section className="toolbar" aria-label="Analyzer controls">
-        <div className="brand-block">
-          <div className="brand-mark" aria-hidden="true">
-            A
-          </div>
-          <div>
-            <h1>Poker Training Analyzer</h1>
-            <p>Post-hand review for Texas Hold&apos;em screenshots</p>
-          </div>
-        </div>
-        <div className="toolbar-stats" aria-label="Session status">
-          <SummaryMetric className="toolbar-stat" label="in queue" value={queueCount} />
-          <i aria-hidden="true" />
-          <SummaryMetric className="toolbar-stat" label="reviewed" value={historyTotal} />
-          <div className={screenSharing ? "source-status active" : "source-status"}>
-            <span aria-hidden="true" />
-            <strong>{liveStatusLabel}</strong>
-          </div>
-          <i aria-hidden="true" />
-          <div className="automation-header-control">
-            <ButtonControl
-              variant="secondary"
-              className={automationEnabled ? "automation-master active" : "automation-master"}
-              onClick={() => updateAutomationSettings((current) => ({
-                ...current,
-                enabled: !current.enabled,
-              }))}
-              aria-pressed={automationEnabled}
-              aria-label={`Automation ${automationEnabled ? "On" : "Off"}`}
-            >
-              <span className="switch-mini" aria-hidden="true">
-                <span />
-              </span>
-              <span className="automation-master-text">
-                <strong>Automation</strong>
-                <span>{automationEnabled ? "On" : "Off"}</span>
-              </span>
-            </ButtonControl>
-            <ButtonControl variant="secondary" className="automation-config-button" onClick={() => setAutomationDialogOpen(true)} aria-label="Configure automation">
-              <Settings size={17} aria-hidden="true" />
-            </ButtonControl>
-          </div>
-          <ButtonControl
-            variant="secondary"
-            iconOnly
-            className="header-icon-button"
-            onClick={openPipelineDialog}
-            disabled={busy}
-            title="Analysis plugins"
-            aria-label="Configure analysis plugins"
-          >
-            <SlidersHorizontal size={18} aria-hidden="true" />
-          </ButtonControl>
-          <ButtonControl
-            variant="secondary"
-            iconOnly
-            className="header-icon-button"
-            onClick={() => setHelpDialogOpen(true)}
-            title="How to use"
-            aria-label="How to use Poker Training Analyzer"
-          >
-            <CircleHelp size={18} aria-hidden="true" />
-          </ButtonControl>
-          <ButtonControl variant="secondary" iconOnly className="header-icon-button" onClick={openInfoDialog} title="About this app" aria-label="About this app">
-            <Info size={18} aria-hidden="true" />
-          </ButtonControl>
-          <ButtonControl
-            variant="secondary"
-            iconOnly
-            className="header-icon-button"
-            onClick={openTrainingDialog}
-            disabled={busy}
-            title="Training progress"
-            aria-label="Training progress"
-          >
-            <Target size={18} aria-hidden="true" />
-          </ButtonControl>
-          <ButtonControl
-            variant="secondary"
-            iconOnly
-            className="header-icon-button"
-            onClick={openBenchmarkDialog}
-            disabled={busy}
-            title="Parser benchmark"
-            aria-label="Parser benchmark"
-          >
-            <FlaskConical size={18} aria-hidden="true" />
-          </ButtonControl>
-        </div>
-      </section>
+      <AppToolbar
+        automationEnabled={automationEnabled}
+        busy={busy}
+        historyTotal={historyTotal}
+        liveStatusLabel={liveStatusLabel}
+        onConfigureAutomation={() => setAutomationDialogOpen(true)}
+        onConfigurePipeline={openPipelineDialog}
+        onOpenBenchmark={openBenchmarkDialog}
+        onOpenHelp={() => setHelpDialogOpen(true)}
+        onOpenInfo={openInfoDialog}
+        onOpenTraining={openTrainingDialog}
+        onToggleAutomation={() => updateAutomationSettings((current) => ({
+          ...current,
+          enabled: !current.enabled,
+        }))}
+        queueCount={queueCount}
+        screenSharing={screenSharing}
+      />
 
       <section className="app-workspace">
         <aside className="control-rail" aria-label="Capture, queue and history">

@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes } from "react";
 
+import { ButtonControl } from "./FormControls";
 import "./ToggleControl.css";
 
 type ToggleControlProps = Omit<
@@ -24,9 +25,10 @@ export function ToggleControl({
   ...props
 }: ToggleControlProps) {
   return (
-    <button
+    <ButtonControl
       {...props}
       type={type}
+      variant="unstyled"
       className={joinClassNames("toggle-control", className)}
       role="switch"
       aria-checked={checked}
@@ -41,6 +43,6 @@ export function ToggleControl({
       >
         <span />
       </span>
-    </button>
+    </ButtonControl>
   );
 }

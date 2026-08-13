@@ -23,6 +23,12 @@
   opacity: 0.45;
 }
 
+.unstyled-button {
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+}
+
 .secondary-button {
   background: transparent;
   border-color: var(--line);

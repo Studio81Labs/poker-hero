@@ -1,9 +1,6 @@
-.toggle-control {
-  align-items: center;
-  background: transparent;
+.button-control.toggle-control {
   border: 0;
   border-bottom: 1px solid rgba(32, 30, 29, 0.12);
-  color: var(--text);
   display: flex;
   gap: 16px;
   justify-content: space-between;
@@ -12,7 +9,7 @@
   width: 100%;
 }
 
-.toggle-control:hover:not(:disabled) {
+.button-control.toggle-control:hover:not(:disabled) {
   background: transparent;
   border-color: rgba(32, 30, 29, 0.12);
   color: var(--text);

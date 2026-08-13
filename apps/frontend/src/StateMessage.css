@@ -1,0 +1,27 @@
+.state-message {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.state-message-small {
+  font-size: 11px;
+}
+
+.state-message-compact {
+  font-size: 10px;
+}
+
+.state-message-inverse {
+  color: var(--muted-2);
+}
+
+.state-message-centered {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.state-message-framed {
+  border: 1px dashed rgba(32, 30, 29, 0.25);
+}

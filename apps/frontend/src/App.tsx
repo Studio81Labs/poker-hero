@@ -12111,8 +12111,8 @@ export default function App() {
                             <Fragment key={summary.certainty}>
                               <tr className={summary.trend ? "has-trend" : undefined}>
                                 <th scope="row">
-                                  <button
-                                    type="button"
+                                  <ButtonControl
+                                    variant="ghost"
                                     className="training-summary-drilldown"
                                     onClick={() => void updateTrainingCertaintyFilter({
                                       certainty: summary.certainty,
@@ -12129,7 +12129,7 @@ export default function App() {
                                   >
                                     <span>{trainingCertaintyLabel(summary.certainty)}</span>
                                     <Eye size={12} aria-hidden="true" />
-                                  </button>
+                                  </ButtonControl>
                                 </th>
                                 <td>{summary.hands}</td>
                                 <td>{benchmarkPercent(summary.action_accuracy)}</td>
@@ -12167,8 +12167,8 @@ export default function App() {
                           {(trainingProgress.unrated_hands ?? 0) > 0 ? (
                             <tr className="training-unrated-row">
                               <th scope="row">
-                                <button
-                                  type="button"
+                                <ButtonControl
+                                  variant="ghost"
                                   className="training-summary-drilldown"
                                   onClick={() => void updateTrainingCertaintyFilter({
                                     certainty: "unrated",
@@ -12180,7 +12180,7 @@ export default function App() {
                                 >
                                   <span>Unrated</span>
                                   <Eye size={12} aria-hidden="true" />
-                                </button>
+                                </ButtonControl>
                               </th>
                               <td>{trainingProgress.unrated_hands}</td>
                               <td>—</td>
@@ -12326,8 +12326,8 @@ export default function App() {
                             <Fragment key={summary.street}>
                               <tr className={summary.trend ? "has-trend" : undefined}>
                                 <th scope="row">
-                                  <button
-                                    type="button"
+                                  <ButtonControl
+                                    variant="ghost"
                                     className="training-summary-drilldown"
                                     onClick={() => void updateTrainingStreetFilter({
                                       street: summary.street,
@@ -12339,7 +12339,7 @@ export default function App() {
                                   >
                                     <span>{summary.street}</span>
                                     <Eye size={12} aria-hidden="true" />
-                                  </button>
+                                  </ButtonControl>
                                 </th>
                                 <td>{summary.reviewed_hands}</td>
                                 <td>{benchmarkPercent(summary.action_accuracy)}</td>
@@ -12461,8 +12461,8 @@ export default function App() {
                               <Fragment key={summary.position}>
                                 <tr className={summary.trend ? "has-trend" : undefined}>
                                   <th scope="row">
-                                    <button
-                                      type="button"
+                                    <ButtonControl
+                                      variant="ghost"
                                       className="training-summary-drilldown"
                                       onClick={() => void updateTrainingPositionFilter({
                                         kind: "position",
@@ -12480,7 +12480,7 @@ export default function App() {
                                     >
                                       <span>{summary.position}</span>
                                       <Eye size={12} aria-hidden="true" />
-                                    </button>
+                                    </ButtonControl>
                                   </th>
                                   <td>{summary.reviewed_hands}</td>
                                   <td>{benchmarkPercent(summary.action_accuracy)}</td>

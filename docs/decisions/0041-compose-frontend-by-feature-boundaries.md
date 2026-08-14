@@ -55,6 +55,21 @@ orchestration. New top-level experiences receive their own page and route.
   domain algorithms.
 - Component tests are colocated with their owners, while analyzer integration
   tests are grouped by workflow domain.
+- A source-architecture test enforces downward imports between app, page,
+  feature, and shared layers. It also keeps feature library and hook code
+  independent from UI components and requires colocated component tests. The
+  root `main.tsx` bootstrap may import only the application layer; other
+  undeclared top-level source locations fail the architecture check. Feature
+  production code must live below `components`, `hooks`, or `lib`; feature-root
+  barrels and undeclared feature areas are rejected so they cannot conceal
+  component dependencies from hooks or libraries. Production modules also may
+  not import colocated tests, integration suites, or shared test helpers. TSX
+  and CSS feature source must live below `components`, and parsed CSS imports,
+  module compositions, value imports, and ICSS imports follow the same layer
+  direction as TypeScript imports. The audit rejects JavaScript modules below
+  `src` so they cannot bypass the TypeScript source graph, and it resolves
+  static Vite glob, `import.meta.url`, and triple-slash path dependencies before
+  applying the same boundaries.
 - Future reviews should reject new feature-local UI, effects, or transformation
   logic added directly to `App.tsx` or the analyzer page without the matching
   application-level or cross-feature reason.

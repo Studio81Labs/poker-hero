@@ -7,9 +7,11 @@ import {
   FileInputControl,
 } from "../../../shared/components/FormControls";
 import { SegmentedControl } from "../../../shared/components/SegmentedControl";
-
-export type InputMode = "live" | "upload";
-export type ShareMode = "browser" | "window" | "monitor";
+import {
+  shareModeLabel,
+  type InputMode,
+  type ShareMode,
+} from "../lib/captureSource";
 
 const INPUT_MODES: readonly { value: InputMode; label: string }[] = [
   { value: "live", label: "Live" },
@@ -30,10 +32,6 @@ export function selectedFilesLabel(files: readonly File[]): string {
     return files[0].name;
   }
   return `${files.length} screenshots selected`;
-}
-
-export function shareModeLabel(mode: ShareMode): string {
-  return SHARE_MODES.find((option) => option.value === mode)?.label ?? "Window";
 }
 
 export interface InputSourcePanelProps {

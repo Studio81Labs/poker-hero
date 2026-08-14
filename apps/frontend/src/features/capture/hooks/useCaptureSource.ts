@@ -14,7 +14,7 @@ import {
   shareModeLabel,
   type InputMode,
   type ShareMode,
-} from "../components/InputSourcePanel";
+} from "../lib/captureSource";
 
 interface UseCaptureSourceOptions {
   onError: (message: string | null) => void;

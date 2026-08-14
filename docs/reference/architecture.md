@@ -371,6 +371,20 @@ testable while leaving user corrections and persisted mutation recovery under
 one visible coordinator. Component tests are colocated with their components;
 the analyzer coordinator's end-to-end state transitions are split into
 domain-named integration suites under `src/pages/analyzer/__tests__`.
+Vitest enforces the source layout: shared code cannot depend on upper layers,
+features and pages cannot depend on the application shell, feature libraries
+and hooks cannot depend on their UI components, and production components
+retain colocated tests. The root `main.tsx` bootstrap may import only `src/app`;
+other undeclared top-level source locations fail the same check. Feature source
+must live below `components`, `hooks`, or `lib`; feature-root barrels and
+undeclared feature areas are rejected instead of bypassing UI dependency rules.
+Production modules cannot import colocated tests, integration suites, or shared
+test helpers. Feature TSX and CSS source must live below `components`, and CSS
+imports, module compositions, value imports, and ICSS imports follow the same
+layer direction as TypeScript imports. JavaScript modules below `src` are
+rejected so they cannot bypass the typed source graph. Static Vite glob,
+`import.meta.url`, and triple-slash path dependencies are resolved and checked
+against the same layer rules.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

@@ -8,8 +8,8 @@ import { BenchmarkDialog } from "../../features/benchmark/components/BenchmarkDi
 import {
   InputSourcePanel,
   selectedFilesLabel,
-  shareModeLabel,
 } from "../../features/capture/components/InputSourcePanel";
+import { shareModeLabel } from "../../features/capture/lib/captureSource";
 import { HistoryPanel } from "../../features/history/components/HistoryPanel";
 import { HandReviewPanel } from "../../features/hand-review/components/HandReviewPanel";
 import { type HistoryItem } from "../../features/history/lib/historyPresentation";

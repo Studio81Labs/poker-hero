@@ -5,6 +5,7 @@ import {
   type ChangeEvent,
   type Ref,
 } from "react";
+import "./BenchmarkDialog.css";
 import {
   AlertTriangle,
   ChevronDown,

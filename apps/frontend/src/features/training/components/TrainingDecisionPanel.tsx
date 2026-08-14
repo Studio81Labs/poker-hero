@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import "./TrainingDecisionPanel.css";
 
 import {
   TRAINING_ACTION_OPTIONS,

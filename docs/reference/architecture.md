@@ -350,8 +350,10 @@ contains the browser-router shell, route registry, top-level error monitoring,
 and other application-wide concerns. `src/pages/analyzer/AnalyzerPage.tsx`
 composes the workspace and retains the queue/history mutation protocol because those
 transactions span capture, automation, review, benchmark labels, and recovery.
-Each directory under `src/features` owns its components, hooks, and non-React
-presentation or domain support. Reusable form controls, API access, primitive
+Each directory under `src/features` owns its components, colocated component
+styles, hooks, and non-React presentation or domain support. Route-level styles
+are limited to page composition; feature selectors must stay with their owning
+component or feature. Reusable form and dialog controls, API access, primitive
 types, and generic formatting helpers live under `src/shared`.
 
 A feature must not move unrelated persistence orchestration into its hook merely

@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import "./UserGuideDialog.css";
 
 import { DialogFooter } from "../../../shared/components/DialogFooter";
 import { DialogFrame } from "../../../shared/components/DialogFrame";

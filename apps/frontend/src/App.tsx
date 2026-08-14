@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Square, Tag, Target, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Tag, Target, Trash2, Upload, X } from "lucide-react";
 import type { ChangeEvent, FormEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -27,6 +27,10 @@ import {
   type StateForm,
 } from "./pokerStateForm";
 import { PipelineDialog } from "./PipelineDialog";
+import {
+  QueueProcessingDialog,
+  type QueueProgress,
+} from "./QueueProcessingDialog";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
@@ -285,16 +289,6 @@ type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
 type DisplayMediaTrackSettings = MediaTrackSettings & {
   displaySurface?: unknown;
 };
-
-interface QueueProgress {
-  total: number;
-  completed: number;
-  failed: number;
-  skipped: number;
-  currentIndex: number;
-  currentFile: string;
-  aborting: boolean;
-}
 
 interface RecommendationEvidenceMetric {
   label: string;
@@ -5671,7 +5665,6 @@ export default function App() {
   const frameStreet = form.street === "" ? "No street" : form.street;
   const queueCount = jobs.length > 0 ? jobs.length : files.length;
   const liveStatusLabel = screenSharing ? `${screenSourceLabel ?? shareModeLabel(shareMode)} sharing` : inputMode === "upload" ? "Upload queue" : "Live capture";
-  const queueProgressPercent = queueProgress ? Math.round((queueProgress.completed / queueProgress.total) * 100) : 0;
   const automationEnabled = automationSettings.enabled;
   const automationApprove = automationSettings.autoApprove;
   const automationRecommend = automationSettings.autoRecommend;
@@ -10755,39 +10748,10 @@ export default function App() {
       </section>
 
       {queueProgress ? (
-        <section className="processing-backdrop">
-          <div className="processing-dialog" role="dialog" aria-modal="true" aria-labelledby="processing-dialog-title">
-            <div className="processing-header">
-              <div>
-                <h2 id="processing-dialog-title">{queueProgress.aborting ? "Stopping import" : "Processing queue"}</h2>
-                <p>
-                  {queueProgress.currentIndex > 0 ? `Screenshot ${queueProgress.currentIndex} of ${queueProgress.total}` : `Preparing ${queueProgress.total} screenshots`}
-                </p>
-              </div>
-              <strong>{queueProgressPercent}%</strong>
-            </div>
-
-            <div className="processing-progress" aria-hidden="true">
-              <span style={{ width: `${queueProgressPercent}%` }} />
-            </div>
-
-            <div className="processing-current">
-              <span>{queueProgress.aborting ? "Discarding unprocessed screenshots" : "Current screenshot"}</span>
-              <strong>{queueProgress.currentFile || "Preparing queue"}</strong>
-            </div>
-
-            <div className="processing-stats">
-              <SummaryMetric label="processed" value={queueProgress.completed} />
-              <SummaryMetric label="attention" value={queueProgress.failed} />
-              <SummaryMetric label="discarded" value={queueProgress.skipped} />
-            </div>
-
-            <ButtonControl variant="secondary" onClick={onAbortQueue} disabled={queueProgress.aborting}>
-              <Square size={13} aria-hidden="true" />
-              Abort and discard unprocessed
-            </ButtonControl>
-          </div>
-        </section>
+        <QueueProcessingDialog
+          onAbort={onAbortQueue}
+          progress={queueProgress}
+        />
       ) : null}
 
       {managedJob ? (

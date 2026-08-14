@@ -1,0 +1,236 @@
+.screenshot-details-dialog {
+  --screenshot-details-footer-height: 64px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 48px);
+  max-width: 680px;
+  overflow: hidden;
+  position: relative;
+}
+
+.screenshot-details-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.screenshot-file-summary {
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  display: grid;
+  flex: 0 0 auto;
+  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  padding: 14px 22px;
+}
+
+.screenshot-file-icon {
+  align-items: center;
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.screenshot-file-summary > span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.screenshot-file-summary strong,
+.screenshot-file-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screenshot-file-summary strong {
+  font-size: 13px;
+}
+
+.screenshot-file-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 3px;
+  text-transform: capitalize;
+}
+
+.screenshot-metadata-fields {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 13px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow-y: auto;
+  padding: 16px 22px;
+}
+
+.screenshot-metadata-fields .form-field-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.screenshot-metadata-fields .form-field-copy {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.screenshot-metadata-fields .text-input-control,
+.screenshot-metadata-fields .text-area-control {
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.screenshot-metadata-fields .text-input-control {
+  height: 36px;
+}
+
+.screenshot-metadata-fields .text-area-control {
+  min-height: 88px;
+}
+
+.screenshot-notes-field {
+  grid-column: 1 / -1;
+}
+
+.local-upload-note {
+  color: var(--muted);
+  flex: 1 1 auto;
+  font-size: 12px;
+  margin: 0;
+  padding: 18px 22px;
+}
+
+.screenshot-delete-confirmation {
+  align-items: center;
+  background: var(--accent-soft);
+  border-top: 1px solid var(--accent);
+  bottom: 0;
+  box-shadow: 0 -12px 28px rgba(32, 30, 29, 0.14);
+  color: var(--accent-dark);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  height: var(--screenshot-details-footer-height);
+  left: 0;
+  padding: 12px 22px;
+  position: absolute;
+  right: 0;
+  z-index: 2;
+}
+
+.screenshot-delete-message {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.screenshot-delete-message > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.screenshot-delete-confirmation strong {
+  font-size: 12px;
+}
+
+.screenshot-delete-confirmation small {
+  color: var(--accent-dark);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.screenshot-delete-label-compact {
+  display: none;
+}
+
+.screenshot-details-footer {
+  align-items: center;
+  border-top: 2px solid var(--line);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+  height: var(--screenshot-details-footer-height);
+  justify-content: space-between;
+  padding: 14px 22px;
+}
+
+.button-control.screenshot-delete-button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent-dark);
+  padding-inline: 0;
+}
+
+.button-control.screenshot-delete-button:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.screenshot-details-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+@media (max-width: 620px) {
+  .screenshot-metadata-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .screenshot-notes-field {
+    grid-column: 1;
+  }
+
+  .screenshot-details-dialog {
+    --screenshot-details-footer-height: 124px;
+  }
+
+  .screenshot-delete-confirmation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-block: 9px;
+  }
+
+  .screenshot-delete-message {
+    grid-column: 1 / -1;
+  }
+
+  .screenshot-delete-confirmation > button {
+    font-size: 12px;
+    gap: 4px;
+    padding-inline: 8px;
+    width: 100%;
+  }
+
+  .screenshot-delete-confirmation > .danger-button svg {
+    display: none;
+  }
+
+  .screenshot-delete-label-full {
+    display: none;
+  }
+
+  .screenshot-delete-label-compact {
+    display: inline;
+  }
+
+  .screenshot-details-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .button-control.screenshot-delete-button,
+  .screenshot-details-actions,
+  .screenshot-details-actions > button {
+    width: 100%;
+  }
+}

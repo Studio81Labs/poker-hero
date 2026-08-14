@@ -46,6 +46,7 @@ import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
+import { TrainingActionDifferences } from "./TrainingActionDifferences";
 import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
 import {
   TrainingPerformanceTrend,
@@ -10649,92 +10650,14 @@ export default function App() {
                     showFocus={trainingProgressView === "recent"}
                   />
 
-                  {(trainingProgress.action_differences?.length ?? 0) > 0 ? (
-                    <section
-                      className="training-progress-section training-differences-section"
-                      aria-labelledby="training-differences-title"
-                    >
-                      <SectionHeading
-                        className="training-section-heading training-differences-heading"
-                        heading="Common differences"
-                        headingId="training-differences-title"
-                      >
-                        <span className="training-differences-heading-actions">
-                          <span className="training-differences-context">
-                            Unsupported action choices
-                          </span>
-                          {trainingProgressView === "recent" && actionDifferenceFocus ? (
-                            <ButtonControl
-                              variant="secondary"
-                              className="training-focus-action"
-                              onClick={() => void focusTrainingActionDifference(
-                                actionDifferenceFocus.difference,
-                              )}
-                              disabled={
-                                trainingProgressLoading
-                                || trainingReviewJobId !== null
-                                || busy
-                              }
-                              title={actionDifferenceFocus.reason}
-                              aria-label={`Focus ${actionDifferenceFocus.label} differences: ${actionDifferenceFocus.reason}`}
-                            >
-                              <Target size={13} aria-hidden="true" />
-                              Focus {actionDifferenceFocus.label}
-                            </ButtonControl>
-                          ) : null}
-                        </span>
-                      </SectionHeading>
-                      <div className="training-differences-list">
-                        {trainingProgress.action_differences?.slice(0, 3).map((difference) => (
-                          <div
-                            key={`${difference.decision_action}-${difference.recommended_action}`}
-                            className="training-difference"
-                          >
-                            <div className="training-difference-actions">
-                              <strong>{trainingDecisionLabel(difference.decision_action, null)}</strong>
-                              <ArrowRight size={13} aria-hidden="true" />
-                              <strong>{trainingDecisionLabel(difference.recommended_action, null)}</strong>
-                            </div>
-                            <span>
-                              {difference.hands} {difference.hands === 1 ? "hand" : "hands"}
-                            </span>
-                            <em>
-                              {difference.ev_compared_hands > 0 && difference.average_ev_loss_bb !== null
-                                ? `${formatEvLossBb(difference.average_ev_loss_bb)} avg loss`
-                                : "EV ungraded"}
-                            </em>
-                            {difference.needs_review_hands > 0 ? (
-                              <ButtonControl
-                                variant="secondary"
-                                className="training-difference-review"
-                                onClick={() => void focusTrainingActionDifference(difference)}
-                                disabled={
-                                  trainingProgressLoading
-                                  || trainingReviewJobId !== null
-                                  || busy
-                                }
-                                aria-label={`Review ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} differences (${difference.needs_review_hands})`}
-                                title={`${difference.needs_review_hands} pending review${difference.needs_review_hands === 1 ? "" : "s"}`}
-                              >
-                                <Target size={12} aria-hidden="true" />
-                                {difference.needs_review_hands}
-                              </ButtonControl>
-                            ) : (
-                              <StateMessage
-                                as="span"
-                                centered
-                                className="training-difference-review-empty"
-                                size="compact"
-                                aria-label={`No pending ${trainingDecisionLabel(difference.decision_action, null)} to ${trainingDecisionLabel(difference.recommended_action, null)} reviews`}
-                              >
-                                —
-                              </StateMessage>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
+                  <TrainingActionDifferences
+                    actionLabel={(action) => trainingDecisionLabel(action, null)}
+                    controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                    differences={trainingProgress.action_differences}
+                    focus={actionDifferenceFocus}
+                    onReview={focusTrainingActionDifference}
+                    showFocus={trainingProgressView === "recent"}
+                  />
 
                   <section className="training-progress-section" aria-labelledby="training-streets-title">
                     <SectionHeading

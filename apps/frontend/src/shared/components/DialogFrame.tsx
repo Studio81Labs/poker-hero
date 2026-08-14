@@ -1,4 +1,5 @@
 import { forwardRef, type HTMLAttributes } from "react";
+import "./DialogFrame.css";
 
 type DialogFrameProps = Omit<
   HTMLAttributes<HTMLDivElement>,

@@ -1,4 +1,5 @@
 import { Check, Play, RefreshCcw } from "lucide-react";
+import "./HandReviewPanel.css";
 
 import type { RecommendationEvidence } from "../../recommendation/lib/recommendationPresentation";
 import type {

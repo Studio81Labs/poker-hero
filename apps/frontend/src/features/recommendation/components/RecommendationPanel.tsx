@@ -1,4 +1,5 @@
 import { Check, Pencil, RefreshCcw, X } from "lucide-react";
+import "./RecommendationPanel.css";
 
 import {
   candidateMatchesRecommendation,

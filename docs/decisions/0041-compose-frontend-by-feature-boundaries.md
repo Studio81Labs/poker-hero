@@ -27,8 +27,8 @@ Compose the frontend using four explicit boundaries:
 - `src/pages` owns route-level composition. The analyzer page coordinates the
   queue/history mutation, lease, recovery, and automation transactions that
   span multiple features.
-- `src/features` groups components, hooks, and non-React support by product
-  domain.
+- `src/features` groups components, colocated styles, hooks, and non-React
+  support by product domain.
 - `src/shared` contains reusable UI controls, API access, primitive types, and
   domain-independent helpers.
 
@@ -42,6 +42,8 @@ orchestration. New top-level experiences receive their own page and route.
 
 - Feature rendering and lifecycles can be tested without reproducing the full
   application coordinator.
+- Page styles describe page composition; feature and shared-component selectors
+  are loaded by their owning component boundary.
 - Poker, persistence, benchmark, recommendation, and training support no longer
   depends on React rendering.
 - Queue/history recovery stays centralized and reviewable instead of being

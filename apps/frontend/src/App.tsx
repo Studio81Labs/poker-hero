@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronDown, Download, Eye, Pencil, Play, RefreshCcw, Search, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Download, Eye, Pencil, Play, RefreshCcw, Upload, X } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -50,6 +50,7 @@ import { TrainingActiveFilters } from "./TrainingActiveFilters";
 import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
 import { TrainingDecisionList } from "./TrainingDecisionList";
 import { TrainingPositionSummary } from "./TrainingPositionSummary";
+import { TrainingProgressControls } from "./TrainingProgressControls";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
 import { TrainingStreetSummary } from "./TrainingStreetSummary";
@@ -8876,6 +8877,39 @@ export default function App() {
     }
   }
 
+  function selectTrainingProgressView(view: TrainingProgressView) {
+    if (view === "recent") {
+      if (trainingSolverFilter) {
+        void updateTrainingSolverFilter(null);
+      } else if (trainingPositionFilter) {
+        void updateTrainingPositionFilter(null);
+      } else if (trainingStreetFilter) {
+        void updateTrainingStreetFilter(null);
+      } else if (trainingCertaintyFilter) {
+        void updateTrainingCertaintyFilter(null);
+      } else {
+        setTrainingProgressView("recent");
+      }
+      return;
+    }
+    if (view === "review") {
+      setTrainingProgressView("review");
+      if (
+        trainingSolverFilter
+        || trainingPositionFilter
+        || trainingStreetFilter
+        || trainingCertaintyFilter
+      ) {
+        void updateTrainingReviewQueue(
+          trainingReviewOrder,
+          trainingReviewStreet,
+        );
+      }
+      return;
+    }
+    setTrainingProgressView("lessons");
+  }
+
   async function reviewTrainingHand(jobId: string, continueReviewQueue = false) {
     setTrainingReviewJobId(jobId);
     setError(null);
@@ -10657,198 +10691,48 @@ export default function App() {
                   />
 
                   <section className="training-progress-section recent-training-section" aria-labelledby="training-hands-title">
-                    <div className="training-review-heading">
-                      <h3 id="training-hands-title">
-                        {trainingProgressView === "review"
-                          ? "Needs review"
-                          : trainingProgressView === "lessons"
-                            ? "Saved lessons"
-                            : "Recent decisions"}
-                      </h3>
-                      <div className="training-review-controls">
-                        {trainingProgressView === "review" ? (
-                          <>
-                            <FormField className="training-review-order" label="Order" labelClassName="training-review-order-label">
-                              <SelectControl
-                                aria-label="Review order"
-                                density="compact"
-                                value={trainingReviewOrder}
-                                onChange={(event) => void updateTrainingReviewQueue(
-                                  event.target.value as TrainingReviewOrder,
-                                  trainingReviewStreet,
-                                )}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              >
-                                <option value="recent">Newest</option>
-                                <option value="ev_loss">EV loss</option>
-                              </SelectControl>
-                            </FormField>
-                            <FormField className="training-review-order" label="Street" labelClassName="training-review-order-label">
-                              <SelectControl
-                                aria-label="Review street"
-                                density="compact"
-                                value={trainingReviewStreet}
-                                onChange={(event) => void updateTrainingReviewQueue(
-                                  trainingReviewOrder,
-                                  event.target.value as TrainingReviewStreet,
-                                )}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              >
-                                <option value="all">All</option>
-                                <option value="preflop">Preflop</option>
-                                <option value="flop">Flop</option>
-                                <option value="turn">Turn</option>
-                                <option value="river">River</option>
-                              </SelectControl>
-                            </FormField>
-                            <FormField className="training-review-order" label="Certainty" labelClassName="training-review-order-label">
-                              <SelectControl
-                                aria-label="Review certainty"
-                                density="compact"
-                                value={trainingReviewCertainty}
-                                onChange={(event) => void updateTrainingReviewQueue(
-                                  trainingReviewOrder,
-                                  trainingReviewStreet,
-                                  trainingReviewDifference,
-                                  event.target.value as TrainingReviewCertaintyFilter,
-                                )}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              >
-                                <option value="all">All</option>
-                                <option value="high">High</option>
-                                <option value="medium">Medium</option>
-                                <option value="low">Low</option>
-                                <option value="unrated">Unrated</option>
-                              </SelectControl>
-                            </FormField>
-                          </>
-                        ) : null}
-                        {trainingProgressView === "lessons" ? (
-                          <>
-                            <form
-                              className="training-lesson-search"
-                              role="search"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                void updateTrainingLessonFilters(
-                                  trainingLessonStreet,
-                                  trainingLessonSearch,
-                                );
-                              }}
-                            >
-                              <TextInput
-                                appearance="borderless"
-                                density="compact"
-                                type="search"
-                                aria-label="Search saved lesson notes"
-                                placeholder="Search notes"
-                                maxLength={120}
-                                value={trainingLessonSearch}
-                                onChange={(event) => setTrainingLessonSearch(event.target.value)}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              />
-                              <ButtonControl
-                                type="submit"
-                                variant="ghost"
-                                className="training-lesson-search-submit"
-                                aria-label="Apply lesson search"
-                                title="Search lesson notes"
-                                disabled={
-                                  trainingProgressLoading
-                                  || trainingReviewJobId !== null
-                                  || busy
-                                  || trainingLessonSearch.trim() === trainingLessonQuery
-                                }
-                              >
-                                <Search size={13} aria-hidden="true" />
-                              </ButtonControl>
-                            </form>
-                            <FormField className="training-review-order" label="Order" labelClassName="training-review-order-label">
-                              <SelectControl
-                                aria-label="Lesson order"
-                                density="compact"
-                                value={trainingLessonOrder}
-                                onChange={(event) => void updateTrainingLessonFilters(
-                                  trainingLessonStreet,
-                                  trainingLessonSearch,
-                                  event.target.value as TrainingReviewOrder,
-                                )}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              >
-                                <option value="recent">Newest</option>
-                                <option value="ev_loss">EV loss</option>
-                              </SelectControl>
-                            </FormField>
-                            <FormField className="training-review-order" label="Street" labelClassName="training-review-order-label">
-                              <SelectControl
-                                aria-label="Lesson street"
-                                density="compact"
-                                value={trainingLessonStreet}
-                                onChange={(event) => void updateTrainingLessonFilters(
-                                  event.target.value as TrainingReviewStreet,
-                                  trainingLessonSearch,
-                                )}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              >
-                                <option value="all">All</option>
-                                <option value="preflop">Preflop</option>
-                                <option value="flop">Flop</option>
-                                <option value="turn">Turn</option>
-                                <option value="river">River</option>
-                              </SelectControl>
-                            </FormField>
-                          </>
-                        ) : null}
-                        <SegmentedControl
-                          ariaLabel="Training decision view"
-                          className="training-view-switch"
-                          options={[
-                            { value: "recent", label: "Recent" },
-                            {
-                              value: "review",
-                              label: `Needs review ${trainingProgress.needs_review_hands}`,
-                            },
-                            {
-                              value: "lessons",
-                              label: `Lessons ${trainingProgress.lesson_count ?? trainingProgress.lesson_hands?.length ?? 0}`,
-                            },
-                          ]}
-                          value={trainingProgressView}
-                          onChange={(view) => {
-                            if (view === "recent") {
-                              if (trainingSolverFilter) {
-                                void updateTrainingSolverFilter(null);
-                              } else if (trainingPositionFilter) {
-                                void updateTrainingPositionFilter(null);
-                              } else if (trainingStreetFilter) {
-                                void updateTrainingStreetFilter(null);
-                              } else if (trainingCertaintyFilter) {
-                                void updateTrainingCertaintyFilter(null);
-                              } else {
-                                setTrainingProgressView("recent");
-                              }
-                              return;
-                            }
-                            if (view === "review") {
-                              setTrainingProgressView("review");
-                              if (
-                                trainingSolverFilter
-                                || trainingPositionFilter
-                                || trainingStreetFilter
-                                || trainingCertaintyFilter
-                              ) {
-                                void updateTrainingReviewQueue(
-                                  trainingReviewOrder,
-                                  trainingReviewStreet,
-                                );
-                              }
-                              return;
-                            }
-                            setTrainingProgressView("lessons");
-                          }}
-                        />
-                      </div>
-                    </div>
+                    <TrainingProgressControls
+                      controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                      lessonCount={trainingProgress.lesson_count ?? trainingProgress.lesson_hands?.length ?? 0}
+                      lessonOrder={trainingLessonOrder}
+                      lessonQuery={trainingLessonQuery}
+                      lessonSearch={trainingLessonSearch}
+                      lessonStreet={trainingLessonStreet}
+                      needsReviewHands={trainingProgress.needs_review_hands}
+                      onLessonOrderChange={(order) => updateTrainingLessonFilters(
+                        trainingLessonStreet,
+                        trainingLessonSearch,
+                        order,
+                      )}
+                      onLessonSearchChange={setTrainingLessonSearch}
+                      onLessonSearchSubmit={() => updateTrainingLessonFilters(
+                        trainingLessonStreet,
+                        trainingLessonSearch,
+                      )}
+                      onLessonStreetChange={(street) => updateTrainingLessonFilters(
+                        street,
+                        trainingLessonSearch,
+                      )}
+                      onReviewCertaintyChange={(certainty) => updateTrainingReviewQueue(
+                        trainingReviewOrder,
+                        trainingReviewStreet,
+                        trainingReviewDifference,
+                        certainty,
+                      )}
+                      onReviewOrderChange={(order) => updateTrainingReviewQueue(
+                        order,
+                        trainingReviewStreet,
+                      )}
+                      onReviewStreetChange={(street) => updateTrainingReviewQueue(
+                        trainingReviewOrder,
+                        street,
+                      )}
+                      onViewChange={selectTrainingProgressView}
+                      reviewCertainty={trainingReviewCertainty}
+                      reviewOrder={trainingReviewOrder}
+                      reviewStreet={trainingReviewStreet}
+                      view={trainingProgressView}
+                    />
                     <TrainingActiveFilters
                       actionLabel={(action) => trainingDecisionLabel(action, null)}
                       certaintyFilter={trainingCertaintyFilter}

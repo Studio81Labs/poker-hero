@@ -380,10 +380,11 @@ must live below `components`, `hooks`, or `lib`; feature-root barrels and
 undeclared feature areas are rejected instead of bypassing UI dependency rules.
 Production modules cannot import colocated tests, integration suites, or shared
 test helpers. Feature TSX and CSS source must live below `components`, and CSS
-`@import` dependencies follow the same layer direction as TypeScript imports.
-JavaScript modules below `src` are rejected so they cannot bypass the typed
-source graph. Static Vite glob, `import.meta.url`, and triple-slash path
-dependencies are resolved and checked against the same layer rules.
+imports, module compositions, value imports, and ICSS imports follow the same
+layer direction as TypeScript imports. JavaScript modules below `src` are
+rejected so they cannot bypass the typed source graph. Static Vite glob,
+`import.meta.url`, and triple-slash path dependencies are resolved and checked
+against the same layer rules.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

@@ -96,7 +96,23 @@ function sourceFiles(): string[] {
 
 function stylesheetImports(source: string, file: string): string[] {
   const imports: string[] = [];
-  parseCss(source, { from: file }).walkAtRules("import", (rule) => {
+  const root = parseCss(source, { from: file });
+
+  function sourceAfterFrom(value: string): string | null {
+    const values = parseCssValue(value).nodes.filter(
+      (node) => node.type !== "space" && node.type !== "comment",
+    );
+    const fromIndex = values.findIndex(
+      (node) => node.type === "word" && node.value.toLowerCase() === "from",
+    );
+    const sourceValue = values[fromIndex + 1];
+    return fromIndex !== -1 &&
+      (sourceValue?.type === "string" || sourceValue?.type === "word")
+      ? sourceValue.value
+      : null;
+  }
+
+  root.walkAtRules("import", (rule) => {
     const firstValue = parseCssValue(rule.params).nodes.find(
       (node) => node.type !== "space" && node.type !== "comment",
     );
@@ -118,6 +134,37 @@ function stylesheetImports(source: string, file: string): string[] {
     );
     if (urlValue?.type === "string" || urlValue?.type === "word") {
       imports.push(urlValue.value);
+    }
+  });
+  root.walkAtRules("value", (rule) => {
+    const sourceValue = sourceAfterFrom(rule.params);
+    if (sourceValue) imports.push(sourceValue);
+  });
+  root.walkDecls(/^composes$/i, (declaration) => {
+    const sourceValue = sourceAfterFrom(declaration.value);
+    if (sourceValue && sourceValue.toLowerCase() !== "global") {
+      imports.push(sourceValue);
+    }
+  });
+  root.walkRules((rule) => {
+    const values = parseCssValue(rule.selector).nodes;
+    for (let index = 0; index < values.length - 1; index += 1) {
+      const prefix = values[index];
+      const importValue = values[index + 1];
+      if (
+        prefix.type !== "div" ||
+        prefix.value !== ":" ||
+        importValue.type !== "function" ||
+        importValue.value.toLowerCase() !== "import"
+      ) {
+        continue;
+      }
+      const sourceValue = importValue.nodes.find(
+        (node) => node.type !== "space" && node.type !== "comment",
+      );
+      if (sourceValue?.type === "string" || sourceValue?.type === "word") {
+        imports.push(sourceValue.value);
+      }
     }
   });
   return imports;
@@ -423,7 +470,7 @@ describe("frontend source architecture", () => {
   it("parses source stylesheet imports without treating URLs as source edges", () => {
     expect(
       stylesheetImports(
-        '@import "../../../pages/analyzer/AnalyzerPage.css";\n@import url("./local.css");\n@import "/src/shared/styles/base.css";\n@import url("https://example.com/font.css");',
+        '@import "../../../pages/analyzer/AnalyzerPage.css";\n@import url("./local.css");\n@import "/src/shared/styles/base.css";\n@import url("https://example.com/font.css");\n@value brand from "./tokens.module.css";\n.button { composes: card from "../../../pages/analyzer/Page.module.css"; }\n.global { composes: shadow from global; }\n:import("/src/shared/styles/tokens.css") { token: color; }',
         "fixture.css",
       ).filter(
         (specifier) => sourceImportTarget("fixture.css", specifier) !== null,
@@ -432,6 +479,9 @@ describe("frontend source architecture", () => {
       "../../../pages/analyzer/AnalyzerPage.css",
       "./local.css",
       "/src/shared/styles/base.css",
+      "./tokens.module.css",
+      "../../../pages/analyzer/Page.module.css",
+      "/src/shared/styles/tokens.css",
     ]);
   });
 

@@ -374,7 +374,8 @@ domain-named integration suites under `src/pages/analyzer/__tests__`.
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries
 and hooks cannot depend on their UI components, and production components
-retain colocated tests.
+retain colocated tests. The root `main.tsx` bootstrap may import only `src/app`;
+other undeclared top-level source locations fail the same check.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

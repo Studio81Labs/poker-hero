@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const SOURCE_ROOT = resolve(process.cwd(), "src");
 const ALLOWED_LAYER_IMPORTS: Readonly<Record<string, ReadonlySet<string>>> = {
+  bootstrap: new Set(["app"]),
   app: new Set(["app", "pages", "shared"]),
   pages: new Set(["pages", "features", "shared"]),
   features: new Set(["features", "shared"]),
@@ -22,6 +23,18 @@ function filesBelow(directory: string): string[] {
 
 function sourceSegments(file: string): string[] {
   return relative(SOURCE_ROOT, file).split(sep);
+}
+
+function sourceLayer(sourcePath: readonly string[]): string | null {
+  if (sourcePath.length === 1 && sourcePath[0] === "main.tsx") {
+    return "bootstrap";
+  }
+  return Object.prototype.hasOwnProperty.call(
+    ALLOWED_LAYER_IMPORTS,
+    sourcePath[0],
+  )
+    ? sourcePath[0]
+    : null;
 }
 
 function sourceFiles(): string[] {
@@ -49,22 +62,30 @@ function layerViolations(): string[] {
 
   for (const file of sourceFiles()) {
     const sourcePath = sourceSegments(file);
-    const sourceLayer = sourcePath[0];
+    const currentSourceLayer = sourceLayer(sourcePath);
+    if (!currentSourceLayer) {
+      violations.push(
+        `production source must live in app, pages, features, or shared: ${sourcePath.join("/")}`,
+      );
+      continue;
+    }
 
     for (const specifier of relativeImports(file)) {
       const targetPath = sourceSegments(resolve(dirname(file), specifier));
-      const targetLayer = targetPath[0];
+      const targetLayer = sourceLayer(targetPath) ?? targetPath[0];
       const importDescription = `${sourcePath.join("/")} -> ${specifier}`;
 
-      const allowedTargets = ALLOWED_LAYER_IMPORTS[sourceLayer];
-      if (allowedTargets && !allowedTargets.has(targetLayer)) {
+      const allowedTargets = ALLOWED_LAYER_IMPORTS[currentSourceLayer];
+      if (!allowedTargets.has(targetLayer)) {
         violations.push(
-          `${sourceLayer} may not depend on ${targetLayer}: ${importDescription}`,
+          `${currentSourceLayer} may not depend on ${targetLayer}: ${importDescription}`,
         );
         continue;
       }
 
-      if (sourceLayer !== "features" || targetLayer !== "features") continue;
+      if (currentSourceLayer !== "features" || targetLayer !== "features") {
+        continue;
+      }
 
       const sourceKind = sourcePath[2];
       const targetKind = targetPath[2];
@@ -96,6 +117,14 @@ function componentsMissingTests(): string[] {
 }
 
 describe("frontend source architecture", () => {
+  it("recognizes only declared layers and the bootstrap entry point", () => {
+    expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
+    expect(
+      sourceLayer(["features", "capture", "lib", "captureSource.ts"]),
+    ).toBe("features");
+    expect(sourceLayer(["utils", "format.ts"])).toBeNull();
+  });
+
   it("keeps imports within the documented layer direction", () => {
     expect(layerViolations()).toEqual([]);
   });

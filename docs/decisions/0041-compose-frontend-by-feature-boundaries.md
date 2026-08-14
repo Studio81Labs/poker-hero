@@ -57,7 +57,9 @@ orchestration. New top-level experiences receive their own page and route.
   tests are grouped by workflow domain.
 - A source-architecture test enforces downward imports between app, page,
   feature, and shared layers. It also keeps feature library and hook code
-  independent from UI components and requires colocated component tests.
+  independent from UI components and requires colocated component tests. The
+  root `main.tsx` bootstrap may import only the application layer; other
+  undeclared top-level source locations fail the architecture check.
 - Future reviews should reject new feature-local UI, effects, or transformation
   logic added directly to `App.tsx` or the analyzer page without the matching
   application-level or cross-feature reason.

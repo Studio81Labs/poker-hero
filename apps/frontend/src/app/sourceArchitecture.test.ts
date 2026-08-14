@@ -124,11 +124,14 @@ function stylesheetImports(source: string, file: string): string[] {
 }
 
 function sourceImportTarget(file: string, specifier: string): string | null {
-  if (specifier.startsWith(".")) {
-    return resolve(dirname(file), specifier);
+  const suffixIndex = specifier.search(/[?#]/);
+  const pathSpecifier =
+    suffixIndex === -1 ? specifier : specifier.slice(0, suffixIndex);
+  if (pathSpecifier.startsWith(".")) {
+    return resolve(dirname(file), pathSpecifier);
   }
-  if (specifier.startsWith("/src/")) {
-    return resolve(SOURCE_ROOT, specifier.slice("/src/".length));
+  if (pathSpecifier.startsWith("/src/")) {
+    return resolve(SOURCE_ROOT, pathSpecifier.slice("/src/".length));
   }
   return null;
 }
@@ -441,6 +444,21 @@ describe("frontend source architecture", () => {
     expect(
       sourceImportTarget(importer, "https://example.com/font.css"),
     ).toBeNull();
+  });
+
+  it("removes Vite query and hash suffixes before classifying imports", () => {
+    const importer = resolve(SOURCE_ROOT, "features/capture/lib/consumer.ts");
+    for (const specifier of [
+      "./captureSource.test?raw",
+      "./captureSource.test#fixture",
+    ]) {
+      const target = sourceImportTarget(importer, specifier);
+      expect(target).not.toBeNull();
+      expect(isTestSupportPath(sourceSegments(target!))).toBe(true);
+    }
+    expect(
+      sourceImportTarget(importer, "/src/shared/styles/base.css?inline"),
+    ).toBe(resolve(SOURCE_ROOT, "shared/styles/base.css"));
   });
 
   it("extracts static Vite glob patterns", () => {

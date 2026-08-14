@@ -1,5 +1,5 @@
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Tag, Target, Trash2, Upload, X } from "lucide-react";
-import type { ChangeEvent, FormEvent } from "react";
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Target, Upload, X } from "lucide-react";
+import type { ChangeEvent } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
@@ -31,6 +31,8 @@ import {
   QueueProcessingDialog,
   type QueueProgress,
 } from "./QueueProcessingDialog";
+import { ScreenshotDetailsDialog } from "./ScreenshotDetailsDialog";
+import { parseScreenshotTags, screenshotTags } from "./screenshotMetadata";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
@@ -128,10 +130,6 @@ const TRAINING_CERTAINTY_OPTIONS = TRAINING_CERTAINTIES.map((value) => ({ value,
 const MIN_SUPPORTED_FREQUENCY = 0.05;
 const SIZING_MATCH_TOLERANCE = 0.01;
 const MAX_TRAINING_REVIEW_NOTE_LENGTH = 1000;
-const MAX_SCREENSHOT_TITLE_LENGTH = 120;
-const MAX_SCREENSHOT_NOTES_LENGTH = 1000;
-const MAX_SCREENSHOT_TAGS = 10;
-const MAX_SCREENSHOT_TAG_LENGTH = 32;
 const PERSISTED_JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
 const LOCAL_UPLOAD_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000;
 const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";
@@ -5124,36 +5122,6 @@ function createLocalErrorJob(
   };
 }
 
-function screenshotTags(job: JobRecord): string[] {
-  return Array.isArray(job.tags)
-    ? job.tags.filter((tag): tag is string => typeof tag === "string")
-    : [];
-}
-
-function parseScreenshotTags(value: string): string[] {
-  const tags: string[] = [];
-  const seen = new Set<string>();
-  for (const rawTag of value.split(",")) {
-    const tag = rawTag.trim();
-    if (!tag) {
-      continue;
-    }
-    if (tag.length > MAX_SCREENSHOT_TAG_LENGTH) {
-      throw new Error(`Tags can be at most ${MAX_SCREENSHOT_TAG_LENGTH} characters`);
-    }
-    const key = tag.toLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    tags.push(tag);
-  }
-  if (tags.length > MAX_SCREENSHOT_TAGS) {
-    throw new Error(`Use no more than ${MAX_SCREENSHOT_TAGS} tags`);
-  }
-  return tags;
-}
-
 export default function App() {
   const [files, setFiles] = useState<File[]>([]);
   const [jobs, setJobs] = useState<JobRecord[]>(
@@ -9730,8 +9698,7 @@ export default function App() {
     setScreenshotDeleteArmed(false);
   }
 
-  async function saveScreenshotMetadata(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveScreenshotMetadata() {
     if (
       !managedJob
       || !managedJobPersisted
@@ -10755,140 +10722,24 @@ export default function App() {
       ) : null}
 
       {managedJob ? (
-        <DialogFrame
-          className="screenshot-details-dialog"
-          titleId="screenshot-details-title"
-        >
-            <DialogHeader
-              titleId="screenshot-details-title"
-              title="Screenshot details"
-              subtitle={managedJob.archived_at ? "Saved history" : "Processing queue"}
-              closeLabel="Close screenshot details"
-              closeDisabled={screenshotMetadataSaving || screenshotDeleting}
-              onClose={closeScreenshotDetails}
-            />
-
-            <form className="screenshot-details-form" onSubmit={(event) => void saveScreenshotMetadata(event)}>
-              <div className="screenshot-file-summary">
-                <span className="screenshot-file-icon" aria-hidden="true">
-                  <Tag size={15} />
-                </span>
-                <span>
-                  <strong>{managedJob.original_filename}</strong>
-                  <small>{managedJob.archived_at ? "History" : "Queue"} · {managedJob.status}</small>
-                </span>
-                <JobStatusBadge status={managedJob.status} />
-              </div>
-
-              {managedJobPersisted ? (
-                <div className="screenshot-metadata-fields">
-                  <FormField label="Title">
-                    <TextInput
-                      type="text"
-                      value={screenshotTitle}
-                      onChange={(event) => setScreenshotTitle(event.target.value)}
-                      maxLength={MAX_SCREENSHOT_TITLE_LENGTH}
-                      disabled={screenshotMetadataSaving || screenshotDeleting}
-                      placeholder={managedJob.original_filename}
-                      autoFocus
-                    />
-                  </FormField>
-                  <FormField label="Tags">
-                    <TextInput
-                      type="text"
-                      value={screenshotTagInput}
-                      onChange={(event) => setScreenshotTagInput(event.target.value)}
-                      maxLength={(MAX_SCREENSHOT_TAG_LENGTH + 2) * MAX_SCREENSHOT_TAGS}
-                      disabled={screenshotMetadataSaving || screenshotDeleting}
-                      placeholder="turn, review, bluff"
-                    />
-                  </FormField>
-                  <FormField className="screenshot-notes-field" label="Notes">
-                    <TextAreaControl
-                      value={screenshotNotes}
-                      onChange={(event) => setScreenshotNotes(event.target.value)}
-                      maxLength={MAX_SCREENSHOT_NOTES_LENGTH}
-                      disabled={screenshotMetadataSaving || screenshotDeleting}
-                      rows={4}
-                    />
-                  </FormField>
-                </div>
-              ) : (
-                <p className="local-upload-note">
-                  {managedLocalUploadRecoveryPending
-                    ? "Checking whether this upload reached persistent storage before deletion."
-                    : "This upload did not reach persistent storage and can only be removed."}
-                </p>
-              )}
-
-              {screenshotDeleteArmed ? (
-                <div className="screenshot-delete-confirmation" role="alert">
-                  <span className="screenshot-delete-message">
-                    <AlertTriangle size={17} aria-hidden="true" />
-                    <span>
-                      <strong>Delete permanently?</strong>
-                      <small>
-                        The image and all analysis data will be removed
-                        {managedJob.benchmark_included ? " from the benchmark corpus too" : ""}.
-                      </small>
-                    </span>
-                  </span>
-                  <ButtonControl
-                    variant="secondary"
-                    onClick={() => setScreenshotDeleteArmed(false)}
-                    disabled={screenshotDeleting}
-                  >
-                    Cancel
-                  </ButtonControl>
-                  <ButtonControl
-                    variant="danger"
-                    onClick={() => void permanentlyDeleteScreenshot()}
-                    disabled={screenshotDeleting || managedLocalUploadRecoveryPending}
-                    aria-label={screenshotDeleting ? "Deleting screenshot" : "Delete permanently"}
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                    {screenshotDeleting ? "Deleting..." : (
-                      <>
-                        <span className="screenshot-delete-label-full">Delete permanently</span>
-                        <span className="screenshot-delete-label-compact">Delete</span>
-                      </>
-                    )}
-                  </ButtonControl>
-                </div>
-              ) : null}
-
-              <div
-                className="screenshot-details-footer"
-                aria-hidden={screenshotDeleteArmed || undefined}
-              >
-                {!screenshotDeleteArmed ? (
-                  <ButtonControl
-                    variant="ghost"
-                    className="screenshot-delete-button"
-                    onClick={() => setScreenshotDeleteArmed(true)}
-                    disabled={
-                      screenshotMetadataSaving
-                      || screenshotDeleting
-                      || managedLocalUploadRecoveryPending
-                    }
-                  >
-                    <Trash2 size={14} aria-hidden="true" />
-                    Delete screenshot
-                  </ButtonControl>
-                ) : <span />}
-                <span className="screenshot-details-actions">
-                  <ButtonControl variant="secondary" onClick={closeScreenshotDetails} disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
-                    Close
-                  </ButtonControl>
-                  {managedJobPersisted ? (
-                    <ButtonControl type="submit" disabled={screenshotDeleteArmed || screenshotMetadataSaving || screenshotDeleting}>
-                      {screenshotMetadataSaving ? "Saving..." : "Save details"}
-                    </ButtonControl>
-                  ) : null}
-                </span>
-              </div>
-            </form>
-        </DialogFrame>
+        <ScreenshotDetailsDialog
+          deleteArmed={screenshotDeleteArmed}
+          deleting={screenshotDeleting}
+          job={managedJob}
+          metadataSaving={screenshotMetadataSaving}
+          notes={screenshotNotes}
+          onClose={closeScreenshotDetails}
+          onDelete={() => void permanentlyDeleteScreenshot()}
+          onDeleteArmedChange={setScreenshotDeleteArmed}
+          onNotesChange={setScreenshotNotes}
+          onSave={() => void saveScreenshotMetadata()}
+          onTagsChange={setScreenshotTagInput}
+          onTitleChange={setScreenshotTitle}
+          persisted={managedJobPersisted}
+          recoveryPending={managedLocalUploadRecoveryPending}
+          tags={screenshotTagInput}
+          title={screenshotTitle}
+        />
       ) : null}
 
       {automationDialogOpen ? (

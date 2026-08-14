@@ -20,14 +20,9 @@ import type { HistoryItem } from "./historyPresentation";
 import { InfoDialog } from "./InfoDialog";
 import { JobStatusBadge } from "./JobStatusBadge";
 import {
-  accessiblePointDelta,
   benchmarkPercent,
-  formatAccuracyDelta,
   formatCandidateValue,
   formatEvLossBb,
-  formatEvLossDeltaBb,
-  trainingTrendWindowLabel,
-  trainingTrendTone,
 } from "./metricPresentation";
 import {
   type CompletedPostflopActionForm,
@@ -51,6 +46,11 @@ import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
+import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
+import {
+  TrainingPerformanceTrend,
+  trainingPerformanceTrendAccessibleLabel,
+} from "./TrainingPerformanceTrend";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
 import { UserGuideDialog } from "./UserGuideDialog";
@@ -127,7 +127,6 @@ import type {
   TrainingReviewStreet,
   TrainingSolverFilter,
   TrainingStreetFilter,
-  TrainingTrend,
 } from "./types";
 
 const RANK_VALUES: readonly Rank[] = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
@@ -1941,62 +1940,6 @@ function parseTrainingSizing(
 
 function benchmarkFieldLabel(field: string): string {
   return field.replace(/_/g, " ");
-}
-
-function performanceTrendAccessibleLabel(trend: TrainingTrend): string {
-  const changes = [
-    `action accuracy change ${accessiblePointDelta(trend.action_accuracy_delta)}`,
-    `exact-line accuracy change ${accessiblePointDelta(trend.exact_accuracy_delta)}`,
-  ];
-  if (trend.average_ev_loss_delta_bb !== null) {
-    changes.push(
-      `average EV loss change ${formatEvLossDeltaBb(trend.average_ev_loss_delta_bb)}`,
-    );
-  }
-  return `${trainingTrendWindowLabel(trend)}: ${changes.join(", ")}`;
-}
-
-function PerformanceTrend({
-  trend,
-  hiddenFromAssistiveTechnology = false,
-}: {
-  trend: TrainingTrend;
-  hiddenFromAssistiveTechnology?: boolean;
-}) {
-  const title = trainingTrendWindowLabel(trend);
-  return (
-    <small
-      className="training-summary-trend"
-      aria-hidden={hiddenFromAssistiveTechnology || undefined}
-      aria-label={
-        hiddenFromAssistiveTechnology
-          ? undefined
-          : performanceTrendAccessibleLabel(trend)
-      }
-    >
-      <span>{title}</span>
-      <strong>
-        Action
-        <em className={trainingTrendTone(trend.action_accuracy_delta)}>
-          {formatAccuracyDelta(trend.action_accuracy_delta)}
-        </em>
-      </strong>
-      <strong>
-        Exact
-        <em className={trainingTrendTone(trend.exact_accuracy_delta)}>
-          {formatAccuracyDelta(trend.exact_accuracy_delta)}
-        </em>
-      </strong>
-      {trend.average_ev_loss_delta_bb !== null ? (
-        <strong>
-          EV loss
-          <em className={trainingTrendTone(trend.average_ev_loss_delta_bb, true)}>
-            {formatEvLossDeltaBb(trend.average_ev_loss_delta_bb)}
-          </em>
-        </strong>
-      ) : null}
-    </small>
-  );
 }
 
 function trainingOutcomeLabel(outcome: TrainingOutcome): string {
@@ -10696,145 +10639,15 @@ export default function App() {
                     onFilterChange={updateTrainingSolverFilter}
                   />
 
-                  {(trainingProgress.certainty_summaries?.length ?? 0) > 0
-                    || (trainingProgress.unrated_hands ?? 0) > 0 ? (
-                    <section
-                      className="training-progress-section training-certainty-section"
-                      aria-labelledby="training-certainty-title"
-                    >
-                      <SectionHeading
-                        className="training-section-heading"
-                        heading="Confidence calibration"
-                        headingId="training-certainty-title"
-                      >
-                        {trainingProgressView === "recent" && certaintyFocus ? (
-                          <ButtonControl
-                            variant="secondary"
-                            className="training-focus-action"
-                            onClick={() => void focusTrainingReviewCertainty(certaintyFocus.certainty)}
-                            disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                            title={certaintyFocus.reason}
-                            aria-label={`Focus ${certaintyFocus.certainty === "unrated" ? "unrated" : `${certaintyFocus.certainty} certainty`} reviews: ${certaintyFocus.reason}`}
-                          >
-                            <Target size={13} aria-hidden="true" />
-                            Focus {certaintyFocus.label}
-                          </ButtonControl>
-                        ) : (
-                          <span className="training-section-context">Self-rated before reveal</span>
-                        )}
-                      </SectionHeading>
-                      <table className="training-street-table training-certainty-table">
-                        <thead>
-                          <tr>
-                            <th>Certainty</th>
-                            <th>Hands</th>
-                            <th>Action</th>
-                            <th>Exact</th>
-                            <th>Avg EV loss</th>
-                            <th>Review</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {trainingProgress.certainty_summaries?.map((summary) => (
-                            <Fragment key={summary.certainty}>
-                              <tr className={summary.trend ? "has-trend" : undefined}>
-                                <th scope="row">
-                                  <ButtonControl
-                                    variant="ghost"
-                                    className="training-summary-drilldown"
-                                    onClick={() => void updateTrainingCertaintyFilter({
-                                      certainty: summary.certainty,
-                                      label: trainingCertaintyLabel(summary.certainty),
-                                    })}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={[
-                                      `Show ${summary.hands} ${summary.hands === 1 ? "hand" : "hands"} rated ${summary.certainty} certainty`,
-                                      summary.trend
-                                        ? performanceTrendAccessibleLabel(summary.trend)
-                                        : null,
-                                    ].filter(Boolean).join(". ")}
-                                    title="Show training hands"
-                                  >
-                                    <span>{trainingCertaintyLabel(summary.certainty)}</span>
-                                    <Eye size={12} aria-hidden="true" />
-                                  </ButtonControl>
-                                </th>
-                                <td>{summary.hands}</td>
-                                <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                                <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                                <td>
-                                  {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
-                                    ? formatEvLossBb(summary.average_ev_loss_bb)
-                                    : "—"}
-                                </td>
-                                <td>
-                                  {(summary.needs_review_hands ?? 0) > 0 ? (
-                                    <ButtonControl
-                                      variant="secondary"
-                                      className="training-certainty-review"
-                                      onClick={() => void focusTrainingReviewCertainty(summary.certainty)}
-                                      disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                      aria-label={`Review ${summary.certainty} certainty differences (${summary.needs_review_hands})`}
-                                      title={`Review ${summary.certainty}-certainty differences`}
-                                    >
-                                      <Target size={12} aria-hidden="true" />
-                                      {summary.needs_review_hands}
-                                    </ButtonControl>
-                                  ) : "—"}
-                                </td>
-                              </tr>
-                              {summary.trend ? (
-                                <tr className="training-summary-trend-row">
-                                  <td colSpan={6}>
-                                    <PerformanceTrend trend={summary.trend} />
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </Fragment>
-                          ))}
-                          {(trainingProgress.unrated_hands ?? 0) > 0 ? (
-                            <tr className="training-unrated-row">
-                              <th scope="row">
-                                <ButtonControl
-                                  variant="ghost"
-                                  className="training-summary-drilldown"
-                                  onClick={() => void updateTrainingCertaintyFilter({
-                                    certainty: "unrated",
-                                    label: "Unrated",
-                                  })}
-                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                  aria-label={`Show ${trainingProgress.unrated_hands} unrated ${trainingProgress.unrated_hands === 1 ? "hand" : "hands"}`}
-                                  title="Show training hands"
-                                >
-                                  <span>Unrated</span>
-                                  <Eye size={12} aria-hidden="true" />
-                                </ButtonControl>
-                              </th>
-                              <td>{trainingProgress.unrated_hands}</td>
-                              <td>—</td>
-                              <td>—</td>
-                              <td>—</td>
-                              <td>
-                                {(trainingProgress.unrated_needs_review_hands ?? 0) > 0 ? (
-                                  <ButtonControl
-                                    variant="secondary"
-                                    className="training-certainty-review"
-                                    onClick={() => void focusTrainingReviewCertainty("unrated")}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Review unrated differences (${trainingProgress.unrated_needs_review_hands})`}
-                                    title="Review unrated differences"
-                                  >
-                                    <Target size={12} aria-hidden="true" />
-                                    {trainingProgress.unrated_needs_review_hands}
-                                  </ButtonControl>
-                                ) : "—"}
-                              </td>
-                            </tr>
-                          ) : null}
-                        </tbody>
-                      </table>
-                    </section>
-                  ) : null}
+                  <TrainingCertaintyCalibration
+                    certaintyLabel={trainingCertaintyLabel}
+                    controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                    focus={certaintyFocus}
+                    onFilterChange={updateTrainingCertaintyFilter}
+                    onReview={focusTrainingReviewCertainty}
+                    progress={trainingProgress}
+                    showFocus={trainingProgressView === "recent"}
+                  />
 
                   {(trainingProgress.action_differences?.length ?? 0) > 0 ? (
                     <section
@@ -11009,7 +10822,7 @@ export default function App() {
                               {summary.trend ? (
                                 <tr className="training-summary-trend-row">
                                   <td colSpan={6}>
-                                    <PerformanceTrend trend={summary.trend} />
+                                    <TrainingPerformanceTrend trend={summary.trend} />
                                   </td>
                                 </tr>
                               ) : null}
@@ -11113,7 +10926,7 @@ export default function App() {
                                       aria-label={[
                                         `Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} recorded at ${summary.position}`,
                                         summary.trend
-                                          ? performanceTrendAccessibleLabel(summary.trend)
+                                          ? trainingPerformanceTrendAccessibleLabel(summary.trend)
                                           : null,
                                       ].filter(Boolean).join(". ")}
                                       title="Show training hands"
@@ -11154,7 +10967,7 @@ export default function App() {
                                 {summary.trend ? (
                                   <tr className="training-summary-trend-row">
                                     <td colSpan={6}>
-                                      <PerformanceTrend
+                                      <TrainingPerformanceTrend
                                         trend={summary.trend}
                                         hiddenFromAssistiveTechnology
                                       />

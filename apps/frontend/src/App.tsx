@@ -20,11 +20,13 @@ import type { HistoryItem } from "./historyPresentation";
 import { InfoDialog } from "./InfoDialog";
 import { JobStatusBadge } from "./JobStatusBadge";
 import {
+  accessiblePointDelta,
   benchmarkPercent,
   formatAccuracyDelta,
   formatCandidateValue,
   formatEvLossBb,
   formatEvLossDeltaBb,
+  trainingTrendWindowLabel,
   trainingTrendTone,
 } from "./metricPresentation";
 import {
@@ -50,6 +52,7 @@ import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
+import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
@@ -1940,119 +1943,6 @@ function benchmarkFieldLabel(field: string): string {
   return field.replace(/_/g, " ");
 }
 
-type SolverPerformanceSummary = {
-  action_accuracy?: number;
-  exact_accuracy?: number;
-  ev_compared_hands?: number;
-  average_ev_loss_bb?: number | null;
-  trend?: TrainingTrend | null;
-};
-
-function trainingTrendWindowLabel(trend: TrainingTrend): string {
-  const hands = trend.window_hands === 1 ? "hand" : "hands";
-  return `Last ${trend.window_hands} ${hands} vs previous ${trend.window_hands}`;
-}
-
-function accessiblePointDelta(value: number): string {
-  const points = Math.round(value * 100);
-  const unit = Math.abs(points) === 1 ? "percentage point" : "percentage points";
-  return `${points > 0 ? "+" : ""}${points} ${unit}`;
-}
-
-function solverPerformanceAccessibleLabel(
-  summary: SolverPerformanceSummary,
-): string | null {
-  if (
-    typeof summary.action_accuracy !== "number"
-    || typeof summary.exact_accuracy !== "number"
-  ) {
-    return null;
-  }
-  const evLoss = (summary.ev_compared_hands ?? 0) > 0
-    && typeof summary.average_ev_loss_bb === "number"
-    ? `average EV loss ${formatEvLossBb(summary.average_ev_loss_bb)}`
-    : "EV loss ungraded";
-  const labels = [
-    `Action accuracy ${benchmarkPercent(summary.action_accuracy)}`,
-    `exact-line accuracy ${benchmarkPercent(summary.exact_accuracy)}`,
-    evLoss,
-  ];
-  if (summary.trend) {
-    const changes = [
-      `action accuracy change ${accessiblePointDelta(summary.trend.action_accuracy_delta)}`,
-      `exact-line accuracy change ${accessiblePointDelta(summary.trend.exact_accuracy_delta)}`,
-    ];
-    if (summary.trend.average_ev_loss_delta_bb !== null) {
-      changes.push(
-        `average EV loss change ${formatEvLossDeltaBb(summary.trend.average_ev_loss_delta_bb)}`,
-      );
-    }
-    labels.push(`${trainingTrendWindowLabel(summary.trend)}: ${changes.join(", ")}`);
-  }
-  return labels.join("; ");
-}
-
-function SolverPerformance({
-  summary,
-}: {
-  summary: SolverPerformanceSummary;
-}) {
-  if (
-    typeof summary.action_accuracy !== "number"
-    || typeof summary.exact_accuracy !== "number"
-  ) {
-    return null;
-  }
-  const trendTitle = summary.trend
-    ? trainingTrendWindowLabel(summary.trend)
-    : undefined;
-  const evLoss = (summary.ev_compared_hands ?? 0) > 0
-    && typeof summary.average_ev_loss_bb === "number"
-    ? `${formatEvLossBb(summary.average_ev_loss_bb)} EV loss`
-    : "EV ungraded";
-  return (
-    <small className="training-solver-performance" aria-hidden="true">
-      <span>
-        Action {benchmarkPercent(summary.action_accuracy)}
-        {summary.trend ? (
-          <em
-            className={trainingTrendTone(summary.trend.action_accuracy_delta)}
-            title={trendTitle}
-          >
-            {formatAccuracyDelta(summary.trend.action_accuracy_delta)}
-          </em>
-        ) : null}
-      </span>
-      <span>
-        Exact {benchmarkPercent(summary.exact_accuracy)}
-        {summary.trend ? (
-          <em
-            className={trainingTrendTone(summary.trend.exact_accuracy_delta)}
-            title={trendTitle}
-          >
-            {formatAccuracyDelta(summary.trend.exact_accuracy_delta)}
-          </em>
-        ) : null}
-      </span>
-      <span>
-        {evLoss}
-        {summary.trend?.average_ev_loss_delta_bb !== null
-          && summary.trend?.average_ev_loss_delta_bb !== undefined ? (
-            <em
-              className={trainingTrendTone(
-                summary.trend.average_ev_loss_delta_bb,
-                true,
-              )}
-              title={trendTitle}
-            >
-              {formatEvLossDeltaBb(summary.trend.average_ev_loss_delta_bb)}
-            </em>
-          ) : null}
-      </span>
-    </small>
-  );
-}
-
 function performanceTrendAccessibleLabel(trend: TrainingTrend): string {
   const changes = [
     `action accuracy change ${accessiblePointDelta(trend.action_accuracy_delta)}`,
@@ -2107,13 +1997,6 @@ function PerformanceTrend({
       ) : null}
     </small>
   );
-}
-
-function solverStreetCountsLabel(counts: Partial<Record<Street, number>>): string {
-  return TRAINING_STREET_ORDER
-    .filter((street) => (counts[street] ?? 0) > 0)
-    .map((street) => `${street.charAt(0).toUpperCase()} ${counts[street]}`)
-    .join(" · ");
 }
 
 function trainingOutcomeLabel(outcome: TrainingOutcome): string {
@@ -10806,169 +10689,12 @@ export default function App() {
                 <>
                   <TrainingProgressOverview progress={trainingProgress} />
 
-                  {trainingProgress.solver_coverage
-                    && trainingProgress.solver_coverage.total_hands > 0 ? (
-                    <section
-                      className="training-progress-section training-solver-section"
-                      aria-labelledby="training-solver-title"
-                    >
-                      <SectionHeading
-                        className="training-section-heading"
-                        heading="Solver coverage"
-                        headingId="training-solver-title"
-                      >
-                        <span className="training-section-context">
-                          {trainingProgress.solver_coverage.tracked_hands} attributed
-                          {" · "}
-                          {trainingProgress.solver_coverage.unattributed_hands > 0 ? (
-                            <ButtonControl
-                              variant="ghost"
-                              className="training-solver-unattributed"
-                              onClick={() => void updateTrainingSolverFilter({
-                                kind: "unattributed",
-                                label: "Unattributed recommendations",
-                              })}
-                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              aria-label={`Show ${trainingProgress.solver_coverage.unattributed_hands} unattributed ${trainingProgress.solver_coverage.unattributed_hands === 1 ? "hand" : "hands"}`}
-                              title="Show training hands"
-                            >
-                              {trainingProgress.solver_coverage.unattributed_hands} unattributed
-                              <Eye size={11} aria-hidden="true" />
-                            </ButtonControl>
-                          ) : (
-                            <>0 unattributed</>
-                          )}
-                          {" · "}
-                          {trainingProgress.solver_coverage.fallback_hands} fallback
-                          {" ("}
-                          {benchmarkPercent(trainingProgress.solver_coverage.fallback_rate)}
-                          )
-                        </span>
-                      </SectionHeading>
-                      {trainingProgress.solver_coverage.trend ? (
-                        <div className="training-solver-trend" aria-label="Solver coverage trend">
-                          <span>
-                            Last {trainingProgress.solver_coverage.trend.window_hands}
-                            {" vs previous "}
-                            {trainingProgress.solver_coverage.trend.window_hands}
-                          </span>
-                          <div>
-                            <small>Attribution</small>
-                            <strong>
-                              {benchmarkPercent(
-                                trainingProgress.solver_coverage.trend.recent_attribution_rate,
-                              )}
-                            </strong>
-                            <em className={trainingTrendTone(
-                              trainingProgress.solver_coverage.trend.attribution_rate_delta,
-                            )}>
-                              {formatAccuracyDelta(
-                                trainingProgress.solver_coverage.trend.attribution_rate_delta,
-                              )}
-                            </em>
-                          </div>
-                          <div>
-                            <small>Fallback</small>
-                            <strong>
-                              {benchmarkPercent(
-                                trainingProgress.solver_coverage.trend.recent_fallback_rate,
-                              )}
-                            </strong>
-                            <em className={trainingTrendTone(
-                              trainingProgress.solver_coverage.trend.fallback_rate_delta,
-                              true,
-                            )}>
-                              {formatAccuracyDelta(
-                                trainingProgress.solver_coverage.trend.fallback_rate_delta,
-                              )}
-                            </em>
-                          </div>
-                        </div>
-                      ) : null}
-                      {trainingProgress.solver_coverage.routes.length > 0 ? (
-                        <table className="training-street-table training-solver-table">
-                          <thead>
-                            <tr>
-                              <th>Engine</th>
-                              <th>Hands</th>
-                              <th>Share</th>
-                              <th>Streets</th>
-                              <th>Fallback</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {trainingProgress.solver_coverage.routes.map((route) => (
-                              <tr key={route.key}>
-                                <th scope="row">
-                                  <ButtonControl
-                                    variant="ghost"
-                                    className="training-solver-route"
-                                    onClick={() => void updateTrainingSolverFilter({
-                                      kind: "route",
-                                      key: route.key,
-                                      label: providerLabel(route.engine),
-                                    })}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={[
-                                      `Show ${route.hands} ${route.hands === 1 ? "hand" : "hands"} handled by ${providerLabel(route.engine)}`,
-                                      solverPerformanceAccessibleLabel(route),
-                                    ].filter(Boolean).join(". ")}
-                                    title="Show training hands"
-                                  >
-                                    <span className="training-solver-route-name">
-                                      {providerLabel(route.engine)}
-                                    </span>
-                                    <Eye size={12} aria-hidden="true" />
-                                    <SolverPerformance summary={route} />
-                                  </ButtonControl>
-                                </th>
-                                <td>{route.hands}</td>
-                                <td>
-                                  {benchmarkPercent(
-                                    route.hands
-                                      / Math.max(trainingProgress.solver_coverage!.tracked_hands, 1),
-                                  )}
-                                </td>
-                                <td className="training-solver-streets">
-                                  {solverStreetCountsLabel(route.street_counts) || "—"}
-                                </td>
-                                <td>{route.fallback_hands || "—"}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : null}
-                      {trainingProgress.solver_coverage.fallback_reasons.length > 0 ? (
-                        <div className="training-solver-fallbacks">
-                          <h4>Fallback reasons</h4>
-                          {trainingProgress.solver_coverage.fallback_reasons.map((fallback) => (
-                            <ButtonControl
-                              key={fallback.key}
-                              variant="ghost"
-                              className="training-solver-fallback"
-                              onClick={() => void updateTrainingSolverFilter({
-                                kind: "fallback",
-                                key: fallback.key,
-                                label: fallback.reason,
-                              })}
-                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              aria-label={[
-                                `Show ${fallback.hands} ${fallback.hands === 1 ? "hand" : "hands"} using fallback: ${fallback.reason}`,
-                                solverPerformanceAccessibleLabel(fallback),
-                              ].filter(Boolean).join(". ")}
-                              title="Show training hands"
-                            >
-                              <span>{fallback.reason}</span>
-                              <em>{solverStreetCountsLabel(fallback.street_counts) || "—"}</em>
-                              <SolverPerformance summary={fallback} />
-                              <strong>{fallback.hands}</strong>
-                              <Eye size={13} aria-hidden="true" />
-                            </ButtonControl>
-                          ))}
-                        </div>
-                      ) : null}
-                    </section>
-                  ) : null}
+                  <TrainingSolverCoverage
+                    controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                    coverage={trainingProgress.solver_coverage}
+                    engineLabel={providerLabel}
+                    onFilterChange={updateTrainingSolverFilter}
+                  />
 
                   {(trainingProgress.certainty_summaries?.length ?? 0) > 0
                     || (trainingProgress.unrated_hands ?? 0) > 0 ? (

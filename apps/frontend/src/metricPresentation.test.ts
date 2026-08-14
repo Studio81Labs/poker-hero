@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  accessiblePointDelta,
   benchmarkPercent,
   formatAccuracyDelta,
   formatCandidateValue,
   formatEvLossBb,
   formatEvLossDeltaBb,
+  trainingTrendWindowLabel,
   trainingTrendTone,
 } from "./metricPresentation";
 
@@ -22,6 +24,11 @@ describe("metric presentation", () => {
     expect(formatAccuracyDelta(-0.5)).toBe("-50 pts");
     expect(formatEvLossDeltaBb(0.4)).toBe("+0.4 BB");
     expect(formatEvLossDeltaBb(-1.2)).toBe("-1.2 BB");
+    expect(accessiblePointDelta(0.01)).toBe("+1 percentage point");
+    expect(accessiblePointDelta(-0.02)).toBe("-2 percentage points");
+    expect(trainingTrendWindowLabel({ window_hands: 1 })).toBe(
+      "Last 1 hand vs previous 1",
+    );
   });
 
   it("accounts for whether higher or lower metrics are better", () => {

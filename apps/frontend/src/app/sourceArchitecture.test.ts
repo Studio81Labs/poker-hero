@@ -111,7 +111,19 @@ function stylesheetImports(source: string, file: string): string[] {
   return imports;
 }
 
-function relativeImports(file: string): string[] {
+function sourceImportTarget(file: string, specifier: string): string | null {
+  if (specifier.startsWith(".")) {
+    return resolve(dirname(file), specifier);
+  }
+  if (specifier.startsWith("/src/")) {
+    return resolve(SOURCE_ROOT, specifier.slice("/src/".length));
+  }
+  return null;
+}
+
+function sourceImports(
+  file: string,
+): Array<{ specifier: string; target: string }> {
   const source = readFileSync(file, "utf8");
   const imports =
     extname(file) === ".css"
@@ -119,7 +131,10 @@ function relativeImports(file: string): string[] {
       : ts
           .preProcessFile(source, true, true)
           .importedFiles.map((importedFile) => importedFile.fileName);
-  return imports.filter((specifier) => specifier.startsWith("."));
+  return imports.flatMap((specifier) => {
+    const target = sourceImportTarget(file, specifier);
+    return target ? [{ specifier, target }] : [];
+  });
 }
 
 function layerViolations(): string[] {
@@ -143,8 +158,8 @@ function layerViolations(): string[] {
       continue;
     }
 
-    for (const specifier of relativeImports(file)) {
-      const targetPath = sourceSegments(resolve(dirname(file), specifier));
+    for (const { specifier, target } of sourceImports(file)) {
+      const targetPath = sourceSegments(target);
       const targetLayer = sourceLayer(targetPath) ?? targetPath[0];
       const importDescription = `${sourcePath.join("/")} -> ${specifier}`;
 
@@ -261,13 +276,32 @@ describe("frontend source architecture", () => {
     ).toBe(false);
   });
 
-  it("parses relative stylesheet imports without treating URLs as source edges", () => {
+  it("parses source stylesheet imports without treating URLs as source edges", () => {
     expect(
       stylesheetImports(
-        '@import "../../../pages/analyzer/AnalyzerPage.css";\n@import url("./local.css");\n@import url("https://example.com/font.css");',
+        '@import "../../../pages/analyzer/AnalyzerPage.css";\n@import url("./local.css");\n@import "/src/shared/styles/base.css";\n@import url("https://example.com/font.css");',
         "fixture.css",
-      ).filter((specifier) => specifier.startsWith(".")),
-    ).toEqual(["../../../pages/analyzer/AnalyzerPage.css", "./local.css"]);
+      ).filter(
+        (specifier) => sourceImportTarget("fixture.css", specifier) !== null,
+      ),
+    ).toEqual([
+      "../../../pages/analyzer/AnalyzerPage.css",
+      "./local.css",
+      "/src/shared/styles/base.css",
+    ]);
+  });
+
+  it("resolves relative and Vite root-relative source imports", () => {
+    const importer = resolve(SOURCE_ROOT, "shared/styles/base.css");
+    expect(sourceImportTarget(importer, "./tokens.css")).toBe(
+      resolve(SOURCE_ROOT, "shared/styles/tokens.css"),
+    );
+    expect(
+      sourceImportTarget(importer, "/src/pages/analyzer/AnalyzerPage.css"),
+    ).toBe(resolve(SOURCE_ROOT, "pages/analyzer/AnalyzerPage.css"));
+    expect(
+      sourceImportTarget(importer, "https://example.com/font.css"),
+    ).toBeNull();
   });
 
   it("keeps imports within the documented layer direction", () => {

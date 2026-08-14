@@ -345,16 +345,20 @@ recovery without logging request bodies or poker evidence.
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and
 correction, automation controls, pre-reveal training decisions, recommendations,
 decision-evidence presentation, aggregate training progress, and history. It
-is composed by feature boundary rather than implemented directly in the root
-component. `App.tsx` is the page-level coordinator: it composes the workspace
-and retains the queue/history mutation protocol because those transactions span
-capture, automation, review, benchmark labels, and recovery. Feature hooks own
-their local lifecycle and asynchronous state, feature components own their
-rendering, and non-React domain, presentation, and persistence support lives
-under `src/app`. A feature
-must not move unrelated persistence orchestration into its hook merely to make
-the root component shorter; new feature behavior should extend the relevant
-hook, component, or domain module instead of growing `App.tsx`.
+is organized into application, page, feature, and shared layers. `src/app`
+contains the browser-router shell, route registry, top-level error monitoring,
+and other application-wide concerns. `src/pages/analyzer/AnalyzerPage.tsx`
+composes the workspace and retains the queue/history mutation protocol because those
+transactions span capture, automation, review, benchmark labels, and recovery.
+Each directory under `src/features` owns its components, hooks, and non-React
+presentation or domain support. Reusable form controls, API access, primitive
+types, and generic formatting helpers live under `src/shared`.
+
+A feature must not move unrelated persistence orchestration into its hook merely
+to make the page coordinator shorter. New feature behavior should extend the
+closest feature boundary, while future top-level experiences such as account or
+authentication pages should enter through `src/app/routes.tsx` and a dedicated
+directory under `src/pages`.
 
 The review workspace is split into hand-state editing, training-decision, and
 recommendation panels. Capture, automation, parser/recommendation selection,
@@ -362,7 +366,9 @@ training progress, benchmarks, screenshot details, and system information each
 have a dedicated state hook or controller. Dialogs and panels receive explicit
 values and commands from those boundaries, which keeps them independently
 testable while leaving user corrections and persisted mutation recovery under
-one visible coordinator.
+one visible coordinator. Component tests are colocated with their components;
+the analyzer coordinator's end-to-end state transitions are split into
+domain-named integration suites under `src/pages/analyzer/__tests__`.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

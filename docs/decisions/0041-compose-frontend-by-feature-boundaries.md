@@ -20,17 +20,23 @@ and history state.
 
 ## Decision
 
-Compose the frontend using three explicit boundaries:
+Compose the frontend using four explicit boundaries:
 
-- `src/app` contains non-React domain, presentation, and persistence support.
-- Feature hooks own feature-local state, effects, requests, and commands.
-- Feature components own dialogs, panels, and form rendering.
+- `src/app` owns the router shell, route registry, error boundary, and other
+  application-wide concerns.
+- `src/pages` owns route-level composition. The analyzer page coordinates the
+  queue/history mutation, lease, recovery, and automation transactions that
+  span multiple features.
+- `src/features` groups components, hooks, and non-React support by product
+  domain.
+- `src/shared` contains reusable UI controls, API access, primitive types, and
+  domain-independent helpers.
 
-`App.tsx` remains the page composition root and owns the queue/history mutation,
-lease, recovery, and automation coordination that spans multiple features. It
-passes explicit state and commands into feature hooks and components. New
-feature behavior belongs in the closest existing boundary; it may enter
-`App.tsx` only when it participates in cross-feature orchestration.
+`App.tsx` remains deliberately small and mounts the route registry. The
+analyzer page passes explicit state and commands into feature hooks and
+components. New feature behavior belongs in the closest existing boundary; it
+may enter a page coordinator only when it participates in cross-feature
+orchestration. New top-level experiences receive their own page and route.
 
 ## Consequences
 
@@ -40,8 +46,13 @@ feature behavior belongs in the closest existing boundary; it may enter
   depends on React rendering.
 - Queue/history recovery stays centralized and reviewable instead of being
   fragmented across feature hooks.
-- `App.tsx` can remain larger than a conventional page component, but its size
-  now represents explicit orchestration rather than embedded feature UIs and
+- The application shell is ready for authentication and account routes without
+  coupling those experiences to the analyzer workspace.
+- The analyzer page can remain larger than a conventional component, but its
+  size represents explicit orchestration rather than embedded feature UIs and
   domain algorithms.
+- Component tests are colocated with their owners, while analyzer integration
+  tests are grouped by workflow domain.
 - Future reviews should reject new feature-local UI, effects, or transformation
-  logic added directly to `App.tsx` without a cross-feature reason.
+  logic added directly to `App.tsx` or the analyzer page without the matching
+  application-level or cross-feature reason.

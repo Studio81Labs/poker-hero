@@ -1,20 +1,19 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
-import "./App.css";
 import {
   AppErrorBoundary,
   captureBrowserException,
   configureBrowserErrorMonitoring,
   FatalError,
-} from "./errorMonitoring";
+} from "./app/errorMonitoring";
 
 async function bootstrap() {
   await configureBrowserErrorMonitoring();
   const root = ReactDOM.createRoot(document.getElementById("root")!);
 
   try {
-    const { default: App } = await import("./App");
+    const { default: App } = await import("./app/App");
     root.render(
       <React.StrictMode>
         <AppErrorBoundary>

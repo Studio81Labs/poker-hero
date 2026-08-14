@@ -1218,34 +1218,6 @@ button:disabled {
   text-transform: capitalize;
 }
 
-.button-control.training-position-unrecorded {
-  border: 0;
-  color: inherit;
-  font: inherit;
-  font-weight: inherit;
-  gap: 3px;
-  padding: 0;
-  text-transform: inherit;
-}
-
-.button-control.training-position-unrecorded:hover:not(:disabled) {
-  background: transparent;
-  border-color: transparent;
-  color: var(--accent);
-}
-
-.training-position-context {
-  align-items: center;
-  display: inline-flex;
-  gap: 8px;
-}
-
-.training-position-heading-actions {
-  align-items: center;
-  display: inline-flex;
-  gap: 8px;
-}
-
 .training-active-solver > span {
   min-width: 0;
   overflow: hidden;
@@ -1321,10 +1293,6 @@ button:disabled {
   font-size: 11px;
   overflow-wrap: anywhere;
   text-transform: capitalize;
-}
-
-.training-position-table tbody th:first-child {
-  width: 28%;
 }
 
 .button-control.training-summary-drilldown {

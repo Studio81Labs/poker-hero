@@ -1443,43 +1443,6 @@ button:disabled {
   text-align: left;
 }
 
-.training-summary-trend {
-  align-items: center;
-  color: var(--muted);
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 8px;
-  font-weight: 800;
-  gap: 3px 12px;
-  line-height: 1.3;
-  text-transform: uppercase;
-}
-
-.training-summary-trend > span {
-  margin-right: auto;
-}
-
-.training-summary-trend strong {
-  align-items: center;
-  display: inline-flex;
-  font-size: inherit;
-  gap: 4px;
-}
-
-.training-summary-trend em {
-  color: var(--muted);
-  font-size: inherit;
-  font-style: normal;
-}
-
-.training-summary-trend em.improving {
-  color: var(--positive);
-}
-
-.training-summary-trend em.declining {
-  color: var(--accent);
-}
-
 .training-street-table th:last-child,
 .training-street-table td:last-child {
   padding-right: 0;
@@ -1497,11 +1460,6 @@ button:disabled {
   background: transparent;
   border-color: var(--accent);
   color: var(--accent);
-}
-
-.training-unrated-row th,
-.training-unrated-row td:not(:last-child) {
-  color: var(--muted);
 }
 
 .recent-training-section {

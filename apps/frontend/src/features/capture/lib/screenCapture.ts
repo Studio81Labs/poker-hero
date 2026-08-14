@@ -1,4 +1,4 @@
-import { shareModeLabel, type ShareMode } from "../components/InputSourcePanel";
+import { shareModeLabel, type ShareMode } from "./captureSource";
 
 export type ExtendedDisplayMediaOptions = DisplayMediaStreamOptions & {
   monitorTypeSurfaces?: "include" | "exclude";

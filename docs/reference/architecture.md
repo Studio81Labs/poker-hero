@@ -371,6 +371,10 @@ testable while leaving user corrections and persisted mutation recovery under
 one visible coordinator. Component tests are colocated with their components;
 the analyzer coordinator's end-to-end state transitions are split into
 domain-named integration suites under `src/pages/analyzer/__tests__`.
+Vitest enforces the source layout: shared code cannot depend on upper layers,
+features and pages cannot depend on the application shell, feature libraries
+and hooks cannot depend on their UI components, and production components
+retain colocated tests.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

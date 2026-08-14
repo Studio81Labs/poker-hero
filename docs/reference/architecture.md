@@ -345,6 +345,26 @@ recovery without logging request bodies or poker evidence.
 `apps/frontend` owns screenshot upload and capture, queue navigation, review and
 correction, automation controls, pre-reveal training decisions, recommendations,
 decision-evidence presentation, aggregate training progress, and history. It
+is composed by feature boundary rather than implemented directly in the root
+component. `App.tsx` is the page-level coordinator: it composes the workspace
+and retains the queue/history mutation protocol because those transactions span
+capture, automation, review, benchmark labels, and recovery. Feature hooks own
+their local lifecycle and asynchronous state, feature components own their
+rendering, and non-React domain, presentation, and persistence support lives
+under `src/app`. A feature
+must not move unrelated persistence orchestration into its hook merely to make
+the root component shorter; new feature behavior should extend the relevant
+hook, component, or domain module instead of growing `App.tsx`.
+
+The review workspace is split into hand-state editing, training-decision, and
+recommendation panels. Capture, automation, parser/recommendation selection,
+training progress, benchmarks, screenshot details, and system information each
+have a dedicated state hook or controller. Dialogs and panels receive explicit
+values and commands from those boundaries, which keeps them independently
+testable while leaving user corrections and persisted mutation recovery under
+one visible coordinator.
+
+The frontend
 defensively normalizes optional provider metadata such as equity, candidate
 EVs/frequencies, exploitability, preflop stack/range/sizing policy, and fallback
 context. Supported postflop results also expose bounded tree/history metadata,

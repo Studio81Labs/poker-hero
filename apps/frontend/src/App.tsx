@@ -54,6 +54,7 @@ import {
 } from "./TrainingPerformanceTrend";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
+import { TrainingStreetSummary } from "./TrainingStreetSummary";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
@@ -1718,10 +1719,6 @@ function trainingDecisionLabel(action: RecommendationAction, sizing: number | nu
 
 function trainingCertaintyLabel(certainty: TrainingCertainty): string {
   return `${certainty.slice(0, 1).toUpperCase()}${certainty.slice(1)}`;
-}
-
-function trainingStreetLabel(street: Street): string {
-  return `${street.slice(0, 1).toUpperCase()}${street.slice(1)}`;
 }
 
 function trainingDecisionComparison(
@@ -10659,102 +10656,15 @@ export default function App() {
                     showFocus={trainingProgressView === "recent"}
                   />
 
-                  <section className="training-progress-section" aria-labelledby="training-streets-title">
-                    <SectionHeading
-                      className="training-section-heading"
-                      heading="By street"
-                      headingId="training-streets-title"
-                    >
-                      {trainingProgressView === "recent" && trainingFocus ? (
-                        <ButtonControl
-                          variant="secondary"
-                          className="training-focus-action"
-                          onClick={() => void focusTrainingReviewStreet(trainingFocus.street)}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          title={trainingFocus.reason}
-                          aria-label={`Focus ${trainingFocus.street} reviews: ${trainingFocus.reason}`}
-                        >
-                          <Target size={13} aria-hidden="true" />
-                          Focus {trainingFocus.street}
-                        </ButtonControl>
-                      ) : null}
-                    </SectionHeading>
-                    <table className="training-street-table">
-                      <thead>
-                        <tr>
-                          <th>Street</th>
-                          <th>Hands</th>
-                          <th>Action</th>
-                          <th>Exact</th>
-                          <th>Avg EV loss</th>
-                          <th>Review</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {trainingProgress.street_summaries.map((summary) => {
-                          const pendingReviews = trainingProgress.review_street_counts?.[
-                            summary.street
-                          ] ?? 0;
-                          return (
-                            <Fragment key={summary.street}>
-                              <tr className={summary.trend ? "has-trend" : undefined}>
-                                <th scope="row">
-                                  <ButtonControl
-                                    variant="ghost"
-                                    className="training-summary-drilldown"
-                                    onClick={() => void updateTrainingStreetFilter({
-                                      street: summary.street,
-                                      label: trainingStreetLabel(summary.street),
-                                    })}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} played on ${summary.street}`}
-                                    title="Show training hands"
-                                  >
-                                    <span>{summary.street}</span>
-                                    <Eye size={12} aria-hidden="true" />
-                                  </ButtonControl>
-                                </th>
-                                <td>{summary.reviewed_hands}</td>
-                                <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                                <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                                <td>
-                                  {summary.ev_compared_hands > 0 && summary.average_ev_loss_bb !== null
-                                    ? formatEvLossBb(summary.average_ev_loss_bb)
-                                    : "—"}
-                                </td>
-                                <td>
-                                  {pendingReviews > 0 ? (
-                                    <ButtonControl
-                                      variant="secondary"
-                                      className="training-certainty-review"
-                                      onClick={() => void focusTrainingReviewStreet(summary.street)}
-                                      disabled={
-                                        trainingProgressLoading
-                                        || trainingReviewJobId !== null
-                                        || busy
-                                      }
-                                      aria-label={`Review ${summary.street} street differences (${pendingReviews})`}
-                                      title={`Review ${summary.street} differences`}
-                                    >
-                                      <Target size={12} aria-hidden="true" />
-                                      {pendingReviews}
-                                    </ButtonControl>
-                                  ) : "—"}
-                                </td>
-                              </tr>
-                              {summary.trend ? (
-                                <tr className="training-summary-trend-row">
-                                  <td colSpan={6}>
-                                    <TrainingPerformanceTrend trend={summary.trend} />
-                                  </td>
-                                </tr>
-                              ) : null}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </section>
+                  <TrainingStreetSummary
+                    controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                    focus={trainingFocus}
+                    onFilterChange={updateTrainingStreetFilter}
+                    onReview={focusTrainingReviewStreet}
+                    reviewCounts={trainingProgress.review_street_counts}
+                    showFocus={trainingProgressView === "recent"}
+                    summaries={trainingProgress.street_summaries}
+                  />
 
                   {(trainingProgress.position_summaries?.length ?? 0) > 0
                     || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (

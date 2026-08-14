@@ -7,7 +7,7 @@ import "./App.css";
 import { ActionHistoryField, ActionHistoryRow } from "./ActionHistoryField";
 import { AppToolbar } from "./AppToolbar";
 import { AutomationDialog } from "./AutomationDialog";
-import { cardToCode, cardToDisplay, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
+import { cardToCode, CODE_BY_SUIT, SUIT_BY_CODE } from "./cardPresentation";
 import { DetectedStateForm } from "./DetectedStateForm";
 import { DetectedStateField } from "./DetectedStateField";
 import { DialogFooter } from "./DialogFooter";
@@ -47,6 +47,7 @@ import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
 import { TrainingActionDifferences } from "./TrainingActionDifferences";
 import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
+import { TrainingDecisionList } from "./TrainingDecisionList";
 import { TrainingPositionSummary } from "./TrainingPositionSummary";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
@@ -115,7 +116,6 @@ import type {
   SystemInfo,
   TrainingCertainty,
   TrainingCertaintyFilter,
-  TrainingOutcome,
   TrainingPositionFilter,
   TrainingProgress,
   TrainingReviewCertainty,
@@ -1934,22 +1934,6 @@ function parseTrainingSizing(
 
 function benchmarkFieldLabel(field: string): string {
   return field.replace(/_/g, " ");
-}
-
-function trainingOutcomeLabel(outcome: TrainingOutcome): string {
-  if (outcome === "match") {
-    return "Exact match";
-  }
-  if (outcome === "mixed") {
-    return "Supported mix";
-  }
-  if (outcome === "same_action") {
-    return "Same action";
-  }
-  if (outcome === "mixed_action") {
-    return "Supported action";
-  }
-  return "Different action";
 }
 
 function sameTrainingPositionFilter(
@@ -10992,90 +10976,20 @@ export default function App() {
                         </ButtonControl>
                       </div>
                     ) : null}
-                    {visibleTrainingHands.length > 0 ? (
-                      <div className="recent-training-list">
-                        {visibleTrainingHands.map((hand) => (
-                          <div className="recent-training-row" key={hand.job_id}>
-                            <ButtonControl
-                              variant="ghost"
-                              className="recent-training-open"
-                              onClick={() => void reviewTrainingHand(
-                                hand.job_id,
-                                trainingProgressView === "review",
-                              )}
-                              disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                              aria-label={`Open ${hand.original_filename} training review`}
-                            >
-                              <span className="recent-training-hand">
-                                <strong>{hand.hero_cards.length > 0 ? hand.hero_cards.map(cardToDisplay).join(" ") : "Unknown cards"}</strong>
-                                <small>
-                                  {hand.street ?? "Unknown street"} · {hand.original_filename}
-                                  {hand.decision_certainty
-                                    ? ` · ${trainingCertaintyLabel(hand.decision_certainty)} certainty`
-                                    : ""}
-                                </small>
-                              </span>
-                              <span className="recent-training-lines">
-                                <small>You: {trainingDecisionLabel(hand.decision_action, hand.decision_sizing)}</small>
-                                <small>Solver: {trainingDecisionLabel(hand.recommended_action, hand.recommended_sizing)}</small>
-                                {typeof hand.ev_loss_bb === "number" ? (
-                                  <small className="recent-training-ev">
-                                    EV loss: {formatEvLossBb(hand.ev_loss_bb)}
-                                  </small>
-                                ) : null}
-                                {hand.review_note ? (
-                                  <small className="recent-training-note">
-                                    Note: {hand.review_note}
-                                  </small>
-                                ) : null}
-                              </span>
-                              <em className={hand.reviewed_at ? "reviewed" : hand.outcome}>
-                                {hand.reviewed_at ? "Reviewed" : trainingOutcomeLabel(hand.outcome)}
-                              </em>
-                              <Eye size={15} aria-hidden="true" />
-                            </ButtonControl>
-                            {trainingProgressView !== "lessons"
-                              && hand.reviewed_at
-                              && hand.outcome !== "match"
-                              && hand.outcome !== "mixed" ? (
-                              <ButtonControl
-                                variant="ghost"
-                                iconOnly
-                                className="recent-training-reopen"
-                                onClick={() => void reopenTrainingReviewFromProgress(hand.job_id)}
-                                disabled={trainingReviewJobId !== null || busy}
-                                aria-label={`Reopen ${hand.original_filename} training review`}
-                                title="Reopen review"
-                              >
-                                <RefreshCcw size={14} aria-hidden="true" />
-                              </ButtonControl>
-                            ) : null}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <StateMessage centered className="training-review-empty" size="small">
-                        {trainingProgressView === "lessons"
-                          ? trainingLessonStreet !== "all" || trainingLessonQuery
-                            ? "No saved lesson notes match these filters."
-                            : "No saved lesson notes yet."
-                          : trainingProgressView === "review"
-                            ? "No action or sizing differences need review."
-                            : trainingSolverFilter
-                              ? trainingSolverFilter.kind === "route"
-                                ? "No training hands were handled by this engine."
-                                : trainingSolverFilter.kind === "fallback"
-                                  ? "No training hands use this fallback."
-                                  : "No training hands are missing engine attribution."
-                              : trainingPositionFilter
-                                ? trainingPositionFilter.kind === "position"
-                                  ? `No training hands were recorded at ${trainingPositionFilter.label}.`
-                                  : "No training hands have a recorded position."
-                                : trainingStreetFilter
-                                  ? `No training hands were played on ${trainingStreetFilter.label}.`
-                                  : "No recent training decisions."}
-                      </StateMessage>
-                    )}
+                    <TrainingDecisionList
+                      certaintyLabel={trainingCertaintyLabel}
+                      decisionLabel={trainingDecisionLabel}
+                      hands={visibleTrainingHands}
+                      lessonFiltersActive={trainingLessonStreet !== "all" || Boolean(trainingLessonQuery)}
+                      onOpen={reviewTrainingHand}
+                      onReopen={reopenTrainingReviewFromProgress}
+                      openDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                      positionFilter={trainingPositionFilter}
+                      reopenDisabled={trainingReviewJobId !== null || busy}
+                      solverFilter={trainingSolverFilter}
+                      streetFilter={trainingStreetFilter}
+                      view={trainingProgressView}
+                    />
                   </section>
                 </>
               ) : (

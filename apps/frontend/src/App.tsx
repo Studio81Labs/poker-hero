@@ -20,6 +20,14 @@ import type { HistoryItem } from "./historyPresentation";
 import { InfoDialog } from "./InfoDialog";
 import { JobStatusBadge } from "./JobStatusBadge";
 import {
+  benchmarkPercent,
+  formatAccuracyDelta,
+  formatCandidateValue,
+  formatEvLossBb,
+  formatEvLossDeltaBb,
+  trainingTrendTone,
+} from "./metricPresentation";
+import {
   type CompletedPostflopActionForm,
   type PostflopActionForm,
   type PreflopActionForm,
@@ -41,6 +49,7 @@ import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
+import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { UserGuideDialog } from "./UserGuideDialog";
 import {
   ApiResponseError,
@@ -1686,10 +1695,6 @@ function recommendationContextLabel(evidence: RecommendationEvidence): string {
   return evidence.routed ? "Specialized route" : "Fallback used";
 }
 
-function formatCandidateValue(value: number): string {
-  return Number(value.toFixed(3)).toString();
-}
-
 function candidateMatchesRecommendation(
   candidate: RecommendationEvidenceCandidate,
   recommendation: RecommendationResult,
@@ -1714,33 +1719,6 @@ function trainingCertaintyLabel(certainty: TrainingCertainty): string {
 
 function trainingStreetLabel(street: Street): string {
   return `${street.slice(0, 1).toUpperCase()}${street.slice(1)}`;
-}
-
-function formatEvLossBb(value: number): string {
-  return `${formatCandidateValue(value)} BB`;
-}
-
-function formatAccuracyDelta(value: number): string {
-  const points = Math.round(value * 100);
-  return `${points > 0 ? "+" : ""}${points} pts`;
-}
-
-function formatEvLossDeltaBb(value: number): string {
-  return `${value > 0 ? "+" : ""}${formatCandidateValue(value)} BB`;
-}
-
-function trainingTrendTone(
-  delta: number,
-  lowerIsBetter = false,
-): "improving" | "declining" | "neutral" {
-  const improvement = lowerIsBetter ? -delta : delta;
-  if (improvement > 0) {
-    return "improving";
-  }
-  if (improvement < 0) {
-    return "declining";
-  }
-  return "neutral";
 }
 
 function trainingDecisionComparison(
@@ -1960,10 +1938,6 @@ function parseTrainingSizing(
 
 function benchmarkFieldLabel(field: string): string {
   return field.replace(/_/g, " ");
-}
-
-function benchmarkPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
 }
 
 type SolverPerformanceSummary = {
@@ -10830,63 +10804,7 @@ export default function App() {
                 <StateMessage centered className="training-progress-empty">Reading reviewed decisions...</StateMessage>
               ) : trainingProgress && trainingProgress.reviewed_hands > 0 ? (
                 <>
-                  <div
-                    className={`training-progress-summary${trainingProgress.ev_compared_hands > 0 ? " has-ev" : ""}`}
-                    aria-label="Training progress summary"
-                  >
-                    <SummaryMetric label="reviewed" value={trainingProgress.reviewed_hands} />
-                    <SummaryMetric label="action match" value={benchmarkPercent(trainingProgress.action_accuracy)} />
-                    <SummaryMetric label="exact line" value={benchmarkPercent(trainingProgress.exact_accuracy)} />
-                    {trainingProgress.ev_compared_hands > 0 && trainingProgress.average_ev_loss_bb !== null ? (
-                      <SummaryMetric label="avg EV loss" value={formatEvLossBb(trainingProgress.average_ev_loss_bb)} />
-                    ) : null}
-                    <SummaryMetric attention={trainingProgress.needs_review_hands > 0} label="needs review" value={trainingProgress.needs_review_hands} />
-                  </div>
-
-                  {trainingProgress.trend ? (
-                    <section className="training-progress-section training-trend-section" aria-labelledby="training-trend-title">
-                      <SectionHeading
-                        className="training-section-heading training-trend-heading"
-                        heading="Recent trend"
-                        headingId="training-trend-title"
-                      >
-                        <span>
-                          Last {trainingProgress.trend.window_hands} vs previous {trainingProgress.trend.window_hands}
-                        </span>
-                      </SectionHeading>
-                      <div
-                        className={`training-trend-grid${trainingProgress.trend.average_ev_loss_delta_bb !== null ? " has-ev" : ""}`}
-                      >
-                        <div>
-                          <span>Action match</span>
-                          <strong>{benchmarkPercent(trainingProgress.trend.recent_action_accuracy)}</strong>
-                          <em className={trainingTrendTone(trainingProgress.trend.action_accuracy_delta)}>
-                            {formatAccuracyDelta(trainingProgress.trend.action_accuracy_delta)}
-                          </em>
-                        </div>
-                        <div>
-                          <span>Exact line</span>
-                          <strong>{benchmarkPercent(trainingProgress.trend.recent_exact_accuracy)}</strong>
-                          <em className={trainingTrendTone(trainingProgress.trend.exact_accuracy_delta)}>
-                            {formatAccuracyDelta(trainingProgress.trend.exact_accuracy_delta)}
-                          </em>
-                        </div>
-                        {trainingProgress.trend.average_ev_loss_delta_bb !== null
-                          && trainingProgress.trend.recent_average_ev_loss_bb !== null ? (
-                            <div>
-                              <span>Avg EV loss</span>
-                              <strong>{formatEvLossBb(trainingProgress.trend.recent_average_ev_loss_bb)}</strong>
-                              <em className={trainingTrendTone(
-                                trainingProgress.trend.average_ev_loss_delta_bb,
-                                true,
-                              )}>
-                                {formatEvLossDeltaBb(trainingProgress.trend.average_ev_loss_delta_bb)}
-                              </em>
-                            </div>
-                          ) : null}
-                      </div>
-                    </section>
-                  ) : null}
+                  <TrainingProgressOverview progress={trainingProgress} />
 
                   {trainingProgress.solver_coverage
                     && trainingProgress.solver_coverage.total_hands > 0 ? (

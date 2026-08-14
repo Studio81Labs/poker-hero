@@ -1,4 +1,4 @@
-import type { JobHistory } from "../types";
+import type { JobHistory } from "../types/jobs";
 import { apiUrl, readJson } from "./core";
 
 const HISTORY_ARCHIVE_BATCH_SIZE = 100;

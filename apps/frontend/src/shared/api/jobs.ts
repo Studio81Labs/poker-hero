@@ -1,9 +1,6 @@
-import type {
-  CanonicalState,
-  JobQueue,
-  JobRecord,
-  PipelineSelection,
-} from "../types";
+import type { JobQueue, JobRecord } from "../types/jobs";
+import type { PipelineSelection } from "../types/pipeline";
+import type { CanonicalState } from "../types/poker";
 import { apiUrl, readJson } from "./core";
 
 export function imageUrl(jobId: string): string {

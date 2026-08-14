@@ -3,9 +3,9 @@ import type {
   BenchmarkDatasetImportResult,
   BenchmarkOverview,
   BenchmarkReport,
-  JobRecord,
-  PipelineSelection,
-} from "../types";
+} from "../types/benchmarks";
+import type { JobRecord } from "../types/jobs";
+import type { PipelineSelection } from "../types/pipeline";
 import { apiUrl, readJson } from "./core";
 
 type ParserPipeline = Pick<

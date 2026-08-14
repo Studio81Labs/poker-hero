@@ -37,6 +37,12 @@ errors from jobs, history, training, benchmark, system, and MCP endpoints. The
 stable client barrel preserves the application-facing contract while endpoint
 tests stay beside their owning module.
 
+Shared API contracts follow the same ownership split. Poker state,
+recommendations, training, jobs, pipeline capabilities, benchmarks, system,
+backup, and MCP contracts live in focused `shared/types` modules. The stable
+`shared/types.ts` type-only barrel preserves existing feature imports, while
+API domain modules import their owning contracts directly.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it
@@ -60,6 +66,9 @@ orchestration. New top-level experiences receive their own page and route.
   domain algorithms.
 - Component tests are colocated with their owners, while analyzer integration
   tests are grouped by workflow domain.
+- Shared transport and contract barrels remain compatibility surfaces rather
+  than implementation owners; endpoint and type definitions stay in matching
+  domain modules.
 - A source-architecture test enforces downward imports between app, page,
   feature, and shared layers. It also keeps feature library and hook code
   independent from UI components and requires colocated component tests. The

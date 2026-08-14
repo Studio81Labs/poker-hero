@@ -32,6 +32,11 @@ Compose the frontend using four explicit boundaries:
 - `src/shared` contains reusable UI controls, API access, primitive types, and
   domain-independent helpers.
 
+Shared API access separates transport, response decoding, and human-readable
+errors from jobs, history, training, benchmark, system, and MCP endpoints. The
+stable client barrel preserves the application-facing contract while endpoint
+tests stay beside their owning module.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it

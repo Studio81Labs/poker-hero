@@ -13,6 +13,7 @@ const ALLOWED_LAYER_IMPORTS: Readonly<Record<string, ReadonlySet<string>>> = {
   features: new Set(["features", "shared"]),
   shared: new Set(["shared"]),
 };
+const ALLOWED_FEATURE_AREAS = new Set(["components", "hooks", "lib"]);
 
 function filesBelow(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -37,14 +38,27 @@ function sourceLayer(sourcePath: readonly string[]): string | null {
     : null;
 }
 
+function featureArea(sourcePath: readonly string[]): string | null {
+  const area = sourcePath[2];
+  return sourcePath[0] === "features" && ALLOWED_FEATURE_AREAS.has(area)
+    ? area
+    : null;
+}
+
+function isTestSupportPath(sourcePath: readonly string[]): boolean {
+  return (
+    sourcePath[0] === "test" ||
+    sourcePath.includes("__tests__") ||
+    sourcePath.some((segment) => segment.includes(".test."))
+  );
+}
+
 function sourceFiles(): string[] {
   return filesBelow(SOURCE_ROOT).filter((file) => {
     const extension = extname(file);
     return (
       (extension === ".ts" || extension === ".tsx") &&
-      !file.includes(".test.") &&
-      !file.includes(`${sep}__tests__${sep}`) &&
-      sourceSegments(file)[0] !== "test"
+      !isTestSupportPath(sourceSegments(file))
     );
   });
 }
@@ -69,11 +83,24 @@ function layerViolations(): string[] {
       );
       continue;
     }
+    if (currentSourceLayer === "features" && !featureArea(sourcePath)) {
+      violations.push(
+        `feature source must live in components, hooks, or lib: ${sourcePath.join("/")}`,
+      );
+      continue;
+    }
 
     for (const specifier of relativeImports(file)) {
       const targetPath = sourceSegments(resolve(dirname(file), specifier));
       const targetLayer = sourceLayer(targetPath) ?? targetPath[0];
       const importDescription = `${sourcePath.join("/")} -> ${specifier}`;
+
+      if (isTestSupportPath(targetPath)) {
+        violations.push(
+          `production source may not depend on test support: ${importDescription}`,
+        );
+        continue;
+      }
 
       const allowedTargets = ALLOWED_LAYER_IMPORTS[currentSourceLayer];
       if (!allowedTargets.has(targetLayer)) {
@@ -123,6 +150,32 @@ describe("frontend source architecture", () => {
       sourceLayer(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe("features");
     expect(sourceLayer(["utils", "format.ts"])).toBeNull();
+  });
+
+  it("recognizes only declared production areas inside features", () => {
+    expect(
+      featureArea(["features", "capture", "lib", "captureSource.ts"]),
+    ).toBe("lib");
+    expect(featureArea(["features", "capture", "index.ts"])).toBeNull();
+    expect(
+      featureArea(["features", "capture", "utils", "format.ts"]),
+    ).toBeNull();
+  });
+
+  it("recognizes test support wherever it is stored", () => {
+    expect(
+      isTestSupportPath([
+        "features",
+        "capture",
+        "lib",
+        "captureSource.test.ts",
+      ]),
+    ).toBe(true);
+    expect(isTestSupportPath(["pages", "analyzer", "__tests__"])).toBe(true);
+    expect(isTestSupportPath(["test", "analyzerHarness.tsx"])).toBe(true);
+    expect(
+      isTestSupportPath(["features", "capture", "lib", "captureSource.ts"]),
+    ).toBe(false);
   });
 
   it("keeps imports within the documented layer direction", () => {

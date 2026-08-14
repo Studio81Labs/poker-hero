@@ -375,7 +375,11 @@ Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries
 and hooks cannot depend on their UI components, and production components
 retain colocated tests. The root `main.tsx` bootstrap may import only `src/app`;
-other undeclared top-level source locations fail the same check.
+other undeclared top-level source locations fail the same check. Feature source
+must live below `components`, `hooks`, or `lib`; feature-root barrels and
+undeclared feature areas are rejected instead of bypassing UI dependency rules.
+Production modules cannot import colocated tests, integration suites, or shared
+test helpers.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

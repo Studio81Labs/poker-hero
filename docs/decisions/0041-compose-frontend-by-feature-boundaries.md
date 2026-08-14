@@ -59,7 +59,11 @@ orchestration. New top-level experiences receive their own page and route.
   feature, and shared layers. It also keeps feature library and hook code
   independent from UI components and requires colocated component tests. The
   root `main.tsx` bootstrap may import only the application layer; other
-  undeclared top-level source locations fail the architecture check.
+  undeclared top-level source locations fail the architecture check. Feature
+  production code must live below `components`, `hooks`, or `lib`; feature-root
+  barrels and undeclared feature areas are rejected so they cannot conceal
+  component dependencies from hooks or libraries. Production modules also may
+  not import colocated tests, integration suites, or shared test helpers.
 - Future reviews should reject new feature-local UI, effects, or transformation
   logic added directly to `App.tsx` or the analyzer page without the matching
   application-level or cross-feature reason.

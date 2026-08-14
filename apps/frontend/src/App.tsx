@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Target, Upload, X } from "lucide-react";
 import type { ChangeEvent } from "react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 
 import "./App.css";
@@ -40,7 +40,6 @@ import { ScreenshotDetailsDialog } from "./ScreenshotDetailsDialog";
 import { parseScreenshotTags, screenshotTags } from "./screenshotMetadata";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
-import { SectionHeading } from "./SectionHeading";
 import { SegmentedControl } from "./SegmentedControl";
 import { StateMessage } from "./StateMessage";
 import { SummaryMetric } from "./SummaryMetric";
@@ -48,10 +47,7 @@ import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
 import { TrainingActionDifferences } from "./TrainingActionDifferences";
 import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
-import {
-  TrainingPerformanceTrend,
-  trainingPerformanceTrendAccessibleLabel,
-} from "./TrainingPerformanceTrend";
+import { TrainingPositionSummary } from "./TrainingPositionSummary";
 import { TrainingProgressOverview } from "./TrainingProgressOverview";
 import { TrainingSolverCoverage } from "./TrainingSolverCoverage";
 import { TrainingStreetSummary } from "./TrainingStreetSummary";
@@ -10666,154 +10662,14 @@ export default function App() {
                     summaries={trainingProgress.street_summaries}
                   />
 
-                  {(trainingProgress.position_summaries?.length ?? 0) > 0
-                    || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
-                    <section
-                      className="training-progress-section"
-                      aria-labelledby="training-positions-title"
-                    >
-                      <SectionHeading
-                        className="training-section-heading"
-                        heading="By position"
-                        headingId="training-positions-title"
-                      >
-                        {(trainingProgressView === "recent" && positionFocus)
-                          || (trainingProgress.unpositioned_hands ?? 0) > 0 ? (
-                          <span className="training-position-heading-actions">
-                            {trainingProgressView === "recent" && positionFocus ? (
-                              <ButtonControl
-                                variant="secondary"
-                                className="training-focus-action"
-                                onClick={() => void focusTrainingReviewPosition(positionFocus.filter)}
-                                disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                title={positionFocus.reason}
-                                aria-label={`Focus ${positionFocus.filter.kind === "unpositioned" ? "unpositioned" : `${positionFocus.label} position`} reviews: ${positionFocus.reason}`}
-                              >
-                                <Target size={13} aria-hidden="true" />
-                                Focus {positionFocus.label}
-                              </ButtonControl>
-                            ) : null}
-                            {(trainingProgress.unpositioned_hands ?? 0) > 0 ? (
-                              <span className="training-section-context training-position-context">
-                                <ButtonControl
-                                  variant="ghost"
-                                  className="training-position-unrecorded"
-                                  onClick={() => void updateTrainingPositionFilter({
-                                    kind: "unpositioned",
-                                    label: "Unpositioned",
-                                  })}
-                                  disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                  aria-label={`Show ${trainingProgress.unpositioned_hands} unpositioned ${trainingProgress.unpositioned_hands === 1 ? "hand" : "hands"}`}
-                                  title="Show training hands"
-                                >
-                                  {trainingProgress.unpositioned_hands} unrecorded
-                                  <Eye size={11} aria-hidden="true" />
-                                </ButtonControl>
-                                {(trainingProgress.unpositioned_needs_review_hands ?? 0) > 0 ? (
-                                  <ButtonControl
-                                    variant="secondary"
-                                    className="training-certainty-review"
-                                    onClick={() => void focusTrainingReviewPosition({
-                                      kind: "unpositioned",
-                                      label: "Unpositioned",
-                                    })}
-                                    disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                    aria-label={`Review unpositioned differences (${trainingProgress.unpositioned_needs_review_hands})`}
-                                    title="Open pending reviews"
-                                  >
-                                    <Target size={11} aria-hidden="true" />
-                                    {trainingProgress.unpositioned_needs_review_hands}
-                                  </ButtonControl>
-                                ) : null}
-                              </span>
-                            ) : null}
-                          </span>
-                        ) : null}
-                      </SectionHeading>
-                      {(trainingProgress.position_summaries?.length ?? 0) > 0 ? (
-                        <table className="training-street-table training-position-table">
-                          <thead>
-                            <tr>
-                              <th>Position</th>
-                              <th>Hands</th>
-                              <th>Action</th>
-                              <th>Exact</th>
-                              <th>Avg EV loss</th>
-                              <th>Review</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {trainingProgress.position_summaries?.map((summary) => (
-                              <Fragment key={summary.position}>
-                                <tr className={summary.trend ? "has-trend" : undefined}>
-                                  <th scope="row">
-                                    <ButtonControl
-                                      variant="ghost"
-                                      className="training-summary-drilldown"
-                                      onClick={() => void updateTrainingPositionFilter({
-                                        kind: "position",
-                                        position: summary.position,
-                                        label: summary.position,
-                                      })}
-                                      disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                      aria-label={[
-                                        `Show ${summary.reviewed_hands} ${summary.reviewed_hands === 1 ? "hand" : "hands"} recorded at ${summary.position}`,
-                                        summary.trend
-                                          ? trainingPerformanceTrendAccessibleLabel(summary.trend)
-                                          : null,
-                                      ].filter(Boolean).join(". ")}
-                                      title="Show training hands"
-                                    >
-                                      <span>{summary.position}</span>
-                                      <Eye size={12} aria-hidden="true" />
-                                    </ButtonControl>
-                                  </th>
-                                  <td>{summary.reviewed_hands}</td>
-                                  <td>{benchmarkPercent(summary.action_accuracy)}</td>
-                                  <td>{benchmarkPercent(summary.exact_accuracy)}</td>
-                                  <td>
-                                    {summary.ev_compared_hands > 0
-                                      && summary.average_ev_loss_bb !== null
-                                      ? formatEvLossBb(summary.average_ev_loss_bb)
-                                      : "—"}
-                                  </td>
-                                  <td>
-                                    {(summary.needs_review_hands ?? 0) > 0 ? (
-                                      <ButtonControl
-                                        variant="secondary"
-                                        className="training-certainty-review"
-                                        onClick={() => void focusTrainingReviewPosition({
-                                          kind: "position",
-                                          position: summary.position,
-                                          label: summary.position,
-                                        })}
-                                        disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                                        aria-label={`Review ${summary.position} position differences (${summary.needs_review_hands})`}
-                                        title="Open pending reviews"
-                                      >
-                                        <Target size={11} aria-hidden="true" />
-                                        {summary.needs_review_hands}
-                                      </ButtonControl>
-                                    ) : "—"}
-                                  </td>
-                                </tr>
-                                {summary.trend ? (
-                                  <tr className="training-summary-trend-row">
-                                    <td colSpan={6}>
-                                      <TrainingPerformanceTrend
-                                        trend={summary.trend}
-                                        hiddenFromAssistiveTechnology
-                                      />
-                                    </td>
-                                  </tr>
-                                ) : null}
-                              </Fragment>
-                            ))}
-                          </tbody>
-                        </table>
-                      ) : null}
-                    </section>
-                  ) : null}
+                  <TrainingPositionSummary
+                    controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                    focus={positionFocus}
+                    onFilterChange={updateTrainingPositionFilter}
+                    onReview={focusTrainingReviewPosition}
+                    progress={trainingProgress}
+                    showFocus={trainingProgressView === "recent"}
+                  />
 
                   <section className="training-progress-section recent-training-section" aria-labelledby="training-hands-title">
                     <div className="training-review-heading">

@@ -1,6 +1,6 @@
+import type { JobRecord } from "../types/jobs";
+import type { RecommendationAction } from "../types/recommendations";
 import type {
-  JobRecord,
-  RecommendationAction,
   TrainingCertainty,
   TrainingCertaintyFilter,
   TrainingPositionFilter,
@@ -11,7 +11,7 @@ import type {
   TrainingReviewStreet,
   TrainingSolverFilter,
   TrainingStreetFilter,
-} from "../types";
+} from "../types/training";
 import { apiUrl, readJson } from "./core";
 
 export async function recordTrainingDecision(

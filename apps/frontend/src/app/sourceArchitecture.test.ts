@@ -391,6 +391,97 @@ function componentsMissingTests(): string[] {
     .map((file) => sourceSegments(file).join("/"));
 }
 
+function sharedTypeBoundaryViolations(): string[] {
+  const violations: string[] = [];
+  const barrel = resolve(SOURCE_ROOT, "shared/types.ts");
+  const barrelTargets = new Set([
+    barrel,
+    barrel.slice(0, -extname(barrel).length),
+  ]);
+  const sourceFile = ts.createSourceFile(
+    barrel,
+    readFileSync(barrel, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const exportedModules = new Set<string>();
+
+  if (sourceFile.statements.length === 0) {
+    violations.push("shared/types.ts must export domain type modules");
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      !statement.isTypeOnly ||
+      statement.exportClause !== undefined ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.startsWith("./types/")
+    ) {
+      violations.push(
+        "shared/types.ts must contain only domain `export type *` declarations",
+      );
+      continue;
+    }
+
+    if (exportedModules.has(statement.moduleSpecifier.text)) {
+      violations.push(
+        `shared type barrel target is exported more than once: ${statement.moduleSpecifier.text}`,
+      );
+    }
+    exportedModules.add(statement.moduleSpecifier.text);
+    const target = resolve(
+      dirname(barrel),
+      `${statement.moduleSpecifier.text}.ts`,
+    );
+    if (!existsSync(target)) {
+      violations.push(
+        `shared type barrel target does not exist: ${statement.moduleSpecifier.text}`,
+      );
+    }
+  }
+
+  function importsTypeBarrel(file: string): boolean {
+    return scriptImports(readFileSync(file, "utf8"), file).some((specifier) => {
+      const target = sourceImportTarget(file, specifier);
+      return target !== null && barrelTargets.has(target);
+    });
+  }
+
+  const apiRoot = resolve(SOURCE_ROOT, "shared/api");
+  for (const file of filesBelow(apiRoot).filter(
+    (candidate) =>
+      extname(candidate) === ".ts" &&
+      !isTestSupportPath(sourceSegments(candidate)),
+  )) {
+    const sourcePath = sourceSegments(file);
+    if (
+      ["client.ts", "core.ts"].includes(sourcePath[sourcePath.length - 1] ?? "")
+    ) {
+      continue;
+    }
+    if (importsTypeBarrel(file)) {
+      violations.push(
+        `shared API domains must import their owning type modules directly: ${sourcePath.join("/")}`,
+      );
+    }
+  }
+
+  const typeRoot = resolve(SOURCE_ROOT, "shared/types");
+  for (const file of filesBelow(typeRoot).filter(
+    (candidate) => extname(candidate) === ".ts",
+  )) {
+    if (importsTypeBarrel(file)) {
+      violations.push(
+        `shared type domains may not import their compatibility barrel: ${sourceSegments(file).join("/")}`,
+      );
+    }
+  }
+
+  return violations;
+}
+
 describe("frontend source architecture", () => {
   it("recognizes only declared layers and the bootstrap entry point", () => {
     expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
@@ -565,5 +656,9 @@ describe("frontend source architecture", () => {
 
   it("keeps tests colocated with production components", () => {
     expect(componentsMissingTests()).toEqual([]);
+  });
+
+  it("keeps shared API contracts in domain type modules", () => {
+    expect(sharedTypeBoundaryViolations()).toEqual([]);
   });
 });

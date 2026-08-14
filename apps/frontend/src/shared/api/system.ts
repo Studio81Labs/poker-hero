@@ -1,8 +1,6 @@
-import type {
-  ApplicationBackupRestoreResult,
-  PipelineCapabilities,
-  SystemInfo,
-} from "../types";
+import type { ApplicationBackupRestoreResult } from "../types/backups";
+import type { PipelineCapabilities } from "../types/pipeline";
+import type { SystemInfo } from "../types/system";
 import { apiUrl, readJson } from "./core";
 
 export function applicationBackupUrl(): string {

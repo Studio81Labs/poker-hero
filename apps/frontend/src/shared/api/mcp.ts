@@ -3,7 +3,7 @@ import type {
   McpIssuedPrincipal,
   McpPrincipal,
   McpScope,
-} from "../types";
+} from "../types/mcp";
 import { apiUrl, readJson } from "./core";
 
 export async function getMcpAccessConfig(): Promise<McpAccessConfig> {

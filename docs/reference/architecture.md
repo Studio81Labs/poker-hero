@@ -360,6 +360,9 @@ metadata, and readable error conversion in one transport core. Jobs, history,
 training, benchmark, system, and MCP endpoints live in focused modules with
 colocated tests; `src/shared/api/client.ts` remains the stable compatibility
 barrel used by application code.
+Shared API data contracts mirror those domains under `src/shared/types`.
+`src/shared/types.ts` is a type-only compatibility barrel, while API modules
+import their narrowly owned contracts directly.
 
 A feature must not move unrelated persistence orchestration into its hook merely
 to make the page coordinator shorter. New feature behavior should extend the

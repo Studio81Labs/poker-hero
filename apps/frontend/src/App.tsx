@@ -17,8 +17,8 @@ import { ButtonControl, DownloadLinkControl, FileInputControl, FormField, Select
 import { InputSourcePanel, selectedFilesLabel, shareModeLabel, type InputMode, type ShareMode } from "./InputSourcePanel";
 import { HistoryPanel } from "./HistoryPanel";
 import type { HistoryItem } from "./historyPresentation";
+import { InfoDialog } from "./InfoDialog";
 import { JobStatusBadge } from "./JobStatusBadge";
-import { McpAccessPanel } from "./McpAccessPanel";
 import {
   type CompletedPostflopActionForm,
   type PostflopActionForm,
@@ -5220,7 +5220,6 @@ export default function App() {
   const appMountedRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const benchmarkDatasetInputRef = useRef<HTMLInputElement | null>(null);
-  const applicationBackupInputRef = useRef<HTMLInputElement | null>(null);
   const queueAbortControllerRef = useRef<AbortController | null>(null);
   const queueAbortRequestedRef = useRef(false);
   const benchmarkOverviewRequestRef = useRef(0);
@@ -5662,6 +5661,18 @@ export default function App() {
     ?? null;
   const activeRecommendationProvider =
     systemInfo?.recommendation_engine ?? systemInfo?.recommendation_provider ?? job?.recommendation_provider ?? null;
+  const activeInfoProviders = activeParserProvider && activeRecommendationProvider
+    ? {
+        recognition: providerLabel(activeParserProvider),
+        recognitionFallbackFrom: activeParserRouting?.fallbackFrom
+          ? providerLabel(activeParserRouting.fallbackFrom)
+          : null,
+        recognitionRoute: activeParserRouting
+          ? providerLabel(activeParserRouting.provider)
+          : null,
+        recommendation: providerLabel(activeRecommendationProvider),
+      }
+    : null;
   const recentBenchmarkReports = useMemo(() => {
     if (benchmarkOverview?.recent_reports?.length) {
       return benchmarkOverview.recent_reports;
@@ -8644,12 +8655,8 @@ export default function App() {
     setInfoDialogOpen(false);
   }
 
-  async function onApplicationBackupRestore(
-    event: ChangeEvent<HTMLInputElement>,
-  ) {
-    const backupFile = event.target.files?.[0];
-    event.target.value = "";
-    if (!backupFile || busy || backupRestoring) {
+  async function onApplicationBackupRestore(backupFile: File) {
+    if (busy || backupRestoring) {
       return;
     }
 
@@ -10791,103 +10798,17 @@ export default function App() {
       ) : null}
 
       {infoDialogOpen ? (
-        <DialogFrame className="info-dialog" titleId="info-dialog-title">
-            <DialogHeader
-              titleId="info-dialog-title"
-              title="About Poker Training Analyzer"
-              subtitle="Post-hand Texas Hold'em review and training"
-              closeLabel="Close app information"
-              closeDisabled={backupRestoring || mcpTokenPending}
-              onClose={closeInfoDialog}
-            />
-
-            <div className="info-dialog-body">
-              <section className="info-dialog-section active-engines">
-                <h3>Currently active</h3>
-                {activeParserProvider && activeRecommendationProvider ? (
-                  <div className="info-provider-grid">
-                    <div>
-                      <small>Recognition</small>
-                      <strong>{providerLabel(activeParserProvider)}</strong>
-                      {activeParserRouting ? (
-                        <span className="info-provider-route">
-                          via {providerLabel(activeParserRouting.provider)}
-                          {activeParserRouting.fallbackFrom
-                            ? ` · fallback from ${providerLabel(activeParserRouting.fallbackFrom)}`
-                            : ""}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div>
-                      <small>Recommendation</small>
-                      <strong>{providerLabel(activeRecommendationProvider)}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <p>{systemInfoLoading ? "Reading backend configuration..." : "Active engine details are unavailable."}</p>
-                )}
-              </section>
-              <section className="info-dialog-section">
-                <h3>Recognition</h3>
-                <p>OCR and computer vision read the cards, board, pot, bets, stacks, and table state from each screenshot. Confidence scores identify fields that need review.</p>
-              </section>
-              <section className="info-dialog-section">
-                <h3>Recommendations</h3>
-                <p>The configured engine analyzes approved hand state and compares available actions. Preflop uses a position-aware training chart, the postflop engine solves supported heads-up game trees, and ambiguous spots use the range/EV fallback.</p>
-              </section>
-              <section className="info-dialog-section">
-                <h3>Training scope</h3>
-                <p>Designed for post-hand study. It does not place bets or interact directly with a poker client.</p>
-              </section>
-              <section className="info-dialog-section">
-                <h3>Agent access</h3>
-                <p>Create environment-bound bearer credentials for trusted developer agents. Store each token when it is shown; only its hash remains on the server.</p>
-                <McpAccessPanel onPendingTokenChange={setMcpTokenPending} />
-              </section>
-              <section className="info-dialog-section data-recovery-section">
-                <h3>Data and recovery</h3>
-                <p>Back up screenshots, reviewed hands, lesson notes, training decisions, recommendations, and benchmark reports in one portable ZIP.</p>
-                <div className="data-recovery-actions">
-                  <DownloadLinkControl
-                    className="secondary-button"
-                    href={applicationBackupUrl()}
-                    download
-                    aria-label="Download application backup"
-                    disabled={busy}
-                  >
-                    <Download size={14} aria-hidden="true" />
-                    Download backup
-                  </DownloadLinkControl>
-                  <ButtonControl
-                    variant="secondary"
-                    onClick={() => applicationBackupInputRef.current?.click()}
-                    disabled={busy || backupRestoring}
-                    aria-label="Restore application backup"
-                  >
-                    <Upload size={14} aria-hidden="true" />
-                    {backupRestoring ? "Restoring..." : "Restore backup"}
-                  </ButtonControl>
-                  <FileInputControl
-                    ref={applicationBackupInputRef}
-                    accept=".zip,application/zip"
-                    aria-label="Application backup ZIP"
-                    disabled={busy || backupRestoring}
-                    onChange={(event) => void onApplicationBackupRestore(event)}
-                  />
-                </div>
-              </section>
-            </div>
-
-            <DialogFooter className="info-dialog-footer">
-              <ButtonControl
-                variant="secondary"
-                onClick={closeInfoDialog}
-                disabled={backupRestoring || mcpTokenPending}
-              >
-                Done
-              </ButtonControl>
-            </DialogFooter>
-        </DialogFrame>
+        <InfoDialog
+          backupDownloadUrl={applicationBackupUrl()}
+          backupRestoring={backupRestoring}
+          busy={busy}
+          mcpTokenPending={mcpTokenPending}
+          onClose={closeInfoDialog}
+          onMcpTokenPendingChange={setMcpTokenPending}
+          onRestoreBackup={(file) => void onApplicationBackupRestore(file)}
+          providers={activeInfoProviders}
+          systemInfoLoading={systemInfoLoading}
+        />
       ) : null}
 
       {trainingDialogOpen ? (

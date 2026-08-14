@@ -49,7 +49,9 @@ function isTestSupportPath(sourcePath: readonly string[]): boolean {
   return (
     sourcePath[0] === "test" ||
     sourcePath.includes("__tests__") ||
-    sourcePath.some((segment) => segment.includes(".test."))
+    sourcePath.some(
+      (segment) => segment.includes(".test.") || segment.endsWith(".test"),
+    )
   );
 }
 
@@ -173,6 +175,9 @@ describe("frontend source architecture", () => {
     ).toBe(true);
     expect(isTestSupportPath(["pages", "analyzer", "__tests__"])).toBe(true);
     expect(isTestSupportPath(["test", "analyzerHarness.tsx"])).toBe(true);
+    expect(
+      isTestSupportPath(["features", "capture", "lib", "captureSource.test"]),
+    ).toBe(true);
     expect(
       isTestSupportPath(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe(false);

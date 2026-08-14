@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Download, Eye, Info, Pencil, Play, RefreshCcw, Search, Target, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, Download, Eye, Pencil, Play, RefreshCcw, Search, Upload, X } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -46,6 +46,7 @@ import { SummaryMetric } from "./SummaryMetric";
 import { TablePreview } from "./TablePreview";
 import { ToggleControl } from "./ToggleControl";
 import { TrainingActionDifferences } from "./TrainingActionDifferences";
+import { TrainingActiveFilters } from "./TrainingActiveFilters";
 import { TrainingCertaintyCalibration } from "./TrainingCertaintyCalibration";
 import { TrainingDecisionList } from "./TrainingDecisionList";
 import { TrainingPositionSummary } from "./TrainingPositionSummary";
@@ -10848,134 +10849,33 @@ export default function App() {
                         />
                       </div>
                     </div>
-                    {trainingProgressView === "review" && trainingReviewDifference ? (
-                      <div className="training-active-difference" aria-label="Active action-difference filter">
-                        <span>
-                          {trainingDecisionLabel(trainingReviewDifference.decision_action, null)}
-                          <ArrowRight size={12} aria-hidden="true" />
-                          {trainingDecisionLabel(trainingReviewDifference.recommended_action, null)}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingReviewQueue(
-                            trainingReviewOrder,
-                            trainingReviewStreet,
-                            null,
-                          )}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear action-difference filter"
-                          title="Clear action-difference filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
-                    {trainingProgressView === "review" && trainingReviewPosition ? (
-                      <div
-                        className="training-active-difference training-active-position"
-                        aria-label="Active review position filter"
-                      >
-                        <span>
-                          <Target size={12} aria-hidden="true" />
-                          {trainingReviewPosition.label}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingReviewQueue(
-                            trainingReviewOrder,
-                            trainingReviewStreet,
-                            trainingReviewDifference,
-                            trainingReviewCertainty,
-                            null,
-                          )}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear review position filter"
-                          title="Clear review position filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
-                    {trainingProgressView === "recent" && trainingSolverFilter ? (
-                      <div className="training-active-difference training-active-solver" aria-label="Active solver filter">
-                        <span>
-                          {trainingSolverFilter.kind === "fallback" ? (
-                            <AlertTriangle size={12} aria-hidden="true" />
-                          ) : trainingSolverFilter.kind === "unattributed" ? (
-                            <Info size={12} aria-hidden="true" />
-                          ) : (
-                            <Target size={12} aria-hidden="true" />
-                          )}
-                          {trainingSolverFilter.label}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingSolverFilter(null)}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear solver filter"
-                          title="Clear solver filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
-                    {trainingProgressView === "recent" && trainingPositionFilter ? (
-                      <div className="training-active-difference training-active-position" aria-label="Active position filter">
-                        <span>
-                          <Target size={12} aria-hidden="true" />
-                          {trainingPositionFilter.label}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingPositionFilter(null)}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear position filter"
-                          title="Clear position filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
-                    {trainingProgressView === "recent" && trainingStreetFilter ? (
-                      <div className="training-active-difference training-active-street" aria-label="Active street filter">
-                        <span>
-                          <Target size={12} aria-hidden="true" />
-                          {trainingStreetFilter.label}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingStreetFilter(null)}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear street filter"
-                          title="Clear street filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
-                    {trainingProgressView === "recent" && trainingCertaintyFilter ? (
-                      <div className="training-active-difference training-active-certainty" aria-label="Active certainty filter">
-                        <span>
-                          <Target size={12} aria-hidden="true" />
-                          {trainingCertaintyFilter.label}
-                        </span>
-                        <ButtonControl
-                          variant="ghost"
-                          iconOnly
-                          onClick={() => void updateTrainingCertaintyFilter(null)}
-                          disabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
-                          aria-label="Clear certainty filter"
-                          title="Clear certainty filter"
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </ButtonControl>
-                      </div>
-                    ) : null}
+                    <TrainingActiveFilters
+                      actionLabel={(action) => trainingDecisionLabel(action, null)}
+                      certaintyFilter={trainingCertaintyFilter}
+                      controlsDisabled={trainingProgressLoading || trainingReviewJobId !== null || busy}
+                      onClearCertainty={() => updateTrainingCertaintyFilter(null)}
+                      onClearPosition={() => updateTrainingPositionFilter(null)}
+                      onClearReviewDifference={() => updateTrainingReviewQueue(
+                        trainingReviewOrder,
+                        trainingReviewStreet,
+                        null,
+                      )}
+                      onClearReviewPosition={() => updateTrainingReviewQueue(
+                        trainingReviewOrder,
+                        trainingReviewStreet,
+                        trainingReviewDifference,
+                        trainingReviewCertainty,
+                        null,
+                      )}
+                      onClearSolver={() => updateTrainingSolverFilter(null)}
+                      onClearStreet={() => updateTrainingStreetFilter(null)}
+                      positionFilter={trainingPositionFilter}
+                      reviewDifference={trainingReviewDifference}
+                      reviewPosition={trainingReviewPosition}
+                      solverFilter={trainingSolverFilter}
+                      streetFilter={trainingStreetFilter}
+                      view={trainingProgressView}
+                    />
                     <TrainingDecisionList
                       certaintyLabel={trainingCertaintyLabel}
                       decisionLabel={trainingDecisionLabel}

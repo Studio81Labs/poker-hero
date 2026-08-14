@@ -379,7 +379,8 @@ other undeclared top-level source locations fail the same check. Feature source
 must live below `components`, `hooks`, or `lib`; feature-root barrels and
 undeclared feature areas are rejected instead of bypassing UI dependency rules.
 Production modules cannot import colocated tests, integration suites, or shared
-test helpers.
+test helpers. Feature TSX and CSS source must live below `components`, and CSS
+`@import` dependencies follow the same layer direction as TypeScript imports.
 
 The frontend
 defensively normalizes optional provider metadata such as equity, candidate

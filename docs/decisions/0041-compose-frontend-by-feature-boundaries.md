@@ -63,7 +63,9 @@ orchestration. New top-level experiences receive their own page and route.
   production code must live below `components`, `hooks`, or `lib`; feature-root
   barrels and undeclared feature areas are rejected so they cannot conceal
   component dependencies from hooks or libraries. Production modules also may
-  not import colocated tests, integration suites, or shared test helpers.
+  not import colocated tests, integration suites, or shared test helpers. TSX
+  and CSS feature source must live below `components`, and parsed CSS `@import`
+  dependencies follow the same layer direction as TypeScript imports.
 - Future reviews should reject new feature-local UI, effects, or transformation
   logic added directly to `App.tsx` or the analyzer page without the matching
   application-level or cross-feature reason.

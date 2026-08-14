@@ -2,6 +2,8 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
+import { parse as parseCss } from "postcss";
+import parseCssValue from "postcss-value-parser";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +16,7 @@ const ALLOWED_LAYER_IMPORTS: Readonly<Record<string, ReadonlySet<string>>> = {
   shared: new Set(["shared"]),
 };
 const ALLOWED_FEATURE_AREAS = new Set(["components", "hooks", "lib"]);
+const SOURCE_EXTENSIONS = new Set([".css", ".ts", ".tsx"]);
 
 function filesBelow(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -45,6 +48,21 @@ function featureArea(sourcePath: readonly string[]): string | null {
     : null;
 }
 
+function featurePlacementViolation(
+  sourcePath: readonly string[],
+): string | null {
+  const area = featureArea(sourcePath);
+  if (!area) {
+    return "feature source must live in components, hooks, or lib";
+  }
+
+  const extension = extname(sourcePath[sourcePath.length - 1] ?? "");
+  if ((extension === ".tsx" || extension === ".css") && area !== "components") {
+    return `feature ${extension.slice(1).toUpperCase()} source must live in components`;
+  }
+  return null;
+}
+
 function isTestSupportPath(sourcePath: readonly string[]): boolean {
   return (
     sourcePath[0] === "test" ||
@@ -57,20 +75,51 @@ function isTestSupportPath(sourcePath: readonly string[]): boolean {
 
 function sourceFiles(): string[] {
   return filesBelow(SOURCE_ROOT).filter((file) => {
-    const extension = extname(file);
     return (
-      (extension === ".ts" || extension === ".tsx") &&
+      SOURCE_EXTENSIONS.has(extname(file)) &&
       !isTestSupportPath(sourceSegments(file))
     );
   });
 }
 
+function stylesheetImports(source: string, file: string): string[] {
+  const imports: string[] = [];
+  parseCss(source, { from: file }).walkAtRules("import", (rule) => {
+    const firstValue = parseCssValue(rule.params).nodes.find(
+      (node) => node.type !== "space" && node.type !== "comment",
+    );
+    if (!firstValue) return;
+
+    if (firstValue.type === "string") {
+      imports.push(firstValue.value);
+      return;
+    }
+    if (
+      firstValue.type !== "function" ||
+      firstValue.value.toLowerCase() !== "url"
+    ) {
+      return;
+    }
+
+    const urlValue = firstValue.nodes.find(
+      (node) => node.type !== "space" && node.type !== "comment",
+    );
+    if (urlValue?.type === "string" || urlValue?.type === "word") {
+      imports.push(urlValue.value);
+    }
+  });
+  return imports;
+}
+
 function relativeImports(file: string): string[] {
   const source = readFileSync(file, "utf8");
-  return ts
-    .preProcessFile(source, true, true)
-    .importedFiles.map((importedFile) => importedFile.fileName)
-    .filter((specifier) => specifier.startsWith("."));
+  const imports =
+    extname(file) === ".css"
+      ? stylesheetImports(source, file)
+      : ts
+          .preProcessFile(source, true, true)
+          .importedFiles.map((importedFile) => importedFile.fileName);
+  return imports.filter((specifier) => specifier.startsWith("."));
 }
 
 function layerViolations(): string[] {
@@ -85,10 +134,12 @@ function layerViolations(): string[] {
       );
       continue;
     }
-    if (currentSourceLayer === "features" && !featureArea(sourcePath)) {
-      violations.push(
-        `feature source must live in components, hooks, or lib: ${sourcePath.join("/")}`,
-      );
+    const featurePlacementError =
+      currentSourceLayer === "features"
+        ? featurePlacementViolation(sourcePath)
+        : null;
+    if (featurePlacementError) {
+      violations.push(`${featurePlacementError}: ${sourcePath.join("/")}`);
       continue;
     }
 
@@ -164,6 +215,33 @@ describe("frontend source architecture", () => {
     ).toBeNull();
   });
 
+  it("keeps feature UI source in component areas", () => {
+    expect(
+      featurePlacementViolation([
+        "features",
+        "capture",
+        "components",
+        "InputSourcePanel.tsx",
+      ]),
+    ).toBeNull();
+    expect(
+      featurePlacementViolation([
+        "features",
+        "capture",
+        "lib",
+        "CaptureWidget.tsx",
+      ]),
+    ).toContain("TSX");
+    expect(
+      featurePlacementViolation([
+        "features",
+        "capture",
+        "hooks",
+        "captureWidget.css",
+      ]),
+    ).toContain("CSS");
+  });
+
   it("recognizes test support wherever it is stored", () => {
     expect(
       isTestSupportPath([
@@ -181,6 +259,15 @@ describe("frontend source architecture", () => {
     expect(
       isTestSupportPath(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe(false);
+  });
+
+  it("parses relative stylesheet imports without treating URLs as source edges", () => {
+    expect(
+      stylesheetImports(
+        '@import "../../../pages/analyzer/AnalyzerPage.css";\n@import url("./local.css");\n@import url("https://example.com/font.css");',
+        "fixture.css",
+      ).filter((specifier) => specifier.startsWith(".")),
+    ).toEqual(["../../../pages/analyzer/AnalyzerPage.css", "./local.css"]);
   });
 
   it("keeps imports within the documented layer direction", () => {

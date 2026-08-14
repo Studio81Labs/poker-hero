@@ -26,6 +26,7 @@ import {
   requiresOpponentPosition,
   type StateForm,
 } from "./pokerStateForm";
+import { PipelineDialog } from "./PipelineDialog";
 import { screenshotLabel } from "./screenshotPresentation";
 import { ScreenshotQueuePanel } from "./ScreenshotQueuePanel";
 import { SectionHeading } from "./SectionHeading";
@@ -10946,70 +10947,28 @@ export default function App() {
       ) : null}
 
       {pipelineDialogOpen ? (
-        <DialogFrame className="pipeline-dialog" titleId="pipeline-dialog-title">
-            <DialogHeader
-              titleId="pipeline-dialog-title"
-              title="Analysis plugins"
-              subtitle="Choose the tools used for new uploads and live captures"
-              closeLabel="Close analysis plugin settings"
-              onClose={() => setPipelineDialogOpen(false)}
-            />
-
-            <div className="pipeline-dialog-body">
-              {pipelineLoading ? (
-                <StateMessage as="p" className="pipeline-loading">Reading installed plugins...</StateMessage>
-              ) : pipelineCapabilities && pipelineSelection ? (
-                <>
-                  <PipelineSelect
-                    id="pipeline-parser"
-                    label="Recognition"
-                    description="Reads the table state from the screenshot"
-                    options={pipelineCapabilities.parser_providers}
-                    value={pipelineSelection.parser_provider}
-                    onChange={updateParserProvider}
-                  />
-                  <PipelineSelect
-                    id="pipeline-layout"
-                    label="Table layout"
-                    description="Defines where cards, wagers, and player seats are located"
-                    options={compatiblePipelineLayouts(
-                      pipelineCapabilities,
-                      pipelineSelection.parser_provider,
-                    )}
-                    value={pipelineSelection.parser_layout_profile}
-                    onChange={(value) => updatePipelineSelection("parser_layout_profile", value)}
-                  />
-                  <PipelineSelect
-                    id="pipeline-recommendation"
-                    label="Recommendation"
-                    description="Analyzes the approved table state"
-                    options={pipelineCapabilities.recommendation_providers}
-                    value={pipelineSelection.recommendation_provider}
-                    onChange={updateRecommendationProvider}
-                  />
-                  {pipelineSelection.recommendation_provider === "local_solver" ? (
-                    <PipelineSelect
-                      id="pipeline-engine"
-                      label="Solver engine"
-                      description="Runs locally inside the backend deployment"
-                      options={pipelineCapabilities.recommendation_engines}
-                      value={pipelineSelection.recommendation_engine ?? ""}
-                      onChange={(value) => updatePipelineSelection("recommendation_engine", value)}
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <StateMessage as="p" className="pipeline-loading">Plugin details are unavailable.</StateMessage>
-              )}
-            </div>
-
-            <DialogFooter className="pipeline-dialog-footer">
-              <span>Existing screenshots keep their original pipeline.</span>
-              <ButtonControl variant="secondary" onClick={() => setPipelineDialogOpen(false)}>
-                Done
-              </ButtonControl>
-            </DialogFooter>
-        </DialogFrame>
+        <PipelineDialog
+          capabilities={pipelineCapabilities}
+          compatibleLayouts={pipelineCapabilities && pipelineSelection
+            ? compatiblePipelineLayouts(
+              pipelineCapabilities,
+              pipelineSelection.parser_provider,
+            )
+            : []}
+          loading={pipelineLoading}
+          onClose={() => setPipelineDialogOpen(false)}
+          onParserChange={updateParserProvider}
+          onParserLayoutChange={(value) => updatePipelineSelection(
+            "parser_layout_profile",
+            value,
+          )}
+          onRecommendationChange={updateRecommendationProvider}
+          onRecommendationEngineChange={(value) => updatePipelineSelection(
+            "recommendation_engine",
+            value,
+          )}
+          selection={pipelineSelection}
+        />
       ) : null}
 
       {helpDialogOpen ? (
@@ -12773,46 +12732,5 @@ export default function App() {
         </DialogFrame>
       ) : null}
     </main>
-  );
-}
-
-function PipelineSelect({
-  id,
-  label,
-  description,
-  options,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  description: string;
-  options: PipelineOption[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const unavailableOptions = options.filter((option) => !option.available);
-  return (
-    <div className="pipeline-select-row">
-      <FormField
-        description={description}
-        htmlFor={id}
-        label={label}
-        labelClassName="pipeline-select-copy"
-      >
-        <SelectControl id={id} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-          {options.map((option) => (
-            <option key={option.id} value={option.id} disabled={!option.available}>
-              {option.label}{option.available ? "" : " (unavailable)"}
-            </option>
-          ))}
-        </SelectControl>
-      </FormField>
-      {unavailableOptions.map((option) => (
-        <small key={option.id} className="pipeline-unavailable">
-          {option.label}: {option.unavailable_reason ?? "Not configured"}
-        </small>
-      ))}
-    </div>
   );
 }

@@ -1,3 +1,5 @@
+import type { TrainingTrend } from "./types";
+
 export function formatCandidateValue(value: number): string {
   return Number(value.toFixed(3)).toString();
 }
@@ -17,6 +19,20 @@ export function formatAccuracyDelta(value: number): string {
 
 export function formatEvLossDeltaBb(value: number): string {
   return `${value > 0 ? "+" : ""}${formatCandidateValue(value)} BB`;
+}
+
+export function trainingTrendWindowLabel(
+  trend: Pick<TrainingTrend, "window_hands">,
+): string {
+  const hands = trend.window_hands === 1 ? "hand" : "hands";
+  return `Last ${trend.window_hands} ${hands} vs previous ${trend.window_hands}`;
+}
+
+export function accessiblePointDelta(value: number): string {
+  const points = Math.round(value * 100);
+  const unit =
+    Math.abs(points) === 1 ? "percentage point" : "percentage points";
+  return `${points > 0 ? "+" : ""}${points} ${unit}`;
 }
 
 export function trainingTrendTone(

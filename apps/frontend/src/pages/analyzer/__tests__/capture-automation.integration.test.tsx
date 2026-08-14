@@ -2556,17 +2556,39 @@ describe("Analyzer capture and automation", () => {
         jobIds: readyJobs.map((job) => job.id),
       }),
     );
-    expect(fetchMock().mock.calls.map(([url]) => url)).toEqual([
-      "http://localhost:8000/api/jobs",
+    const calls = fetchMock().mock.calls;
+    const callIndexes = (url: string, method: string): number[] =>
+      calls.flatMap(([requestUrl, options], index) =>
+        requestUrl === url && (options?.method ?? "GET") === method
+          ? [index]
+          : [],
+      );
+    const queueReads = callIndexes("http://localhost:8000/api/jobs", "GET");
+    const nextQueuePage = callIndexes(
       "http://localhost:8000/api/jobs?offset=100",
+      "GET",
+    );
+    const archiveAttempts = callIndexes(
       "http://localhost:8000/api/history",
+      "PUT",
+    );
+    const historyRefreshes = callIndexes(
       "http://localhost:8000/api/history",
-      "http://localhost:8000/api/history",
-      "http://localhost:8000/api/jobs",
-    ]);
-    expect(fetchMock().mock.calls[2][1]?.method).toBe("PUT");
-    expect(fetchMock().mock.calls[3][1]?.method).toBe("PUT");
-    expect(fetchMock().mock.calls[4][1]).toEqual({ credentials: "include" });
+      "GET",
+    );
+
+    expect(nextQueuePage).toHaveLength(1);
+    expect(archiveAttempts).toHaveLength(2);
+    expect(historyRefreshes).toHaveLength(1);
+    expect(queueReads.length).toBeGreaterThanOrEqual(2);
+    expect(queueReads[0]).toBeLessThan(nextQueuePage[0]);
+    expect(nextQueuePage[0]).toBeLessThan(archiveAttempts[0]);
+    expect(archiveAttempts[0]).toBeLessThan(archiveAttempts[1]);
+    expect(archiveAttempts[1]).toBeLessThan(historyRefreshes[0]);
+    expect(queueReads.some((index) => index > historyRefreshes[0])).toBe(true);
+    expect(calls[historyRefreshes[0]][1]).toEqual({
+      credentials: "include",
+    });
   });
 
   it("clears persisted jobs when the bounded browser history cache is unavailable", async () => {

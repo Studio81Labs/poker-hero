@@ -355,6 +355,11 @@ styles, hooks, and non-React presentation or domain support. Route-level styles
 are limited to page composition; feature selectors must stay with their owning
 component or feature. Reusable form and dialog controls, API access, primitive
 types, and generic formatting helpers live under `src/shared`.
+The shared API layer keeps base URL selection, response decoding, retry
+metadata, and readable error conversion in one transport core. Jobs, history,
+training, benchmark, system, and MCP endpoints live in focused modules with
+colocated tests; `src/shared/api/client.ts` remains the stable compatibility
+barrel used by application code.
 
 A feature must not move unrelated persistence orchestration into its hook merely
 to make the page coordinator shorter. New feature behavior should extend the

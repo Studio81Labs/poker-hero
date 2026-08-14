@@ -217,6 +217,8 @@ function scriptImports(source: string, file: string): string[] {
   const preprocessed = ts.preProcessFile(source, true, true);
   return preprocessed.importedFiles
     .concat(preprocessed.referencedFiles)
+    .concat(preprocessed.typeReferenceDirectives)
+    .concat(preprocessed.libReferenceDirectives)
     .map((importedFile) => importedFile.fileName)
     .concat(viteStaticUrlSpecifiers(source, file));
 }
@@ -482,13 +484,13 @@ describe("frontend source architecture", () => {
     ).toEqual(["../../pages/worker.ts"]);
   });
 
-  it("includes triple-slash path references as source imports", () => {
-    expect(
-      scriptImports(
-        '/// <reference path="../../pages/analyzer/types.d.ts" />',
-        "fixture.ts",
-      ),
-    ).toContain("../../pages/analyzer/types.d.ts");
+  it("includes triple-slash references as source imports", () => {
+    const imports = scriptImports(
+      '/// <reference path="../../pages/analyzer/types.d.ts" />\n/// <reference types="../../pages/analyzer/types" />',
+      "fixture.ts",
+    );
+    expect(imports).toContain("../../pages/analyzer/types.d.ts");
+    expect(imports).toContain("../../pages/analyzer/types");
   });
 
   it("expands Vite glob imports into auditable source targets", () => {

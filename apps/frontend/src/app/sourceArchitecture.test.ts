@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { parse as parseCss } from "postcss";
 import parseCssValue from "postcss-value-parser";
+import { globSync } from "tinyglobby";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +17,18 @@ const ALLOWED_LAYER_IMPORTS: Readonly<Record<string, ReadonlySet<string>>> = {
   shared: new Set(["shared"]),
 };
 const ALLOWED_FEATURE_AREAS = new Set(["components", "hooks", "lib"]);
-const SOURCE_EXTENSIONS = new Set([".css", ".ts", ".tsx"]);
+const JAVASCRIPT_EXTENSIONS = new Set([".cjs", ".js", ".jsx", ".mjs"]);
+const SOURCE_EXTENSIONS = new Set([
+  ".cjs",
+  ".css",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".mts",
+  ".ts",
+  ".tsx",
+]);
 
 function filesBelow(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -121,6 +133,116 @@ function sourceImportTarget(file: string, specifier: string): string | null {
   return null;
 }
 
+function viteGlobPatternGroups(source: string, file: string): string[][] {
+  const groups: string[][] = [];
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+
+  function staticPattern(node: ts.Expression): string | null {
+    return ts.isStringLiteralLike(node) ? node.text : null;
+  }
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isMetaProperty(node.expression.expression) &&
+      node.expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+      node.expression.expression.name.text === "meta" &&
+      (node.expression.name.text === "glob" ||
+        node.expression.name.text === "globEager")
+    ) {
+      const argument = node.arguments[0];
+      if (argument) {
+        const patterns = ts.isArrayLiteralExpression(argument)
+          ? argument.elements.flatMap((element) => {
+              const pattern = ts.isExpression(element)
+                ? staticPattern(element)
+                : null;
+              return pattern === null ? [] : [pattern];
+            })
+          : [staticPattern(argument)].filter(
+              (pattern): pattern is string => pattern !== null,
+            );
+        if (patterns.length > 0) groups.push(patterns);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return groups;
+}
+
+function viteStaticUrlSpecifiers(source: string, file: string): string[] {
+  const specifiers: string[] = [];
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+  );
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "URL" &&
+      node.arguments?.length === 2 &&
+      ts.isStringLiteralLike(node.arguments[0]) &&
+      ts.isPropertyAccessExpression(node.arguments[1]) &&
+      ts.isMetaProperty(node.arguments[1].expression) &&
+      node.arguments[1].expression.keywordToken ===
+        ts.SyntaxKind.ImportKeyword &&
+      node.arguments[1].expression.name.text === "meta" &&
+      node.arguments[1].name.text === "url"
+    ) {
+      specifiers.push(node.arguments[0].text);
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return specifiers;
+}
+
+function scriptImports(source: string, file: string): string[] {
+  const preprocessed = ts.preProcessFile(source, true, true);
+  return preprocessed.importedFiles
+    .concat(preprocessed.referencedFiles)
+    .map((importedFile) => importedFile.fileName)
+    .concat(viteStaticUrlSpecifiers(source, file));
+}
+
+function viteGlobImports(
+  file: string,
+  source: string,
+): Array<{ specifier: string; target: string }> {
+  const sourceRootFromImporter =
+    relative(dirname(file), SOURCE_ROOT).split(sep).join("/") || ".";
+
+  return viteGlobPatternGroups(source, file).flatMap((patterns) => {
+    const resolvedPatterns = patterns.map((pattern) => {
+      const negated = pattern.startsWith("!");
+      const value = negated ? pattern.slice(1) : pattern;
+      const resolved = value.startsWith("/src/")
+        ? `${sourceRootFromImporter}/${value.slice("/src/".length)}`
+        : value;
+      return negated ? `!${resolved}` : resolved;
+    });
+    const specifier = `import.meta.glob(${JSON.stringify(patterns)})`;
+    return globSync(resolvedPatterns, {
+      absolute: true,
+      cwd: dirname(file),
+      onlyFiles: true,
+    }).map((target) => ({ specifier, target }));
+  });
+}
+
 function sourceImports(
   file: string,
 ): Array<{ specifier: string; target: string }> {
@@ -128,13 +250,13 @@ function sourceImports(
   const imports =
     extname(file) === ".css"
       ? stylesheetImports(source, file)
-      : ts
-          .preProcessFile(source, true, true)
-          .importedFiles.map((importedFile) => importedFile.fileName);
-  return imports.flatMap((specifier) => {
-    const target = sourceImportTarget(file, specifier);
-    return target ? [{ specifier, target }] : [];
-  });
+      : scriptImports(source, file);
+  return imports
+    .flatMap((specifier) => {
+      const target = sourceImportTarget(file, specifier);
+      return target ? [{ specifier, target }] : [];
+    })
+    .concat(viteGlobImports(file, source));
 }
 
 function layerViolations(): string[] {
@@ -142,6 +264,12 @@ function layerViolations(): string[] {
 
   for (const file of sourceFiles()) {
     const sourcePath = sourceSegments(file);
+    if (JAVASCRIPT_EXTENSIONS.has(extname(file))) {
+      violations.push(
+        `production source must use TypeScript instead of JavaScript: ${sourcePath.join("/")}`,
+      );
+      continue;
+    }
     const currentSourceLayer = sourceLayer(sourcePath);
     if (!currentSourceLayer) {
       violations.push(
@@ -230,6 +358,17 @@ describe("frontend source architecture", () => {
     ).toBeNull();
   });
 
+  it("includes Vite JavaScript modules in the TypeScript-only source audit", () => {
+    for (const extension of [".cjs", ".js", ".jsx", ".mjs"]) {
+      expect(SOURCE_EXTENSIONS.has(extension)).toBe(true);
+      expect(JAVASCRIPT_EXTENSIONS.has(extension)).toBe(true);
+    }
+    for (const extension of [".cts", ".mts"]) {
+      expect(SOURCE_EXTENSIONS.has(extension)).toBe(true);
+      expect(JAVASCRIPT_EXTENSIONS.has(extension)).toBe(false);
+    }
+  });
+
   it("keeps feature UI source in component areas", () => {
     expect(
       featurePlacementViolation([
@@ -302,6 +441,52 @@ describe("frontend source architecture", () => {
     expect(
       sourceImportTarget(importer, "https://example.com/font.css"),
     ).toBeNull();
+  });
+
+  it("extracts static Vite glob patterns", () => {
+    expect(
+      viteGlobPatternGroups(
+        'const pages = import.meta.glob(["../../pages/**/*.tsx", "!../../pages/**/*.test.tsx"]);\nconst styles = import.meta.globEager(`/src/shared/**/*.css`);',
+        "fixture.ts",
+      ),
+    ).toEqual([
+      ["../../pages/**/*.tsx", "!../../pages/**/*.test.tsx"],
+      ["/src/shared/**/*.css"],
+    ]);
+  });
+
+  it("extracts Vite static URL dependencies", () => {
+    expect(
+      viteStaticUrlSpecifiers(
+        'const worker = new Worker(new URL("../../pages/worker.ts", import.meta.url));\nconst external = new URL(value, baseUrl);',
+        "fixture.ts",
+      ),
+    ).toEqual(["../../pages/worker.ts"]);
+  });
+
+  it("includes triple-slash path references as source imports", () => {
+    expect(
+      scriptImports(
+        '/// <reference path="../../pages/analyzer/types.d.ts" />',
+        "fixture.ts",
+      ),
+    ).toContain("../../pages/analyzer/types.d.ts");
+  });
+
+  it("expands Vite glob imports into auditable source targets", () => {
+    const importer = resolve(SOURCE_ROOT, "shared/lib/registry.ts");
+    const imports = viteGlobImports(
+      importer,
+      'const pages = import.meta.glob(["../../pages/**/*.tsx", "!../../pages/**/__tests__/**"]);',
+    );
+    expect(
+      imports.some((entry) =>
+        entry.target.endsWith("/pages/analyzer/AnalyzerPage.tsx"),
+      ),
+    ).toBe(true);
+    expect(imports.some((entry) => entry.target.includes("/__tests__/"))).toBe(
+      false,
+    );
   });
 
   it("keeps imports within the documented layer direction", () => {

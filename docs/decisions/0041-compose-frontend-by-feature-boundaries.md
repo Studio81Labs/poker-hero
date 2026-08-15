@@ -48,6 +48,13 @@ processing-queue persistence, history persistence, and reconciliation into
 focused library modules. `workspace/lib/persistence.ts` remains a compatibility
 barrel for the page coordinator, not an owner of persistence behavior.
 
+Recommendation presentation follows the same pattern: metadata validation,
+parser routing, preflop and postflop evidence, candidate ranking, and formatting
+are separate feature-library modules. The existing
+`recommendation/lib/recommendationPresentation.ts` path remains a compatibility
+barrel so consumers keep a stable contract without becoming coupled to those
+implementations.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it

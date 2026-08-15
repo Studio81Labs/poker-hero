@@ -5,7 +5,7 @@ import {
   isCachedJobRecord,
   isPristineBenchmarkImport,
 } from "./cacheValidation";
-import { readPersistedMutationLease } from "./mutationLeases";
+import { readPersistedMutationLease } from "./mutationLeaseStorage";
 import { newerJob } from "./reconciliation";
 
 export const PROCESSING_QUEUE_SESSION_SYNC_KEY =

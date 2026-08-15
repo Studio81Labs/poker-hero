@@ -570,6 +570,14 @@ function workspacePersistenceBoundaryViolations(): string[] {
   });
 }
 
+function mutationLeaseBoundaryViolations(): string[] {
+  return featureLibraryBarrelViolations({
+    barrelPath: "features/workspace/lib/mutationLeases.ts",
+    label: "workspace mutation leases",
+    namedExportsAllowed: true,
+  });
+}
+
 function recommendationPresentationBoundaryViolations(): string[] {
   return featureLibraryBarrelViolations({
     barrelPath: "features/recommendation/lib/recommendationPresentation.ts",
@@ -800,6 +808,10 @@ describe("frontend source architecture", () => {
 
   it("keeps workspace persistence in focused modules", () => {
     expect(workspacePersistenceBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps workspace mutation leases in focused modules", () => {
+    expect(mutationLeaseBoundaryViolations()).toEqual([]);
   });
 
   it("keeps recommendation presentation in focused modules", () => {

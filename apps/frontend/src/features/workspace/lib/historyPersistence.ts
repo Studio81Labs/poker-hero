@@ -1,7 +1,7 @@
 import { getHistory } from "../../../shared/api/history";
 import type { JobHistory, JobRecord } from "../../../shared/types/jobs";
 import type { HistoryItem } from "../../history/lib/historyPresentation";
-import { readPersistedMutationLease } from "./mutationLeases";
+import { readPersistedMutationLease } from "./mutationLeaseStorage";
 import { newerHistoryItem } from "./reconciliation";
 
 export const HISTORY_SESSION_SYNC_KEY = "poker-training-history-synced";

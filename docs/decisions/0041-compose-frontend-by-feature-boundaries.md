@@ -70,6 +70,9 @@ The parser benchmark dialog composes focused owners for pipeline comparison,
 report overview, result sections, expandable case review, and dataset/run
 actions. The dialog itself retains only its public contract, close lifecycle,
 ground-truth toggle, and loading or empty-state composition.
+Benchmark report comparison, case trends, report caching, parser-route
+aggregation, and value formatting are separate library modules behind the
+stable `benchmark/lib/benchmarkPresentation.ts` compatibility barrel.
 
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
@@ -101,6 +104,8 @@ orchestration. New top-level experiences receive their own page and route.
   domain modules.
 - Workspace recovery keeps one public import surface while storage schemas,
   lease durability, pagination, and reconciliation can be tested independently.
+- Benchmark components and controller code keep one presentation import surface
+  without coupling report caching, case comparison, or route aggregation.
 - A source-architecture test enforces downward imports between app, page,
   feature, and shared layers. It also keeps feature library and hook code
   independent from UI components and requires colocated component tests. The

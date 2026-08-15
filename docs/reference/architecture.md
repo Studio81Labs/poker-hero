@@ -401,6 +401,9 @@ normalizer export remains a compatibility alias.
 The parser benchmark dialog is likewise a composition root: pipeline
 comparison, report overview, result presentation, expandable case review, and
 dataset/run actions live in focused benchmark components with direct tests.
+Benchmark report comparison, case trends, report caching, parser-route
+aggregation, and value formatting live in focused modules behind
+`features/benchmark/lib/benchmarkPresentation.ts`.
 
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries

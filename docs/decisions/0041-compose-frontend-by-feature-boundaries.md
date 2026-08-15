@@ -54,6 +54,10 @@ are separate feature-library modules. The existing
 `recommendation/lib/recommendationPresentation.ts` path remains a compatibility
 barrel so consumers keep a stable contract without becoming coupled to those
 implementations.
+Postflop evidence further separates solve-tree metadata, generic range context,
+limped-pot range derivation, raised-pot range derivation, and final evidence
+composition. `recommendation/lib/postflopEvidencePresentation.ts` remains its
+two-export compatibility barrel.
 
 Training presentation separates decision comparison and sizing, queue status,
 focus ranking, and shared option definitions. Its existing

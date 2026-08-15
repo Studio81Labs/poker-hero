@@ -586,6 +586,14 @@ function postflopEvidenceBoundaryViolations(): string[] {
   });
 }
 
+function preflopEvidenceBoundaryViolations(): string[] {
+  return featureLibraryBarrelViolations({
+    barrelPath: "features/recommendation/lib/preflopEvidencePresentation.ts",
+    label: "preflop evidence presentation",
+    namedExportsAllowed: true,
+  });
+}
+
 function trainingPresentationBoundaryViolations(): string[] {
   return featureLibraryBarrelViolations({
     barrelPath: "features/training/lib/trainingPresentation.ts",
@@ -800,6 +808,10 @@ describe("frontend source architecture", () => {
 
   it("keeps postflop evidence presentation in focused modules", () => {
     expect(postflopEvidenceBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps preflop evidence presentation in focused modules", () => {
+    expect(preflopEvidenceBoundaryViolations()).toEqual([]);
   });
 
   it("keeps training presentation in focused modules", () => {

@@ -393,6 +393,9 @@ is the stable compatibility barrel; it contains no evidence parsing behavior.
 Postflop evidence keeps solve-tree metadata, generic range context, limped-pot
 derivations, raised-pot derivations, and final composition in focused modules
 behind `postflopEvidencePresentation.ts`.
+Preflop evidence keeps stack and commitment context, limp and isolation lines,
+raised-pot actors and sizing, response ranges, and final composition in focused
+modules behind `preflopEvidencePresentation.ts`.
 Training options, decision comparison, review-queue copy, and suggested-focus
 ranking follow the same pattern behind
 `features/training/lib/trainingPresentation.ts`.

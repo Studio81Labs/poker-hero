@@ -47,6 +47,9 @@ The workspace feature separates browser-cache validation, mutation leases,
 processing-queue persistence, history persistence, and reconciliation into
 focused library modules. `workspace/lib/persistence.ts` remains a compatibility
 barrel for the page coordinator, not an owner of persistence behavior.
+Mutation leases further separate their persisted contracts, job and projection
+expectations, lease matching, legacy decoding, browser storage, and factories.
+`workspace/lib/mutationLeases.ts` remains the stable lease compatibility barrel.
 
 Recommendation presentation follows the same pattern: metadata validation,
 parser routing, preflop and postflop evidence, candidate ranking, and formatting

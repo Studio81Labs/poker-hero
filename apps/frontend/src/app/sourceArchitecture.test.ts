@@ -557,6 +557,77 @@ function workspacePersistenceBoundaryViolations(): string[] {
   return violations;
 }
 
+function recommendationPresentationBoundaryViolations(): string[] {
+  const violations: string[] = [];
+  const barrel = resolve(
+    SOURCE_ROOT,
+    "features/recommendation/lib/recommendationPresentation.ts",
+  );
+  const barrelTargets = new Set([
+    barrel,
+    barrel.slice(0, -extname(barrel).length),
+  ]);
+  const sourceFile = ts.createSourceFile(
+    barrel,
+    readFileSync(barrel, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+
+  if (sourceFile.statements.length === 0) {
+    violations.push("recommendation presentation must export focused modules");
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.startsWith("./")
+    ) {
+      violations.push(
+        "recommendation presentation barrel must contain only module re-exports",
+      );
+      continue;
+    }
+
+    const target = resolve(
+      dirname(barrel),
+      `${statement.moduleSpecifier.text}.ts`,
+    );
+    if (target === barrel) {
+      violations.push(
+        "recommendation presentation barrel may not re-export itself",
+      );
+    } else if (!existsSync(target)) {
+      violations.push(
+        `recommendation presentation barrel target does not exist: ${statement.moduleSpecifier.text}`,
+      );
+    }
+  }
+
+  for (const file of filesBelow(dirname(barrel)).filter(
+    (candidate) =>
+      candidate !== barrel &&
+      extname(candidate) === ".ts" &&
+      !isTestSupportPath(sourceSegments(candidate)),
+  )) {
+    const importsBarrel = scriptImports(readFileSync(file, "utf8"), file).some(
+      (specifier) => {
+        const importTarget = sourceImportTarget(file, specifier);
+        return importTarget !== null && barrelTargets.has(importTarget);
+      },
+    );
+    if (importsBarrel) {
+      violations.push(
+        `recommendation libraries may not import their presentation compatibility barrel: ${sourceSegments(file).join("/")}`,
+      );
+    }
+  }
+
+  return violations;
+}
+
 describe("frontend source architecture", () => {
   it("recognizes only declared layers and the bootstrap entry point", () => {
     expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
@@ -739,5 +810,9 @@ describe("frontend source architecture", () => {
 
   it("keeps workspace persistence in focused modules", () => {
     expect(workspacePersistenceBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps recommendation presentation in focused modules", () => {
+    expect(recommendationPresentationBoundaryViolations()).toEqual([]);
   });
 });

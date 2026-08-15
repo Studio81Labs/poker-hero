@@ -386,6 +386,11 @@ mutation-lease, processing-queue, history, and reconciliation modules. The
 contract while preventing cache schemas and recovery algorithms from sharing
 one implementation file.
 
+Recommendation metadata validation, parser routing, preflop context, postflop
+range evidence, candidate ranking, and display formatting live in focused
+feature-library modules. `features/recommendation/lib/recommendationPresentation.ts`
+is the stable compatibility barrel; it contains no evidence parsing behavior.
+
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries
 and hooks cannot depend on their UI components, and production components

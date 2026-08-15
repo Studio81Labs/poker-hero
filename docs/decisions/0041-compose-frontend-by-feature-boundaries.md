@@ -85,6 +85,10 @@ The parser benchmark dialog composes focused owners for pipeline comparison,
 report overview, result sections, expandable case review, and dataset/run
 actions. The dialog itself retains only its public contract, close lifecycle,
 ground-truth toggle, and loading or empty-state composition.
+The benchmark controller delegates report catalog loading, stale-request
+protection, report caching and selection, and previous-run comparison to a
+focused report-state hook. It retains parser selection, benchmark execution,
+dialog commands, and opening benchmark hands.
 Benchmark report comparison, case trends, report caching, parser-route
 aggregation, and value formatting are separate library modules behind the
 stable `benchmark/lib/benchmarkPresentation.ts` compatibility barrel.

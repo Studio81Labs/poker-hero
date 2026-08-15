@@ -74,6 +74,9 @@ Training presentation separates decision comparison and sizing, queue status,
 focus ranking, and shared option definitions. Its existing
 `training/lib/trainingPresentation.ts` import path remains a compatibility
 barrel.
+Training progress delegates report loading, query filters, stale-response
+protection, and optimistic-filter rollback to a focused state hook. Its
+controller retains dialog commands and opening a selected training hand.
 
 Hand-review state separates card and number parsing, form/canonical conversion,
 confidence summaries, stable identity keys, and preflop position normalization.

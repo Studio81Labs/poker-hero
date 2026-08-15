@@ -586,6 +586,14 @@ function trainingPresentationBoundaryViolations(): string[] {
   });
 }
 
+function handReviewPokerStateBoundaryViolations(): string[] {
+  return featureLibraryBarrelViolations({
+    barrelPath: "features/hand-review/lib/pokerState.ts",
+    label: "hand-review poker state",
+    namedExportsAllowed: true,
+  });
+}
+
 describe("frontend source architecture", () => {
   it("recognizes only declared layers and the bootstrap entry point", () => {
     expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
@@ -776,5 +784,9 @@ describe("frontend source architecture", () => {
 
   it("keeps training presentation in focused modules", () => {
     expect(trainingPresentationBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps hand-review poker state in focused modules", () => {
+    expect(handReviewPokerStateBoundaryViolations()).toEqual([]);
   });
 });

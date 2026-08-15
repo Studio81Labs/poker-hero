@@ -60,6 +60,12 @@ focus ranking, and shared option definitions. Its existing
 `training/lib/trainingPresentation.ts` import path remains a compatibility
 barrel.
 
+Hand-review state separates card and number parsing, form/canonical conversion,
+confidence summaries, stable identity keys, and preflop position normalization.
+`hand-review/lib/pokerState.ts` remains the compatibility barrel. Benchmark
+presentation consumes the position model from hand review, removing the prior
+hand-review-to-benchmark dependency cycle.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it

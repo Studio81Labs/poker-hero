@@ -12,13 +12,12 @@ import {
   type BenchmarkReport,
   type BenchmarkReportSummary,
   type PipelineCapabilities,
-  type PreflopPosition,
 } from "../../../shared/types";
 import { providerLabel } from "../../pipeline/lib/pipelineSelection";
 import {
   PREFLOP_POSITIONS,
-  PREFLOP_POSITION_ALIASES,
-} from "../../hand-review/lib/pokerState";
+  normalizePreflopPosition,
+} from "../../hand-review/lib/preflopPosition";
 import { parserRoutingEvidence } from "../../recommendation/lib/recommendationPresentation";
 import { benchmarkFieldLabel } from "../../training/lib/trainingPresentation";
 
@@ -220,19 +219,7 @@ export function benchmarkPipelinePointChange(
   return benchmarkPointChange(latest.accuracy, previous.accuracy);
 }
 
-export function normalizePreflopPosition(
-  value: string | null | undefined,
-): PreflopPosition | null {
-  if (!value) {
-    return null;
-  }
-  const normalized = value
-    .toLowerCase()
-    .replace(/[_-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return PREFLOP_POSITION_ALIASES[normalized] ?? null;
-}
+export { normalizePreflopPosition };
 
 export function previousBenchmarkFieldMetric(
   metric: BenchmarkFieldMetric,

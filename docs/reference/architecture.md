@@ -393,6 +393,11 @@ is the stable compatibility barrel; it contains no evidence parsing behavior.
 Training options, decision comparison, review-queue copy, and suggested-focus
 ranking follow the same pattern behind
 `features/training/lib/trainingPresentation.ts`.
+Hand-review card parsing, form conversion, canonical identity, confidence
+summaries, and preflop-position normalization live in focused modules behind
+`features/hand-review/lib/pokerState.ts`. Benchmark presentation consumes the
+hand-review position model without owning its implementation; its legacy
+normalizer export remains a compatibility alias.
 
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries

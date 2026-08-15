@@ -482,6 +482,81 @@ function sharedTypeBoundaryViolations(): string[] {
   return violations;
 }
 
+function workspacePersistenceBoundaryViolations(): string[] {
+  const violations: string[] = [];
+  const barrel = resolve(SOURCE_ROOT, "features/workspace/lib/persistence.ts");
+  const barrelTargets = new Set([
+    barrel,
+    barrel.slice(0, -extname(barrel).length),
+  ]);
+  const sourceFile = ts.createSourceFile(
+    barrel,
+    readFileSync(barrel, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
+  const exportedModules = new Set<string>();
+
+  if (sourceFile.statements.length === 0) {
+    violations.push("workspace persistence must export focused modules");
+  }
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isExportDeclaration(statement) ||
+      statement.exportClause !== undefined ||
+      !statement.moduleSpecifier ||
+      !ts.isStringLiteralLike(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.startsWith("./")
+    ) {
+      violations.push(
+        "workspace persistence barrel must contain only module re-exports",
+      );
+      continue;
+    }
+
+    const moduleSpecifier = statement.moduleSpecifier.text;
+    if (exportedModules.has(moduleSpecifier)) {
+      violations.push(
+        `workspace persistence module is exported more than once: ${moduleSpecifier}`,
+      );
+    }
+    exportedModules.add(moduleSpecifier);
+    const target = resolve(dirname(barrel), `${moduleSpecifier}.ts`);
+    if (target === barrel) {
+      violations.push("workspace persistence barrel may not re-export itself");
+      continue;
+    }
+    if (!existsSync(target)) {
+      violations.push(
+        `workspace persistence barrel target does not exist: ${moduleSpecifier}`,
+      );
+      continue;
+    }
+  }
+
+  for (const file of filesBelow(dirname(barrel)).filter(
+    (candidate) =>
+      candidate !== barrel &&
+      extname(candidate) === ".ts" &&
+      !isTestSupportPath(sourceSegments(candidate)),
+  )) {
+    const importsBarrel = scriptImports(readFileSync(file, "utf8"), file).some(
+      (specifier) => {
+        const importTarget = sourceImportTarget(file, specifier);
+        return importTarget !== null && barrelTargets.has(importTarget);
+      },
+    );
+    if (importsBarrel) {
+      violations.push(
+        `workspace libraries may not import their persistence compatibility barrel: ${sourceSegments(file).join("/")}`,
+      );
+    }
+  }
+
+  return violations;
+}
+
 describe("frontend source architecture", () => {
   it("recognizes only declared layers and the bootstrap entry point", () => {
     expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
@@ -660,5 +735,9 @@ describe("frontend source architecture", () => {
 
   it("keeps shared API contracts in domain type modules", () => {
     expect(sharedTypeBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps workspace persistence in focused modules", () => {
+    expect(workspacePersistenceBoundaryViolations()).toEqual([]);
   });
 });

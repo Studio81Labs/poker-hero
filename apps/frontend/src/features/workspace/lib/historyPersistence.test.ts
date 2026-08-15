@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { getHistory } from "../../../shared/api/history";
+import { jobRecord } from "../../../test/analyzerHarness";
+import {
+  HISTORY_CACHE_LIMIT,
+  getHistorySearchExtent,
+  readCachedHistoryTotal,
+  readHistory,
+  writeHistory,
+  writeHistoryTotal,
+} from "./historyPersistence";
+
+vi.mock("../../../shared/api/history", () => ({
+  getHistory: vi.fn(),
+}));
+
+describe("history persistence", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    vi.mocked(getHistory).mockReset();
+  });
+
+  it("keeps the browser history cache bounded while retaining the server total", () => {
+    const items = Array.from(
+      { length: HISTORY_CACHE_LIMIT + 2 },
+      (_, index) => {
+        const job = jobRecord({
+          id: index.toString(16).padStart(32, "0"),
+          archived_at: "2026-07-10T00:00:00Z",
+        });
+        return { id: job.id, job, savedAt: job.archived_at! };
+      },
+    );
+
+    expect(writeHistory(items)).toBe(true);
+    expect(writeHistoryTotal(items.length)).toBe(true);
+    const cached = readHistory();
+    expect(cached).toHaveLength(HISTORY_CACHE_LIMIT);
+    expect(readCachedHistoryTotal(cached)).toBe(items.length);
+  });
+
+  it("retries history pagination when the snapshot changes", async () => {
+    const firstJob = jobRecord({
+      id: "1".repeat(32),
+      archived_at: "2026-07-10T00:00:00Z",
+    });
+    const secondJob = jobRecord({
+      id: "2".repeat(32),
+      archived_at: "2026-07-10T00:00:00Z",
+    });
+    vi.mocked(getHistory)
+      .mockResolvedValueOnce({
+        total: 2,
+        jobs: [firstJob],
+        snapshot_version: "first",
+      })
+      .mockResolvedValueOnce({
+        total: 2,
+        jobs: [secondJob],
+        snapshot_version: "changed",
+      })
+      .mockResolvedValueOnce({
+        total: 2,
+        jobs: [firstJob, secondJob],
+        snapshot_version: "stable",
+      });
+
+    await expect(getHistorySearchExtent("river", 2)).resolves.toEqual({
+      total: 2,
+      jobs: [firstJob, secondJob],
+      snapshot_version: "stable",
+    });
+    expect(getHistory).toHaveBeenNthCalledWith(1, 0, "river", 2);
+    expect(getHistory).toHaveBeenNthCalledWith(2, 1, "river", 1);
+    expect(getHistory).toHaveBeenNthCalledWith(3, 0, "river", 2);
+  });
+});

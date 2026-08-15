@@ -3,7 +3,7 @@ import {
   humanReadableMessage,
 } from "../../../shared/api/client";
 import { type CanonicalState, type JobRecord } from "../../../shared/types";
-import { type PersistedJobMutationScope } from "./persistence";
+import { type PersistedJobMutationScope } from "./mutationLeases";
 import {
   formToCanonical,
   stateToForm,

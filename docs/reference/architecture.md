@@ -398,6 +398,9 @@ summaries, and preflop-position normalization live in focused modules behind
 `features/hand-review/lib/pokerState.ts`. Benchmark presentation consumes the
 hand-review position model without owning its implementation; its legacy
 normalizer export remains a compatibility alias.
+The parser benchmark dialog is likewise a composition root: pipeline
+comparison, report overview, result presentation, expandable case review, and
+dataset/run actions live in focused benchmark components with direct tests.
 
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries

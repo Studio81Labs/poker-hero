@@ -385,6 +385,9 @@ mutation-lease, processing-queue, history, and reconciliation modules. The
 `features/workspace/lib/persistence.ts` barrel preserves the coordinator-facing
 contract while preventing cache schemas and recovery algorithms from sharing
 one implementation file.
+Cache validation keeps primitive bounds, poker and completed-street state,
+recommendation and training payloads, and parser/job records in focused modules
+behind the stable `features/workspace/lib/cacheValidation.ts` barrel.
 Mutation-lease contracts, job and projection expectations, lease matching,
 legacy decoding, browser storage, and lease factories are separate modules
 behind the stable `features/workspace/lib/mutationLeases.ts` barrel.

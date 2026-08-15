@@ -570,6 +570,14 @@ function workspacePersistenceBoundaryViolations(): string[] {
   });
 }
 
+function cacheValidationBoundaryViolations(): string[] {
+  return featureLibraryBarrelViolations({
+    barrelPath: "features/workspace/lib/cacheValidation.ts",
+    label: "workspace cache validation",
+    namedExportsAllowed: true,
+  });
+}
+
 function mutationLeaseBoundaryViolations(): string[] {
   return featureLibraryBarrelViolations({
     barrelPath: "features/workspace/lib/mutationLeases.ts",
@@ -808,6 +816,10 @@ describe("frontend source architecture", () => {
 
   it("keeps workspace persistence in focused modules", () => {
     expect(workspacePersistenceBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps workspace cache validation in focused modules", () => {
+    expect(cacheValidationBoundaryViolations()).toEqual([]);
   });
 
   it("keeps workspace mutation leases in focused modules", () => {

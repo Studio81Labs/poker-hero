@@ -66,6 +66,11 @@ confidence summaries, stable identity keys, and preflop position normalization.
 presentation consumes the position model from hand review, removing the prior
 hand-review-to-benchmark dependency cycle.
 
+The parser benchmark dialog composes focused owners for pipeline comparison,
+report overview, result sections, expandable case review, and dataset/run
+actions. The dialog itself retains only its public contract, close lifecycle,
+ground-truth toggle, and loading or empty-state composition.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it
@@ -89,6 +94,8 @@ orchestration. New top-level experiences receive their own page and route.
   domain algorithms.
 - Component tests are colocated with their owners, while analyzer integration
   tests are grouped by workflow domain.
+- Dense dialogs remain readable composition roots; independently interactive
+  sections own their calculations, local disclosure state, and direct tests.
 - Shared transport and contract barrels remain compatibility surfaces rather
   than implementation owners; endpoint and type definitions stay in matching
   domain modules.

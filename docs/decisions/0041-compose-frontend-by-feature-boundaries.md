@@ -55,6 +55,11 @@ are separate feature-library modules. The existing
 barrel so consumers keep a stable contract without becoming coupled to those
 implementations.
 
+Training presentation separates decision comparison and sizing, queue status,
+focus ranking, and shared option definitions. Its existing
+`training/lib/trainingPresentation.ts` import path remains a compatibility
+barrel.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it

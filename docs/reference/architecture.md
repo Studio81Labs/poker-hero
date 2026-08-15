@@ -390,6 +390,9 @@ Recommendation metadata validation, parser routing, preflop context, postflop
 range evidence, candidate ranking, and display formatting live in focused
 feature-library modules. `features/recommendation/lib/recommendationPresentation.ts`
 is the stable compatibility barrel; it contains no evidence parsing behavior.
+Training options, decision comparison, review-queue copy, and suggested-focus
+ranking follow the same pattern behind
+`features/training/lib/trainingPresentation.ts`.
 
 Vitest enforces the source layout: shared code cannot depend on upper layers,
 features and pages cannot depend on the application shell, feature libraries

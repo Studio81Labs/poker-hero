@@ -43,6 +43,11 @@ backup, and MCP contracts live in focused `shared/types` modules. The stable
 `shared/types.ts` type-only barrel preserves existing feature imports, while
 API domain modules import their owning contracts directly.
 
+The workspace feature separates browser-cache validation, mutation leases,
+processing-queue persistence, history persistence, and reconciliation into
+focused library modules. `workspace/lib/persistence.ts` remains a compatibility
+barrel for the page coordinator, not an owner of persistence behavior.
+
 `App.tsx` remains deliberately small and mounts the route registry. The
 analyzer page passes explicit state and commands into feature hooks and
 components. New feature behavior belongs in the closest existing boundary; it
@@ -69,6 +74,8 @@ orchestration. New top-level experiences receive their own page and route.
 - Shared transport and contract barrels remain compatibility surfaces rather
   than implementation owners; endpoint and type definitions stay in matching
   domain modules.
+- Workspace recovery keeps one public import surface while storage schemas,
+  lease durability, pagination, and reconciliation can be tested independently.
 - A source-architecture test enforces downward imports between app, page,
   feature, and shared layers. It also keeps feature library and hook code
   independent from UI components and requires colocated component tests. The

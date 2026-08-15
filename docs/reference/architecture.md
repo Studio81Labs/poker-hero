@@ -390,6 +390,9 @@ Recommendation metadata validation, parser routing, preflop context, postflop
 range evidence, candidate ranking, and display formatting live in focused
 feature-library modules. `features/recommendation/lib/recommendationPresentation.ts`
 is the stable compatibility barrel; it contains no evidence parsing behavior.
+Postflop evidence keeps solve-tree metadata, generic range context, limped-pot
+derivations, raised-pot derivations, and final composition in focused modules
+behind `postflopEvidencePresentation.ts`.
 Training options, decision comparison, review-queue copy, and suggested-focus
 ranking follow the same pattern behind
 `features/training/lib/trainingPresentation.ts`.

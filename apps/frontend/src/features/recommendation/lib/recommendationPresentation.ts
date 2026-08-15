@@ -27,5 +27,5 @@ export {
   parserRoutingEvidence,
   parserRoutingFromRaw,
 } from "./parserRoutingPresentation";
-export { POSTFLOP_RANGE_SOURCE_LABELS } from "./postflopEvidencePresentation";
+export { POSTFLOP_RANGE_SOURCE_LABELS } from "./postflopRangeSources";
 export { rangeConditioningEvidence } from "./rangeConditioningPresentation";

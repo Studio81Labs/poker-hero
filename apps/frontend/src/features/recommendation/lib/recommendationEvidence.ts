@@ -1,6 +1,6 @@
 import type { RecommendationResult } from "../../../shared/types/recommendations";
 import { providerLabel } from "../../pipeline/lib/pipelineSelection";
-import { appendPostflopEvidence } from "./postflopEvidencePresentation";
+import { appendPostflopEvidence } from "./postflopEvidence";
 import { appendPreflopEvidence } from "./preflopEvidencePresentation";
 import { recommendationCandidatesFromRaw } from "./recommendationCandidates";
 import type {

@@ -1,10 +1,10 @@
 import { getProcessingJobs } from "../../../shared/api/jobs";
 import type { JobQueue, JobRecord } from "../../../shared/types/jobs";
 import {
-  PERSISTED_JOB_ID_PATTERN,
   isCachedJobRecord,
   isPristineBenchmarkImport,
-} from "./cacheValidation";
+} from "./cachedJobValidation";
+import { PERSISTED_JOB_ID_PATTERN } from "./cacheValidationPrimitives";
 import { readPersistedMutationLease } from "./mutationLeaseStorage";
 import { newerJob } from "./reconciliation";
 

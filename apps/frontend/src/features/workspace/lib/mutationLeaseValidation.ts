@@ -2,7 +2,7 @@ import {
   TRAINING_ACTIONS,
   TRAINING_CERTAINTIES,
 } from "../../training/lib/trainingPresentation";
-import { isCachedActionSizing } from "./cacheValidation";
+import { isCachedActionSizing } from "./cachedRecommendationValidation";
 import type { JobMutationExpectation } from "./mutationLeaseTypes";
 
 export function isJobMutationExpectation(

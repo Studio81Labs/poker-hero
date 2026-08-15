@@ -413,6 +413,10 @@ normalizer export remains a compatibility alias.
 The parser benchmark dialog is likewise a composition root: pipeline
 comparison, report overview, result presentation, expandable case review, and
 dataset/run actions live in focused benchmark components with direct tests.
+Its controller separates report catalog loading, request invalidation, report
+caching and selection, and previous-run comparison into
+`useBenchmarkReportState`; parser selection, benchmark execution, dialog
+commands, and case review remain in `useBenchmarkController`.
 Benchmark report comparison, case trends, report caching, parser-route
 aggregation, and value formatting live in focused modules behind
 `features/benchmark/lib/benchmarkPresentation.ts`.

@@ -594,6 +594,14 @@ function handReviewPokerStateBoundaryViolations(): string[] {
   });
 }
 
+function benchmarkPresentationBoundaryViolations(): string[] {
+  return featureLibraryBarrelViolations({
+    barrelPath: "features/benchmark/lib/benchmarkPresentation.ts",
+    label: "benchmark presentation",
+    namedExportsAllowed: true,
+  });
+}
+
 describe("frontend source architecture", () => {
   it("recognizes only declared layers and the bootstrap entry point", () => {
     expect(sourceLayer(["main.tsx"])).toBe("bootstrap");
@@ -788,5 +796,9 @@ describe("frontend source architecture", () => {
 
   it("keeps hand-review poker state in focused modules", () => {
     expect(handReviewPokerStateBoundaryViolations()).toEqual([]);
+  });
+
+  it("keeps benchmark presentation in focused modules", () => {
+    expect(benchmarkPresentationBoundaryViolations()).toEqual([]);
   });
 });

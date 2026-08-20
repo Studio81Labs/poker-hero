@@ -16,13 +16,16 @@ from app.mcp_access import (
 )
 from app.models import (
     ArchiveJobsRequest,
+    CanonicalState,
     HealthResponse,
     JobHistory,
     JobQueue,
     JobRecord,
     PipelineCapabilities,
     RecommendationAction,
+    ScreenshotMetadataRequest,
     Street,
+    TrainingDecisionRequest,
     TrainingProgress,
     TrainingReviewCertainty,
     TrainingReviewOrder,
@@ -34,8 +37,12 @@ class PipelineCapabilitiesUnavailableError(Exception):
     """The configured pipeline cannot describe its available capabilities."""
 
 
-class JobReadNotFoundError(Exception):
-    """A requested job record or image is not available."""
+class JobTransportNotFoundError(Exception):
+    """A job resource requested through the transport is not available."""
+
+
+class JobMutationConflictError(Exception):
+    """A requested job mutation conflicts with its current persisted state."""
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,16 @@ class JobsReadRuntime:
     list_jobs: Callable[[int, int], JobQueue]
     get_job: Callable[[str], JobRecord]
     get_image: Callable[[str], JobImage]
+
+
+@dataclass(frozen=True)
+class JobsMutationRuntime:
+    """Dependencies required by processing job mutation endpoints."""
+
+    update_metadata: Callable[[str, ScreenshotMetadataRequest], JobRecord]
+    delete_job: Callable[[str], None]
+    approve_job: Callable[[str, CanonicalState], JobRecord]
+    record_training_decision: Callable[[str, TrainingDecisionRequest], JobRecord]
 
 
 @dataclass(frozen=True)

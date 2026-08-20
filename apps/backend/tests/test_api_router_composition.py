@@ -11,7 +11,9 @@ from app.api.dependencies import (
     ApiRuntime,
     HistoryRuntime,
     JobImage,
-    JobReadNotFoundError,
+    JobMutationConflictError,
+    JobTransportNotFoundError,
+    JobsMutationRuntime,
     JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
@@ -20,7 +22,7 @@ from app.api.dependencies import (
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
-from app.api.routers.jobs import create_jobs_router
+from app.api.routers.jobs import create_job_mutations_router, create_jobs_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -33,12 +35,15 @@ from app.mcp_access import (
 )
 from app.models import (
     ArchiveJobsRequest,
+    CanonicalState,
     HealthResponse,
     JobHistory,
     JobQueue,
     JobRecord,
     PipelineCapabilities,
     PipelineSelection,
+    ScreenshotMetadataRequest,
+    TrainingDecisionRequest,
     TrainingProgress,
     TrainingReviewRequest,
 )
@@ -98,6 +103,15 @@ def default_jobs_read_runtime() -> JobsReadRuntime:
         list_jobs=lambda _limit, _offset: job_queue(),
         get_job=lambda _job_id: job_record(),
         get_image=lambda _job_id: job_image(),
+    )
+
+
+def default_jobs_mutation_runtime() -> JobsMutationRuntime:
+    return JobsMutationRuntime(
+        update_metadata=lambda _job_id, _metadata: job_record(),
+        delete_job=lambda _job_id: None,
+        approve_job=lambda _job_id, _state: job_record(),
+        record_training_decision=lambda _job_id, _decision: job_record(),
     )
 
 
@@ -201,6 +215,7 @@ def make_client(
     mcp_admin_runtime: McpAdminRuntime | None = None,
     training_runtime: TrainingRuntime | None = None,
     jobs_read_runtime: JobsReadRuntime | None = None,
+    jobs_mutation_runtime: JobsMutationRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -222,6 +237,11 @@ def make_client(
     )
     app.include_router(
         create_jobs_router(jobs_read_runtime or default_jobs_read_runtime())
+    )
+    app.include_router(
+        create_job_mutations_router(
+            jobs_mutation_runtime or default_jobs_mutation_runtime()
+        )
     )
     return TestClient(app)
 
@@ -380,13 +400,13 @@ def test_jobs_read_router_validates_pagination_without_delegating() -> None:
 
 def test_jobs_read_router_maps_not_found_details() -> None:
     def missing_job(_job_id: str) -> JobRecord:
-        raise JobReadNotFoundError("Job not found")
+        raise JobTransportNotFoundError("Job not found")
 
     def missing_image(_job_id: str) -> JobImage:
-        raise JobReadNotFoundError("Job image not found")
+        raise JobTransportNotFoundError("Job image not found")
 
     def missing_image_job(_job_id: str) -> JobImage:
-        raise JobReadNotFoundError("Job not found")
+        raise JobTransportNotFoundError("Job not found")
 
     runtime = JobsReadRuntime(
         list_jobs=lambda _limit, _offset: job_queue(),
@@ -416,6 +436,181 @@ def test_jobs_read_router_maps_not_found_details() -> None:
         missing_image_job_response.status_code,
         missing_image_job_response.json(),
     ) == (404, {"detail": "Job not found"})
+
+
+def test_jobs_mutation_router_delegates_validated_requests() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    def update_metadata(
+        job_id: str,
+        metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        calls.append(("metadata", job_id, metadata))
+        return job_record()
+
+    def delete_job(job_id: str) -> None:
+        calls.append(("delete", job_id))
+
+    def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
+        calls.append(("approve", job_id, state))
+        return job_record()
+
+    def record_training_decision(
+        job_id: str,
+        decision: TrainingDecisionRequest,
+    ) -> JobRecord:
+        calls.append(("decision", job_id, decision))
+        return job_record()
+
+    runtime = JobsMutationRuntime(
+        update_metadata=update_metadata,
+        delete_job=delete_job,
+        approve_job=approve_job,
+        record_training_decision=record_training_decision,
+    )
+    with make_client(jobs_mutation_runtime=runtime) as client:
+        metadata = client.put(
+            "/api/jobs/job-1/metadata",
+            json={
+                "title": "  Turn study  ",
+                "notes": "  Check blockers.  ",
+                "tags": [" Turn ", "study", "turn", ""],
+            },
+        )
+        deleted = client.delete("/api/jobs/job-1")
+        approved = client.post("/api/jobs/job-1/approve", json={})
+        decision = client.put(
+            "/api/jobs/job-1/decision",
+            json={"action": "check", "certainty": "high"},
+        )
+
+    assert [response.status_code for response in (
+        metadata,
+        deleted,
+        approved,
+        decision,
+    )] == [200, 204, 200, 200]
+    assert deleted.content == b""
+    assert calls[0] == (
+        "metadata",
+        "job-1",
+        ScreenshotMetadataRequest(
+            title="Turn study",
+            notes="Check blockers.",
+            tags=["Turn", "study"],
+        ),
+    )
+    assert calls[1] == ("delete", "job-1")
+    assert calls[2][0:2] == ("approve", "job-1")
+    assert calls[3] == (
+        "decision",
+        "job-1",
+        TrainingDecisionRequest(action="check", certainty="high"),
+    )
+
+
+def test_jobs_mutation_router_preserves_request_validation_without_delegating() -> None:
+    calls: list[str] = []
+
+    def update_metadata(
+        _job_id: str,
+        _metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        calls.append("metadata")
+        return job_record()
+
+    def delete_job(_job_id: str) -> None:
+        calls.append("delete")
+
+    def approve_job(_job_id: str, _state: CanonicalState) -> JobRecord:
+        calls.append("approve")
+        return job_record()
+
+    def record_training_decision(
+        _job_id: str,
+        _decision: TrainingDecisionRequest,
+    ) -> JobRecord:
+        calls.append("decision")
+        return job_record()
+
+    runtime = JobsMutationRuntime(
+        update_metadata=update_metadata,
+        delete_job=delete_job,
+        approve_job=approve_job,
+        record_training_decision=record_training_decision,
+    )
+    with make_client(jobs_mutation_runtime=runtime) as client:
+        invalid_tags = client.put(
+            "/api/jobs/job-1/metadata",
+            json={"tags": ["turn,river"]},
+        )
+        invalid_state = client.post(
+            "/api/jobs/job-1/approve",
+            json={"hero_cards": ["Ah"]},
+        )
+        invalid_decision = client.put(
+            "/api/jobs/job-1/decision",
+            json={"action": "check", "sizing": 2},
+        )
+
+    assert [response.status_code for response in (
+        invalid_tags,
+        invalid_state,
+        invalid_decision,
+    )] == [422, 422, 422]
+    assert calls == []
+
+
+def test_jobs_mutation_router_maps_typed_errors() -> None:
+    def missing_metadata(
+        _job_id: str,
+        _metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        raise JobTransportNotFoundError("Job not found")
+
+    def blocked_delete(_job_id: str) -> None:
+        raise JobMutationConflictError("A benchmark dataset import is still pending")
+
+    def blocked_approval(_job_id: str, _state: CanonicalState) -> JobRecord:
+        raise JobMutationConflictError("Recommendation is already running")
+
+    def missing_decision(
+        _job_id: str,
+        _decision: TrainingDecisionRequest,
+    ) -> JobRecord:
+        raise JobTransportNotFoundError("Job not found")
+
+    runtime = JobsMutationRuntime(
+        update_metadata=missing_metadata,
+        delete_job=blocked_delete,
+        approve_job=blocked_approval,
+        record_training_decision=missing_decision,
+    )
+    with make_client(jobs_mutation_runtime=runtime) as client:
+        missing_metadata_response = client.put("/api/jobs/missing/metadata", json={})
+        pending_import = client.delete("/api/jobs/job-1")
+        pending_recommendation = client.post("/api/jobs/job-1/approve", json={})
+        missing_decision_response = client.put(
+            "/api/jobs/missing/decision",
+            json={"action": "fold"},
+        )
+
+    assert (missing_metadata_response.status_code, missing_metadata_response.json()) == (
+        404,
+        {"detail": "Job not found"},
+    )
+    assert (pending_import.status_code, pending_import.json()) == (
+        409,
+        {"detail": "A benchmark dataset import is still pending"},
+    )
+    assert (pending_recommendation.status_code, pending_recommendation.json()) == (
+        409,
+        {"detail": "Recommendation is already running"},
+    )
+    assert (missing_decision_response.status_code, missing_decision_response.json()) == (
+        404,
+        {"detail": "Job not found"},
+    )
 
 
 def test_training_router_delegates_review_progress_and_lesson_export() -> None:
@@ -756,6 +951,22 @@ def test_router_composition_preserves_public_operation_ids() -> None:
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
     assert document["paths"]["/api/jobs"]["get"]["operationId"] == "jobs_list"
     assert document["paths"]["/api/jobs/{job_id}"]["get"]["operationId"] == "job_get"
+    assert (
+        document["paths"]["/api/jobs/{job_id}/metadata"]["put"]["operationId"]
+        == "job_metadata_update"
+    )
+    assert (
+        document["paths"]["/api/jobs/{job_id}"]["delete"]["operationId"]
+        == "job_delete"
+    )
+    assert (
+        document["paths"]["/api/jobs/{job_id}/approve"]["post"]["operationId"]
+        == "job_approve"
+    )
+    assert (
+        document["paths"]["/api/jobs/{job_id}/decision"]["put"]["operationId"]
+        == "job_decision_record"
+    )
     job_image_response = document["paths"]["/api/jobs/{job_id}/image"]["get"][
         "responses"
     ]["200"]

@@ -39,7 +39,9 @@ from app.api.dependencies import (
     ApiRuntime,
     HistoryRuntime,
     JobImage,
-    JobReadNotFoundError,
+    JobMutationConflictError,
+    JobTransportNotFoundError,
+    JobsMutationRuntime,
     JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
@@ -49,7 +51,7 @@ from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import ZIP_RESPONSE_CONTENT
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
-from app.api.routers.jobs import create_jobs_router
+from app.api.routers.jobs import create_job_mutations_router, create_jobs_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -1101,7 +1103,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             try:
                 return store.get(job_id)
             except JobNotFoundError as exc:
-                raise JobReadNotFoundError("Job not found") from exc
+                raise JobTransportNotFoundError("Job not found") from exc
 
     def get_processing_job_image(job_id: str) -> JobImage:
         with job_lock_for(job_id):
@@ -1109,13 +1111,87 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 job = store.get(job_id)
                 image_path = store.image_path(job)
             except JobNotFoundError as exc:
-                raise JobReadNotFoundError("Job not found") from exc
+                raise JobTransportNotFoundError("Job not found") from exc
             try:
                 image_bytes = image_path.read_bytes()
             except FileNotFoundError as exc:
-                raise JobReadNotFoundError("Job image not found") from exc
+                raise JobTransportNotFoundError("Job image not found") from exc
             media_type = guess_type(image_path.name)[0] or "application/octet-stream"
         return JobImage(content=image_bytes, media_type=media_type)
+
+    def update_processing_job_metadata(
+        job_id: str,
+        metadata: ScreenshotMetadataRequest,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            try:
+                job = store.get(job_id)
+            except JobNotFoundError as exc:
+                raise JobTransportNotFoundError("Job not found") from exc
+            job.title = metadata.title
+            job.notes = metadata.notes
+            job.tags = metadata.tags
+            return save_job(job)
+
+    def delete_processing_job(job_id: str) -> None:
+        with benchmark_corpus_lock:
+            if benchmark_store.has_pending_import():
+                raise JobMutationConflictError(
+                    "A benchmark dataset import is still pending"
+                )
+            with job_lock_for(job_id), history_lock:
+                try:
+                    store.get(job_id)
+                    store.delete(job_id)
+                except JobNotFoundError as exc:
+                    raise JobTransportNotFoundError("Job not found") from exc
+
+    def approve_processing_job(job_id: str, state: CanonicalState) -> JobRecord:
+        with job_lock_for(job_id):
+            try:
+                job = store.get(job_id)
+            except JobNotFoundError as exc:
+                raise JobTransportNotFoundError("Job not found") from exc
+            if job.recommendation_pending:
+                raise JobMutationConflictError("Recommendation is already running")
+            state.user_approved = True
+            job.approved_state = state
+            job.training_decision = None
+            job.recommendation = None
+            job.training_reviewed_at = None
+            job.training_review_note = None
+            job.status = "approved"
+            job.error = None
+            return save_job(job)
+
+    def record_processing_training_decision(
+        job_id: str,
+        decision: TrainingDecisionRequest,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            try:
+                job = store.get(job_id)
+            except JobNotFoundError as exc:
+                raise JobTransportNotFoundError("Job not found") from exc
+            if job.approved_state is None or not job.approved_state.user_approved:
+                raise JobMutationConflictError(
+                    "Approve corrected state before recording your decision"
+                )
+            if job.recommendation is not None:
+                raise JobMutationConflictError(
+                    "Your decision must be recorded before revealing the recommendation"
+                )
+
+            job.training_decision = TrainingDecision(
+                action=decision.action,
+                sizing=decision.sizing,
+                certainty=decision.certainty,
+            )
+            job.training_reviewed_at = None
+            job.training_review_note = None
+            job.status = "approved"
+            job.error = None
+            return save_job(job)
 
     api_runtime = ApiRuntime(
         get_health=get_health,
@@ -1142,6 +1218,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         list_jobs=list_processing_jobs,
         get_job=get_processing_job,
         get_image=get_processing_job_image,
+    )
+    jobs_mutation_runtime = JobsMutationRuntime(
+        update_metadata=update_processing_job_metadata,
+        delete_job=delete_processing_job,
+        approve_job=approve_processing_job,
+        record_training_decision=record_processing_training_decision,
     )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
@@ -1208,97 +1290,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             selection,
         )
 
-    @app.put(
-        "/api/jobs/{job_id}/metadata",
-        operation_id="job_metadata_update",
-        response_model=JobRecord,
-    )
-    def update_job_metadata(
-        job_id: str,
-        metadata: ScreenshotMetadataRequest,
-    ) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            job.title = metadata.title
-            job.notes = metadata.notes
-            job.tags = metadata.tags
-            return save_job(job)
-
-    @app.delete(
-        "/api/jobs/{job_id}",
-        operation_id="job_delete",
-        status_code=status.HTTP_204_NO_CONTENT,
-        response_class=Response,
-    )
-    def delete_job(job_id: str) -> Response:
-        with benchmark_corpus_lock:
-            ensure_benchmark_corpus_ready()
-            with job_lock_for(job_id), history_lock:
-                load_job_or_404(store, job_id)
-                try:
-                    store.delete(job_id)
-                except JobNotFoundError as exc:
-                    raise HTTPException(status_code=404, detail="Job not found") from exc
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
     app.include_router(create_history_router(history_runtime))
     app.include_router(create_jobs_router(jobs_read_runtime))
-
-    @app.post(
-        "/api/jobs/{job_id}/approve",
-        operation_id="job_approve",
-        response_model=JobRecord,
-    )
-    def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            if job.recommendation_pending:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Recommendation is already running",
-                )
-            state.user_approved = True
-            job.approved_state = state
-            job.training_decision = None
-            job.recommendation = None
-            job.training_reviewed_at = None
-            job.training_review_note = None
-            job.status = "approved"
-            job.error = None
-            return save_job(job)
-
-    @app.put(
-        "/api/jobs/{job_id}/decision",
-        operation_id="job_decision_record",
-        response_model=JobRecord,
-    )
-    def record_training_decision(
-        job_id: str,
-        decision: TrainingDecisionRequest,
-    ) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            if job.approved_state is None or not job.approved_state.user_approved:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Approve corrected state before recording your decision",
-                )
-            if job.recommendation is not None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Your decision must be recorded before revealing the recommendation",
-                )
-
-            job.training_decision = TrainingDecision(
-                action=decision.action,
-                sizing=decision.sizing,
-                certainty=decision.certainty,
-            )
-            job.training_reviewed_at = None
-            job.training_review_note = None
-            job.status = "approved"
-            job.error = None
-            return save_job(job)
+    app.include_router(create_job_mutations_router(jobs_mutation_runtime))
 
     @app.post(
         "/api/jobs/{job_id}/recommend",

@@ -892,8 +892,11 @@ export interface components {
     };
     /** HealthResponse */
     HealthResponse: {
-      /** Environment */
-      environment: string;
+      /**
+       * Environment
+       * @enum {string}
+       */
+      environment: "local" | "staging" | "production";
       /** Parser Provider */
       parser_provider: string;
       /** Recommendation Engine */
@@ -1650,7 +1653,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "application/zip": string;
         };
       };
     };
@@ -1738,7 +1741,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "application/zip": string;
         };
       };
       /** @description Validation Error */
@@ -2217,7 +2220,10 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "image/gif": string;
+          "image/jpeg": string;
+          "image/png": string;
+          "image/webp": string;
         };
       };
       /** @description Validation Error */
@@ -2541,7 +2547,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": unknown;
+          "text/markdown": string;
         };
       };
       /** @description Validation Error */

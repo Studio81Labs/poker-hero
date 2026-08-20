@@ -14,7 +14,7 @@ import pytest
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
-from app import api as api_module
+import app.bootstrap as bootstrap_module
 from app import dataset_export as dataset_export_module
 from app import dataset_import as dataset_import_module
 from app.api import create_app
@@ -82,8 +82,8 @@ def access_log_records(
         def emit(self, record: logging.LogRecord) -> None:
             records.append(record)
 
-    monkeypatch.setattr(api_module.LOGGER, "handlers", [RecordHandler()])
-    monkeypatch.setattr(api_module.LOGGER, "propagate", False)
+    monkeypatch.setattr(bootstrap_module.LOGGER, "handlers", [RecordHandler()])
+    monkeypatch.setattr(bootstrap_module.LOGGER, "propagate", False)
     return records
 
 
@@ -455,7 +455,7 @@ def test_unhandled_error_response_keeps_request_id(
     request_id = "08b8ce83-8423-4fe6-8aa1-966d6710ad74"
     captured: list[tuple[Exception, dict[str, str | None]]] = []
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "capture_unhandled_exception",
         lambda error, **context: captured.append((error, context)),
     )
@@ -604,7 +604,7 @@ def test_client_disconnect_marks_file_response_failed(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(file_response)(
+        bootstrap_module.RequestObservabilityMiddleware(file_response)(
             scope,
             receive,
             send,
@@ -673,7 +673,7 @@ def test_client_disconnect_during_pathsend_marks_response_failed(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(file_response)(
+        bootstrap_module.RequestObservabilityMiddleware(file_response)(
             scope,
             receive,
             send,
@@ -743,7 +743,7 @@ def test_client_disconnect_during_final_body_send_marks_response_failed(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(file_response)(
+        bootstrap_module.RequestObservabilityMiddleware(file_response)(
             scope,
             receive,
             send,
@@ -958,7 +958,7 @@ def test_disconnect_during_successful_unread_body_response_is_logged_as_failed(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(successful_short_circuit)(
+        bootstrap_module.RequestObservabilityMiddleware(successful_short_circuit)(
             scope,
             receive,
             send,
@@ -1044,7 +1044,7 @@ def test_response_start_does_not_create_concurrent_receive_calls(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(overlapping_response)(
+        bootstrap_module.RequestObservabilityMiddleware(overlapping_response)(
             scope,
             receive,
             send,
@@ -1104,7 +1104,7 @@ def test_preexisting_disconnect_is_seen_before_synchronous_final_send(
     }
 
     asyncio.run(
-        api_module.RequestObservabilityMiddleware(synchronous_response)(
+        bootstrap_module.RequestObservabilityMiddleware(synchronous_response)(
             scope,
             receive,
             send,
@@ -1161,12 +1161,12 @@ def test_completed_response_is_logged_before_post_response_failure(
         "headers": [],
         "client": ("127.0.0.1", 1234),
         "server": ("testserver", 80),
-        "state": {api_module.BACKGROUND_TASK_STATE_KEY: True},
+        "state": {bootstrap_module.BACKGROUND_TASK_STATE_KEY: True},
     }
 
     with pytest.raises(RuntimeError, match="background task failed"):
         asyncio.run(
-            api_module.RequestObservabilityMiddleware(response_then_fail)(
+            bootstrap_module.RequestObservabilityMiddleware(response_then_fail)(
                 scope,
                 receive,
                 send,
@@ -1195,7 +1195,7 @@ def test_benchmark_recovery_poll_logs_before_background_import_finishes(
         raise OSError("simulated interrupted background import")
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "parse_parser_dataset_archive",
         block_import_parse,
     )
@@ -1257,12 +1257,12 @@ def test_cors_preflight_is_observed(
 def test_access_logger_formats_events_as_plain_json() -> None:
     handler = next(
         handler
-        for handler in api_module.LOGGER.handlers
-        if handler.get_name() == api_module.ACCESS_LOG_HANDLER_NAME
+        for handler in bootstrap_module.LOGGER.handlers
+        if handler.get_name() == bootstrap_module.ACCESS_LOG_HANDLER_NAME
     )
     message = '{"event":"http_request","level":"info"}'
-    record = api_module.LOGGER.makeRecord(
-        api_module.LOGGER.name,
+    record = bootstrap_module.LOGGER.makeRecord(
+        bootstrap_module.LOGGER.name,
         logging.INFO,
         __file__,
         1,
@@ -1271,7 +1271,7 @@ def test_access_logger_formats_events_as_plain_json() -> None:
         None,
     )
 
-    assert api_module.LOGGER.propagate is False
+    assert bootstrap_module.LOGGER.propagate is False
     assert handler.format(record) == message
 
 
@@ -1363,7 +1363,7 @@ def test_recommendation_uses_provider_selected_when_job_was_uploaded(
         selected_settings.append(settings)
         return MockRecommendationProvider()
 
-    monkeypatch.setattr(api_module, "build_provider", capture_provider)
+    monkeypatch.setattr(bootstrap_module, "build_provider", capture_provider)
     client = make_client(
         tmp_path,
         recommendation_enabled_providers=["rule_based"],
@@ -1423,7 +1423,7 @@ def test_recommendation_does_not_require_a_persisted_provider_to_remain_enabled(
     approve_job(client, job_id)
     settings.recommendation_enabled_providers = []
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "build_provider",
         lambda _settings: MockRecommendationProvider(),
     )
@@ -1547,7 +1547,7 @@ def test_processing_queue_keeps_mutated_benchmark_imports(
         f"/api/jobs/{decision_id}/decision",
         json={"action": "call", "sizing": None, "certainty": "medium"},
     )
-    monkeypatch.setattr("app.api.build_provider", lambda settings: FailingProvider())
+    monkeypatch.setattr("app.bootstrap.build_provider", lambda settings: FailingProvider())
     failed_recommendation = client.post(f"/api/jobs/{failed_id}/recommend")
     queue = client.get("/api/jobs")
 
@@ -1583,7 +1583,7 @@ def test_processing_queue_keeps_correctable_benchmark_attempts(
     imported_job.parser_result = None
     imported_job.benchmark_included = True
     store.save(imported_job)
-    monkeypatch.setattr("app.api.build_provider", lambda settings: CorrectableProvider())
+    monkeypatch.setattr("app.bootstrap.build_provider", lambda settings: CorrectableProvider())
 
     recommendation = client.post(
         f"/api/jobs/{job_id}/recommend",
@@ -2774,7 +2774,7 @@ def test_recommendation_preserves_decision_recorded_while_provider_runs(
     imported_job.benchmark_included = True
     FileJobStore(tmp_path).save(imported_job)
     monkeypatch.setattr(
-        "app.api.build_provider",
+        "app.bootstrap.build_provider",
         lambda settings: SlowRecommendationProvider(),
     )
     recommendation_responses = []
@@ -2851,7 +2851,7 @@ def test_superseded_recommendation_cannot_overwrite_newer_attempt(
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
-    monkeypatch.setattr("app.api.build_provider", lambda settings: provider)
+    monkeypatch.setattr("app.bootstrap.build_provider", lambda settings: provider)
     first_responses = []
     first_thread = Thread(
         target=lambda: first_responses.append(client.post(
@@ -3201,7 +3201,7 @@ def test_metadata_update_during_active_parser_is_preserved(
             assert release_parse.wait(timeout=5)
             return super().parse(image_path)
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: SlowParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: SlowParser())
     client = make_client(tmp_path)
     upload_thread = Thread(
         target=lambda: responses.update(upload=upload_job(client)),
@@ -3266,7 +3266,7 @@ def test_late_parser_failure_preserves_newer_approved_state(
             raise ParserError("late parser failure")
 
     monkeypatch.setattr(
-        "app.api.build_parser",
+        "app.bootstrap.build_parser",
         lambda settings: SlowFailingParser(),
     )
     client = make_client(tmp_path)
@@ -3316,7 +3316,7 @@ def test_delete_during_active_parser_cancels_upload_without_resurrecting_job(
             assert release_parse.wait(timeout=5)
             return super().parse(image_path)
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: SlowParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: SlowParser())
     client = make_client(tmp_path)
     upload_thread = Thread(
         target=lambda: responses.update(upload=upload_job(client)),
@@ -3375,9 +3375,9 @@ def test_colliding_job_stripe_does_not_block_unrelated_parser(
                 second_parse_started.set()
             return super().parse(image_path)
 
-    monkeypatch.setattr("app.api.JOB_LOCK_STRIPES", 1)
+    monkeypatch.setattr("app.bootstrap.JOB_LOCK_STRIPES", 1)
     monkeypatch.setattr(
-        "app.api.build_parser",
+        "app.bootstrap.build_parser",
         lambda settings: IndependentlySlowParser(),
     )
     client = make_client(tmp_path)
@@ -3494,7 +3494,7 @@ def test_parser_runtime_errors_are_bad_gateway_and_stored(
         def parse(self, image_path: Path):
             raise ParserError("parser exploded")
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: FailingParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: FailingParser())
     client = make_client(tmp_path)
 
     response = upload_job(client)
@@ -3515,7 +3515,7 @@ def test_unexpected_parser_errors_are_http_errors_and_stored(
         def parse(self, image_path: Path):
             raise RuntimeError("unexpected parser crash")
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: FailingParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: FailingParser())
     client = make_client(tmp_path)
 
     response = upload_job(client)
@@ -3545,7 +3545,7 @@ def test_provider_runtime_errors_are_stored_retryable_and_not_archived(
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
-    monkeypatch.setattr("app.api.build_provider", lambda settings: FailingProvider())
+    monkeypatch.setattr("app.bootstrap.build_provider", lambda settings: FailingProvider())
 
     response = client.post(f"/api/jobs/{job_id}/recommend")
     rejected_archive = client.put(
@@ -3591,10 +3591,10 @@ def test_unexpected_provider_setup_errors_clear_pending(
     def fail_required_field_validation(state, required_fields):
         raise RuntimeError("required field validation exploded")
 
-    monkeypatch.setattr("app.api.build_provider", build_setup_provider)
+    monkeypatch.setattr("app.bootstrap.build_provider", build_setup_provider)
     if failure_stage == "validation":
         monkeypatch.setattr(
-            "app.api.missing_required_fields",
+            "app.bootstrap.missing_required_fields",
             fail_required_field_validation,
         )
     client = make_client(tmp_path)
@@ -3826,7 +3826,7 @@ def test_upload_server_auto_approval_stops_on_parser_warning(
             result.warnings = ["Hero cards need manual review"]
             return result
 
-    monkeypatch.setattr(api_module, "build_parser", lambda _settings: WarningParser())
+    monkeypatch.setattr(bootstrap_module, "build_parser", lambda _settings: WarningParser())
     client = make_client(
         tmp_path,
         parser_auto_approve_enabled=True,
@@ -3960,7 +3960,7 @@ def test_benchmark_case_limit_applies_to_selection_and_export(
     second_id = upload_job(client, filename="second.png").json()["id"]
     approve_job(client, first_id)
     approve_job(client, second_id)
-    monkeypatch.setattr(api_module, "MAX_DATASET_CASES", 1)
+    monkeypatch.setattr(bootstrap_module, "MAX_DATASET_CASES", 1)
 
     first = client.put(f"/api/jobs/{first_id}/benchmark", json={"included": True})
     rejected = client.put(
@@ -4372,14 +4372,14 @@ def test_benchmark_dataset_import_journals_before_parsing_and_resumes(
     parse_entered = Event()
     release_parse = Event()
     import_errors: list[Exception] = []
-    original_parse = api_module.parse_parser_dataset_archive
+    original_parse = bootstrap_module.parse_parser_dataset_archive
 
     def interrupt_parse(*args: object, **kwargs: object):
         parse_entered.set()
         assert release_parse.wait(timeout=2)
         raise OSError("simulated interruption during dataset parsing")
 
-    monkeypatch.setattr(api_module, "parse_parser_dataset_archive", interrupt_parse)
+    monkeypatch.setattr(bootstrap_module, "parse_parser_dataset_archive", interrupt_parse)
 
     def run_import() -> None:
         try:
@@ -4406,7 +4406,7 @@ def test_benchmark_dataset_import_journals_before_parsing_and_resumes(
     assert isinstance(import_errors[0], OSError)
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "parse_parser_dataset_archive",
         original_parse,
     )
@@ -4608,14 +4608,14 @@ def test_benchmark_dataset_import_serializes_reuse_with_corrections(
     approval_started = Event()
     approval_finished = Event()
     responses: dict[str, object] = {}
-    original_import = api_module.import_parser_dataset
+    original_import = bootstrap_module.import_parser_dataset
 
     def paused_import(*args: object, **kwargs: object):
         import_entered.set()
         assert release_import.wait(timeout=2)
         return original_import(*args, **kwargs)
 
-    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+    monkeypatch.setattr(bootstrap_module, "import_parser_dataset", paused_import)
 
     def run_import() -> None:
         responses["import"] = client.post(
@@ -4685,14 +4685,14 @@ def test_benchmark_run_waits_for_dataset_import_corpus_update(
     benchmark_started = Event()
     benchmark_finished = Event()
     responses: dict[str, object] = {}
-    original_import = api_module.import_parser_dataset
+    original_import = bootstrap_module.import_parser_dataset
 
     def paused_import(*args: object, **kwargs: object):
         import_entered.set()
         assert release_import.wait(timeout=2)
         return original_import(*args, **kwargs)
 
-    monkeypatch.setattr(api_module, "import_parser_dataset", paused_import)
+    monkeypatch.setattr(bootstrap_module, "import_parser_dataset", paused_import)
 
     import_thread = Thread(
         target=lambda: responses.update(
@@ -4748,14 +4748,14 @@ def test_unrelated_approval_does_not_wait_for_benchmark_run(
     release_benchmark = Event()
     approval_finished = Event()
     responses: dict[str, object] = {}
-    original_run = api_module.run_benchmark
+    original_run = bootstrap_module.run_benchmark
 
     def paused_run(*args: object, **kwargs: object):
         benchmark_entered.set()
         assert release_benchmark.wait(timeout=2)
         return original_run(*args, **kwargs)
 
-    monkeypatch.setattr(api_module, "run_benchmark", paused_run)
+    monkeypatch.setattr(bootstrap_module, "run_benchmark", paused_run)
 
     benchmark_thread = Thread(
         target=lambda: responses.update(
@@ -5116,7 +5116,7 @@ def test_benchmark_overview_compares_compatible_parser_plugins(
         parser_enabled_layout_profiles=["fortuna_nations"],
         external_parser_url="https://parser.example/api",
     )
-    monkeypatch.setattr(api_module, "build_parser", lambda _settings: MockParser())
+    monkeypatch.setattr(bootstrap_module, "build_parser", lambda _settings: MockParser())
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
     client.put(f"/api/jobs/{job_id}/benchmark", json={"included": True})
@@ -5248,7 +5248,7 @@ def test_benchmark_scores_an_enabled_selected_parser_pipeline(
         parser_settings.append(settings)
         return MockParser()
 
-    monkeypatch.setattr(api_module, "build_parser", build_selected_parser)
+    monkeypatch.setattr(bootstrap_module, "build_parser", build_selected_parser)
 
     response = client.post(
         "/api/benchmarks/run",
@@ -5277,7 +5277,7 @@ def test_benchmark_runs_and_exports_layout_corpora_independently(
         parser_enabled_providers=["ocr_cv"],
         parser_enabled_layout_profiles=["pokerstars"],
     )
-    monkeypatch.setattr(api_module, "build_parser", lambda _settings: MockParser())
+    monkeypatch.setattr(bootstrap_module, "build_parser", lambda _settings: MockParser())
     generic_id = upload_job(client, filename="generic.png").json()["id"]
     store = FileJobStore(tmp_path)
     legacy_generic = store.get(generic_id)
@@ -5518,7 +5518,7 @@ def test_benchmark_continues_after_an_individual_parser_failure(
                 raise ParserError("case failed")
             return MockParser().parse(image_path)
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: PartiallyFailingParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: PartiallyFailingParser())
 
     response = client.post("/api/benchmarks/run")
 
@@ -5573,7 +5573,7 @@ def test_benchmark_parser_configuration_error_does_not_replace_latest_report(
         def parse(self, image_path: Path):
             raise ParserConfigurationError("external parser URL is missing")
 
-    monkeypatch.setattr("app.api.build_parser", lambda settings: MisconfiguredParser())
+    monkeypatch.setattr("app.bootstrap.build_parser", lambda settings: MisconfiguredParser())
 
     response = client.post("/api/benchmarks/run")
 
@@ -5597,7 +5597,7 @@ def test_provider_configuration_errors_are_http_errors(
     client = make_client(tmp_path)
     job_id = upload_job(client).json()["id"]
     approve_job(client, job_id)
-    monkeypatch.setattr("app.api.build_provider", lambda settings: MisconfiguredProvider())
+    monkeypatch.setattr("app.bootstrap.build_provider", lambda settings: MisconfiguredProvider())
 
     response = client.post(f"/api/jobs/{job_id}/recommend")
 
@@ -5647,7 +5647,7 @@ def test_missing_job_mutations_do_not_allocate_per_job_locks(
         created_locks.append(lock)
         return lock
 
-    monkeypatch.setattr("app.api.Lock", counting_lock)
+    monkeypatch.setattr("app.bootstrap.Lock", counting_lock)
     client = make_client(tmp_path)
     initial_lock_count = len(created_locks)
 

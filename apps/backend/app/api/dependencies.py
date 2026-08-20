@@ -10,6 +10,10 @@ from dataclasses import dataclass
 from app.models import HealthResponse, PipelineCapabilities
 
 
+class PipelineCapabilitiesUnavailableError(Exception):
+    """The configured pipeline cannot describe its available capabilities."""
+
+
 @dataclass(frozen=True)
 class ApiRuntime:
     """Read-only dependencies shared by the first extracted API routers."""

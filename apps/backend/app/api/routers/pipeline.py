@@ -2,9 +2,8 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.api.dependencies import ApiRuntime
+from app.api.dependencies import ApiRuntime, PipelineCapabilitiesUnavailableError
 from app.models import PipelineCapabilities
-from app.pipeline import PipelineSelectionError
 
 
 def create_pipeline_router(runtime: ApiRuntime) -> APIRouter:
@@ -20,7 +19,7 @@ def create_pipeline_router(runtime: ApiRuntime) -> APIRouter:
     def get_pipeline_capabilities() -> PipelineCapabilities:
         try:
             return runtime.get_pipeline_capabilities()
-        except PipelineSelectionError as exc:
+        except PipelineCapabilitiesUnavailableError as exc:
             raise HTTPException(
                 status_code=500,
                 detail=f"Pipeline configuration error: {exc}",

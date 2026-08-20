@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-import app.api as api_module
+import app.bootstrap as bootstrap_module
 import app.application_backup as application_backup_module
 from app.api import create_app
 from app.config import Settings
@@ -310,7 +310,7 @@ def test_restore_does_not_block_unrelated_requests(
 
     parse_started = Event()
     release_parse = Event()
-    original_parse = api_module.parse_application_backup_archive
+    original_parse = bootstrap_module.parse_application_backup_archive
 
     def paused_parse(*args: object, **kwargs: object):
         parse_started.set()
@@ -318,7 +318,7 @@ def test_restore_does_not_block_unrelated_requests(
         return original_parse(*args, **kwargs)
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "parse_application_backup_archive",
         paused_parse,
     )
@@ -369,7 +369,7 @@ def test_upload_waiting_for_backup_does_not_block_unrelated_requests(
 ) -> None:
     export_started = Event()
     release_export = Event()
-    original_build = api_module.build_application_backup_archive
+    original_build = bootstrap_module.build_application_backup_archive
 
     def paused_build(*args: object, **kwargs: object):
         export_started.set()
@@ -377,7 +377,7 @@ def test_upload_waiting_for_backup_does_not_block_unrelated_requests(
         return original_build(*args, **kwargs)
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "build_application_backup_archive",
         paused_build,
     )
@@ -427,7 +427,7 @@ def test_slow_backup_download_does_not_block_mutations(
 ) -> None:
     stream_started = Event()
     release_stream = Event()
-    original_stream = api_module.stream_application_backup
+    original_stream = bootstrap_module.stream_application_backup
 
     def paused_stream(archive_file):
         stream_started.set()
@@ -435,7 +435,7 @@ def test_slow_backup_download_does_not_block_mutations(
         yield from original_stream(archive_file)
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "stream_application_backup",
         paused_stream,
     )

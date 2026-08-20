@@ -26,6 +26,15 @@ FORBIDDEN_APP_IMPORTS = {
     "app.config",
     "app.infrastructure",
 }
+ROUTER_FORBIDDEN_IMPORT_PREFIXES = {
+    "app.config",
+    "app.storage",
+    "app.data_lock",
+    "app.pipeline",
+    "app.parsers.registry",
+    "app.providers.registry",
+    "app.solvers.registry",
+}
 
 
 def future_sources() -> list[Path]:
@@ -82,4 +91,18 @@ def test_future_backend_layers_follow_direction_and_boundaries() -> None:
             target = package_target(module, path)
             if target is not None and target not in ALLOWED_IMPORTS[layer]:
                 violations.append(f"{path}: {layer} may not import {target}")
+    assert violations == []
+
+
+def test_api_routers_do_not_import_runtime_wiring_dependencies() -> None:
+    violations: list[str] = []
+    for path in sorted((APP_ROOT / "api" / "routers").glob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        for module in imported_modules(path):
+            if module in ROUTER_FORBIDDEN_IMPORT_PREFIXES or any(
+                module.startswith(prefix + ".")
+                for prefix in ROUTER_FORBIDDEN_IMPORT_PREFIXES
+            ):
+                violations.append(f"{path}: {module}")
     assert violations == []

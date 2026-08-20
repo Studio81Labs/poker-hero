@@ -75,3 +75,43 @@ def test_health_response_schema_is_explicit(tmp_path: Path) -> None:
         "title": "Status",
         "type": "string",
     }
+    assert health_schema["properties"]["environment"] == {
+        "enum": ["local", "staging", "production"],
+        "title": "Environment",
+        "type": "string",
+    }
+
+
+def test_binary_and_markdown_response_contracts_are_explicit(tmp_path: Path) -> None:
+    document = openapi_document(tmp_path)
+
+    binary_schema = {"schema": {"type": "string", "format": "binary"}}
+    expected_content = {
+        ("/api/jobs/{job_id}/image", "image/gif"): binary_schema,
+        ("/api/jobs/{job_id}/image", "image/jpeg"): binary_schema,
+        ("/api/jobs/{job_id}/image", "image/png"): binary_schema,
+        ("/api/jobs/{job_id}/image", "image/webp"): binary_schema,
+        ("/api/backups/export", "application/zip"): binary_schema,
+        ("/api/benchmarks/export", "application/zip"): binary_schema,
+        ("/api/training/lessons/export", "text/markdown"): {
+            "schema": {"type": "string"}
+        },
+    }
+
+    actual_content = {
+        (path, content_type): schema
+        for path, content_type, schema in (
+            (path, content_type, schema)
+            for path in (
+                "/api/jobs/{job_id}/image",
+                "/api/backups/export",
+                "/api/benchmarks/export",
+                "/api/training/lessons/export",
+            )
+            for content_type, schema in document["paths"][path]["get"]["responses"][
+                "200"
+            ]["content"].items()
+        )
+    }
+
+    assert actual_content == expected_content

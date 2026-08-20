@@ -35,10 +35,15 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.dependencies import ApiRuntime, HistoryRuntime, McpAdminRuntime
+from app.api.dependencies import (
+    ApiRuntime,
+    HistoryRuntime,
+    McpAdminRuntime,
+    TrainingProgressQuery,
+    TrainingRuntime,
+)
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import (
-    MARKDOWN_RESPONSE_CONTENT,
     SUPPORTED_IMAGE_RESPONSE_CONTENT,
     ZIP_RESPONSE_CONTENT,
 )
@@ -46,6 +51,7 @@ from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
+from app.api.routers.training import create_training_router
 from app.application_backup import (
     ApplicationBackupError,
     MAX_BACKUP_EXPANSION_RATIO,
@@ -100,14 +106,12 @@ from app.models import (
     JobRecord,
     PipelineCapabilities,
     PipelineSelection,
-    RecommendationAction,
     RecommendationRequest,
     ScreenshotMetadataRequest,
     Street,
     TrainingDecision,
     TrainingDecisionRequest,
     TrainingProgress,
-    TrainingReviewCertainty,
     TrainingReviewOrder,
     TrainingReviewRequest,
 )
@@ -1007,6 +1011,86 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         store_for_mcp = require_mcp_principal_store(mcp_principal_store)
         return await run_in_threadpool(store_for_mcp.revoke, principal_id)
 
+    def training_job(job_id: str) -> JobRecord:
+        try:
+            return store.get(job_id)
+        except JobNotFoundError as exc:
+            raise KeyError("Job not found") from exc
+
+    def complete_training_review(
+        job_id: str,
+        review: TrainingReviewRequest | None,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            job = training_job(job_id)
+            if job.training_decision is None or job.recommendation is None:
+                raise ValueError(
+                    "A completed decision comparison is required before review"
+                )
+            if training_outcome(job) in {"match", "mixed"}:
+                raise ValueError("Exact matches do not need review")
+            changed = False
+            if job.training_reviewed_at is None:
+                job.training_reviewed_at = datetime.now(timezone.utc)
+                changed = True
+            if review is not None and job.training_review_note != review.note:
+                job.training_review_note = review.note
+                changed = True
+            if changed:
+                return save_job(job)
+            return job
+
+    def reopen_training_review(job_id: str) -> JobRecord:
+        with job_lock_for(job_id):
+            job = training_job(job_id)
+            if job.training_decision is None or job.recommendation is None:
+                raise ValueError(
+                    "A completed decision comparison is required before reopening review"
+                )
+            if training_outcome(job) in {"match", "mixed"}:
+                raise ValueError("Exact matches do not need review")
+            if job.training_reviewed_at is not None:
+                job.training_reviewed_at = None
+                return save_job(job)
+            return job
+
+    def get_training_progress(query: TrainingProgressQuery) -> TrainingProgress:
+        return summarize_training(
+            store.list(),
+            review_order=query.review_order,
+            review_street=query.review_street,
+            review_certainty=query.review_certainty,
+            review_position=query.review_position,
+            review_unpositioned=query.review_unpositioned,
+            review_action_difference=query.review_action_difference,
+            lesson_street=query.lesson_street,
+            lesson_query=query.lesson_query,
+            lesson_order=query.lesson_order,
+            solver_fallback_key=query.solver_fallback_key,
+            solver_route_key=query.solver_route_key,
+            solver_unattributed=query.solver_unattributed,
+            recent_street=query.recent_street,
+            recent_position=query.recent_position,
+            recent_unpositioned=query.recent_unpositioned,
+            recent_certainty=query.recent_certainty,
+        )
+
+    def export_training_lessons(
+        lesson_order: TrainingReviewOrder,
+        lesson_street: Street | None,
+        lesson_query: str | None,
+    ) -> tuple[str, str]:
+        document, lesson_count = build_training_lessons_markdown(
+            store.list(),
+            lesson_street=lesson_street,
+            lesson_query=lesson_query,
+            lesson_order=lesson_order,
+        )
+        if lesson_count == 0:
+            raise ValueError("No saved lesson notes match the selected filters")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return document, f"poker-hero-lessons-{timestamp}.md"
+
     api_runtime = ApiRuntime(
         get_health=get_health,
         get_pipeline_capabilities=get_pipeline_capabilities,
@@ -1022,9 +1106,16 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         rotate_principal=rotate_mcp_principal,
         revoke_principal=revoke_mcp_principal,
     )
+    training_runtime = TrainingRuntime(
+        complete_review=complete_training_review,
+        reopen_review=reopen_training_review,
+        get_progress=get_training_progress,
+        export_lessons=export_training_lessons,
+    )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
     app.include_router(create_mcp_admin_router(mcp_admin_runtime))
+    app.include_router(create_training_router(training_runtime))
 
     @app.post(
         "/api/jobs",
@@ -1366,61 +1457,6 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             return save_job(current)
 
     @app.put(
-        "/api/jobs/{job_id}/training-review",
-        operation_id="job_training_review_complete",
-        response_model=JobRecord,
-    )
-    def complete_training_review(
-        job_id: str,
-        review: TrainingReviewRequest | None = None,
-    ) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            if job.training_decision is None or job.recommendation is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="A completed decision comparison is required before review",
-                )
-            if training_outcome(job) in {"match", "mixed"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Exact matches do not need review",
-                )
-            changed = False
-            if job.training_reviewed_at is None:
-                job.training_reviewed_at = datetime.now(timezone.utc)
-                changed = True
-            if review is not None and job.training_review_note != review.note:
-                job.training_review_note = review.note
-                changed = True
-            if changed:
-                return save_job(job)
-            return job
-
-    @app.delete(
-        "/api/jobs/{job_id}/training-review",
-        operation_id="job_training_review_reopen",
-        response_model=JobRecord,
-    )
-    def reopen_training_review(job_id: str) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            if job.training_decision is None or job.recommendation is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail="A completed decision comparison is required before reopening review",
-                )
-            if training_outcome(job) in {"match", "mixed"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Exact matches do not need review",
-                )
-            if job.training_reviewed_at is not None:
-                job.training_reviewed_at = None
-                return save_job(job)
-            return job
-
-    @app.put(
         "/api/jobs/{job_id}/benchmark",
         operation_id="job_benchmark_update",
         response_model=JobRecord,
@@ -1468,176 +1504,6 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 candidate_archive.close()
             job.benchmark_included = selection.included
             return save_job(job)
-
-    @app.get(
-        "/api/training/progress",
-        operation_id="training_progress_get",
-        response_model=TrainingProgress,
-    )
-    def get_training_progress(
-        review_order: TrainingReviewOrder = "recent",
-        review_street: Street | None = None,
-        review_certainty: TrainingReviewCertainty | None = None,
-        review_position: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=120,
-            pattern=r".*\S.*",
-        ),
-        review_unpositioned: bool = False,
-        review_decision_action: RecommendationAction | None = None,
-        review_recommended_action: RecommendationAction | None = None,
-        lesson_order: TrainingReviewOrder = "recent",
-        lesson_street: Street | None = None,
-        lesson_query: str | None = Query(default=None, max_length=120),
-        solver_fallback_key: str | None = Query(
-            default=None,
-            pattern=r"^[0-9a-f]{64}$",
-        ),
-        solver_route_key: str | None = Query(
-            default=None,
-            pattern=r"^[0-9a-f]{64}$",
-        ),
-        solver_unattributed: bool = False,
-        recent_street: Street | None = None,
-        recent_position: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=120,
-            pattern=r".*\S.*",
-        ),
-        recent_unpositioned: bool = False,
-        recent_certainty: TrainingReviewCertainty | None = None,
-    ) -> TrainingProgress:
-        if (review_decision_action is None) != (review_recommended_action is None):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "review_decision_action and review_recommended_action "
-                    "must be provided together"
-                ),
-            )
-        if review_position is not None and review_unpositioned:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "review_position and review_unpositioned "
-                    "are mutually exclusive"
-                ),
-            )
-        solver_filter_count = sum((
-            solver_fallback_key is not None,
-            solver_route_key is not None,
-            solver_unattributed,
-        ))
-        if solver_filter_count > 1:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "solver_fallback_key, solver_route_key, and "
-                    "solver_unattributed are mutually exclusive"
-                ),
-            )
-        position_filter_count = sum((
-            recent_position is not None,
-            recent_unpositioned,
-        ))
-        if position_filter_count > 1:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "recent_position and recent_unpositioned "
-                    "are mutually exclusive"
-                ),
-            )
-        if position_filter_count > 0 and solver_filter_count > 0:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "position and solver recent-hand filters "
-                    "are mutually exclusive"
-                ),
-            )
-        if recent_street is not None and (
-            position_filter_count > 0 or solver_filter_count > 0
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "street, position, and solver recent-hand filters "
-                    "are mutually exclusive"
-                ),
-            )
-        if recent_certainty is not None and (
-            recent_street is not None
-            or position_filter_count > 0
-            or solver_filter_count > 0
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "certainty, street, position, and solver recent-hand "
-                    "filters are mutually exclusive"
-                ),
-            )
-        review_action_difference = (
-            (review_decision_action, review_recommended_action)
-            if review_decision_action is not None
-            and review_recommended_action is not None
-            else None
-        )
-        return summarize_training(
-            store.list(),
-            review_order=review_order,
-            review_street=review_street,
-            review_certainty=review_certainty,
-            review_position=review_position,
-            review_unpositioned=review_unpositioned,
-            review_action_difference=review_action_difference,
-            lesson_street=lesson_street,
-            lesson_query=lesson_query,
-            lesson_order=lesson_order,
-            solver_fallback_key=solver_fallback_key,
-            solver_route_key=solver_route_key,
-            solver_unattributed=solver_unattributed,
-            recent_street=recent_street,
-            recent_position=recent_position,
-            recent_unpositioned=recent_unpositioned,
-            recent_certainty=recent_certainty,
-        )
-
-    @app.get(
-        "/api/training/lessons/export",
-        operation_id="training_lessons_export",
-        response_class=StreamingResponse,
-        responses={"200": {"content": MARKDOWN_RESPONSE_CONTENT}},
-    )
-    def export_training_lessons(
-        lesson_order: TrainingReviewOrder = "recent",
-        lesson_street: Street | None = None,
-        lesson_query: str | None = Query(default=None, max_length=120),
-    ) -> StreamingResponse:
-        document, lesson_count = build_training_lessons_markdown(
-            store.list(),
-            lesson_street=lesson_street,
-            lesson_query=lesson_query,
-            lesson_order=lesson_order,
-        )
-        if lesson_count == 0:
-            raise HTTPException(
-                status_code=409,
-                detail="No saved lesson notes match the selected filters",
-            )
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return StreamingResponse(
-            iter([document]),
-            media_type="text/markdown",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="poker-hero-lessons-{timestamp}.md"'
-                )
-            },
-        )
 
     @app.get(
         "/api/benchmarks",

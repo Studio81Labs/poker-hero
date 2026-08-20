@@ -14,7 +14,19 @@ from app.mcp_access import (
     McpPrincipalList,
     McpPrincipalSummary,
 )
-from app.models import ArchiveJobsRequest, HealthResponse, JobHistory, PipelineCapabilities
+from app.models import (
+    ArchiveJobsRequest,
+    HealthResponse,
+    JobHistory,
+    JobRecord,
+    PipelineCapabilities,
+    RecommendationAction,
+    Street,
+    TrainingProgress,
+    TrainingReviewCertainty,
+    TrainingReviewOrder,
+    TrainingReviewRequest,
+)
 
 
 class PipelineCapabilitiesUnavailableError(Exception):
@@ -49,3 +61,40 @@ class McpAdminRuntime:
     ]
     rotate_principal: Callable[[str], Awaitable[McpIssuedPrincipal]]
     revoke_principal: Callable[[str], Awaitable[McpPrincipalSummary]]
+
+
+@dataclass(frozen=True)
+class TrainingProgressQuery:
+    """Validated filters passed from HTTP transport to training aggregation."""
+
+    review_order: TrainingReviewOrder
+    review_street: Street | None
+    review_certainty: TrainingReviewCertainty | None
+    review_position: str | None
+    review_unpositioned: bool
+    review_action_difference: (
+        tuple[RecommendationAction, RecommendationAction] | None
+    )
+    lesson_order: TrainingReviewOrder
+    lesson_street: Street | None
+    lesson_query: str | None
+    solver_fallback_key: str | None
+    solver_route_key: str | None
+    solver_unattributed: bool
+    recent_street: Street | None
+    recent_position: str | None
+    recent_unpositioned: bool
+    recent_certainty: TrainingReviewCertainty | None
+
+
+@dataclass(frozen=True)
+class TrainingRuntime:
+    """Dependencies required by the training transport endpoints."""
+
+    complete_review: Callable[[str, TrainingReviewRequest | None], JobRecord]
+    reopen_review: Callable[[str], JobRecord]
+    get_progress: Callable[[TrainingProgressQuery], TrainingProgress]
+    export_lessons: Callable[
+        [TrainingReviewOrder, Street | None, str | None],
+        tuple[str, str],
+    ]

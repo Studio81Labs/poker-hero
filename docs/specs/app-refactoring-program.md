@@ -429,6 +429,40 @@ The stronger model is reserved for concurrency, recovery, and state-machine
 work where a subtle mistake can corrupt persisted state. Mechanical migrations
 use the lower-cost model and must be bounded by characterization tests.
 
+## Agent Work Packages
+
+Each package below is an independently reviewable branch. Packages in the same
+row may run in parallel only when their path ownership is disjoint. The
+coordinator owns integration, generated artifacts, shared manifests, lockfiles,
+compatibility barrels, and the authoritative full-suite run.
+
+| Package | Scope                                                             | Model and effort                                                                                | Exclusive ownership                                             | Depends on |
+| ------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------- |
+| A0      | Architecture baselines, metrics, and fixture inventory            | `gpt-5.6-luna`, medium                                                                          | Architecture tests and baseline fixtures                        | None       |
+| A1      | OpenAPI IDs, response contracts, generation, and CI drift gate    | `gpt-5.6-terra`, high                                                                           | Backend wire annotations and generated contracts                | A0         |
+| A2F     | Shared transport, Query provider, system/pipeline adapters        | `gpt-5.6-terra`, high                                                                           | Frontend manifest/lock, providers, transport, first domain APIs | A1         |
+| A2B     | Runtime dependency container and first read-only routers          | `gpt-5.6-terra`, high                                                                           | Backend bootstrap and API package                               | A1         |
+| A3R     | Remaining routers, one route domain per branch                    | `gpt-5.6-terra`, medium                                                                         | One router and its focused tests                                | A2B        |
+| A4J     | Job, queue, and history read models                               | `gpt-5.6-terra`, high                                                                           | Job/history domain APIs and Query adapters                      | A2F        |
+| A4T     | Training and benchmark read models                                | `gpt-5.6-terra`, medium                                                                         | Training/benchmark domain APIs and Query adapters               | A2F        |
+| A5      | Domain model split with compatibility exports                     | `gpt-5.6-terra`, high                                                                           | One backend domain plus its model tests per branch              | A3R        |
+| A6R     | Repository protocols and file-adapter conformance                 | `gpt-5.6-terra`, high                                                                           | Ports, one repository adapter, and contract tests               | A5         |
+| A6C     | Lock ordering, recovery, import, backup, and restore coordinator  | `gpt-5.6-sol`, high                                                                             | Workspace coordinator and concurrency tests                     | A6R        |
+| A7      | Analyzer reducer, events, leases, and runtime services            | `gpt-5.6-sol`, high                                                                             | Analyzer workflow store and transition tests                    | A4J, A4T   |
+| A8      | Application services, one use-case domain per branch              | `gpt-5.6-terra`, high                                                                           | One service and its in-memory-port tests                        | A6C        |
+| A9      | Mutation commands and cache outcomes                              | `gpt-5.6-sol`, high for recovery-sensitive core; `gpt-5.6-terra`, medium for ordinary mutations | One command domain per branch                                   | A7, A8     |
+| A10C    | Mechanical pane and dialog composition extraction                 | `gpt-5.6-luna`, medium                                                                          | One component subtree and colocated tests                       | A9         |
+| A10R    | Route provider integration, deep links, and navigation guards     | `gpt-5.6-sol`, high                                                                             | Analyzer route, workflow composition, router                    | A10C       |
+| A11     | Fixture/test splits and compatibility matrices                    | `gpt-5.6-luna`, medium; escalate failing behavioral gaps to `gpt-5.6-terra`                     | One test domain per branch                                      | Continuous |
+| A12     | Compatibility removal, security/performance audit, and final docs | `gpt-5.6-sol`, high for audit; `gpt-5.6-luna`, medium for approved removals/docs                | Coordinator-selected final surfaces                             | A1-A11     |
+
+Agent prompts must name the exact write set, compatibility behavior, required
+checks, and prohibited neighboring files. Agents commit only their owned paths.
+When a package reveals a cross-cutting interface change, work pauses at the
+interface proposal; the coordinator updates the contract before parallel work
+resumes. This keeps cheaper agents on bounded mechanical work and spends the
+frontier model only where concurrent state or recovery correctness warrants it.
+
 ## Pull Request Contract
 
 Every implementation PR must include:

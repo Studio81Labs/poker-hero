@@ -22,6 +22,7 @@ from app.models import (
     JobQueue,
     JobRecord,
     PipelineCapabilities,
+    PipelineSelection,
     RecommendationAction,
     ScreenshotMetadataRequest,
     Street,
@@ -43,6 +44,26 @@ class JobTransportNotFoundError(Exception):
 
 class JobMutationConflictError(Exception):
     """A requested job mutation conflicts with its current persisted state."""
+
+
+class JobUploadInputError(Exception):
+    """An uploaded image or pipeline selection is not valid for processing."""
+
+
+class JobUploadConflictError(Exception):
+    """An upload changed state while its parser work was in progress."""
+
+
+class JobUploadParserConfigurationError(Exception):
+    """The selected parser cannot be configured for an uploaded image."""
+
+
+class JobUploadParserProviderError(Exception):
+    """The selected parser failed while processing an uploaded image."""
+
+
+class JobUploadUnexpectedParserError(Exception):
+    """An unexpected parser failure was recorded for an uploaded image."""
 
 
 class JobRecommendationInputError(Exception):
@@ -109,6 +130,35 @@ class JobsRecommendationRuntime:
     """Dependencies required by the processing job recommendation endpoint."""
 
     recommend: Callable[[str, str | None], JobRecord]
+
+
+@dataclass(frozen=True)
+class JobUploadPipelineRequest:
+    """Pipeline selectors validated from an upload multipart request."""
+
+    parser_provider: str | None
+    parser_layout_profile: str | None
+    recommendation_provider: str | None
+    recommendation_engine: str | None
+
+
+@dataclass(frozen=True)
+class JobUploadRequest:
+    """Bounded upload data passed to the synchronous processing use case."""
+
+    original_filename: str
+    image_bytes: bytes
+    upload_request_id: str | None
+    selection: PipelineSelection
+
+
+@dataclass(frozen=True)
+class JobsUploadRuntime:
+    """Dependencies required by the processing job upload endpoint."""
+
+    max_upload_bytes: int
+    resolve_pipeline: Callable[[JobUploadPipelineRequest], PipelineSelection]
+    process_upload: Callable[[JobUploadRequest], JobRecord]
 
 
 @dataclass(frozen=True)

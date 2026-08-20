@@ -1,7 +1,17 @@
 """Processing job transport endpoints."""
 
-from fastapi import APIRouter, Header, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import (
     JobMutationConflictError,
@@ -9,9 +19,17 @@ from app.api.dependencies import (
     JobRecommendationInputError,
     JobRecommendationProviderError,
     JobTransportNotFoundError,
+    JobUploadConflictError,
+    JobUploadInputError,
+    JobUploadParserConfigurationError,
+    JobUploadParserProviderError,
+    JobUploadPipelineRequest,
+    JobUploadRequest,
+    JobUploadUnexpectedParserError,
     JobsMutationRuntime,
     JobsRecommendationRuntime,
     JobsReadRuntime,
+    JobsUploadRuntime,
 )
 from app.api.response_contracts import SUPPORTED_IMAGE_RESPONSE_CONTENT
 from app.models import (
@@ -58,6 +76,90 @@ def create_jobs_router(runtime: JobsReadRuntime) -> APIRouter:
         except JobTransportNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return Response(content=image.content, media_type=image.media_type)
+
+    return router
+
+
+def create_job_upload_router(runtime: JobsUploadRuntime) -> APIRouter:
+    """Build the multipart processing-job upload router."""
+
+    router = APIRouter()
+
+    @router.post(
+        "/api/jobs",
+        operation_id="jobs_create",
+        response_model=JobRecord,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_job(
+        file: UploadFile = File(...),
+        upload_request_id: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+        parser_provider: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        parser_layout_profile: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        recommendation_provider: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+        recommendation_engine: str | None = Form(
+            default=None,
+            min_length=1,
+            max_length=64,
+            pattern=r"^[a-z0-9_]+$",
+        ),
+    ) -> JobRecord:
+        pipeline_request = JobUploadPipelineRequest(
+            parser_provider=parser_provider,
+            parser_layout_profile=parser_layout_profile,
+            recommendation_provider=recommendation_provider,
+            recommendation_engine=recommendation_engine,
+        )
+        try:
+            selection = runtime.resolve_pipeline(pipeline_request)
+        except JobUploadInputError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        image_bytes = await file.read(runtime.max_upload_bytes + 1)
+        if len(image_bytes) > runtime.max_upload_bytes:
+            raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
+
+        request = JobUploadRequest(
+            original_filename=file.filename or "screenshot.png",
+            image_bytes=image_bytes,
+            upload_request_id=upload_request_id,
+            selection=selection,
+        )
+        try:
+            return await run_in_threadpool(runtime.process_upload, request)
+        except JobUploadInputError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except JobUploadConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except JobUploadParserConfigurationError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Parser configuration error: {exc}",
+            ) from exc
+        except JobUploadParserProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except JobUploadUnexpectedParserError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return router
 

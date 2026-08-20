@@ -61,7 +61,7 @@ cannot be recreated by parser completion.
 
 FastAPI composition remains in `app/bootstrap.py`, while extracted transport
 adapters live under `app/api/routers`. Health, pipeline, history, MCP
-administration, training, and processing-job read, short mutation, and
+administration, training, and processing-job read, upload, short mutation, and
 recommendation routes receive focused frozen runtime containers; storage,
 locking, aggregation, and persistence stay behind bootstrap-owned callables
 until application services replace those concrete dependencies.

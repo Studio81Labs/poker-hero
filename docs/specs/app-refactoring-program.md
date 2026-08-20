@@ -477,13 +477,13 @@ Every implementation PR must include:
 
 ## Implementation Status
 
-| Wave | Status      | Current work                                                                                                        |
-| ---- | ----------- | ------------------------------------------------------------------------------------------------------------------- |
-| 0    | In progress | Plan, architecture guardrails, dependency baseline, and full-suite baseline are established                         |
-| 1    | In progress | Stable operation IDs, deterministic generation, binary contracts, and schema dependency pins landed                 |
-| 2    | In progress | Query provider, shared transport, and system/pipeline domain reads landed with compatibility behavior               |
-| 3    | In progress | Bootstrap isolation and health, pipeline, and history routers landed; remaining route domains stay in the bootstrap |
-| 4-12 | Pending     | Begin as their documented dependencies and compatibility gates pass                                                 |
+| Wave | Status      | Current work                                                                                                                             |
+| ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | In progress | Plan, architecture guardrails, dependency baseline, and full-suite baseline are established                                              |
+| 1    | In progress | Stable operation IDs, deterministic generation, binary contracts, and schema dependency pins landed                                      |
+| 2    | In progress | Query provider, shared transport, and system/pipeline domain reads landed with compatibility behavior                                    |
+| 3    | In progress | Bootstrap isolation plus health, pipeline, history, and MCP administration routers landed; remaining route domains stay in the bootstrap |
+| 4-12 | Pending     | Begin as their documented dependencies and compatibility gates pass                                                                      |
 
 ## Exit Criteria
 

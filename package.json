@@ -19,6 +19,8 @@
     "backend:recommendation-benchmark": "export POKER_BENCHMARK_BASE_DIR=\"$PWD\" && cd apps/backend && PATH=\"$(pwd)/../../solver-plugins/postflop/target/release:$PATH\" .venv/bin/python -m app.recommendation_benchmark",
     "backend:backup": "cd apps/backend && .venv/bin/python -m app.backup_cli",
     "backend:test": "cd apps/backend && .venv/bin/python -m pytest",
+    "api:generate": "cd apps/backend && if test -x .venv/bin/python; then .venv/bin/python ../../scripts/export_openapi.py; else python ../../scripts/export_openapi.py; fi && cd ../.. && pnpm exec openapi-typescript apps/frontend/src/shared/api/generated/openapi.json -o apps/frontend/src/shared/api/generated/openapi.ts && pnpm exec prettier --write --ignore-unknown apps/frontend/src/shared/api/generated/openapi.json apps/frontend/src/shared/api/generated/openapi.ts",
+    "api:check": "pnpm api:generate && git diff --exit-code -- apps/frontend/src/shared/api/generated",
     "frontend:dev": "pnpm -C apps/frontend dev",
     "frontend:build": "pnpm -C apps/frontend build",
     "frontend:test": "pnpm -C apps/frontend test",
@@ -37,6 +39,7 @@
     "@commitlint/config-conventional": "^21.1.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "openapi-typescript": "7.13.0",
     "prettier": "~3.8.1"
   },
   "lint-staged": {

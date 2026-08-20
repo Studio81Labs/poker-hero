@@ -200,6 +200,14 @@ class Card(BaseModel):
         return cls(rank=rank, suit=suit)
 
 
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    environment: str
+    parser_provider: str
+    recommendation_provider: str
+    recommendation_engine: str
+
+
 class PostflopAction(BaseModel):
     actor: PostflopActor
     action: PostflopActionType

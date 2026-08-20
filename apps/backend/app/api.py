@@ -83,6 +83,7 @@ from app.models import (
     BenchmarkRunRequest,
     BenchmarkSelectionRequest,
     CanonicalState,
+    HealthResponse,
     JobHistory,
     JobQueue,
     JobRecord,
@@ -273,9 +274,11 @@ class RequestObservabilityMiddleware:
         self,
         app: ASGIApp,
         access_log_level: int = logging.INFO,
+        api_application: FastAPI | None = None,
     ) -> None:
         self.app = app
         self.access_log_level = access_log_level
+        self.api_application = api_application
 
     async def __call__(
         self,
@@ -898,22 +901,26 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
         return response
 
-    @app.get("/api/health")
-    def health() -> dict[str, str]:
+    @app.get("/api/health", operation_id="health_get", response_model=HealthResponse)
+    def health() -> HealthResponse:
         configured_engine = configured_recommendation_engine(active_settings)
-        return {
-            "status": "ok",
-            "environment": active_settings.deployment_environment,
-            "parser_provider": active_settings.parser_provider,
-            "recommendation_provider": active_settings.recommendation_provider,
-            "recommendation_engine": (
+        return HealthResponse(
+            status="ok",
+            environment=active_settings.deployment_environment,
+            parser_provider=active_settings.parser_provider,
+            recommendation_provider=active_settings.recommendation_provider,
+            recommendation_engine=(
                 active_settings.recommendation_provider
                 if configured_engine is None
                 else configured_engine
             ),
-        }
+        )
 
-    @app.get("/api/pipeline", response_model=PipelineCapabilities)
+    @app.get(
+        "/api/pipeline",
+        operation_id="pipeline_get",
+        response_model=PipelineCapabilities,
+    )
     def get_pipeline_capabilities() -> PipelineCapabilities:
         try:
             return pipeline_capabilities(active_settings)
@@ -923,7 +930,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 detail=f"Pipeline configuration error: {exc}",
             ) from exc
 
-    @app.get("/api/mcp/config", response_model=McpAccessConfig)
+    @app.get(
+        "/api/mcp/config",
+        operation_id="mcp_config_get",
+        response_model=McpAccessConfig,
+    )
     def get_mcp_access_config() -> McpAccessConfig:
         return McpAccessConfig(
             enabled=active_settings.mcp_enabled,
@@ -936,7 +947,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             writes_enabled=active_settings.mcp_allow_writes,
         )
 
-    @app.get("/api/mcp/principals", response_model=McpPrincipalList)
+    @app.get(
+        "/api/mcp/principals",
+        operation_id="mcp_principals_list",
+        response_model=McpPrincipalList,
+    )
     async def list_mcp_principals() -> McpPrincipalList:
         if mcp_principal_store is None:
             return McpPrincipalList(principals=[])
@@ -945,6 +960,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.post(
         "/api/mcp/principals",
+        operation_id="mcp_principals_create",
         response_model=McpIssuedPrincipal,
         status_code=status.HTTP_201_CREATED,
     )
@@ -977,6 +993,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.post(
         "/api/mcp/principals/{principal_id}/rotate",
+        operation_id="mcp_principal_rotate",
         response_model=McpIssuedPrincipal,
         status_code=status.HTTP_201_CREATED,
     )
@@ -996,6 +1013,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.delete(
         "/api/mcp/principals/{principal_id}",
+        operation_id="mcp_principal_revoke",
         response_model=McpPrincipalSummary,
     )
     async def revoke_mcp_principal(principal_id: str) -> McpPrincipalSummary:
@@ -1007,7 +1025,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/api/jobs", response_model=JobRecord, status_code=status.HTTP_201_CREATED)
+    @app.post(
+        "/api/jobs",
+        operation_id="jobs_create",
+        response_model=JobRecord,
+        status_code=status.HTTP_201_CREATED,
+    )
     async def create_job(
         file: UploadFile = File(...),
         upload_request_id: str | None = Form(
@@ -1062,7 +1085,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             selection,
         )
 
-    @app.get("/api/jobs", response_model=JobQueue)
+    @app.get("/api/jobs", operation_id="jobs_list", response_model=JobQueue)
     def get_processing_jobs(
         limit: int = Query(default=100, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
@@ -1070,12 +1093,20 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         with history_lock:
             return build_job_queue(store, limit, offset)
 
-    @app.get("/api/jobs/{job_id}", response_model=JobRecord)
+    @app.get(
+        "/api/jobs/{job_id}",
+        operation_id="job_get",
+        response_model=JobRecord,
+    )
     def get_job(job_id: str) -> JobRecord:
         with job_lock_for(job_id):
             return load_job_or_404(store, job_id)
 
-    @app.put("/api/jobs/{job_id}/metadata", response_model=JobRecord)
+    @app.put(
+        "/api/jobs/{job_id}/metadata",
+        operation_id="job_metadata_update",
+        response_model=JobRecord,
+    )
     def update_job_metadata(
         job_id: str,
         metadata: ScreenshotMetadataRequest,
@@ -1089,6 +1120,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.delete(
         "/api/jobs/{job_id}",
+        operation_id="job_delete",
         status_code=status.HTTP_204_NO_CONTENT,
         response_class=Response,
     )
@@ -1103,7 +1135,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     raise HTTPException(status_code=404, detail="Job not found") from exc
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @app.get("/api/history", response_model=JobHistory)
+    @app.get("/api/history", operation_id="history_get", response_model=JobHistory)
     def get_history(
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0),
@@ -1112,7 +1144,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         with history_lock:
             return build_job_history(store, limit, offset, query)
 
-    @app.put("/api/history", response_model=JobHistory)
+    @app.put(
+        "/api/history",
+        operation_id="history_archive",
+        response_model=JobHistory,
+    )
     def archive_jobs(
         request: ArchiveJobsRequest,
         limit: int = Query(default=24, ge=1, le=100),
@@ -1140,7 +1176,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         store.save(job)
                 return build_job_history(store, limit)
 
-    @app.get("/api/jobs/{job_id}/image")
+    @app.get("/api/jobs/{job_id}/image", operation_id="job_image_get")
     def get_job_image(job_id: str) -> Response:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
@@ -1158,7 +1194,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             media_type = guess_type(image_path.name)[0] or "application/octet-stream"
         return Response(content=image_bytes, media_type=media_type)
 
-    @app.post("/api/jobs/{job_id}/approve", response_model=JobRecord)
+    @app.post(
+        "/api/jobs/{job_id}/approve",
+        operation_id="job_approve",
+        response_model=JobRecord,
+    )
     def approve_job(job_id: str, state: CanonicalState) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
@@ -1177,7 +1217,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             job.error = None
             return save_job(job)
 
-    @app.put("/api/jobs/{job_id}/decision", response_model=JobRecord)
+    @app.put(
+        "/api/jobs/{job_id}/decision",
+        operation_id="job_decision_record",
+        response_model=JobRecord,
+    )
     def record_training_decision(
         job_id: str,
         decision: TrainingDecisionRequest,
@@ -1206,7 +1250,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             job.error = None
             return save_job(job)
 
-    @app.post("/api/jobs/{job_id}/recommend", response_model=JobRecord)
+    @app.post(
+        "/api/jobs/{job_id}/recommend",
+        operation_id="job_recommend",
+        response_model=JobRecord,
+    )
     def recommend(
         job_id: str,
         recommendation_request_id: str | None = Header(
@@ -1350,7 +1398,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             current.error = None
             return save_job(current)
 
-    @app.put("/api/jobs/{job_id}/training-review", response_model=JobRecord)
+    @app.put(
+        "/api/jobs/{job_id}/training-review",
+        operation_id="job_training_review_complete",
+        response_model=JobRecord,
+    )
     def complete_training_review(
         job_id: str,
         review: TrainingReviewRequest | None = None,
@@ -1378,7 +1430,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 return save_job(job)
             return job
 
-    @app.delete("/api/jobs/{job_id}/training-review", response_model=JobRecord)
+    @app.delete(
+        "/api/jobs/{job_id}/training-review",
+        operation_id="job_training_review_reopen",
+        response_model=JobRecord,
+    )
     def reopen_training_review(job_id: str) -> JobRecord:
         with job_lock_for(job_id):
             job = load_job_or_404(store, job_id)
@@ -1397,7 +1453,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 return save_job(job)
             return job
 
-    @app.put("/api/jobs/{job_id}/benchmark", response_model=JobRecord)
+    @app.put(
+        "/api/jobs/{job_id}/benchmark",
+        operation_id="job_benchmark_update",
+        response_model=JobRecord,
+    )
     def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
         with benchmark_corpus_lock, job_lock_for(job_id):
             ensure_benchmark_corpus_ready()
@@ -1442,7 +1502,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             job.benchmark_included = selection.included
             return save_job(job)
 
-    @app.get("/api/training/progress", response_model=TrainingProgress)
+    @app.get(
+        "/api/training/progress",
+        operation_id="training_progress_get",
+        response_model=TrainingProgress,
+    )
     def get_training_progress(
         review_order: TrainingReviewOrder = "recent",
         review_street: Street | None = None,
@@ -1575,7 +1639,10 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             recent_certainty=recent_certainty,
         )
 
-    @app.get("/api/training/lessons/export")
+    @app.get(
+        "/api/training/lessons/export",
+        operation_id="training_lessons_export",
+    )
     def export_training_lessons(
         lesson_order: TrainingReviewOrder = "recent",
         lesson_street: Street | None = None,
@@ -1603,7 +1670,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             },
         )
 
-    @app.get("/api/benchmarks", response_model=BenchmarkOverview)
+    @app.get(
+        "/api/benchmarks",
+        operation_id="benchmarks_get",
+        response_model=BenchmarkOverview,
+    )
     def get_benchmark_overview(
         parser_provider: str | None = Query(
             default=None,
@@ -1717,7 +1788,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         detail=str(exc),
                     ) from exc
 
-    @app.get("/api/backups/export")
+    @app.get("/api/backups/export", operation_id="backups_export")
     async def export_application_backup() -> StreamingResponse:
         descriptor = await data_lock.acquire_async(
             exclusive=True,
@@ -1742,6 +1813,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.post(
         "/api/backups/restore",
+        operation_id="backups_restore",
         response_model=ApplicationBackupRestoreResult,
     )
     async def restore_backup(
@@ -1760,7 +1832,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             archive_bytes,
         )
 
-    @app.get("/api/benchmarks/export")
+    @app.get("/api/benchmarks/export", operation_id="benchmarks_export")
     def export_benchmark_dataset(
         parser_provider: str | None = Query(
             default=None,
@@ -1834,6 +1906,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.post(
         "/api/benchmarks/import",
+        operation_id="benchmarks_import",
         response_model=BenchmarkDatasetImportResult,
     )
     async def import_benchmark_dataset(
@@ -1924,6 +1997,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
 
     @app.get(
         "/api/benchmarks/imports/{request_id}",
+        operation_id="benchmark_import_get",
         response_model=BenchmarkDatasetImportReceipt,
     )
     def get_benchmark_dataset_import(
@@ -1943,14 +2017,22 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             background_tasks.add_task(resume_benchmark_import, request_id)
         return receipt
 
-    @app.get("/api/benchmarks/{report_id}", response_model=BenchmarkReport)
+    @app.get(
+        "/api/benchmarks/{report_id}",
+        operation_id="benchmark_report_get",
+        response_model=BenchmarkReport,
+    )
     def get_benchmark_report(report_id: str) -> BenchmarkReport:
         try:
             return benchmark_store.get(report_id)
         except BenchmarkNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Benchmark report not found") from exc
 
-    @app.post("/api/benchmarks/run", response_model=BenchmarkReport)
+    @app.post(
+        "/api/benchmarks/run",
+        operation_id="benchmarks_run",
+        response_model=BenchmarkReport,
+    )
     def run_parser_benchmark(
         benchmark_request: BenchmarkRunRequest | None = None,
     ) -> BenchmarkReport:
@@ -2031,7 +2113,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ),
         ),
         access_log_level=ACCESS_LOG_LEVELS[active_settings.access_log_level],
+        api_application=app,
     )
+
+
+def create_openapi_document(settings: Settings) -> dict[str, Any]:
+    application = create_app(settings)
+    if application.api_application is None:
+        raise RuntimeError("Expected the API application to be available")
+    return application.api_application.openapi()
 
 
 def load_job_or_404(store: FileJobStore, job_id: str) -> JobRecord:

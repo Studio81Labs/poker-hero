@@ -1,10 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  getJob,
-  getPipelineCapabilities,
-  runParserBenchmark,
-} from "../../../shared/api/client";
+import { getJob, runParserBenchmark } from "../../../shared/api/client";
 import {
   type BenchmarkComparisonProgress,
   benchmarkCorpusIsUnverified,
@@ -31,8 +27,7 @@ interface UseBenchmarkControllerOptions {
   pipelineCapabilities: PipelineCapabilities | null;
   pipelineLoading: boolean;
   pipelineSelection: PipelineSelection | null;
-  setPipelineCapabilities: (capabilities: PipelineCapabilities) => void;
-  setPipelineLoading: (loading: boolean) => void;
+  loadPipelineCapabilities: () => Promise<PipelineCapabilities | null>;
   setPipelineSelection: (selection: PipelineSelection) => void;
 }
 
@@ -50,8 +45,7 @@ export function useBenchmarkController({
   pipelineCapabilities,
   pipelineLoading,
   pipelineSelection,
-  setPipelineCapabilities,
-  setPipelineLoading,
+  loadPipelineCapabilities,
   setPipelineSelection,
 }: UseBenchmarkControllerOptions) {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -240,20 +234,10 @@ export function useBenchmarkController({
     ) {
       return;
     }
-    let capabilities = pipelineCapabilities;
-    if (!capabilities) {
-      setPipelineLoading(true);
-      onError(null);
-      try {
-        capabilities = await getPipelineCapabilities();
-        setPipelineCapabilities(capabilities);
-      } catch (error) {
-        onError(messageFromError(error, "Could not read analysis plugins"));
-        return;
-      } finally {
-        setPipelineLoading(false);
-      }
-    }
+    onError(null);
+    const capabilities =
+      pipelineCapabilities ?? (await loadPipelineCapabilities());
+    if (!capabilities) return;
     const currentSelection = reconcilePipelineSelection(
       capabilities,
       pipelineSelection ?? capabilities.defaults,

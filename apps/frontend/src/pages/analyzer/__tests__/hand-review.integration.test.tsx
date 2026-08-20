@@ -2,12 +2,12 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import App from "../AnalyzerPage";
 import type {
   DetectedState,
   RecommendationResult,
 } from "../../../shared/types";
 import {
+  AnalyzerTestApp as App,
   approvedJob,
   canonicalState,
   deferredResponse,

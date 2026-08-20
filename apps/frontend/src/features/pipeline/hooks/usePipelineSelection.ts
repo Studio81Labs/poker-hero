@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { getPipelineCapabilities } from "../../../shared/api/client";
+import { usePipelineCapabilitiesQuery } from "../../../domains/pipeline/api/pipelineQueries";
 import { reconcilePipelineSelection } from "../lib/pipelineSelection";
 import { messageFromError } from "../../workspace/lib/workflow";
 import type {
@@ -14,34 +14,35 @@ interface UsePipelineSelectionOptions {
 
 export function usePipelineSelection({ onError }: UsePipelineSelectionOptions) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [capabilities, setCapabilities] = useState<PipelineCapabilities | null>(
-    null,
-  );
   const [selection, setSelection] = useState<PipelineSelection | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data, isFetching, refetch } = usePipelineCapabilitiesQuery(false);
+  const capabilities = data ?? null;
 
-  function loadCapabilities() {
-    if (capabilities || loading) return;
-    setLoading(true);
-    void getPipelineCapabilities()
-      .then((nextCapabilities) => {
-        setCapabilities(nextCapabilities);
-        setSelection((current) =>
-          reconcilePipelineSelection(
-            nextCapabilities,
-            current ?? nextCapabilities.defaults,
-          ),
-        );
-      })
-      .catch((error) =>
-        onError(messageFromError(error, "Could not read analysis plugins")),
-      )
-      .finally(() => setLoading(false));
-  }
+  useEffect(() => {
+    if (!capabilities) return;
+    setSelection((current) =>
+      reconcilePipelineSelection(
+        capabilities,
+        current ?? capabilities.defaults,
+      ),
+    );
+  }, [capabilities]);
+
+  const loadCapabilities = useCallback(async () => {
+    if (capabilities) return capabilities;
+    const result = await refetch();
+    if (result.error) {
+      onError(
+        messageFromError(result.error, "Could not read analysis plugins"),
+      );
+      return null;
+    }
+    return result.data ?? null;
+  }, [capabilities, onError, refetch]);
 
   function openDialog() {
     setDialogOpen(true);
-    loadCapabilities();
+    void loadCapabilities();
   }
 
   function updateSelection<K extends keyof PipelineSelection>(
@@ -95,12 +96,10 @@ export function usePipelineSelection({ onError }: UsePipelineSelectionOptions) {
     capabilities,
     dialogOpen,
     loadCapabilities,
-    loading,
+    loading: isFetching,
     openDialog,
     selection,
-    setCapabilities,
     setDialogOpen,
-    setLoading,
     setSelection,
     updateParserProvider,
     updateRecommendationProvider,

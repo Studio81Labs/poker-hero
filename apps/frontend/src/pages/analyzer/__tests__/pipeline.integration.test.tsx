@@ -2,8 +2,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import App from "../AnalyzerPage";
 import {
+  AnalyzerTestApp as App,
   disableAutomation,
   fetchMock,
   jobRecord,

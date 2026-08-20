@@ -1,13 +1,20 @@
 import { cleanup, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, vi } from "vitest";
 
+import { AppProviders } from "../app/providers/AppProviders";
+import AnalyzerPage from "../pages/analyzer/AnalyzerPage";
 import type {
   CanonicalState,
   DetectedState,
   JobRecord,
   RecommendationResult,
 } from "../shared/types";
+
+export function AnalyzerTestApp({ children }: { children?: ReactNode }) {
+  return <AppProviders>{children ?? <AnalyzerPage />}</AppProviders>;
+}
 
 export const detectedState: DetectedState = {
   hero_cards: [

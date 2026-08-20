@@ -1,24 +1,22 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { getSystemInfo } from "../../../shared/api/client";
-import type { SystemInfo } from "../../../shared/types";
+
+import {
+  systemInfoQueryOptions,
+  useSystemInfoQuery,
+} from "../../../domains/system/api/systemQueries";
 
 export function useSystemInfoDialog() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mcpTokenPending, setMcpTokenPending] = useState(false);
-  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const { data, isFetching } = useSystemInfoQuery(false);
 
   function openDialog() {
     setDialogOpen(true);
-    if (systemInfo || loading) {
-      return;
-    }
-
-    setLoading(true);
-    void getSystemInfo()
-      .then(setSystemInfo)
-      .catch(() => undefined)
-      .finally(() => setLoading(false));
+    void queryClient
+      .fetchQuery(systemInfoQueryOptions())
+      .catch(() => undefined);
   }
 
   function closeDialog(blocked = false) {
@@ -31,10 +29,10 @@ export function useSystemInfoDialog() {
   return {
     closeDialog,
     dialogOpen,
-    loading,
+    loading: isFetching,
     mcpTokenPending,
     openDialog,
     setMcpTokenPending,
-    systemInfo,
+    systemInfo: data ?? null,
   };
 }

@@ -1,12 +1,16 @@
 """Processing job transport endpoints."""
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from fastapi.responses import Response
 
 from app.api.dependencies import (
     JobMutationConflictError,
+    JobRecommendationConfigurationError,
+    JobRecommendationInputError,
+    JobRecommendationProviderError,
     JobTransportNotFoundError,
     JobsMutationRuntime,
+    JobsRecommendationRuntime,
     JobsReadRuntime,
 )
 from app.api.response_contracts import SUPPORTED_IMAGE_RESPONSE_CONTENT
@@ -120,5 +124,46 @@ def create_job_mutations_router(runtime: JobsMutationRuntime) -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except JobMutationConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return router
+
+
+def create_job_recommendation_router(
+    runtime: JobsRecommendationRuntime,
+) -> APIRouter:
+    """Build the processing job recommendation router with application dependencies."""
+
+    router = APIRouter()
+
+    @router.post(
+        "/api/jobs/{job_id}/recommend",
+        operation_id="job_recommend",
+        response_model=JobRecord,
+    )
+    def recommend(
+        job_id: str,
+        recommendation_request_id: str | None = Header(
+            default=None,
+            alias="X-Recommendation-Request-ID",
+            min_length=1,
+            max_length=128,
+            pattern=r"^[A-Za-z0-9._:-]+$",
+        ),
+    ) -> JobRecord:
+        try:
+            return runtime.recommend(job_id, recommendation_request_id)
+        except JobTransportNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except JobMutationConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except JobRecommendationInputError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail) from exc
+        except JobRecommendationConfigurationError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Provider configuration error: {exc}",
+            ) from exc
+        except JobRecommendationProviderError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return router

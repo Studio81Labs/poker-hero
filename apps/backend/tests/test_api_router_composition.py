@@ -6,14 +6,19 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+import pytest
 
 from app.api.dependencies import (
     ApiRuntime,
     HistoryRuntime,
     JobImage,
     JobMutationConflictError,
+    JobRecommendationConfigurationError,
+    JobRecommendationInputError,
+    JobRecommendationProviderError,
     JobTransportNotFoundError,
     JobsMutationRuntime,
+    JobsRecommendationRuntime,
     JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
@@ -22,7 +27,11 @@ from app.api.dependencies import (
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
-from app.api.routers.jobs import create_job_mutations_router, create_jobs_router
+from app.api.routers.jobs import (
+    create_job_mutations_router,
+    create_job_recommendation_router,
+    create_jobs_router,
+)
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -112,6 +121,12 @@ def default_jobs_mutation_runtime() -> JobsMutationRuntime:
         delete_job=lambda _job_id: None,
         approve_job=lambda _job_id, _state: job_record(),
         record_training_decision=lambda _job_id, _decision: job_record(),
+    )
+
+
+def default_jobs_recommendation_runtime() -> JobsRecommendationRuntime:
+    return JobsRecommendationRuntime(
+        recommend=lambda _job_id, _request_id: job_record()
     )
 
 
@@ -216,6 +231,7 @@ def make_client(
     training_runtime: TrainingRuntime | None = None,
     jobs_read_runtime: JobsReadRuntime | None = None,
     jobs_mutation_runtime: JobsMutationRuntime | None = None,
+    jobs_recommendation_runtime: JobsRecommendationRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -241,6 +257,11 @@ def make_client(
     app.include_router(
         create_job_mutations_router(
             jobs_mutation_runtime or default_jobs_mutation_runtime()
+        )
+    )
+    app.include_router(
+        create_job_recommendation_router(
+            jobs_recommendation_runtime or default_jobs_recommendation_runtime()
         )
     )
     return TestClient(app)
@@ -611,6 +632,109 @@ def test_jobs_mutation_router_maps_typed_errors() -> None:
         404,
         {"detail": "Job not found"},
     )
+
+
+def test_job_recommendation_router_delegates_request_id() -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def recommend(job_id: str, request_id: str | None) -> JobRecord:
+        calls.append((job_id, request_id))
+        return job_record()
+
+    runtime = JobsRecommendationRuntime(recommend=recommend)
+    with make_client(jobs_recommendation_runtime=runtime) as client:
+        default_request = client.post("/api/jobs/job-1/recommend")
+        identified_request = client.post(
+            "/api/jobs/job-2/recommend",
+            headers={"X-Recommendation-Request-ID": "request-id_2"},
+        )
+
+    assert [response.status_code for response in (
+        default_request,
+        identified_request,
+    )] == [200, 200]
+    assert calls == [("job-1", None), ("job-2", "request-id_2")]
+
+
+def test_job_recommendation_router_validates_header_without_delegating() -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def recommend(job_id: str, request_id: str | None) -> JobRecord:
+        calls.append((job_id, request_id))
+        return job_record()
+
+    runtime = JobsRecommendationRuntime(recommend=recommend)
+    with make_client(jobs_recommendation_runtime=runtime) as client:
+        invalid_request_id = client.post(
+            "/api/jobs/job-1/recommend",
+            headers={"X-Recommendation-Request-ID": "invalid request id"},
+        )
+        oversized_request_id = client.post(
+            "/api/jobs/job-1/recommend",
+            headers={"X-Recommendation-Request-ID": "a" * 129},
+        )
+
+    assert [response.status_code for response in (
+        invalid_request_id,
+        oversized_request_id,
+    )] == [422, 422]
+    assert calls == []
+
+
+def test_job_recommendation_router_maps_typed_errors() -> None:
+    def recommend(job_id: str, _request_id: str | None) -> JobRecord:
+        if job_id == "missing":
+            raise JobTransportNotFoundError("Job not found")
+        if job_id == "blocked":
+            raise JobMutationConflictError("Recommendation is already running")
+        if job_id == "missing-fields":
+            raise JobRecommendationInputError({"missing_fields": ["hero_cards"]})
+        if job_id == "invalid-input":
+            raise JobRecommendationInputError("Add the missing table context")
+        if job_id == "misconfigured":
+            raise JobRecommendationConfigurationError("Provider is unavailable")
+        raise JobRecommendationProviderError("provider exploded")
+
+    runtime = JobsRecommendationRuntime(recommend=recommend)
+    with make_client(jobs_recommendation_runtime=runtime) as client:
+        missing = client.post("/api/jobs/missing/recommend")
+        blocked = client.post("/api/jobs/blocked/recommend")
+        missing_fields = client.post("/api/jobs/missing-fields/recommend")
+        invalid_input = client.post("/api/jobs/invalid-input/recommend")
+        misconfigured = client.post("/api/jobs/misconfigured/recommend")
+        provider_failure = client.post("/api/jobs/provider-failure/recommend")
+
+    assert (missing.status_code, missing.json()) == (404, {"detail": "Job not found"})
+    assert (blocked.status_code, blocked.json()) == (
+        409,
+        {"detail": "Recommendation is already running"},
+    )
+    assert (missing_fields.status_code, missing_fields.json()) == (
+        422,
+        {"detail": {"missing_fields": ["hero_cards"]}},
+    )
+    assert (invalid_input.status_code, invalid_input.json()) == (
+        422,
+        {"detail": "Add the missing table context"},
+    )
+    assert (misconfigured.status_code, misconfigured.json()) == (
+        500,
+        {"detail": "Provider configuration error: Provider is unavailable"},
+    )
+    assert (provider_failure.status_code, provider_failure.json()) == (
+        502,
+        {"detail": "provider exploded"},
+    )
+
+
+def test_job_recommendation_router_propagates_unexpected_errors() -> None:
+    def recommend(_job_id: str, _request_id: str | None) -> JobRecord:
+        raise RuntimeError("provider implementation defect")
+
+    runtime = JobsRecommendationRuntime(recommend=recommend)
+    with make_client(jobs_recommendation_runtime=runtime) as client:
+        with pytest.raises(RuntimeError, match="provider implementation defect"):
+            client.post("/api/jobs/job-1/recommend")
 
 
 def test_training_router_delegates_review_progress_and_lesson_export() -> None:

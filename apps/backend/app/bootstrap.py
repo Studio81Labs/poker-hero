@@ -18,7 +18,6 @@ from fastapi import (
     BackgroundTasks,
     FastAPI,
     File,
-    Form,
     Header,
     HTTPException,
     Query,
@@ -44,9 +43,17 @@ from app.api.dependencies import (
     JobRecommendationInputError,
     JobRecommendationProviderError,
     JobTransportNotFoundError,
+    JobUploadConflictError,
+    JobUploadInputError,
+    JobUploadParserConfigurationError,
+    JobUploadParserProviderError,
+    JobUploadPipelineRequest,
+    JobUploadRequest,
+    JobUploadUnexpectedParserError,
     JobsMutationRuntime,
     JobsRecommendationRuntime,
     JobsReadRuntime,
+    JobsUploadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
     TrainingRuntime,
@@ -58,6 +65,7 @@ from app.api.routers.history import create_history_router
 from app.api.routers.jobs import (
     create_job_mutations_router,
     create_job_recommendation_router,
+    create_job_upload_router,
     create_jobs_router,
 )
 from app.api.routers.mcp_admin import create_mcp_admin_router
@@ -705,34 +713,41 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 # A later poll can retry an interrupted or temporarily unavailable journal.
                 return
 
-    def process_uploaded_image(
-        original_filename: str,
-        image_bytes: bytes,
-        upload_request_id: str | None,
-        selection: PipelineSelection,
-    ) -> JobRecord:
-        if not is_supported_image(image_bytes):
-            raise HTTPException(
-                status_code=400,
-                detail="Upload must contain supported image data",
+    def resolve_upload_pipeline(
+        request: JobUploadPipelineRequest,
+    ) -> PipelineSelection:
+        try:
+            return resolve_pipeline_selection(
+                active_settings,
+                parser_provider=request.parser_provider,
+                parser_layout_profile=request.parser_layout_profile,
+                recommendation_provider=request.recommendation_provider,
+                recommendation_engine=request.recommendation_engine,
             )
+        except PipelineSelectionError as exc:
+            raise JobUploadInputError(str(exc)) from exc
+
+    def process_uploaded_image(request: JobUploadRequest) -> JobRecord:
+        selection = request.selection
+        image_bytes = request.image_bytes
+        if not is_supported_image(image_bytes):
+            raise JobUploadInputError("Upload must contain supported image data")
         with application_backup_lock:
             job = store.create_job(
-                original_filename=original_filename,
+                original_filename=request.original_filename,
                 image_bytes=image_bytes,
                 parser_provider=selection.parser_provider,
                 parser_layout_profile=selection.parser_layout_profile,
                 recommendation_provider=selection.recommendation_provider,
                 recommendation_engine=selection.recommendation_engine,
-                upload_request_id=upload_request_id,
+                upload_request_id=request.upload_request_id,
             )
         with job_lock_for(job.id):
             try:
                 job = store.get(job.id)
             except JobNotFoundError as exc:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Upload was deleted before parsing started",
+                raise JobUploadConflictError(
+                    "Upload was deleted before parsing started"
                 ) from exc
 
         def save_parser_failure(message: str) -> JobRecord:
@@ -740,9 +755,8 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 try:
                     current = store.get(job.id)
                 except JobNotFoundError as exc:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Upload was deleted while parsing",
+                    raise JobUploadConflictError(
+                        "Upload was deleted while parsing"
                     ) from exc
                 if current.approved_state is not None:
                     return current
@@ -755,25 +769,21 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             parser_result = parser.parse(store.image_path(job))
         except ParserConfigurationError as exc:
             save_parser_failure(str(exc))
-            raise HTTPException(
-                status_code=500,
-                detail=f"Parser configuration error: {exc}",
-            ) from exc
+            raise JobUploadParserConfigurationError(str(exc)) from exc
         except ParserError as exc:
             save_parser_failure(str(exc))
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            raise JobUploadParserProviderError(str(exc)) from exc
         except Exception as exc:
             error = f"Unexpected parser error: {exc}"
             save_parser_failure(error)
-            raise HTTPException(status_code=500, detail=error) from exc
+            raise JobUploadUnexpectedParserError(error) from exc
 
         with job_lock_for(job.id):
             try:
                 current = store.get(job.id)
             except JobNotFoundError as exc:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Upload was deleted while parsing",
+                raise JobUploadConflictError(
+                    "Upload was deleted while parsing"
                 ) from exc
             current.parser_result = parser_result
             current.parser_auto_approval_eligible = meets_auto_approve_thresholds(
@@ -1381,73 +1391,19 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     jobs_recommendation_runtime = JobsRecommendationRuntime(
         recommend=recommend_processing_job,
     )
+    jobs_upload_runtime = JobsUploadRuntime(
+        max_upload_bytes=active_settings.max_upload_bytes,
+        resolve_pipeline=resolve_upload_pipeline,
+        process_upload=process_uploaded_image,
+    )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
     app.include_router(create_mcp_admin_router(mcp_admin_runtime))
     app.include_router(create_training_router(training_runtime))
 
-    @app.post(
-        "/api/jobs",
-        operation_id="jobs_create",
-        response_model=JobRecord,
-        status_code=status.HTTP_201_CREATED,
-    )
-    async def create_job(
-        file: UploadFile = File(...),
-        upload_request_id: str | None = Form(
-            default=None,
-            min_length=1,
-            max_length=128,
-            pattern=r"^[A-Za-z0-9._:-]+$",
-        ),
-        parser_provider: str | None = Form(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-        parser_layout_profile: str | None = Form(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-        recommendation_provider: str | None = Form(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-        recommendation_engine: str | None = Form(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-    ) -> JobRecord:
-        try:
-            selection = resolve_pipeline_selection(
-                active_settings,
-                parser_provider=parser_provider,
-                parser_layout_profile=parser_layout_profile,
-                recommendation_provider=recommendation_provider,
-                recommendation_engine=recommendation_engine,
-            )
-        except PipelineSelectionError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        image_bytes = await file.read(active_settings.max_upload_bytes + 1)
-        if len(image_bytes) > active_settings.max_upload_bytes:
-            raise HTTPException(status_code=413, detail="Upload exceeds maximum size")
-        return await run_in_threadpool(
-            process_uploaded_image,
-            file.filename or "screenshot.png",
-            image_bytes,
-            upload_request_id,
-            selection,
-        )
-
     app.include_router(create_history_router(history_runtime))
     app.include_router(create_jobs_router(jobs_read_runtime))
+    app.include_router(create_job_upload_router(jobs_upload_runtime))
     app.include_router(create_job_mutations_router(jobs_mutation_runtime))
     app.include_router(create_job_recommendation_router(jobs_recommendation_runtime))
 

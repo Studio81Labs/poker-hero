@@ -17,9 +17,17 @@ from app.api.dependencies import (
     JobRecommendationInputError,
     JobRecommendationProviderError,
     JobTransportNotFoundError,
+    JobUploadConflictError,
+    JobUploadInputError,
+    JobUploadParserConfigurationError,
+    JobUploadParserProviderError,
+    JobUploadPipelineRequest,
+    JobUploadRequest,
+    JobUploadUnexpectedParserError,
     JobsMutationRuntime,
     JobsRecommendationRuntime,
     JobsReadRuntime,
+    JobsUploadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
     TrainingRuntime,
@@ -30,6 +38,7 @@ from app.api.routers.history import create_history_router
 from app.api.routers.jobs import (
     create_job_mutations_router,
     create_job_recommendation_router,
+    create_job_upload_router,
     create_jobs_router,
 )
 from app.api.routers.mcp_admin import create_mcp_admin_router
@@ -127,6 +136,19 @@ def default_jobs_mutation_runtime() -> JobsMutationRuntime:
 def default_jobs_recommendation_runtime() -> JobsRecommendationRuntime:
     return JobsRecommendationRuntime(
         recommend=lambda _job_id, _request_id: job_record()
+    )
+
+
+def default_jobs_upload_runtime() -> JobsUploadRuntime:
+    return JobsUploadRuntime(
+        max_upload_bytes=1024,
+        resolve_pipeline=lambda _request: PipelineSelection(
+            parser_provider="ocr_cv",
+            parser_layout_profile="fortuna",
+            recommendation_provider="local_solver",
+            recommendation_engine="local_solver",
+        ),
+        process_upload=lambda _request: job_record(),
     )
 
 
@@ -232,6 +254,7 @@ def make_client(
     jobs_read_runtime: JobsReadRuntime | None = None,
     jobs_mutation_runtime: JobsMutationRuntime | None = None,
     jobs_recommendation_runtime: JobsRecommendationRuntime | None = None,
+    jobs_upload_runtime: JobsUploadRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -263,6 +286,9 @@ def make_client(
         create_job_recommendation_router(
             jobs_recommendation_runtime or default_jobs_recommendation_runtime()
         )
+    )
+    app.include_router(
+        create_job_upload_router(jobs_upload_runtime or default_jobs_upload_runtime())
     )
     return TestClient(app)
 
@@ -457,6 +483,216 @@ def test_jobs_read_router_maps_not_found_details() -> None:
         missing_image_job_response.status_code,
         missing_image_job_response.json(),
     ) == (404, {"detail": "Job not found"})
+
+
+def test_job_upload_router_delegates_defaults_and_all_form_values() -> None:
+    pipeline_requests: list[JobUploadPipelineRequest] = []
+    upload_requests: list[JobUploadRequest] = []
+    selection = PipelineSelection(
+        parser_provider="mock",
+        parser_layout_profile="pokerstars",
+        recommendation_provider="external",
+        recommendation_engine="solver_v2",
+    )
+
+    def resolve_pipeline(request: JobUploadPipelineRequest) -> PipelineSelection:
+        pipeline_requests.append(request)
+        return selection
+
+    def process_upload(request: JobUploadRequest) -> JobRecord:
+        upload_requests.append(request)
+        return job_record()
+
+    runtime = JobsUploadRuntime(
+        max_upload_bytes=1024,
+        resolve_pipeline=resolve_pipeline,
+        process_upload=process_upload,
+    )
+    with make_client(jobs_upload_runtime=runtime) as client:
+        default_upload = client.post(
+            "/api/jobs",
+            content=(
+                b"--upload-boundary\r\n"
+                b'Content-Disposition: form-data; name="file"; filename=""\r\n'
+                b"Content-Type: image/png\r\n\r\n"
+                b"default image\r\n"
+                b"--upload-boundary--\r\n"
+            ),
+            headers={"content-type": "multipart/form-data; boundary=upload-boundary"},
+        )
+        configured_upload = client.post(
+            "/api/jobs",
+            files={"file": ("table.png", b"configured image", "image/png")},
+            data={
+                "upload_request_id": "upload-42",
+                "parser_provider": "mock",
+                "parser_layout_profile": "pokerstars",
+                "recommendation_provider": "external",
+                "recommendation_engine": "solver_v2",
+            },
+        )
+
+    assert [response.status_code for response in (default_upload, configured_upload)] == [
+        201,
+        201,
+    ]
+    assert pipeline_requests == [
+        JobUploadPipelineRequest(None, None, None, None),
+        JobUploadPipelineRequest("mock", "pokerstars", "external", "solver_v2"),
+    ]
+    assert upload_requests == [
+        JobUploadRequest(
+            original_filename="screenshot.png",
+            image_bytes=b"default image",
+            upload_request_id=None,
+            selection=selection,
+        ),
+        JobUploadRequest(
+            original_filename="table.png",
+            image_bytes=b"configured image",
+            upload_request_id="upload-42",
+            selection=selection,
+        ),
+    ]
+
+
+def test_job_upload_router_validates_each_form_field_without_delegating() -> None:
+    calls: list[str] = []
+    runtime = JobsUploadRuntime(
+        max_upload_bytes=1024,
+        resolve_pipeline=lambda _request: calls.append("pipeline") or PipelineSelection(
+            parser_provider="ocr_cv",
+            parser_layout_profile="fortuna",
+            recommendation_provider="local_solver",
+            recommendation_engine="local_solver",
+        ),
+        process_upload=lambda _request: calls.append("upload") or job_record(),
+    )
+    invalid_fields = [
+        {"upload_request_id": "invalid request"},
+        {"parser_provider": "invalid-provider"},
+        {"parser_layout_profile": "invalid-profile"},
+        {"recommendation_provider": "invalid-provider"},
+        {"recommendation_engine": "invalid-engine"},
+    ]
+
+    with make_client(jobs_upload_runtime=runtime) as client:
+        responses = [
+            client.post(
+                "/api/jobs",
+                files={"file": ("table.png", b"image", "image/png")},
+                data=data,
+            )
+            for data in invalid_fields
+        ]
+
+    assert [response.status_code for response in responses] == [422] * len(invalid_fields)
+    assert calls == []
+
+
+def test_job_upload_router_rejects_oversize_before_processing() -> None:
+    calls: list[str] = []
+    runtime = JobsUploadRuntime(
+        max_upload_bytes=3,
+        resolve_pipeline=lambda _request: calls.append("pipeline") or PipelineSelection(
+            parser_provider="ocr_cv",
+            parser_layout_profile="fortuna",
+            recommendation_provider="local_solver",
+            recommendation_engine="local_solver",
+        ),
+        process_upload=lambda _request: calls.append("upload") or job_record(),
+    )
+
+    with make_client(jobs_upload_runtime=runtime) as client:
+        response = client.post(
+            "/api/jobs",
+            files={"file": ("table.png", b"four", "image/png")},
+        )
+
+    assert (response.status_code, response.json()) == (
+        413,
+        {"detail": "Upload exceeds maximum size"},
+    )
+    assert calls == ["pipeline"]
+
+
+def test_job_upload_router_maps_typed_errors() -> None:
+    selection = PipelineSelection(
+        parser_provider="ocr_cv",
+        parser_layout_profile="fortuna",
+        recommendation_provider="local_solver",
+        recommendation_engine="local_solver",
+    )
+
+    def resolve_pipeline(request: JobUploadPipelineRequest) -> PipelineSelection:
+        if request.parser_provider == "invalid":
+            raise JobUploadInputError("Unknown parser provider: invalid")
+        return selection
+
+    def process_upload(request: JobUploadRequest) -> JobRecord:
+        if request.original_filename == "invalid.png":
+            raise JobUploadInputError("Upload must contain supported image data")
+        if request.original_filename == "deleted.png":
+            raise JobUploadConflictError("Upload was deleted while parsing")
+        if request.original_filename == "configuration.png":
+            raise JobUploadParserConfigurationError("Unknown parser provider: missing")
+        if request.original_filename == "provider.png":
+            raise JobUploadParserProviderError("parser exploded")
+        raise JobUploadUnexpectedParserError("Unexpected parser error: parser crash")
+
+    runtime = JobsUploadRuntime(
+        max_upload_bytes=1024,
+        resolve_pipeline=resolve_pipeline,
+        process_upload=process_upload,
+    )
+    with make_client(jobs_upload_runtime=runtime) as client:
+        selection_error = client.post(
+            "/api/jobs",
+            files={"file": ("table.png", b"image", "image/png")},
+            data={"parser_provider": "invalid"},
+        )
+        invalid_image = client.post(
+            "/api/jobs",
+            files={"file": ("invalid.png", b"image", "image/png")},
+        )
+        deleted = client.post(
+            "/api/jobs",
+            files={"file": ("deleted.png", b"image", "image/png")},
+        )
+        configuration = client.post(
+            "/api/jobs",
+            files={"file": ("configuration.png", b"image", "image/png")},
+        )
+        provider = client.post(
+            "/api/jobs",
+            files={"file": ("provider.png", b"image", "image/png")},
+        )
+        unexpected = client.post(
+            "/api/jobs",
+            files={"file": ("unexpected.png", b"image", "image/png")},
+        )
+
+    assert (selection_error.status_code, selection_error.json()) == (
+        400,
+        {"detail": "Unknown parser provider: invalid"},
+    )
+    assert (invalid_image.status_code, invalid_image.json()) == (
+        400,
+        {"detail": "Upload must contain supported image data"},
+    )
+    assert (deleted.status_code, deleted.json()) == (
+        409,
+        {"detail": "Upload was deleted while parsing"},
+    )
+    assert (configuration.status_code, configuration.json()) == (
+        500,
+        {"detail": "Parser configuration error: Unknown parser provider: missing"},
+    )
+    assert (provider.status_code, provider.json()) == (502, {"detail": "parser exploded"})
+    assert (unexpected.status_code, unexpected.json()) == (
+        500,
+        {"detail": "Unexpected parser error: parser crash"},
+    )
 
 
 def test_jobs_mutation_router_delegates_validated_requests() -> None:
@@ -1074,6 +1310,7 @@ def test_router_composition_preserves_public_operation_ids() -> None:
     )
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
     assert document["paths"]["/api/jobs"]["get"]["operationId"] == "jobs_list"
+    assert document["paths"]["/api/jobs"]["post"]["operationId"] == "jobs_create"
     assert document["paths"]["/api/jobs/{job_id}"]["get"]["operationId"] == "job_get"
     assert (
         document["paths"]["/api/jobs/{job_id}/metadata"]["put"]["operationId"]

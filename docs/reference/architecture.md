@@ -379,6 +379,9 @@ testable while leaving user corrections and persisted mutation recovery under
 one visible coordinator. Component tests are colocated with their components;
 the analyzer coordinator's end-to-end state transitions are split into
 domain-named integration suites under `src/pages/analyzer/__tests__`.
+Training progress query state owns review, lesson, and recent-hand filters,
+request ordering, and failed-filter rollback. Its outer controller owns only
+dialog lifecycle and opening a selected hand in the analyzer workspace.
 
 Workspace persistence is implemented by focused cache-validation,
 mutation-lease, processing-queue, history, and reconciliation modules. The

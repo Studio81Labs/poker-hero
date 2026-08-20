@@ -35,7 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.dependencies import ApiRuntime
+from app.api.dependencies import ApiRuntime, HistoryRuntime
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import (
     MARKDOWN_RESPONSE_CONTENT,
@@ -43,6 +43,7 @@ from app.api.response_contracts import (
     ZIP_RESPONSE_CONTENT,
 )
 from app.api.routers.health import create_health_router
+from app.api.routers.history import create_history_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.application_backup import (
     ApplicationBackupError,
@@ -930,9 +931,45 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         except PipelineSelectionError as exc:
             raise PipelineCapabilitiesUnavailableError(str(exc)) from exc
 
+    def list_history(
+        limit: int,
+        offset: int,
+        query: str | None,
+    ) -> JobHistory:
+        with history_lock:
+            return build_job_history(store, limit, offset, query)
+
+    def archive_jobs(request: ArchiveJobsRequest, limit: int) -> JobHistory:
+        lock_indexes = sorted({job_lock_index(job_id) for job_id in request.job_ids})
+        with ExitStack() as job_lock_stack:
+            for lock_index in lock_indexes:
+                job_lock_stack.enter_context(job_locks[lock_index])
+
+            jobs = [load_job_or_404(store, job_id) for job_id in request.job_ids]
+            if any(not is_history_ready(job) for job in jobs):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Only successful approved or recommended jobs "
+                        "can be moved to history"
+                    ),
+                )
+
+            with history_lock:
+                archived_at = datetime.now(timezone.utc)
+                for job in jobs:
+                    if job.archived_at is None:
+                        job.archived_at = archived_at
+                        store.save(job)
+                return build_job_history(store, limit)
+
     api_runtime = ApiRuntime(
         get_health=get_health,
         get_pipeline_capabilities=get_pipeline_capabilities,
+    )
+    history_runtime = HistoryRuntime(
+        list_history=list_history,
+        archive_jobs=archive_jobs,
     )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
@@ -1142,46 +1179,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     raise HTTPException(status_code=404, detail="Job not found") from exc
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-    @app.get("/api/history", operation_id="history_get", response_model=JobHistory)
-    def get_history(
-        limit: int = Query(default=24, ge=1, le=100),
-        offset: int = Query(default=0, ge=0),
-        query: str | None = Query(default=None, max_length=100),
-    ) -> JobHistory:
-        with history_lock:
-            return build_job_history(store, limit, offset, query)
-
-    @app.put(
-        "/api/history",
-        operation_id="history_archive",
-        response_model=JobHistory,
-    )
-    def archive_jobs(
-        request: ArchiveJobsRequest,
-        limit: int = Query(default=24, ge=1, le=100),
-    ) -> JobHistory:
-        lock_indexes = sorted({job_lock_index(job_id) for job_id in request.job_ids})
-        with ExitStack() as job_lock_stack:
-            for lock_index in lock_indexes:
-                job_lock_stack.enter_context(job_locks[lock_index])
-
-            jobs = [load_job_or_404(store, job_id) for job_id in request.job_ids]
-            if any(not is_history_ready(job) for job in jobs):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Only successful approved or recommended jobs "
-                        "can be moved to history"
-                    ),
-                )
-
-            with history_lock:
-                archived_at = datetime.now(timezone.utc)
-                for job in jobs:
-                    if job.archived_at is None:
-                        job.archived_at = archived_at
-                        store.save(job)
-                return build_job_history(store, limit)
+    app.include_router(create_history_router(history_runtime))
 
     @app.get(
         "/api/jobs/{job_id}/image",

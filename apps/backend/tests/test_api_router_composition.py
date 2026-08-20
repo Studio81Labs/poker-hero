@@ -1369,6 +1369,7 @@ import importlib
 import sys
 
 importlib.import_module('app.api.routers.health')
+importlib.import_module('app.api.routers.benchmarks')
 importlib.import_module('app.api.routers.history')
 importlib.import_module('app.api.routers.jobs')
 importlib.import_module('app.api.routers.mcp_admin')

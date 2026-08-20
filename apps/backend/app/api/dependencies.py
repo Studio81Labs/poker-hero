@@ -4,7 +4,7 @@ The application factory wires concrete settings, stores, and plugins into this
 container. Routers receive only the use-case callables they need.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 
 from app.mcp_access import (
@@ -16,6 +16,12 @@ from app.mcp_access import (
 )
 from app.models import (
     ArchiveJobsRequest,
+    BenchmarkDatasetImportReceipt,
+    BenchmarkDatasetImportResult,
+    BenchmarkOverview,
+    BenchmarkReport,
+    BenchmarkRunRequest,
+    BenchmarkSelectionRequest,
     CanonicalState,
     HealthResponse,
     JobHistory,
@@ -32,6 +38,8 @@ from app.models import (
     TrainingReviewOrder,
     TrainingReviewRequest,
 )
+
+BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
 
 
 class PipelineCapabilitiesUnavailableError(Exception):
@@ -80,6 +88,30 @@ class JobRecommendationConfigurationError(Exception):
 
 class JobRecommendationProviderError(Exception):
     """The configured recommendation provider failed while serving a request."""
+
+
+class BenchmarkInputError(Exception):
+    """A benchmark request contains an unsupported pipeline selection."""
+
+
+class BenchmarkTransportNotFoundError(Exception):
+    """A benchmark resource requested through the transport is unavailable."""
+
+
+class BenchmarkConflictError(Exception):
+    """A benchmark operation conflicts with the current persisted state."""
+
+
+class BenchmarkDatasetInputError(Exception):
+    """A benchmark dataset cannot be imported with the submitted content."""
+
+    def __init__(self, detail: str, status_code: int) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+
+
+class BenchmarkConfigurationError(Exception):
+    """The selected benchmark parser cannot be configured."""
 
 
 @dataclass(frozen=True)
@@ -159,6 +191,37 @@ class JobsUploadRuntime:
     max_upload_bytes: int
     resolve_pipeline: Callable[[JobUploadPipelineRequest], PipelineSelection]
     process_upload: Callable[[JobUploadRequest], JobRecord]
+
+
+@dataclass(frozen=True)
+class BenchmarkDatasetExport:
+    """A prepared parser dataset archive ready for an HTTP response."""
+
+    content: Iterator[bytes]
+    filename: str
+
+
+@dataclass(frozen=True)
+class BenchmarkImportStatus:
+    """A persisted import receipt plus its recovery scheduling state."""
+
+    receipt: BenchmarkDatasetImportReceipt
+    should_resume: bool
+
+
+@dataclass(frozen=True)
+class BenchmarksRuntime:
+    """Dependencies required by parser benchmark transport endpoints."""
+
+    update_inclusion: Callable[[str, BenchmarkSelectionRequest], JobRecord]
+    get_overview: Callable[[str | None, str | None], BenchmarkOverview]
+    export_dataset: Callable[[str | None, str | None], BenchmarkDatasetExport]
+    max_dataset_upload_bytes: int
+    import_dataset: Callable[[bytes, str | None], BenchmarkDatasetImportResult]
+    get_import: Callable[[str], BenchmarkImportStatus]
+    resume_import: Callable[[str], None]
+    get_report: Callable[[str], BenchmarkReport]
+    run: Callable[[BenchmarkRunRequest | None], BenchmarkReport]
 
 
 @dataclass(frozen=True)

@@ -7,12 +7,19 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import ApiRuntime, HistoryRuntime, McpAdminRuntime
+from app.api.dependencies import (
+    ApiRuntime,
+    HistoryRuntime,
+    McpAdminRuntime,
+    TrainingProgressQuery,
+    TrainingRuntime,
+)
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
+from app.api.routers.training import create_training_router
 from app.mcp_access import (
     CreateMcpPrincipalRequest,
     McpAccessConfig,
@@ -24,9 +31,13 @@ from app.models import (
     ArchiveJobsRequest,
     HealthResponse,
     JobHistory,
+    JobRecord,
     PipelineCapabilities,
     PipelineSelection,
+    TrainingProgress,
+    TrainingReviewRequest,
 )
+from app.training import summarize_training
 
 
 def pipeline_capabilities() -> PipelineCapabilities:
@@ -57,6 +68,48 @@ def health_response() -> HealthResponse:
 
 def job_history() -> JobHistory:
     return JobHistory(total=0, jobs=[], snapshot_version="history-snapshot")
+
+
+def job_record() -> JobRecord:
+    return JobRecord(
+        id="a" * 32,
+        original_filename="table.png",
+        image_filename="table.png",
+        parser_provider="ocr_cv",
+        recommendation_provider="local_solver",
+    )
+
+
+def training_progress(_query: TrainingProgressQuery) -> TrainingProgress:
+    return summarize_training([])
+
+
+def complete_training_review(
+    _job_id: str,
+    _review: TrainingReviewRequest | None,
+) -> JobRecord:
+    return job_record()
+
+
+def reopen_training_review(_job_id: str) -> JobRecord:
+    return job_record()
+
+
+def export_training_lessons(
+    _lesson_order: str,
+    _lesson_street: str | None,
+    _lesson_query: str | None,
+) -> tuple[str, str]:
+    return "# Poker Hero Lessons\n", "poker-hero-lessons-20260820T000000Z.md"
+
+
+def default_training_runtime() -> TrainingRuntime:
+    return TrainingRuntime(
+        complete_review=complete_training_review,
+        reopen_review=reopen_training_review,
+        get_progress=training_progress,
+        export_lessons=export_training_lessons,
+    )
 
 
 def mcp_config() -> McpAccessConfig:
@@ -125,6 +178,7 @@ def make_client(
         lambda _request, _limit: job_history()
     ),
     mcp_admin_runtime: McpAdminRuntime | None = None,
+    training_runtime: TrainingRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -140,6 +194,9 @@ def make_client(
     app.include_router(create_history_router(history_runtime))
     app.include_router(
         create_mcp_admin_router(mcp_admin_runtime or default_mcp_admin_runtime())
+    )
+    app.include_router(
+        create_training_router(training_runtime or default_training_runtime())
     )
     return TestClient(app)
 
@@ -232,6 +289,171 @@ def test_history_router_preserves_callback_http_errors() -> None:
 
     assert response.status_code == 409
     assert response.json() == {"detail": "History is not ready"}
+
+
+def test_training_router_delegates_review_progress_and_lesson_export() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    def complete_review(
+        job_id: str,
+        review: TrainingReviewRequest | None,
+    ) -> JobRecord:
+        calls.append(("complete", job_id, review.note if review else None))
+        return job_record()
+
+    def reopen_review(job_id: str) -> JobRecord:
+        calls.append(("reopen", job_id))
+        return job_record()
+
+    def get_progress(query: TrainingProgressQuery) -> TrainingProgress:
+        calls.append(("progress", query))
+        return summarize_training([])
+
+    def export_lessons(
+        lesson_order: str,
+        lesson_street: str | None,
+        lesson_query: str | None,
+    ) -> tuple[str, str]:
+        calls.append(("export", lesson_order, lesson_street, lesson_query))
+        return "# Poker Hero Lessons\n", "poker-hero-lessons-20260820T000000Z.md"
+
+    runtime = TrainingRuntime(
+        complete_review=complete_review,
+        reopen_review=reopen_review,
+        get_progress=get_progress,
+        export_lessons=export_lessons,
+    )
+    with make_client(training_runtime=runtime) as client:
+        completed = client.put(
+            "/api/jobs/job-1/training-review",
+            json={"note": "Review blockers"},
+        )
+        reopened = client.delete("/api/jobs/job-1/training-review")
+        progress = client.get(
+            "/api/training/progress?review_order=ev_loss&review_street=flop"
+            "&review_certainty=high&review_position=button"
+            "&review_decision_action=fold&review_recommended_action=call"
+            "&lesson_order=ev_loss&lesson_street=turn&lesson_query=blockers"
+            f"&solver_fallback_key={'a' * 64}"
+        )
+        exported = client.get(
+            "/api/training/lessons/export?lesson_order=ev_loss"
+            "&lesson_street=flop&lesson_query=blockers"
+        )
+
+    assert [response.status_code for response in (
+        completed,
+        reopened,
+        progress,
+        exported,
+    )] == [200, 200, 200, 200]
+    assert exported.text == "# Poker Hero Lessons\n"
+    assert exported.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert exported.headers["content-disposition"] == (
+        'attachment; filename="poker-hero-lessons-20260820T000000Z.md"'
+    )
+    assert calls == [
+        ("complete", "job-1", "Review blockers"),
+        ("reopen", "job-1"),
+        (
+            "progress",
+            TrainingProgressQuery(
+                review_order="ev_loss",
+                review_street="flop",
+                review_certainty="high",
+                review_position="button",
+                review_unpositioned=False,
+                review_action_difference=("fold", "call"),
+                lesson_order="ev_loss",
+                lesson_street="turn",
+                lesson_query="blockers",
+                solver_fallback_key="a" * 64,
+                solver_route_key=None,
+                solver_unattributed=False,
+                recent_street=None,
+                recent_position=None,
+                recent_unpositioned=False,
+                recent_certainty=None,
+            ),
+        ),
+        ("export", "ev_loss", "flop", "blockers"),
+    ]
+
+
+def test_training_router_preserves_query_validation_without_delegating() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    def get_progress(query: TrainingProgressQuery) -> TrainingProgress:
+        calls.append((query,))
+        return summarize_training([])
+
+    runtime = TrainingRuntime(
+        complete_review=complete_training_review,
+        reopen_review=reopen_training_review,
+        get_progress=get_progress,
+        export_lessons=export_training_lessons,
+    )
+    with make_client(training_runtime=runtime) as client:
+        incomplete_difference = client.get(
+            "/api/training/progress?review_decision_action=fold"
+        )
+        conflicting_filters = client.get(
+            "/api/training/progress?recent_position=button"
+            f"&solver_route_key={'b' * 64}"
+        )
+        invalid_position = client.get("/api/training/progress?review_position=%20")
+
+    assert [response.status_code for response in (
+        incomplete_difference,
+        conflicting_filters,
+        invalid_position,
+    )] == [422, 422, 422]
+    assert calls == []
+
+
+def test_training_router_maps_review_and_lesson_export_errors() -> None:
+    def missing_review(
+        _job_id: str,
+        _review: TrainingReviewRequest | None,
+    ) -> JobRecord:
+        raise KeyError("Job not found")
+
+    def incomplete_reopen(_job_id: str) -> JobRecord:
+        raise ValueError(
+            "A completed decision comparison is required before reopening review"
+        )
+
+    def no_lessons(
+        _lesson_order: str,
+        _lesson_street: str | None,
+        _lesson_query: str | None,
+    ) -> tuple[str, str]:
+        raise ValueError("No saved lesson notes match the selected filters")
+
+    runtime = TrainingRuntime(
+        complete_review=missing_review,
+        reopen_review=incomplete_reopen,
+        get_progress=training_progress,
+        export_lessons=no_lessons,
+    )
+    with make_client(training_runtime=runtime) as client:
+        missing = client.put("/api/jobs/missing/training-review")
+        incomplete = client.delete("/api/jobs/job-1/training-review")
+        empty_export = client.get("/api/training/lessons/export")
+
+    assert (missing.status_code, missing.json()) == (404, {"detail": "Job not found"})
+    assert (incomplete.status_code, incomplete.json()) == (
+        409,
+        {
+            "detail": (
+                "A completed decision comparison is required before reopening review"
+            )
+        },
+    )
+    assert (empty_export.status_code, empty_export.json()) == (
+        409,
+        {"detail": "No saved lesson notes match the selected filters"},
+    )
 
 
 def test_mcp_admin_router_forwards_requests_and_preserves_issued_token_cache_rules() -> None:
@@ -405,6 +627,26 @@ def test_router_composition_preserves_public_operation_ids() -> None:
         == "mcp_principal_revoke"
     )
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
+    assert (
+        document["paths"]["/api/jobs/{job_id}/training-review"]["put"][
+            "operationId"
+        ]
+        == "job_training_review_complete"
+    )
+    assert (
+        document["paths"]["/api/jobs/{job_id}/training-review"]["delete"][
+            "operationId"
+        ]
+        == "job_training_review_reopen"
+    )
+    assert (
+        document["paths"]["/api/training/progress"]["get"]["operationId"]
+        == "training_progress_get"
+    )
+    assert (
+        document["paths"]["/api/training/lessons/export"]["get"]["operationId"]
+        == "training_lessons_export"
+    )
 
 
 def test_router_imports_do_not_initialize_the_legacy_bootstrap() -> None:
@@ -416,6 +658,7 @@ importlib.import_module('app.api.routers.health')
 importlib.import_module('app.api.routers.history')
 importlib.import_module('app.api.routers.mcp_admin')
 importlib.import_module('app.api.routers.pipeline')
+importlib.import_module('app.api.routers.training')
 
 for module_name in (
     'app.bootstrap',

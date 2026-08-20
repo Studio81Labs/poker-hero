@@ -59,6 +59,12 @@ Screenshot parsing runs outside those stripes, then reloads and merges into the
 latest job record so slow OCR does not block unrelated jobs and deleted uploads
 cannot be recreated by parser completion.
 
+FastAPI composition remains in `app/bootstrap.py`, while extracted transport
+adapters live under `app/api/routers`. Health, pipeline, history, MCP
+administration, and training routes receive focused frozen runtime containers;
+storage, locking, aggregation, and persistence stay behind bootstrap-owned
+callables until application services replace those concrete dependencies.
+
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can

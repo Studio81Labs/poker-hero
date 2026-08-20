@@ -6,7 +6,7 @@ type HealthResponse = components["schemas"]["HealthResponse"];
 
 export function toSystemInfo(response: HealthResponse): SystemInfo {
   return {
-    environment: response.environment as SystemInfo["environment"],
+    environment: response.environment,
     parser_provider: response.parser_provider,
     recommendation_engine: response.recommendation_engine,
     recommendation_provider: response.recommendation_provider,

@@ -477,11 +477,13 @@ Every implementation PR must include:
 
 ## Implementation Status
 
-| Wave | Status      | Current work                                           |
-| ---- | ----------- | ------------------------------------------------------ |
-| 0    | In progress | Architecture guardrails and legacy dependency baseline |
-| 1    | In progress | Stable operation IDs and generated OpenAPI contracts   |
-| 2-12 | Pending     | Start only after their documented dependencies pass    |
+| Wave | Status      | Current work                                                                                          |
+| ---- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| 0    | In progress | Plan, architecture guardrails, dependency baseline, and full-suite baseline are established           |
+| 1    | In progress | Stable operation IDs, deterministic generation, binary contracts, and schema dependency pins landed   |
+| 2    | In progress | Query provider, shared transport, and system/pipeline domain reads landed with compatibility behavior |
+| 3    | In progress | Bootstrap isolation and health/pipeline routers landed; remaining route domains stay in the bootstrap |
+| 4-12 | Pending     | Begin as their documented dependencies and compatibility gates pass                                   |
 
 ## Exit Criteria
 

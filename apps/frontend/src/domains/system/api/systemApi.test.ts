@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { jsonResponse, resetApiMocks } from "../../../test/api";
+import type { components } from "../../../shared/api/generated/openapi";
 import { getSystemInfo, toSystemInfo } from "./systemApi";
 
 afterEach(resetApiMocks);
@@ -10,8 +11,8 @@ const response = {
   parser_provider: "ocr_cv",
   recommendation_engine: "postflop_solver",
   recommendation_provider: "local_solver",
-  status: "ok" as const,
-};
+  status: "ok",
+} satisfies components["schemas"]["HealthResponse"];
 
 describe("system API adapter", () => {
   it("maps the generated health response into the stable system domain value", () => {

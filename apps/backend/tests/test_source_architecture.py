@@ -1,0 +1,84 @@
+"""Guardrails for backend packages reserved for the layered migration."""
+
+import ast
+from pathlib import Path
+
+APP_ROOT = Path(__file__).parents[1] / "app"
+LAYERS = {"api", "application", "domain", "infrastructure"}
+ALLOWED_IMPORTS = {
+    "api": {"application", "domain"},
+    "application": {"domain"},
+    "domain": set(),
+    "infrastructure": {"application", "domain"},
+}
+FORBIDDEN_APP_IMPORTS = {
+    "fastapi",
+    "starlette",
+    "pydantic_settings",
+    "pathlib",
+    "os",
+    "shutil",
+    "tempfile",
+    "glob",
+    "fnmatch",
+    "fcntl",
+    "subprocess",
+    "app.config",
+    "app.infrastructure",
+}
+
+
+def future_sources() -> list[Path]:
+    return sorted(
+        path
+        for layer in LAYERS
+        for path in (APP_ROOT / layer).rglob("*.py")
+        if path.name != "__init__.py"
+    ) if any((APP_ROOT / layer).is_dir() for layer in LAYERS) else []
+
+
+def layer_for(path: Path) -> str:
+    return path.relative_to(APP_ROOT).parts[0]
+
+
+def imported_modules(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            prefix = "." * node.level
+            modules.append(prefix + (node.module or ""))
+    return modules
+
+
+def package_target(module: str, path: Path) -> str | None:
+    if module.startswith("."):
+        relative_parts = list(path.relative_to(APP_ROOT).parts[:-1])
+        for _ in range(module.count(".") - 1):
+            if relative_parts:
+                relative_parts.pop()
+        relative_parts.extend(part for part in module.lstrip(".").split(".") if part)
+        return relative_parts[0] if relative_parts and relative_parts[0] in LAYERS else None
+    parts = module.split(".")
+    if parts[0] == "app" and len(parts) > 1 and parts[1] in LAYERS:
+        return parts[1]
+    return parts[0] if parts[0] in LAYERS else None
+
+def test_future_backend_layers_follow_direction_and_boundaries() -> None:
+    violations: list[str] = []
+    for path in future_sources():
+        layer = layer_for(path)
+        modules = imported_modules(path)
+        if layer in {"application", "domain"}:
+            for module in modules:
+                if module in FORBIDDEN_APP_IMPORTS or any(
+                    module.startswith(root + ".") for root in FORBIDDEN_APP_IMPORTS
+                ):
+                    violations.append(f"{path}: {module}")
+        for module in modules:
+            target = package_target(module, path)
+            if target is not None and target not in ALLOWED_IMPORTS[layer]:
+                violations.append(f"{path}: {layer} may not import {target}")
+    assert violations == []

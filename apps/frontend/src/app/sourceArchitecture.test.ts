@@ -12,11 +12,21 @@ const SOURCE_ROOT = resolve(process.cwd(), "src");
 const ALLOWED_LAYER_IMPORTS: Readonly<Record<string, ReadonlySet<string>>> = {
   bootstrap: new Set(["app"]),
   app: new Set(["app", "pages", "shared"]),
-  pages: new Set(["pages", "features", "shared"]),
-  features: new Set(["features", "shared"]),
+  pages: new Set(["pages", "workflows", "features", "shared"]),
+  workflows: new Set(["workflows", "features", "domains", "shared"]),
+  features: new Set(["features", "domains", "shared"]),
+  domains: new Set(["domains", "shared"]),
   shared: new Set(["shared"]),
 };
-const ALLOWED_FEATURE_AREAS = new Set(["components", "hooks", "lib"]);
+const ALLOWED_FEATURE_AREAS = new Set([
+  "api",
+  "components",
+  "hooks",
+  "lib",
+  "model",
+  "services",
+  "store",
+]);
 const JAVASCRIPT_EXTENSIONS = new Set([".cjs", ".js", ".jsx", ".mjs"]);
 const SOURCE_EXTENSIONS = new Set([
   ".cjs",
@@ -55,7 +65,8 @@ function sourceLayer(sourcePath: readonly string[]): string | null {
 
 function featureArea(sourcePath: readonly string[]): string | null {
   const area = sourcePath[2];
-  return sourcePath[0] === "features" && ALLOWED_FEATURE_AREAS.has(area)
+  return (sourcePath[0] === "features" || sourcePath[0] === "domains") &&
+    ALLOWED_FEATURE_AREAS.has(area)
     ? area
     : null;
 }
@@ -65,7 +76,7 @@ function featurePlacementViolation(
 ): string | null {
   const area = featureArea(sourcePath);
   if (!area) {
-    return "feature source must live in components, hooks, or lib";
+    return "feature or domain source must live in an allowed area";
   }
 
   const extension = extname(sourcePath[sourcePath.length - 1] ?? "");
@@ -74,6 +85,15 @@ function featurePlacementViolation(
   }
   return null;
 }
+
+const PEER_FEATURE_BASELINE_PATH = resolve(
+  SOURCE_ROOT,
+  "test/sourceArchitecturePeerFeatureBaseline.json",
+);
+const PEER_FEATURE_BASELINE_ENTRIES = JSON.parse(
+  readFileSync(PEER_FEATURE_BASELINE_PATH, "utf8"),
+) as string[];
+const PEER_FEATURE_BASELINE = new Set(PEER_FEATURE_BASELINE_ENTRIES);
 
 function isTestSupportPath(sourcePath: readonly string[]): boolean {
   return (
@@ -311,6 +331,57 @@ function sourceImports(
     .concat(viteGlobImports(file, source));
 }
 
+function resolvedSourceFile(target: string, importer: string): string {
+  if (existsSync(target)) return target;
+  const extensions =
+    extname(importer) === ".css"
+      ? [".css", ".scss", ".sass"]
+      : [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
+  for (const extension of extensions) {
+    const candidate = `${target}${extension}`;
+    if (existsSync(candidate)) return candidate;
+  }
+  for (const extension of extensions) {
+    const candidate = join(target, `index${extension}`);
+    if (existsSync(candidate)) return candidate;
+  }
+  return target;
+}
+
+function peerFeatureEdges(): Set<string> {
+  const edges = new Set<string>();
+  for (const file of sourceFiles()) {
+    const sourcePath = sourceSegments(file);
+    if (sourcePath[0] !== "features") continue;
+    for (const { target } of sourceImports(file)) {
+      const targetPath = sourceSegments(resolvedSourceFile(target, file));
+      if (targetPath[0] === "features" && sourcePath[1] !== targetPath[1]) {
+        edges.add(`${sourcePath.join("/")} -> ${targetPath.join("/")}`);
+      }
+    }
+  }
+  return edges;
+}
+
+function peerFeatureBoundaryViolations(): string[] {
+  const current = peerFeatureEdges();
+  const baselineShape = [...new Set(PEER_FEATURE_BASELINE_ENTRIES)].sort();
+  return [
+    ...(JSON.stringify(PEER_FEATURE_BASELINE_ENTRIES) !==
+    JSON.stringify(baselineShape)
+      ? ["peer-feature baseline must be sorted and duplicate-free"]
+      : []),
+    ...[...current]
+      .filter((edge) => !PEER_FEATURE_BASELINE.has(edge))
+      .sort()
+      .map((edge) => `new peer-feature import: ${edge}`),
+    ...[...PEER_FEATURE_BASELINE]
+      .filter((edge) => !current.has(edge))
+      .sort()
+      .map((edge) => `stale peer-feature baseline entry: ${edge}`),
+  ];
+}
+
 function layerViolations(): string[] {
   const violations: string[] = [];
 
@@ -325,12 +396,12 @@ function layerViolations(): string[] {
     const currentSourceLayer = sourceLayer(sourcePath);
     if (!currentSourceLayer) {
       violations.push(
-        `production source must live in app, pages, features, or shared: ${sourcePath.join("/")}`,
+        `production source must live in a declared layer: ${sourcePath.join("/")}`,
       );
       continue;
     }
     const featurePlacementError =
-      currentSourceLayer === "features"
+      currentSourceLayer === "features" || currentSourceLayer === "domains"
         ? featurePlacementViolation(sourcePath)
         : null;
     if (featurePlacementError) {
@@ -640,6 +711,12 @@ describe("frontend source architecture", () => {
     expect(
       sourceLayer(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe("features");
+    expect(sourceLayer(["workflows", "capture", "lib", "capture.ts"])).toBe(
+      "workflows",
+    );
+    expect(sourceLayer(["domains", "cards", "model", "card.ts"])).toBe(
+      "domains",
+    );
     expect(sourceLayer(["utils", "format.ts"])).toBeNull();
   });
 
@@ -648,6 +725,10 @@ describe("frontend source architecture", () => {
       featureArea(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe("lib");
     expect(featureArea(["features", "capture", "index.ts"])).toBeNull();
+    expect(featureArea(["features", "capture", "services", "api.ts"])).toBe(
+      "services",
+    );
+    expect(featureArea(["domains", "cards", "model", "card.ts"])).toBe("model");
     expect(
       featureArea(["features", "capture", "utils", "format.ts"]),
     ).toBeNull();
@@ -804,6 +885,10 @@ describe("frontend source architecture", () => {
 
   it("keeps imports within the documented layer direction", () => {
     expect(layerViolations()).toEqual([]);
+  });
+
+  it("allows only the checked-in legacy peer-feature imports", () => {
+    expect(peerFeatureBoundaryViolations()).toEqual([]);
   });
 
   it("keeps tests colocated with production components", () => {

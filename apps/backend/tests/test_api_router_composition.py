@@ -10,6 +10,9 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import (
     ApiRuntime,
     HistoryRuntime,
+    JobImage,
+    JobReadNotFoundError,
+    JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
     TrainingRuntime,
@@ -17,6 +20,7 @@ from app.api.dependencies import (
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
+from app.api.routers.jobs import create_jobs_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -31,6 +35,7 @@ from app.models import (
     ArchiveJobsRequest,
     HealthResponse,
     JobHistory,
+    JobQueue,
     JobRecord,
     PipelineCapabilities,
     PipelineSelection,
@@ -77,6 +82,22 @@ def job_record() -> JobRecord:
         image_filename="table.png",
         parser_provider="ocr_cv",
         recommendation_provider="local_solver",
+    )
+
+
+def job_queue() -> JobQueue:
+    return JobQueue(total=1, jobs=[job_record()], snapshot_version="queue-snapshot")
+
+
+def job_image() -> JobImage:
+    return JobImage(content=b"image bytes", media_type="image/png")
+
+
+def default_jobs_read_runtime() -> JobsReadRuntime:
+    return JobsReadRuntime(
+        list_jobs=lambda _limit, _offset: job_queue(),
+        get_job=lambda _job_id: job_record(),
+        get_image=lambda _job_id: job_image(),
     )
 
 
@@ -179,6 +200,7 @@ def make_client(
     ),
     mcp_admin_runtime: McpAdminRuntime | None = None,
     training_runtime: TrainingRuntime | None = None,
+    jobs_read_runtime: JobsReadRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -197,6 +219,9 @@ def make_client(
     )
     app.include_router(
         create_training_router(training_runtime or default_training_runtime())
+    )
+    app.include_router(
+        create_jobs_router(jobs_read_runtime or default_jobs_read_runtime())
     )
     return TestClient(app)
 
@@ -289,6 +314,108 @@ def test_history_router_preserves_callback_http_errors() -> None:
 
     assert response.status_code == 409
     assert response.json() == {"detail": "History is not ready"}
+
+
+def test_jobs_read_router_delegates_list_get_and_image() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    def list_jobs(limit: int, offset: int) -> JobQueue:
+        calls.append(("list", limit, offset))
+        return job_queue()
+
+    def get_job(job_id: str) -> JobRecord:
+        calls.append(("get", job_id))
+        return job_record()
+
+    def get_image(job_id: str) -> JobImage:
+        calls.append(("image", job_id))
+        return JobImage(content=b"gif bytes", media_type="image/gif")
+
+    runtime = JobsReadRuntime(
+        list_jobs=list_jobs,
+        get_job=get_job,
+        get_image=get_image,
+    )
+    with make_client(jobs_read_runtime=runtime) as client:
+        listed = client.get("/api/jobs", params={"limit": 7, "offset": 3})
+        job = client.get("/api/jobs/job-1")
+        image = client.get("/api/jobs/job-1/image")
+
+    assert listed.status_code == 200
+    assert listed.json()["snapshot_version"] == "queue-snapshot"
+    assert job.status_code == 200
+    assert job.json()["id"] == "a" * 32
+    assert image.status_code == 200
+    assert image.content == b"gif bytes"
+    assert image.headers["content-type"] == "image/gif"
+    assert calls == [
+        ("list", 7, 3),
+        ("get", "job-1"),
+        ("image", "job-1"),
+    ]
+
+
+def test_jobs_read_router_validates_pagination_without_delegating() -> None:
+    calls: list[tuple[int, int]] = []
+
+    def list_jobs(limit: int, offset: int) -> JobQueue:
+        calls.append((limit, offset))
+        return job_queue()
+
+    runtime = JobsReadRuntime(
+        list_jobs=list_jobs,
+        get_job=lambda _job_id: job_record(),
+        get_image=lambda _job_id: job_image(),
+    )
+    with make_client(jobs_read_runtime=runtime) as client:
+        invalid_limit = client.get("/api/jobs", params={"limit": 101})
+        invalid_offset = client.get("/api/jobs", params={"offset": -1})
+
+    assert [response.status_code for response in (invalid_limit, invalid_offset)] == [
+        422,
+        422,
+    ]
+    assert calls == []
+
+
+def test_jobs_read_router_maps_not_found_details() -> None:
+    def missing_job(_job_id: str) -> JobRecord:
+        raise JobReadNotFoundError("Job not found")
+
+    def missing_image(_job_id: str) -> JobImage:
+        raise JobReadNotFoundError("Job image not found")
+
+    def missing_image_job(_job_id: str) -> JobImage:
+        raise JobReadNotFoundError("Job not found")
+
+    runtime = JobsReadRuntime(
+        list_jobs=lambda _limit, _offset: job_queue(),
+        get_job=missing_job,
+        get_image=missing_image,
+    )
+    with make_client(jobs_read_runtime=runtime) as client:
+        missing_job = client.get("/api/jobs/missing")
+        missing_image = client.get("/api/jobs/missing/image")
+    image_job_runtime = JobsReadRuntime(
+        list_jobs=lambda _limit, _offset: job_queue(),
+        get_job=lambda _job_id: job_record(),
+        get_image=missing_image_job,
+    )
+    with make_client(jobs_read_runtime=image_job_runtime) as client:
+        missing_image_job_response = client.get("/api/jobs/missing/image")
+
+    assert (missing_job.status_code, missing_job.json()) == (
+        404,
+        {"detail": "Job not found"},
+    )
+    assert (missing_image.status_code, missing_image.json()) == (
+        404,
+        {"detail": "Job image not found"},
+    )
+    assert (
+        missing_image_job_response.status_code,
+        missing_image_job_response.json(),
+    ) == (404, {"detail": "Job not found"})
 
 
 def test_training_router_delegates_review_progress_and_lesson_export() -> None:
@@ -627,6 +754,21 @@ def test_router_composition_preserves_public_operation_ids() -> None:
         == "mcp_principal_revoke"
     )
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
+    assert document["paths"]["/api/jobs"]["get"]["operationId"] == "jobs_list"
+    assert document["paths"]["/api/jobs/{job_id}"]["get"]["operationId"] == "job_get"
+    job_image_response = document["paths"]["/api/jobs/{job_id}/image"]["get"][
+        "responses"
+    ]["200"]
+    assert (
+        document["paths"]["/api/jobs/{job_id}/image"]["get"]["operationId"]
+        == "job_image_get"
+    )
+    assert job_image_response["content"] == {
+        "image/gif": {"schema": {"type": "string", "format": "binary"}},
+        "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+        "image/png": {"schema": {"type": "string", "format": "binary"}},
+        "image/webp": {"schema": {"type": "string", "format": "binary"}},
+    }
     assert (
         document["paths"]["/api/jobs/{job_id}/training-review"]["put"][
             "operationId"
@@ -656,6 +798,7 @@ import sys
 
 importlib.import_module('app.api.routers.health')
 importlib.import_module('app.api.routers.history')
+importlib.import_module('app.api.routers.jobs')
 importlib.import_module('app.api.routers.mcp_admin')
 importlib.import_module('app.api.routers.pipeline')
 importlib.import_module('app.api.routers.training')

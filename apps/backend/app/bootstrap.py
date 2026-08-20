@@ -38,17 +38,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.dependencies import (
     ApiRuntime,
     HistoryRuntime,
+    JobImage,
+    JobReadNotFoundError,
+    JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
     TrainingRuntime,
 )
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
-from app.api.response_contracts import (
-    SUPPORTED_IMAGE_RESPONSE_CONTENT,
-    ZIP_RESPONSE_CONTENT,
-)
+from app.api.response_contracts import ZIP_RESPONSE_CONTENT
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
+from app.api.routers.jobs import create_jobs_router
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -1091,6 +1092,31 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return document, f"poker-hero-lessons-{timestamp}.md"
 
+    def list_processing_jobs(limit: int, offset: int) -> JobQueue:
+        with history_lock:
+            return build_job_queue(store, limit, offset)
+
+    def get_processing_job(job_id: str) -> JobRecord:
+        with job_lock_for(job_id):
+            try:
+                return store.get(job_id)
+            except JobNotFoundError as exc:
+                raise JobReadNotFoundError("Job not found") from exc
+
+    def get_processing_job_image(job_id: str) -> JobImage:
+        with job_lock_for(job_id):
+            try:
+                job = store.get(job_id)
+                image_path = store.image_path(job)
+            except JobNotFoundError as exc:
+                raise JobReadNotFoundError("Job not found") from exc
+            try:
+                image_bytes = image_path.read_bytes()
+            except FileNotFoundError as exc:
+                raise JobReadNotFoundError("Job image not found") from exc
+            media_type = guess_type(image_path.name)[0] or "application/octet-stream"
+        return JobImage(content=image_bytes, media_type=media_type)
+
     api_runtime = ApiRuntime(
         get_health=get_health,
         get_pipeline_capabilities=get_pipeline_capabilities,
@@ -1111,6 +1137,11 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         reopen_review=reopen_training_review,
         get_progress=get_training_progress,
         export_lessons=export_training_lessons,
+    )
+    jobs_read_runtime = JobsReadRuntime(
+        list_jobs=list_processing_jobs,
+        get_job=get_processing_job,
+        get_image=get_processing_job_image,
     )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
@@ -1177,23 +1208,6 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             selection,
         )
 
-    @app.get("/api/jobs", operation_id="jobs_list", response_model=JobQueue)
-    def get_processing_jobs(
-        limit: int = Query(default=100, ge=1, le=100),
-        offset: int = Query(default=0, ge=0),
-    ) -> JobQueue:
-        with history_lock:
-            return build_job_queue(store, limit, offset)
-
-    @app.get(
-        "/api/jobs/{job_id}",
-        operation_id="job_get",
-        response_model=JobRecord,
-    )
-    def get_job(job_id: str) -> JobRecord:
-        with job_lock_for(job_id):
-            return load_job_or_404(store, job_id)
-
     @app.put(
         "/api/jobs/{job_id}/metadata",
         operation_id="job_metadata_update",
@@ -1228,29 +1242,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     app.include_router(create_history_router(history_runtime))
-
-    @app.get(
-        "/api/jobs/{job_id}/image",
-        operation_id="job_image_get",
-        response_class=Response,
-        responses={"200": {"content": SUPPORTED_IMAGE_RESPONSE_CONTENT}},
-    )
-    def get_job_image(job_id: str) -> Response:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            try:
-                image_path = store.image_path(job)
-            except JobNotFoundError as exc:
-                raise HTTPException(status_code=404, detail="Job not found") from exc
-            try:
-                image_bytes = image_path.read_bytes()
-            except FileNotFoundError as exc:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Job image not found",
-                ) from exc
-            media_type = guess_type(image_path.name)[0] or "application/octet-stream"
-        return Response(content=image_bytes, media_type=media_type)
+    app.include_router(create_jobs_router(jobs_read_runtime))
 
     @app.post(
         "/api/jobs/{job_id}/approve",

@@ -18,6 +18,7 @@ from app.models import (
     ArchiveJobsRequest,
     HealthResponse,
     JobHistory,
+    JobQueue,
     JobRecord,
     PipelineCapabilities,
     RecommendationAction,
@@ -31,6 +32,10 @@ from app.models import (
 
 class PipelineCapabilitiesUnavailableError(Exception):
     """The configured pipeline cannot describe its available capabilities."""
+
+
+class JobReadNotFoundError(Exception):
+    """A requested job record or image is not available."""
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,23 @@ class HistoryRuntime:
 
     list_history: Callable[[int, int, str | None], JobHistory]
     archive_jobs: Callable[[ArchiveJobsRequest, int], JobHistory]
+
+
+@dataclass(frozen=True)
+class JobImage:
+    """An image payload prepared by the job-read application boundary."""
+
+    content: bytes
+    media_type: str
+
+
+@dataclass(frozen=True)
+class JobsReadRuntime:
+    """Dependencies required by read-only processing job endpoints."""
+
+    list_jobs: Callable[[int, int], JobQueue]
+    get_job: Callable[[str], JobRecord]
+    get_image: Callable[[str], JobImage]
 
 
 @dataclass(frozen=True)

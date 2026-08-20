@@ -35,7 +35,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.api.dependencies import ApiRuntime, HistoryRuntime
+from app.api.dependencies import ApiRuntime, HistoryRuntime, McpAdminRuntime
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import (
     MARKDOWN_RESPONSE_CONTENT,
@@ -44,6 +44,7 @@ from app.api.response_contracts import (
 )
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
+from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.application_backup import (
     ApplicationBackupError,
@@ -963,54 +964,25 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         store.save(job)
                 return build_job_history(store, limit)
 
-    api_runtime = ApiRuntime(
-        get_health=get_health,
-        get_pipeline_capabilities=get_pipeline_capabilities,
-    )
-    history_runtime = HistoryRuntime(
-        list_history=list_history,
-        archive_jobs=archive_jobs,
-    )
-    app.include_router(create_health_router(api_runtime))
-    app.include_router(create_pipeline_router(api_runtime))
-
-    @app.get(
-        "/api/mcp/config",
-        operation_id="mcp_config_get",
-        response_model=McpAccessConfig,
-    )
     def get_mcp_access_config() -> McpAccessConfig:
         return McpAccessConfig(
             enabled=active_settings.mcp_enabled,
             environment=active_settings.deployment_environment,
             endpoint=(
-                active_settings.mcp_public_url
-                if active_settings.mcp_enabled
-                else None
+                active_settings.mcp_public_url if active_settings.mcp_enabled else None
             ),
             writes_enabled=active_settings.mcp_allow_writes,
         )
 
-    @app.get(
-        "/api/mcp/principals",
-        operation_id="mcp_principals_list",
-        response_model=McpPrincipalList,
-    )
     async def list_mcp_principals() -> McpPrincipalList:
         if mcp_principal_store is None:
             return McpPrincipalList(principals=[])
         principals = await run_in_threadpool(mcp_principal_store.list)
         return McpPrincipalList(principals=principals)
 
-    @app.post(
-        "/api/mcp/principals",
-        operation_id="mcp_principals_create",
-        response_model=McpIssuedPrincipal,
-        status_code=status.HTTP_201_CREATED,
-    )
     async def create_mcp_principal(
         request: CreateMcpPrincipalRequest,
-    ) -> JSONResponse:
+    ) -> McpIssuedPrincipal:
         store_for_mcp = require_mcp_principal_store(mcp_principal_store)
         if (
             active_settings.deployment_environment != "staging"
@@ -1020,54 +992,39 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 status_code=400,
                 detail="MCP write credentials can only be issued in staging",
             )
-        try:
-            issued = await run_in_threadpool(
-                store_for_mcp.create,
-                name=request.name,
-                scopes=request.scopes,
-                expires_at=request.expires_at,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return JSONResponse(
-            status_code=201,
-            content=issued.model_dump(mode="json"),
-            headers={"Cache-Control": "no-store"},
+        return await run_in_threadpool(
+            store_for_mcp.create,
+            name=request.name,
+            scopes=request.scopes,
+            expires_at=request.expires_at,
         )
 
-    @app.post(
-        "/api/mcp/principals/{principal_id}/rotate",
-        operation_id="mcp_principal_rotate",
-        response_model=McpIssuedPrincipal,
-        status_code=status.HTTP_201_CREATED,
-    )
-    async def rotate_mcp_principal(principal_id: str) -> JSONResponse:
+    async def rotate_mcp_principal(principal_id: str) -> McpIssuedPrincipal:
         store_for_mcp = require_mcp_principal_store(mcp_principal_store)
-        try:
-            issued = await run_in_threadpool(store_for_mcp.rotate, principal_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return JSONResponse(
-            status_code=201,
-            content=issued.model_dump(mode="json"),
-            headers={"Cache-Control": "no-store"},
-        )
+        return await run_in_threadpool(store_for_mcp.rotate, principal_id)
 
-    @app.delete(
-        "/api/mcp/principals/{principal_id}",
-        operation_id="mcp_principal_revoke",
-        response_model=McpPrincipalSummary,
-    )
     async def revoke_mcp_principal(principal_id: str) -> McpPrincipalSummary:
         store_for_mcp = require_mcp_principal_store(mcp_principal_store)
-        try:
-            return await run_in_threadpool(store_for_mcp.revoke, principal_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return await run_in_threadpool(store_for_mcp.revoke, principal_id)
+
+    api_runtime = ApiRuntime(
+        get_health=get_health,
+        get_pipeline_capabilities=get_pipeline_capabilities,
+    )
+    history_runtime = HistoryRuntime(
+        list_history=list_history,
+        archive_jobs=archive_jobs,
+    )
+    mcp_admin_runtime = McpAdminRuntime(
+        get_config=get_mcp_access_config,
+        list_principals=list_mcp_principals,
+        create_principal=create_mcp_principal,
+        rotate_principal=rotate_mcp_principal,
+        revoke_principal=revoke_mcp_principal,
+    )
+    app.include_router(create_health_router(api_runtime))
+    app.include_router(create_pipeline_router(api_runtime))
+    app.include_router(create_mcp_admin_router(mcp_admin_runtime))
 
     @app.post(
         "/api/jobs",

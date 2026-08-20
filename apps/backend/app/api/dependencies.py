@@ -4,9 +4,16 @@ The application factory wires concrete settings, stores, and plugins into this
 container. Routers receive only the use-case callables they need.
 """
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.mcp_access import (
+    CreateMcpPrincipalRequest,
+    McpAccessConfig,
+    McpIssuedPrincipal,
+    McpPrincipalList,
+    McpPrincipalSummary,
+)
 from app.models import ArchiveJobsRequest, HealthResponse, JobHistory, PipelineCapabilities
 
 
@@ -28,3 +35,17 @@ class HistoryRuntime:
 
     list_history: Callable[[int, int, str | None], JobHistory]
     archive_jobs: Callable[[ArchiveJobsRequest, int], JobHistory]
+
+
+@dataclass(frozen=True)
+class McpAdminRuntime:
+    """Dependencies required by the MCP administration transport endpoints."""
+
+    get_config: Callable[[], McpAccessConfig]
+    list_principals: Callable[[], Awaitable[McpPrincipalList]]
+    create_principal: Callable[
+        [CreateMcpPrincipalRequest],
+        Awaitable[McpIssuedPrincipal],
+    ]
+    rotate_principal: Callable[[str], Awaitable[McpIssuedPrincipal]]
+    revoke_principal: Callable[[str], Awaitable[McpPrincipalSummary]]

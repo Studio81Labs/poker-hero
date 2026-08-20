@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime, timezone
 import subprocess
 import sys
 from pathlib import Path
@@ -6,11 +7,19 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import ApiRuntime, HistoryRuntime
+from app.api.dependencies import ApiRuntime, HistoryRuntime, McpAdminRuntime
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
+from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
+from app.mcp_access import (
+    CreateMcpPrincipalRequest,
+    McpAccessConfig,
+    McpIssuedPrincipal,
+    McpPrincipalList,
+    McpPrincipalSummary,
+)
 from app.models import (
     ArchiveJobsRequest,
     HealthResponse,
@@ -50,6 +59,61 @@ def job_history() -> JobHistory:
     return JobHistory(total=0, jobs=[], snapshot_version="history-snapshot")
 
 
+def mcp_config() -> McpAccessConfig:
+    return McpAccessConfig(
+        enabled=True,
+        environment="staging",
+        endpoint="https://poker.test/mcp",
+        writes_enabled=True,
+    )
+
+
+def mcp_principal() -> McpPrincipalSummary:
+    now = datetime(2026, 8, 20, tzinfo=timezone.utc)
+    return McpPrincipalSummary(
+        id="mcp_" + "a" * 32,
+        name="Codex test",
+        environment="staging",
+        token_prefix="tokenprefix1",
+        scopes=["read"],
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def issued_mcp_principal() -> McpIssuedPrincipal:
+    return McpIssuedPrincipal(principal=mcp_principal(), token="phmcp_test")
+
+
+async def list_mcp_principals() -> McpPrincipalList:
+    return McpPrincipalList(principals=[mcp_principal()])
+
+
+async def create_mcp_principal(
+    _request: CreateMcpPrincipalRequest,
+) -> McpIssuedPrincipal:
+    return issued_mcp_principal()
+
+
+async def rotate_mcp_principal(_principal_id: str) -> McpIssuedPrincipal:
+    return issued_mcp_principal()
+
+
+async def revoke_mcp_principal(_principal_id: str) -> McpPrincipalSummary:
+    return mcp_principal()
+
+
+def default_mcp_admin_runtime() -> McpAdminRuntime:
+    return McpAdminRuntime(
+        get_config=mcp_config,
+        list_principals=list_mcp_principals,
+        create_principal=create_mcp_principal,
+        rotate_principal=rotate_mcp_principal,
+        revoke_principal=revoke_mcp_principal,
+    )
+
+
 def make_client(
     *,
     get_health: Callable[[], HealthResponse] = health_response,
@@ -60,6 +124,7 @@ def make_client(
     archive_jobs: Callable[[ArchiveJobsRequest, int], JobHistory] = (
         lambda _request, _limit: job_history()
     ),
+    mcp_admin_runtime: McpAdminRuntime | None = None,
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
@@ -73,6 +138,9 @@ def make_client(
     app.include_router(create_health_router(runtime))
     app.include_router(create_pipeline_router(runtime))
     app.include_router(create_history_router(history_runtime))
+    app.include_router(
+        create_mcp_admin_router(mcp_admin_runtime or default_mcp_admin_runtime())
+    )
     return TestClient(app)
 
 
@@ -166,6 +234,135 @@ def test_history_router_preserves_callback_http_errors() -> None:
     assert response.json() == {"detail": "History is not ready"}
 
 
+def test_mcp_admin_router_forwards_requests_and_preserves_issued_token_cache_rules() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    async def list_principals() -> McpPrincipalList:
+        calls.append(("list",))
+        return McpPrincipalList(principals=[mcp_principal()])
+
+    async def create_principal(
+        request: CreateMcpPrincipalRequest,
+    ) -> McpIssuedPrincipal:
+        calls.append(("create", request.name, request.scopes, request.expires_at))
+        return issued_mcp_principal()
+
+    async def rotate_principal(principal_id: str) -> McpIssuedPrincipal:
+        calls.append(("rotate", principal_id))
+        return issued_mcp_principal()
+
+    async def revoke_principal(principal_id: str) -> McpPrincipalSummary:
+        calls.append(("revoke", principal_id))
+        return mcp_principal()
+
+    runtime = McpAdminRuntime(
+        get_config=mcp_config,
+        list_principals=list_principals,
+        create_principal=create_principal,
+        rotate_principal=rotate_principal,
+        revoke_principal=revoke_principal,
+    )
+    principal_id = mcp_principal().id
+    with make_client(mcp_admin_runtime=runtime) as client:
+        config = client.get("/api/mcp/config")
+        listed = client.get("/api/mcp/principals")
+        created = client.post(
+            "/api/mcp/principals",
+            json={"name": "Codex test", "scopes": ["read"], "expires_at": None},
+        )
+        rotated = client.post(f"/api/mcp/principals/{principal_id}/rotate")
+        revoked = client.delete(f"/api/mcp/principals/{principal_id}")
+
+    assert config.json() == {
+        "enabled": True,
+        "environment": "staging",
+        "endpoint": "https://poker.test/mcp",
+        "writes_enabled": True,
+    }
+    assert listed.json()["principals"][0]["id"] == principal_id
+    assert [response.status_code for response in (created, rotated, revoked)] == [
+        201,
+        201,
+        200,
+    ]
+    assert created.headers["cache-control"] == "no-store"
+    assert rotated.headers["cache-control"] == "no-store"
+    assert calls == [
+        ("list",),
+        ("create", "Codex test", ["read"], None),
+        ("rotate", principal_id),
+        ("revoke", principal_id),
+    ]
+
+
+def test_mcp_admin_router_maps_store_errors_without_changing_callback_policy() -> None:
+    async def invalid_create(
+        _request: CreateMcpPrincipalRequest,
+    ) -> McpIssuedPrincipal:
+        raise ValueError("invalid principal")
+
+    async def missing_principal(_principal_id: str) -> McpIssuedPrincipal:
+        raise KeyError("MCP principal not found")
+
+    async def inactive_principal(_principal_id: str) -> McpIssuedPrincipal:
+        raise ValueError("MCP principal is not active")
+
+    async def missing_revoke(_principal_id: str) -> McpPrincipalSummary:
+        raise KeyError("MCP principal not found")
+
+    async def invalid_revoke(_principal_id: str) -> McpPrincipalSummary:
+        raise ValueError("invalid principal id")
+
+    with make_client(
+        mcp_admin_runtime=McpAdminRuntime(
+            get_config=mcp_config,
+            list_principals=list_mcp_principals,
+            create_principal=invalid_create,
+            rotate_principal=missing_principal,
+            revoke_principal=missing_revoke,
+        )
+    ) as client:
+        create_error = client.post(
+            "/api/mcp/principals",
+            json={"name": "Codex test", "scopes": ["read"]},
+        )
+        rotate_missing = client.post("/api/mcp/principals/mcp_missing/rotate")
+        revoke_missing = client.delete("/api/mcp/principals/mcp_missing")
+
+    with make_client(
+        mcp_admin_runtime=McpAdminRuntime(
+            get_config=mcp_config,
+            list_principals=list_mcp_principals,
+            create_principal=create_mcp_principal,
+            rotate_principal=inactive_principal,
+            revoke_principal=invalid_revoke,
+        )
+    ) as client:
+        rotate_inactive = client.post("/api/mcp/principals/mcp_inactive/rotate")
+        revoke_invalid = client.delete("/api/mcp/principals/mcp_invalid")
+
+    assert (create_error.status_code, create_error.json()) == (
+        400,
+        {"detail": "invalid principal"},
+    )
+    assert (rotate_missing.status_code, rotate_missing.json()) == (
+        404,
+        {"detail": "MCP principal not found"},
+    )
+    assert (rotate_inactive.status_code, rotate_inactive.json()) == (
+        409,
+        {"detail": "MCP principal is not active"},
+    )
+    assert (revoke_missing.status_code, revoke_missing.json()) == (
+        404,
+        {"detail": "MCP principal not found"},
+    )
+    assert (revoke_invalid.status_code, revoke_invalid.json()) == (
+        400,
+        {"detail": "invalid principal id"},
+    )
+
+
 def test_pipeline_router_preserves_configuration_error_contract() -> None:
     def invalid_pipeline() -> PipelineCapabilities:
         raise PipelineCapabilitiesUnavailableError("missing parser configuration")
@@ -186,6 +383,27 @@ def test_router_composition_preserves_public_operation_ids() -> None:
     assert document["paths"]["/api/health"]["get"]["operationId"] == "health_get"
     assert document["paths"]["/api/history"]["get"]["operationId"] == "history_get"
     assert document["paths"]["/api/history"]["put"]["operationId"] == "history_archive"
+    assert document["paths"]["/api/mcp/config"]["get"]["operationId"] == "mcp_config_get"
+    assert (
+        document["paths"]["/api/mcp/principals"]["get"]["operationId"]
+        == "mcp_principals_list"
+    )
+    assert (
+        document["paths"]["/api/mcp/principals"]["post"]["operationId"]
+        == "mcp_principals_create"
+    )
+    assert (
+        document["paths"]["/api/mcp/principals/{principal_id}/rotate"]["post"][
+            "operationId"
+        ]
+        == "mcp_principal_rotate"
+    )
+    assert (
+        document["paths"]["/api/mcp/principals/{principal_id}"]["delete"][
+            "operationId"
+        ]
+        == "mcp_principal_revoke"
+    )
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
 
 
@@ -196,6 +414,7 @@ import sys
 
 importlib.import_module('app.api.routers.health')
 importlib.import_module('app.api.routers.history')
+importlib.import_module('app.api.routers.mcp_admin')
 importlib.import_module('app.api.routers.pipeline')
 
 for module_name in (

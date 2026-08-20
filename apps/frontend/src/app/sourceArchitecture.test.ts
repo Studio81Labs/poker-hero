@@ -65,7 +65,7 @@ function sourceLayer(sourcePath: readonly string[]): string | null {
 
 function featureArea(sourcePath: readonly string[]): string | null {
   const area = sourcePath[2];
-  return (sourcePath[0] === "features" || sourcePath[0] === "domains") &&
+  return ["workflows", "features", "domains"].includes(sourcePath[0] ?? "") &&
     ALLOWED_FEATURE_AREAS.has(area)
     ? area
     : null;
@@ -76,7 +76,7 @@ function featurePlacementViolation(
 ): string | null {
   const area = featureArea(sourcePath);
   if (!area) {
-    return "feature or domain source must live in an allowed area";
+    return "workflow, feature, or domain source must live in an allowed area";
   }
 
   const extension = extname(sourcePath[sourcePath.length - 1] ?? "");
@@ -400,10 +400,11 @@ function layerViolations(): string[] {
       );
       continue;
     }
-    const featurePlacementError =
-      currentSourceLayer === "features" || currentSourceLayer === "domains"
-        ? featurePlacementViolation(sourcePath)
-        : null;
+    const featurePlacementError = ["workflows", "features", "domains"].includes(
+      currentSourceLayer,
+    )
+      ? featurePlacementViolation(sourcePath)
+      : null;
     if (featurePlacementError) {
       violations.push(`${featurePlacementError}: ${sourcePath.join("/")}`);
       continue;
@@ -725,6 +726,9 @@ describe("frontend source architecture", () => {
       featureArea(["features", "capture", "lib", "captureSource.ts"]),
     ).toBe("lib");
     expect(featureArea(["features", "capture", "index.ts"])).toBeNull();
+    expect(featureArea(["workflows", "analyzer", "store", "state.ts"])).toBe(
+      "store",
+    );
     expect(featureArea(["features", "capture", "services", "api.ts"])).toBe(
       "services",
     );

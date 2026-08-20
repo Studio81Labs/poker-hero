@@ -6,10 +6,10 @@ from pathlib import Path
 APP_ROOT = Path(__file__).parents[1] / "app"
 LAYERS = {"api", "application", "domain", "infrastructure"}
 ALLOWED_IMPORTS = {
-    "api": {"application", "domain"},
-    "application": {"domain"},
-    "domain": set(),
-    "infrastructure": {"application", "domain"},
+    "api": {"api", "application", "domain"},
+    "application": {"application", "domain"},
+    "domain": {"domain"},
+    "infrastructure": {"infrastructure", "application", "domain"},
 }
 FORBIDDEN_APP_IMPORTS = {
     "fastapi",
@@ -65,6 +65,7 @@ def package_target(module: str, path: Path) -> str | None:
     if parts[0] == "app" and len(parts) > 1 and parts[1] in LAYERS:
         return parts[1]
     return parts[0] if parts[0] in LAYERS else None
+
 
 def test_future_backend_layers_follow_direction_and_boundaries() -> None:
     violations: list[str] = []

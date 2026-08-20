@@ -9,8 +9,13 @@ export const systemQueryKeys = {
 
 export function systemInfoQueryOptions() {
   return queryOptions({
+    gcTime: 30 * 60 * 1_000,
     queryFn: ({ signal }) => getSystemInfo(signal),
     queryKey: systemQueryKeys.information(),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 

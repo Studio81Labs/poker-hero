@@ -27,6 +27,14 @@ const ALLOWED_FEATURE_AREAS = new Set([
   "services",
   "store",
 ]);
+const NON_COMPONENT_FEATURE_AREAS = new Set([
+  "api",
+  "hooks",
+  "lib",
+  "model",
+  "services",
+  "store",
+]);
 const JAVASCRIPT_EXTENSIONS = new Set([".cjs", ".js", ".jsx", ".mjs"]);
 const SOURCE_EXTENSIONS = new Set([
   ".cjs",
@@ -84,6 +92,26 @@ function featurePlacementViolation(
     return `feature ${extension.slice(1).toUpperCase()} source must live in components`;
   }
   return null;
+}
+
+function isGeneratedOpenApiPath(sourcePath: readonly string[]): boolean {
+  return (
+    sourcePath[0] === "shared" &&
+    sourcePath[1] === "api" &&
+    sourcePath[2] === "generated"
+  );
+}
+
+function generatedOpenApiImportAllowed(sourcePath: readonly string[]): boolean {
+  if (sourcePath[0] === "domains" && sourcePath[2] === "api") {
+    return true;
+  }
+  if (sourcePath[0] !== "shared" || sourcePath[1] !== "api") {
+    return false;
+  }
+  return ["client.ts", "core.ts", "transport.ts"].includes(
+    sourcePath[sourcePath.length - 1] ?? "",
+  );
 }
 
 const PEER_FEATURE_BASELINE_PATH = resolve(
@@ -422,6 +450,15 @@ function layerViolations(): string[] {
         continue;
       }
 
+      if (
+        isGeneratedOpenApiPath(targetPath) &&
+        !generatedOpenApiImportAllowed(sourcePath)
+      ) {
+        violations.push(
+          `generated OpenAPI contracts may only be imported by shared API transport or compatibility modules and domain API adapters: ${importDescription}`,
+        );
+      }
+
       const allowedTargets = ALLOWED_LAYER_IMPORTS[currentSourceLayer];
       if (!allowedTargets.has(targetLayer)) {
         violations.push(
@@ -431,22 +468,32 @@ function layerViolations(): string[] {
       }
 
       if (currentSourceLayer !== "features" || targetLayer !== "features") {
+        const sourceKind = featureArea(sourcePath);
+        if (
+          sourceKind !== null &&
+          NON_COMPONENT_FEATURE_AREAS.has(sourceKind) &&
+          featureArea(targetPath) === "components"
+        ) {
+          violations.push(
+            `${sourcePath[0]} ${sourceKind} may not depend on components: ${importDescription}`,
+          );
+        }
         continue;
       }
 
       const sourceKind = sourcePath[2];
       const targetKind = targetPath[2];
-      if (
-        sourceKind === "lib" &&
-        (targetKind === "components" || targetKind === "hooks")
-      ) {
+      if (sourceKind === "lib" && targetKind === "hooks") {
         violations.push(
-          `feature lib may not depend on ${targetKind}: ${importDescription}`,
+          `feature lib may not depend on hooks: ${importDescription}`,
         );
       }
-      if (sourceKind === "hooks" && targetKind === "components") {
+      if (
+        NON_COMPONENT_FEATURE_AREAS.has(sourceKind ?? "") &&
+        targetKind === "components"
+      ) {
         violations.push(
-          `feature hooks may not depend on components: ${importDescription}`,
+          `feature ${sourceKind} may not depend on components: ${importDescription}`,
         );
       }
     }

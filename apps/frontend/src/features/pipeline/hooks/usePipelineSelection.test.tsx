@@ -77,4 +77,64 @@ describe("usePipelineSelection", () => {
     await result.current.loadCapabilities();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("reports a human-readable error and lets a later load retry", async () => {
+    const onError = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ missing_fields: ["opponent_wager"] }), {
+          headers: { "Content-Type": "application/json" },
+          status: 422,
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse(capabilities));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => usePipelineSelection({ onError }), {
+      wrapper,
+    });
+
+    await expect(result.current.loadCapabilities()).resolves.toBeNull();
+    expect(onError).toHaveBeenCalledWith(
+      "Complete the required table details before requesting a recommendation: Opponent wager total. Edit the listed fields, then approve the state again.",
+    );
+
+    await expect(result.current.loadCapabilities()).resolves.toEqual(
+      capabilities,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("deduplicates concurrent capability loads through the shared Query cache", async () => {
+    const onError = vi.fn();
+    let resolveResponse: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveResponse = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(
+      () =>
+        [
+          usePipelineSelection({ onError }),
+          usePipelineSelection({ onError }),
+        ] as const,
+      { wrapper },
+    );
+
+    let firstLoad: Promise<unknown> | undefined;
+    let secondLoad: Promise<unknown> | undefined;
+    await act(async () => {
+      firstLoad = result.current[0].loadCapabilities();
+      secondLoad = result.current[1].loadCapabilities();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveResponse?.(jsonResponse(capabilities));
+    await expect(firstLoad).resolves.toEqual(capabilities);
+    await expect(secondLoad).resolves.toEqual(capabilities);
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

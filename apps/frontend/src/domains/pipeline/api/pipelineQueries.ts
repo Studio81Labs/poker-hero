@@ -9,8 +9,13 @@ export const pipelineQueryKeys = {
 
 export function pipelineCapabilitiesQueryOptions() {
   return queryOptions({
+    gcTime: 30 * 60 * 1_000,
     queryFn: ({ signal }) => getPipelineCapabilities(signal),
     queryKey: pipelineQueryKeys.capabilities(),
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 

@@ -40,8 +40,12 @@ from app.api.dependencies import (
     HistoryRuntime,
     JobImage,
     JobMutationConflictError,
+    JobRecommendationConfigurationError,
+    JobRecommendationInputError,
+    JobRecommendationProviderError,
     JobTransportNotFoundError,
     JobsMutationRuntime,
+    JobsRecommendationRuntime,
     JobsReadRuntime,
     McpAdminRuntime,
     TrainingProgressQuery,
@@ -51,7 +55,11 @@ from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import ZIP_RESPONSE_CONTENT
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
-from app.api.routers.jobs import create_job_mutations_router, create_jobs_router
+from app.api.routers.jobs import (
+    create_job_mutations_router,
+    create_job_recommendation_router,
+    create_jobs_router,
+)
 from app.api.routers.mcp_admin import create_mcp_admin_router
 from app.api.routers.pipeline import create_pipeline_router
 from app.api.routers.training import create_training_router
@@ -626,16 +634,17 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         expected_state: CanonicalState,
         expected_request_id: str | None,
     ) -> JobRecord:
-        current = load_job_or_404(store, job_id)
+        try:
+            current = store.get(job_id)
+        except JobNotFoundError as exc:
+            raise JobTransportNotFoundError("Job not found") from exc
         if current.approved_state != expected_state:
-            raise HTTPException(
-                status_code=409,
-                detail="Approved state changed while the recommendation was running",
+            raise JobMutationConflictError(
+                "Approved state changed while the recommendation was running"
             )
         if current.recommendation_request_id != expected_request_id:
-            raise HTTPException(
-                status_code=409,
-                detail="A newer recommendation request replaced this attempt",
+            raise JobMutationConflictError(
+                "A newer recommendation request replaced this attempt"
             )
         return current
 
@@ -1193,6 +1202,150 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             job.error = None
             return save_job(job)
 
+    def recommend_processing_job(
+        job_id: str,
+        recommendation_request_id: str | None,
+    ) -> JobRecord:
+        with job_lock_for(job_id):
+            try:
+                job = store.get(job_id)
+            except JobNotFoundError as exc:
+                raise JobTransportNotFoundError("Job not found") from exc
+            if job.approved_state is None or not job.approved_state.user_approved:
+                raise JobMutationConflictError(
+                    "Approve corrected state before requesting recommendation"
+                )
+            if job.recommendation_pending:
+                raise JobMutationConflictError("Recommendation is already running")
+            approved_state = job.approved_state.model_copy(deep=True)
+            job.recommendation_pending = True
+            job.recommendation_request_id = recommendation_request_id
+            job.error = None
+            save_job(job)
+
+        try:
+            selection = resolve_pipeline_selection(
+                active_settings,
+                parser_provider=job.parser_provider,
+                parser_layout_profile=(
+                    job.parser_layout_profile
+                    or active_settings.parser_layout_profile
+                ),
+                recommendation_provider=job.recommendation_provider,
+                recommendation_engine=job.recommendation_engine,
+                validate_parser=False,
+                enforce_recommendation_allowlist=False,
+            )
+            provider = build_provider(settings_for_selection(active_settings, selection))
+            missing = missing_required_fields(
+                approved_state,
+                provider.required_fields_for(approved_state),
+            )
+        except (PipelineSelectionError, ProviderConfigurationError) as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = str(exc)
+                save_job(current)
+            raise JobRecommendationConfigurationError(str(exc)) from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
+
+        if missing:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
+            raise JobRecommendationInputError({"missing_fields": missing})
+
+        try:
+            result = provider.recommend(
+                RecommendationRequest(state=approved_state, provider=provider.name)
+            )
+        except ProviderInputError as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "approved"
+                current.error = None
+                save_job(current)
+            raise JobRecommendationInputError(str(exc)) from exc
+        except ProviderConfigurationError as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = str(exc)
+                save_job(current)
+            raise JobRecommendationConfigurationError(str(exc)) from exc
+        except ProviderError as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = str(exc)
+                save_job(current)
+            raise JobRecommendationProviderError(str(exc)) from exc
+        except Exception as exc:
+            with job_lock_for(job_id):
+                current = current_recommendation_target(
+                    job_id,
+                    approved_state,
+                    recommendation_request_id,
+                )
+                current.recommendation_pending = False
+                current.status = "error"
+                current.error = f"Unexpected provider error: {exc}"
+                save_job(current)
+            raise
+
+        with job_lock_for(job_id):
+            current = current_recommendation_target(
+                job_id,
+                approved_state,
+                recommendation_request_id,
+            )
+            current.recommendation = result
+            current.recommendation_pending = False
+            current.training_reviewed_at = None
+            current.training_review_note = None
+            current.status = "recommended"
+            current.error = None
+            return save_job(current)
+
     api_runtime = ApiRuntime(
         get_health=get_health,
         get_pipeline_capabilities=get_pipeline_capabilities,
@@ -1224,6 +1377,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         delete_job=delete_processing_job,
         approve_job=approve_processing_job,
         record_training_decision=record_processing_training_decision,
+    )
+    jobs_recommendation_runtime = JobsRecommendationRuntime(
+        recommend=recommend_processing_job,
     )
     app.include_router(create_health_router(api_runtime))
     app.include_router(create_pipeline_router(api_runtime))
@@ -1293,154 +1449,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     app.include_router(create_history_router(history_runtime))
     app.include_router(create_jobs_router(jobs_read_runtime))
     app.include_router(create_job_mutations_router(jobs_mutation_runtime))
-
-    @app.post(
-        "/api/jobs/{job_id}/recommend",
-        operation_id="job_recommend",
-        response_model=JobRecord,
-    )
-    def recommend(
-        job_id: str,
-        recommendation_request_id: str | None = Header(
-            default=None,
-            alias="X-Recommendation-Request-ID",
-            min_length=1,
-            max_length=128,
-            pattern=r"^[A-Za-z0-9._:-]+$",
-        ),
-    ) -> JobRecord:
-        with job_lock_for(job_id):
-            job = load_job_or_404(store, job_id)
-            if job.approved_state is None or not job.approved_state.user_approved:
-                raise HTTPException(status_code=409, detail="Approve corrected state before requesting recommendation")
-            if job.recommendation_pending:
-                raise HTTPException(status_code=409, detail="Recommendation is already running")
-            approved_state = job.approved_state.model_copy(deep=True)
-            job.recommendation_pending = True
-            job.recommendation_request_id = recommendation_request_id
-            job.error = None
-            save_job(job)
-
-        try:
-            selection = resolve_pipeline_selection(
-                active_settings,
-                parser_provider=job.parser_provider,
-                parser_layout_profile=(
-                    job.parser_layout_profile
-                    or active_settings.parser_layout_profile
-                ),
-                recommendation_provider=job.recommendation_provider,
-                recommendation_engine=job.recommendation_engine,
-                validate_parser=False,
-                enforce_recommendation_allowlist=False,
-            )
-            provider = build_provider(settings_for_selection(active_settings, selection))
-            missing = missing_required_fields(
-                approved_state,
-                provider.required_fields_for(approved_state),
-            )
-        except (PipelineSelectionError, ProviderConfigurationError) as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "error"
-                current.error = str(exc)
-                save_job(current)
-            raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
-        except Exception as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "error"
-                current.error = f"Unexpected provider error: {exc}"
-                save_job(current)
-            raise
-
-        if missing:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "approved"
-                current.error = None
-                save_job(current)
-            raise HTTPException(status_code=422, detail={"missing_fields": missing})
-
-        try:
-            result = provider.recommend(RecommendationRequest(state=approved_state, provider=provider.name))
-        except ProviderInputError as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "approved"
-                current.error = None
-                save_job(current)
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except ProviderConfigurationError as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "error"
-                current.error = str(exc)
-                save_job(current)
-            raise HTTPException(status_code=500, detail=f"Provider configuration error: {exc}") from exc
-        except ProviderError as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "error"
-                current.error = str(exc)
-                save_job(current)
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        except Exception as exc:
-            with job_lock_for(job_id):
-                current = current_recommendation_target(
-                    job_id,
-                    approved_state,
-                    recommendation_request_id,
-                )
-                current.recommendation_pending = False
-                current.status = "error"
-                current.error = f"Unexpected provider error: {exc}"
-                save_job(current)
-            raise
-
-        with job_lock_for(job_id):
-            current = current_recommendation_target(
-                job_id,
-                approved_state,
-                recommendation_request_id,
-            )
-            current.recommendation = result
-            current.recommendation_pending = False
-            current.training_reviewed_at = None
-            current.training_review_note = None
-            current.status = "recommended"
-            current.error = None
-            return save_job(current)
+    app.include_router(create_job_recommendation_router(jobs_recommendation_runtime))
 
     @app.put(
         "/api/jobs/{job_id}/benchmark",

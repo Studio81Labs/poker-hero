@@ -45,6 +45,22 @@ class JobMutationConflictError(Exception):
     """A requested job mutation conflicts with its current persisted state."""
 
 
+class JobRecommendationInputError(Exception):
+    """A recommendation request needs more user-correctable state."""
+
+    def __init__(self, detail: str | dict[str, list[str]]) -> None:
+        super().__init__(str(detail))
+        self.detail = detail
+
+
+class JobRecommendationConfigurationError(Exception):
+    """The configured recommendation route cannot be initialized."""
+
+
+class JobRecommendationProviderError(Exception):
+    """The configured recommendation provider failed while serving a request."""
+
+
 @dataclass(frozen=True)
 class ApiRuntime:
     """Read-only dependencies shared by the first extracted API routers."""
@@ -86,6 +102,13 @@ class JobsMutationRuntime:
     delete_job: Callable[[str], None]
     approve_job: Callable[[str, CanonicalState], JobRecord]
     record_training_decision: Callable[[str, TrainingDecisionRequest], JobRecord]
+
+
+@dataclass(frozen=True)
+class JobsRecommendationRuntime:
+    """Dependencies required by the processing job recommendation endpoint."""
+
+    recommend: Callable[[str, str | None], JobRecord]
 
 
 @dataclass(frozen=True)

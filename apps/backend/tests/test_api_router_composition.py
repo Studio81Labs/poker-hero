@@ -3,14 +3,21 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.api.dependencies import ApiRuntime
+from app.api.dependencies import ApiRuntime, HistoryRuntime
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.routers.health import create_health_router
+from app.api.routers.history import create_history_router
 from app.api.routers.pipeline import create_pipeline_router
-from app.models import HealthResponse, PipelineCapabilities, PipelineSelection
+from app.models import (
+    ArchiveJobsRequest,
+    HealthResponse,
+    JobHistory,
+    PipelineCapabilities,
+    PipelineSelection,
+)
 
 
 def pipeline_capabilities() -> PipelineCapabilities:
@@ -39,18 +46,33 @@ def health_response() -> HealthResponse:
     )
 
 
+def job_history() -> JobHistory:
+    return JobHistory(total=0, jobs=[], snapshot_version="history-snapshot")
+
+
 def make_client(
     *,
     get_health: Callable[[], HealthResponse] = health_response,
     get_pipeline_capabilities: Callable[[], PipelineCapabilities] = pipeline_capabilities,
+    list_history: Callable[[int, int, str | None], JobHistory] = (
+        lambda _limit, _offset, _query: job_history()
+    ),
+    archive_jobs: Callable[[ArchiveJobsRequest, int], JobHistory] = (
+        lambda _request, _limit: job_history()
+    ),
 ) -> TestClient:
     runtime = ApiRuntime(
         get_health=get_health,
         get_pipeline_capabilities=get_pipeline_capabilities,
     )
+    history_runtime = HistoryRuntime(
+        list_history=list_history,
+        archive_jobs=archive_jobs,
+    )
     app = FastAPI()
     app.include_router(create_health_router(runtime))
     app.include_router(create_pipeline_router(runtime))
+    app.include_router(create_history_router(history_runtime))
     return TestClient(app)
 
 
@@ -79,6 +101,71 @@ def test_read_only_routers_use_injected_runtime_callables() -> None:
     assert calls == ["health", "pipeline"]
 
 
+def test_history_router_forwards_defaults_and_explicit_parameters() -> None:
+    calls: list[tuple[object, ...]] = []
+
+    def list_history(limit: int, offset: int, query: str | None) -> JobHistory:
+        calls.append(("list", limit, offset, query))
+        return job_history()
+
+    def archive_jobs(request: ArchiveJobsRequest, limit: int) -> JobHistory:
+        calls.append(("archive", request.job_ids, limit))
+        return job_history()
+
+    with make_client(
+        list_history=list_history,
+        archive_jobs=archive_jobs,
+    ) as client:
+        default_list = client.get("/api/history")
+        explicit_list = client.get(
+            "/api/history",
+            params={"limit": 7, "offset": 3, "query": "river"},
+        )
+        default_archive = client.put("/api/history", json={"job_ids": ["a"]})
+        explicit_archive = client.put(
+            "/api/history?limit=7",
+            json={"job_ids": ["a", "b"]},
+        )
+
+    assert [response.status_code for response in (
+        default_list,
+        explicit_list,
+        default_archive,
+        explicit_archive,
+    )] == [200, 200, 200, 200]
+    assert default_list.json() == {
+        "total": 0,
+        "jobs": [],
+        "snapshot_version": "history-snapshot",
+    }
+    assert calls == [
+        ("list", 24, 0, None),
+        ("list", 7, 3, "river"),
+        ("archive", ["a"], 24),
+        ("archive", ["a", "b"], 7),
+    ]
+
+
+def test_history_router_preserves_request_validation() -> None:
+    with make_client() as client:
+        invalid_limit = client.get("/api/history", params={"limit": 101})
+        duplicate_job_ids = client.put("/api/history", json={"job_ids": ["a", "a"]})
+
+    assert invalid_limit.status_code == 422
+    assert duplicate_job_ids.status_code == 422
+
+
+def test_history_router_preserves_callback_http_errors() -> None:
+    def cannot_archive(_request: ArchiveJobsRequest, _limit: int) -> JobHistory:
+        raise HTTPException(status_code=409, detail="History is not ready")
+
+    with make_client(archive_jobs=cannot_archive) as client:
+        response = client.put("/api/history", json={"job_ids": ["a"]})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "History is not ready"}
+
+
 def test_pipeline_router_preserves_configuration_error_contract() -> None:
     def invalid_pipeline() -> PipelineCapabilities:
         raise PipelineCapabilitiesUnavailableError("missing parser configuration")
@@ -97,6 +184,8 @@ def test_router_composition_preserves_public_operation_ids() -> None:
         document = client.app.openapi()
 
     assert document["paths"]["/api/health"]["get"]["operationId"] == "health_get"
+    assert document["paths"]["/api/history"]["get"]["operationId"] == "history_get"
+    assert document["paths"]["/api/history"]["put"]["operationId"] == "history_archive"
     assert document["paths"]["/api/pipeline"]["get"]["operationId"] == "pipeline_get"
 
 
@@ -106,6 +195,7 @@ import importlib
 import sys
 
 importlib.import_module('app.api.routers.health')
+importlib.import_module('app.api.routers.history')
 importlib.import_module('app.api.routers.pipeline')
 
 for module_name in (

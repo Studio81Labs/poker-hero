@@ -35,6 +35,9 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.dependencies import ApiRuntime
+from app.api.routers.health import create_health_router
+from app.api.routers.pipeline import create_pipeline_router
 from app.application_backup import (
     ApplicationBackupError,
     MAX_BACKUP_EXPANSION_RATIO,
@@ -901,8 +904,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
         return response
 
-    @app.get("/api/health", operation_id="health_get", response_model=HealthResponse)
-    def health() -> HealthResponse:
+    def get_health() -> HealthResponse:
         configured_engine = configured_recommendation_engine(active_settings)
         return HealthResponse(
             status="ok",
@@ -916,19 +918,15 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             ),
         )
 
-    @app.get(
-        "/api/pipeline",
-        operation_id="pipeline_get",
-        response_model=PipelineCapabilities,
-    )
     def get_pipeline_capabilities() -> PipelineCapabilities:
-        try:
-            return pipeline_capabilities(active_settings)
-        except PipelineSelectionError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Pipeline configuration error: {exc}",
-            ) from exc
+        return pipeline_capabilities(active_settings)
+
+    api_runtime = ApiRuntime(
+        get_health=get_health,
+        get_pipeline_capabilities=get_pipeline_capabilities,
+    )
+    app.include_router(create_health_router(api_runtime))
+    app.include_router(create_pipeline_router(api_runtime))
 
     @app.get(
         "/api/mcp/config",

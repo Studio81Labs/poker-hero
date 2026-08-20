@@ -280,11 +280,10 @@ export default function AnalyzerPage() {
     capabilities: pipelineCapabilities,
     dialogOpen: pipelineDialogOpen,
     loading: pipelineLoading,
+    loadCapabilities: loadPipelineCapabilities,
     openDialog: openPipelineDialog,
     selection: pipelineSelection,
-    setCapabilities: setPipelineCapabilities,
     setDialogOpen: setPipelineDialogOpen,
-    setLoading: setPipelineLoading,
     setSelection: setPipelineSelection,
     updateParserProvider,
     updateRecommendationProvider,
@@ -443,8 +442,7 @@ export default function AnalyzerPage() {
     pipelineCapabilities,
     pipelineLoading,
     pipelineSelection,
-    setPipelineCapabilities,
-    setPipelineLoading,
+    loadPipelineCapabilities,
     setPipelineSelection,
   });
 

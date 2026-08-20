@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from app import api as api_module
+import app.bootstrap as bootstrap_module
 from app.api import PROXY_SHARED_SECRET_HEADER, create_app
 from app.config import Settings
 from app.rate_limiting import (
@@ -314,7 +314,7 @@ def test_import_recovery_get_consumes_the_data_transfer_budget(
         parse_calls += 1
 
     monkeypatch.setattr(
-        api_module,
+        bootstrap_module,
         "parse_parser_dataset_archive",
         track_parse,
     )

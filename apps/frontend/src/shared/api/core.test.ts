@@ -105,6 +105,7 @@ describe("readJson", () => {
         headers: {
           "Content-Type": "application/json",
           "Retry-After": "7",
+          "X-Request-ID": "request-429",
         },
       },
     );
@@ -112,9 +113,16 @@ describe("readJson", () => {
     await expect(readJson(response)).rejects.toEqual(
       expect.objectContaining({
         name: "ApiResponseError",
+        requestId: "request-429",
         status: 429,
         retryAfterSeconds: 7,
       } satisfies Partial<ApiResponseError>),
     );
+  });
+
+  it("returns undefined for successful no-content responses", async () => {
+    await expect(
+      readJson<void>(new Response(null, { status: 204 })),
+    ).resolves.toBeUndefined();
   });
 });

@@ -32,6 +32,7 @@ PostflopActionType = Literal["check", "bet", "raise"]
 CompletedPostflopActionType = Literal["check", "bet", "raise", "call"]
 CompletedPostflopStreet = Literal["flop", "turn"]
 RecommendationAction = Literal["fold", "check", "call", "bet", "raise"]
+DeploymentEnvironment = Literal["local", "staging", "production"]
 TrainingCertainty = Literal["low", "medium", "high"]
 TrainingOutcome = Literal["match", "mixed", "same_action", "mixed_action", "different"]
 TrainingReviewOrder = Literal["recent", "ev_loss"]
@@ -198,6 +199,14 @@ class Card(BaseModel):
         rank = stripped[:-1]
         suit = stripped[-1]
         return cls(rank=rank, suit=suit)
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+    environment: DeploymentEnvironment
+    parser_provider: str
+    recommendation_provider: str
+    recommendation_engine: str
 
 
 class PostflopAction(BaseModel):

@@ -9,16 +9,19 @@ const API_BASE_URL =
 export class ApiResponseError extends Error {
   readonly status: number;
   readonly retryAfterSeconds: number | null;
+  readonly requestId: string | null;
 
   constructor(
     message: string,
     status: number,
     retryAfterSeconds: number | null = null,
+    requestId: string | null = null,
   ) {
     super(message);
     this.name = "ApiResponseError";
     this.status = status;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.requestId = requestId;
   }
 }
 
@@ -211,6 +214,14 @@ function retryAfterSeconds(response: Response): number | null {
   return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
 }
 
+function withRetryGuidance(message: string, retryAfter: number | null): string {
+  if (retryAfter === null) {
+    return message;
+  }
+  const unit = retryAfter === 1 ? "second" : "seconds";
+  return `${message} Try again in ${retryAfter} ${unit}.`;
+}
+
 export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
 }
@@ -234,11 +245,16 @@ export async function readJson<T>(response: Response): Promise<T> {
     } catch {
       detail = fallback;
     }
+    const retryAfter = retryAfterSeconds(response);
     throw new ApiResponseError(
-      detail,
+      withRetryGuidance(detail, retryAfter),
       response.status,
-      retryAfterSeconds(response),
+      retryAfter,
+      response.headers.get("X-Request-ID"),
     );
+  }
+  if (response.status === 204) {
+    return undefined as T;
   }
   return response.json() as Promise<T>;
 }

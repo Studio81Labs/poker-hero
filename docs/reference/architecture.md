@@ -80,7 +80,9 @@ projection, metadata, and deletion coverage lives in `test_jobs_api.py`.
 Training-decision persistence and validation, progress filtering, lesson export,
 and review lifecycle coverage lives in `test_training_api.py`. Benchmark corpus
 selection, archive import/export, recovery, concurrency, scoring, and report
-coverage lives in `test_benchmarks_api.py`.
+coverage lives in `test_benchmarks_api.py`. Recommendation provider selection,
+request lifecycle, recovery, failure mapping, and solver-input validation
+coverage lives in `test_recommendation_api.py`.
 
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.

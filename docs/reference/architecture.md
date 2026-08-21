@@ -70,13 +70,16 @@ while archive creation, restore coordination, and interprocess lock timing remai
 inside its injected runtime boundary.
 
 Backend API integration tests share transport setup through
-`tests/api_test_support.py`. Route-domain suites live in focused modules as they
-are extracted from the legacy `test_api_flow.py`; health, capability, and
-pipeline-selection coverage lives in `test_pipeline_api.py`, while request
+`tests/api_test_support.py`, and route-domain suites live in focused modules.
+Health, capability, and pipeline-selection coverage lives in
+`test_pipeline_api.py`, while request
 observability, streaming/disconnect handling, CORS, and proxy-guard coverage
 lives in `test_api_observability.py`. History archive, paging, concurrency, and
 search coverage lives in `test_history_api.py`. Job request identity, queue
-projection, metadata, and deletion coverage lives in `test_jobs_api.py`.
+projection, metadata, approval, read/image behavior, deletion, and storage
+guards live in `test_jobs_api.py`. Upload validation, parser lifecycle,
+mutation coordination during parsing, and auto-approval coverage lives in
+`test_job_upload_api.py`.
 Training-decision persistence and validation, progress filtering, lesson export,
 and review lifecycle coverage lives in `test_training_api.py`. Benchmark corpus
 selection, archive import/export, recovery, concurrency, scoring, and report

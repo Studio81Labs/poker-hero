@@ -69,6 +69,11 @@ dependencies. Backup transport owns multipart limits and streaming responses,
 while archive creation, restore coordination, and interprocess lock timing remain
 inside its injected runtime boundary.
 
+Backend API integration tests share transport setup through
+`tests/api_test_support.py`. Route-domain suites live in focused modules as they
+are extracted from the legacy `test_api_flow.py`; health, capability, and
+pipeline-selection coverage now lives in `test_pipeline_api.py`.
+
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.
 When a reviewed state supplies an ordered preflop action history, the chart can

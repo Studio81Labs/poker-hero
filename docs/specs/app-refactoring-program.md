@@ -477,13 +477,13 @@ Every implementation PR must include:
 
 ## Implementation Status
 
-| Wave | Status      | Current work                                                                                                                                                            |
-| ---- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | In progress | Plan, architecture guardrails, dependency baseline, and full-suite baseline are established                                                                             |
-| 1    | In progress | Stable operation IDs, deterministic generation, binary contracts, and schema dependency pins landed                                                                     |
-| 2    | In progress | Query provider, shared transport, and system/pipeline domain reads landed with compatibility behavior                                                                   |
-| 3    | In progress | All HTTP route domains now have focused routers and runtime boundaries; the remaining work is to finish decomposing shared integration coverage before closing the wave |
-| 4-12 | Pending     | Begin as their documented dependencies and compatibility gates pass                                                                                                     |
+| Wave | Status      | Current work                                                                                                                                                                       |
+| ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | In progress | Plan, architecture guardrails, dependency baseline, and full-suite baseline are established                                                                                        |
+| 1    | In progress | Stable operation IDs, deterministic generation, binary contracts, and schema dependency pins landed                                                                                |
+| 2    | In progress | Query provider, shared transport, and system/pipeline domain reads landed with compatibility behavior                                                                              |
+| 3    | In progress | All HTTP route domains have focused routers and runtime boundaries; shared API test support and the pipeline integration module have landed, with remaining domains still to split |
+| 4-12 | Pending     | Begin as their documented dependencies and compatibility gates pass                                                                                                                |
 
 ## Exit Criteria
 

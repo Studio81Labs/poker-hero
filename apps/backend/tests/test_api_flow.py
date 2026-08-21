@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -29,47 +28,22 @@ from app.storage import (
     FileJobStore,
     JobNotFoundError,
 )
-
-
-VALID_PNG = (
-    base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
-        "AAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg=="
-    )
+from api_test_support import (
+    APPROVED_STATE,
+    VALID_PNG,
+    approve_job,
+    archive_with_unsupported_compression,
+    load_only_job,
+    make_client,
+    rebuild_zip_archive,
+    upload_job,
+    upload_job_with_pipeline,
 )
+
+
 CORS_EXPOSED_HEADERS = (
     "X-Request-ID, Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining"
 )
-
-APPROVED_STATE = {
-    "hero_cards": [{"rank": "A", "suit": "hearts"}, {"rank": "K", "suit": "diamonds"}],
-    "board_cards": [
-        {"rank": "Q", "suit": "spades"},
-        {"rank": "J", "suit": "clubs"},
-        {"rank": "2", "suit": "hearts"},
-    ],
-    "pot_size": 12.5,
-    "current_bet": 2.5,
-    "hero_stack": 97.5,
-    "effective_stack": 96.0,
-    "players_in_hand": 3,
-    "hero_position": "button",
-    "street": "flop",
-    "facing_action": "bet",
-    "action_context": "Cutoff bet 2.5 into 12.5",
-    "user_approved": True,
-}
-
-
-def make_client(tmp_path: Path, **settings_overrides: object) -> TestClient:
-    settings_values = {
-        "data_dir": tmp_path,
-        "parser_provider": "mock",
-        "recommendation_provider": "mock",
-    }
-    settings_values.update(settings_overrides)
-    app = create_app(Settings(**settings_values))
-    return TestClient(app)
 
 
 @pytest.fixture
@@ -85,275 +59,6 @@ def access_log_records(
     monkeypatch.setattr(bootstrap_module.LOGGER, "handlers", [RecordHandler()])
     monkeypatch.setattr(bootstrap_module.LOGGER, "propagate", False)
     return records
-
-
-def upload_job(
-    client: TestClient,
-    content: bytes = VALID_PNG,
-    content_type: str = "image/png",
-    filename: str = "table.png",
-    upload_request_id: str | None = None,
-):
-    data = (
-        {"upload_request_id": upload_request_id}
-        if upload_request_id is not None
-        else None
-    )
-    return client.post(
-        "/api/jobs",
-        files={"file": (filename, content, content_type)},
-        data=data,
-    )
-
-
-def upload_job_with_pipeline(
-    client: TestClient,
-    *,
-    parser_provider: str,
-    parser_layout_profile: str,
-    recommendation_provider: str,
-    recommendation_engine: str | None = None,
-):
-    data = {
-        "parser_provider": parser_provider,
-        "parser_layout_profile": parser_layout_profile,
-        "recommendation_provider": recommendation_provider,
-    }
-    if recommendation_engine is not None:
-        data["recommendation_engine"] = recommendation_engine
-    return client.post(
-        "/api/jobs",
-        files={"file": ("table.png", VALID_PNG, "image/png")},
-        data=data,
-    )
-
-
-def approve_job(client: TestClient, job_id: str, state: dict[str, object] | None = None):
-    return client.post(f"/api/jobs/{job_id}/approve", json=state or APPROVED_STATE)
-
-
-def load_only_job(tmp_path: Path):
-    job_dirs = list((tmp_path / "jobs").iterdir())
-    assert len(job_dirs) == 1
-    return FileJobStore(tmp_path).get(job_dirs[0].name)
-
-
-def archive_with_unsupported_compression(archive_bytes: bytes) -> bytes:
-    payload = bytearray(archive_bytes)
-    for signature, compression_offset in (
-        (b"PK\x03\x04", 8),
-        (b"PK\x01\x02", 10),
-    ):
-        header_offset = payload.find(signature)
-        assert header_offset >= 0
-        payload[
-            header_offset + compression_offset:
-            header_offset + compression_offset + 2
-        ] = (99).to_bytes(2, "little")
-    return bytes(payload)
-
-
-def rebuild_zip_archive(
-    archive_bytes: bytes,
-    replacements: dict[str, bytes],
-) -> bytes:
-    output = BytesIO()
-    with ZipFile(BytesIO(archive_bytes)) as source:
-        with ZipFile(output, "w") as target:
-            for info in source.infolist():
-                target.writestr(
-                    info,
-                    replacements.get(info.filename, source.read(info)),
-                )
-    return output.getvalue()
-
-
-def test_health_reports_active_local_solver_engine(tmp_path: Path) -> None:
-    client = make_client(
-        tmp_path,
-        recommendation_provider="local_solver",
-        local_solver_engine="postflop_solver",
-    )
-
-    response = client.get("/api/health")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "environment": "local",
-        "parser_provider": "mock",
-        "recommendation_provider": "local_solver",
-        "recommendation_engine": "postflop_solver",
-    }
-
-
-@pytest.mark.parametrize("engine", ["", "   "])
-def test_health_preserves_invalid_blank_local_solver_engine(
-    tmp_path: Path,
-    engine: str,
-) -> None:
-    client = make_client(
-        tmp_path,
-        recommendation_provider="local_solver",
-        local_solver_engine=engine,
-    )
-
-    response = client.get("/api/health")
-
-    assert response.status_code == 200
-    assert response.json()["recommendation_engine"] == ""
-
-
-def test_pipeline_endpoint_reports_runtime_choices(tmp_path: Path) -> None:
-    client = make_client(
-        tmp_path,
-        parser_layout_profile="generic",
-        parser_enabled_layout_profiles=["fortuna_nations"],
-        recommendation_enabled_providers=["rule_based"],
-    )
-
-    response = client.get("/api/pipeline")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["defaults"] == {
-        "parser_provider": "mock",
-        "parser_layout_profile": "generic",
-        "recommendation_provider": "mock",
-        "recommendation_engine": None,
-    }
-    assert [option["id"] for option in payload["parser_layout_profiles"]] == [
-        "generic",
-        "fortuna_nations",
-    ]
-    assert payload["parser_layout_compatibility"] == {
-        "mock": ["generic", "fortuna_nations"],
-    }
-    assert [option["id"] for option in payload["recommendation_providers"]] == [
-        "mock",
-        "rule_based",
-    ]
-
-
-def test_pipeline_endpoint_tolerates_unknown_inactive_local_engine(
-    tmp_path: Path,
-) -> None:
-    client = make_client(
-        tmp_path,
-        recommendation_provider="rule_based",
-        local_solver_engine="missing",
-    )
-
-    response = client.get("/api/pipeline")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["defaults"]["recommendation_engine"] is None
-    assert payload["recommendation_engines"] == [
-        {
-            "id": "missing",
-            "label": "Missing",
-            "available": True,
-            "unavailable_reason": None,
-        }
-    ]
-
-
-def test_pipeline_endpoint_reports_fallbacks_for_unavailable_defaults(
-    tmp_path: Path,
-) -> None:
-    client = make_client(
-        tmp_path,
-        parser_provider="llm_vision",
-        parser_enabled_providers=["mock"],
-        recommendation_provider="external_solver",
-        recommendation_enabled_providers=["rule_based"],
-    )
-
-    response = client.get("/api/pipeline")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["parser_providers"][0] == {
-        "id": "llm_vision",
-        "label": "External vision",
-        "available": False,
-        "unavailable_reason": "External parser URL is not configured",
-    }
-    assert payload["parser_providers"][1]["id"] == "mock"
-    assert payload["parser_providers"][1]["available"] is True
-    assert payload["recommendation_providers"][0] == {
-        "id": "external_solver",
-        "label": "External solver",
-        "available": False,
-        "unavailable_reason": "External solver URL is not configured",
-    }
-    assert payload["recommendation_providers"][1]["id"] == "rule_based"
-    assert payload["recommendation_providers"][1]["available"] is True
-
-
-def test_upload_persists_explicit_pipeline_selection(tmp_path: Path) -> None:
-    client = make_client(
-        tmp_path,
-        parser_enabled_layout_profiles=["pokerstars"],
-        recommendation_enabled_providers=["rule_based"],
-    )
-
-    response = upload_job_with_pipeline(
-        client,
-        parser_provider="mock",
-        parser_layout_profile="pokerstars",
-        recommendation_provider="rule_based",
-    )
-
-    assert response.status_code == 201
-    payload = response.json()
-    assert payload["parser_provider"] == "mock"
-    assert payload["parser_layout_profile"] == "pokerstars"
-    assert payload["recommendation_provider"] == "rule_based"
-    assert payload["recommendation_engine"] is None
-
-
-def test_upload_rejects_pipeline_plugin_not_enabled_by_deployment(
-    tmp_path: Path,
-) -> None:
-    client = make_client(tmp_path)
-
-    response = upload_job_with_pipeline(
-        client,
-        parser_provider="ocr_cv",
-        parser_layout_profile="generic",
-        recommendation_provider="mock",
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "Parser provider 'ocr_cv' is not enabled for this deployment"
-    )
-    assert list((tmp_path / "jobs").iterdir()) == []
-
-
-def test_upload_rejects_layout_not_supported_by_selected_parser(
-    tmp_path: Path,
-) -> None:
-    client = make_client(
-        tmp_path,
-        parser_enabled_providers=["ocr_cv"],
-        parser_enabled_layout_profiles=["pokerstars"],
-    )
-
-    response = upload_job_with_pipeline(
-        client,
-        parser_provider="ocr_cv",
-        parser_layout_profile="pokerstars",
-        recommendation_provider="mock",
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "Layout profile 'pokerstars' is not supported by parser provider 'ocr_cv'"
-    )
-    assert list((tmp_path / "jobs").iterdir()) == []
 
 
 def test_default_access_log_level_suppresses_health_event(

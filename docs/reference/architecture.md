@@ -75,7 +75,8 @@ are extracted from the legacy `test_api_flow.py`; health, capability, and
 pipeline-selection coverage lives in `test_pipeline_api.py`, while request
 observability, streaming/disconnect handling, CORS, and proxy-guard coverage
 lives in `test_api_observability.py`. History archive, paging, concurrency, and
-search coverage lives in `test_history_api.py`.
+search coverage lives in `test_history_api.py`. Job request identity, queue
+projection, metadata, and deletion coverage lives in `test_jobs_api.py`.
 
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.

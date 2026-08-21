@@ -16,6 +16,7 @@ from app.mcp_access import (
 )
 from app.models import (
     ArchiveJobsRequest,
+    ApplicationBackupRestoreResult,
     BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
@@ -112,6 +113,14 @@ class BenchmarkDatasetInputError(Exception):
 
 class BenchmarkConfigurationError(Exception):
     """The selected benchmark parser cannot be configured."""
+
+
+class ApplicationBackupTransportError(Exception):
+    """A backup operation failed with a client-safe HTTP response."""
+
+    def __init__(self, detail: str, status_code: int) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -222,6 +231,23 @@ class BenchmarksRuntime:
     resume_import: Callable[[str], None]
     get_report: Callable[[str], BenchmarkReport]
     run: Callable[[BenchmarkRunRequest | None], BenchmarkReport]
+
+
+@dataclass(frozen=True)
+class ApplicationBackupExport:
+    """A prepared full application backup ready for an HTTP response."""
+
+    content: Iterator[bytes]
+    filename: str
+
+
+@dataclass(frozen=True)
+class BackupsRuntime:
+    """Dependencies required by application backup transport endpoints."""
+
+    max_upload_bytes: int
+    export_backup: Callable[[], Awaitable[ApplicationBackupExport]]
+    restore_backup: Callable[[bytes], ApplicationBackupRestoreResult]
 
 
 @dataclass(frozen=True)

@@ -61,10 +61,13 @@ cannot be recreated by parser completion.
 
 FastAPI composition remains in `app/bootstrap.py`, while extracted transport
 adapters live under `app/api/routers`. Health, pipeline, history, MCP
-administration, training, benchmark, and processing-job read, upload, short
-mutation, and recommendation routes receive focused frozen runtime containers;
-storage, locking, aggregation, and persistence stay behind bootstrap-owned
-callables until application services replace those concrete dependencies.
+administration, training, benchmark, backup, and processing-job read, upload,
+short mutation, and recommendation routes receive focused frozen runtime
+containers; storage, locking, aggregation, and persistence stay behind
+bootstrap-owned callables until application services replace those concrete
+dependencies. Backup transport owns multipart limits and streaming responses,
+while archive creation, restore coordination, and interprocess lock timing remain
+inside its injected runtime boundary.
 
 The `local_solver` provider has a second configurable boundary for local engine
 plugins. Supported preflop states use a position-aware 169-hand training chart.

@@ -16,16 +16,14 @@ from uuid import uuid4
 
 from fastapi import (
     FastAPI,
-    File,
     HTTPException,
     Request,
-    UploadFile,
     status,
 )
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 from PIL import Image, UnidentifiedImageError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, MutableHeaders
@@ -34,6 +32,9 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.api.dependencies import (
     BACKGROUND_TASK_STATE_KEY,
     ApiRuntime,
+    ApplicationBackupExport,
+    ApplicationBackupTransportError,
+    BackupsRuntime,
     BenchmarkConfigurationError,
     BenchmarkConflictError,
     BenchmarkDatasetExport,
@@ -65,7 +66,7 @@ from app.api.dependencies import (
     TrainingRuntime,
 )
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
-from app.api.response_contracts import ZIP_RESPONSE_CONTENT
+from app.api.routers.backups import create_backups_router
 from app.api.routers.benchmarks import create_benchmarks_router
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
@@ -842,12 +843,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         job.status == "created" or job.recommendation_pending
                         for job in store.list()
                     ):
-                        raise HTTPException(
-                            status_code=409,
-                            detail=(
+                        raise ApplicationBackupTransportError(
+                            (
                                 "Wait for active parsing and recommendations "
                                 "before restoring a backup"
                             ),
+                            409,
                         )
                     return restore_application_backup(
                         backup,
@@ -855,9 +856,9 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         benchmark_store=benchmark_store,
                     )
         except ApplicationBackupError as exc:
-            raise HTTPException(
-                status_code=exc.status_code,
-                detail=str(exc),
+            raise ApplicationBackupTransportError(
+                str(exc),
+                exc.status_code,
             ) from exc
 
     @asynccontextmanager
@@ -1565,18 +1566,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         max_image_bytes=active_settings.max_upload_bytes,
                     )
                 except ApplicationBackupError as exc:
-                    raise HTTPException(
-                        status_code=exc.status_code,
-                        detail=str(exc),
+                    raise ApplicationBackupTransportError(
+                        str(exc),
+                        exc.status_code,
                     ) from exc
 
-    @app.get(
-        "/api/backups/export",
-        operation_id="backups_export",
-        response_class=StreamingResponse,
-        responses={"200": {"content": ZIP_RESPONSE_CONTENT}},
-    )
-    async def export_application_backup() -> StreamingResponse:
+    async def export_application_backup() -> ApplicationBackupExport:
         descriptor = await data_lock.acquire_async(
             exclusive=True,
         )
@@ -1588,36 +1583,17 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             data_lock.release(descriptor)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return StreamingResponse(
-            stream_application_backup(archive_file),
-            media_type="application/zip",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="poker-hero-backup-{timestamp}.zip"'
-                )
-            },
+        return ApplicationBackupExport(
+            content=stream_application_backup(archive_file),
+            filename=f"poker-hero-backup-{timestamp}.zip",
         )
 
-    @app.post(
-        "/api/backups/restore",
-        operation_id="backups_restore",
-        response_model=ApplicationBackupRestoreResult,
+    backups_runtime = BackupsRuntime(
+        max_upload_bytes=active_settings.max_backup_upload_bytes,
+        export_backup=export_application_backup,
+        restore_backup=restore_uploaded_application_backup,
     )
-    async def restore_backup(
-        file: UploadFile = File(...),
-    ) -> ApplicationBackupRestoreResult:
-        archive_bytes = await file.read(
-            active_settings.max_backup_upload_bytes + 1
-        )
-        if len(archive_bytes) > active_settings.max_backup_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail="Application backup ZIP exceeds maximum size",
-            )
-        return await run_in_threadpool(
-            restore_uploaded_application_backup,
-            archive_bytes,
-        )
+    app.include_router(create_backups_router(backups_runtime))
 
     def export_benchmark_dataset(
         parser_provider: str | None,

@@ -15,12 +15,9 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import (
-    BackgroundTasks,
     FastAPI,
     File,
-    Header,
     HTTPException,
-    Query,
     Request,
     UploadFile,
     status,
@@ -35,7 +32,16 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.dependencies import (
+    BACKGROUND_TASK_STATE_KEY,
     ApiRuntime,
+    BenchmarkConfigurationError,
+    BenchmarkConflictError,
+    BenchmarkDatasetExport,
+    BenchmarkDatasetInputError,
+    BenchmarkImportStatus,
+    BenchmarkInputError,
+    BenchmarksRuntime,
+    BenchmarkTransportNotFoundError,
     HistoryRuntime,
     JobImage,
     JobMutationConflictError,
@@ -60,6 +66,7 @@ from app.api.dependencies import (
 )
 from app.api.dependencies import PipelineCapabilitiesUnavailableError
 from app.api.response_contracts import ZIP_RESPONSE_CONTENT
+from app.api.routers.benchmarks import create_benchmarks_router
 from app.api.routers.health import create_health_router
 from app.api.routers.history import create_history_router
 from app.api.routers.jobs import (
@@ -108,10 +115,8 @@ from app.dataset_import import (
     parse_parser_dataset_archive,
 )
 from app.models import (
-    BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
     ApplicationBackupRestoreResult,
     ArchiveJobsRequest,
-    BenchmarkDatasetImportReceipt,
     BenchmarkDatasetImportResult,
     BenchmarkOverview,
     BenchmarkParserPipelineSummary,
@@ -211,7 +216,6 @@ PROXY_AUTH_EXEMPT_PATHS = frozenset({"/api/health"})
 REQUEST_ID_HEADER = "X-Request-ID"
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 ACCESS_LOG_HANDLER_NAME = "poker-json-access"
-BACKGROUND_TASK_STATE_KEY = "poker_response_background_task_scheduled"
 ERROR_MONITORING_CAPTURED_STATE_KEY = "poker_error_monitoring_captured"
 ACCESS_LOG_LEVELS = {
     "DEBUG": logging.DEBUG,
@@ -630,12 +634,20 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
         with history_lock:
             return store.save(job)
 
-    def ensure_benchmark_corpus_ready() -> None:
+    def require_benchmark_corpus_ready() -> None:
         if benchmark_store.has_pending_import():
+            raise BenchmarkConflictError(
+                "A benchmark dataset import is still pending"
+            )
+
+    def ensure_benchmark_corpus_ready() -> None:
+        try:
+            require_benchmark_corpus_ready()
+        except BenchmarkConflictError as exc:
             raise HTTPException(
                 status_code=409,
-                detail="A benchmark dataset import is still pending",
-            )
+                detail=str(exc),
+            ) from exc
 
     def current_recommendation_target(
         job_id: str,
@@ -1407,30 +1419,29 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
     app.include_router(create_job_mutations_router(jobs_mutation_runtime))
     app.include_router(create_job_recommendation_router(jobs_recommendation_runtime))
 
-    @app.put(
-        "/api/jobs/{job_id}/benchmark",
-        operation_id="job_benchmark_update",
-        response_model=JobRecord,
-    )
-    def set_benchmark_inclusion(job_id: str, selection: BenchmarkSelectionRequest) -> JobRecord:
+    def set_benchmark_inclusion(
+        job_id: str,
+        selection: BenchmarkSelectionRequest,
+    ) -> JobRecord:
         with benchmark_corpus_lock, job_lock_for(job_id):
-            ensure_benchmark_corpus_ready()
-            job = load_job_or_404(store, job_id)
+            require_benchmark_corpus_ready()
+            try:
+                job = store.get(job_id)
+            except JobNotFoundError as exc:
+                raise BenchmarkTransportNotFoundError("Job not found") from exc
             if selection.included and (
                 job.approved_state is None or not job.approved_state.user_approved
             ):
-                raise HTTPException(
-                    status_code=409,
-                    detail="Approve corrected state before adding it to the benchmark",
+                raise BenchmarkConflictError(
+                    "Approve corrected state before adding it to the benchmark"
                 )
             if selection.included and not job.benchmark_included:
                 included_cases = sum(
                     candidate.benchmark_included for candidate in store.list()
                 )
                 if included_cases >= MAX_DATASET_CASES:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=dataset_case_limit_message(MAX_DATASET_CASES),
+                    raise BenchmarkConflictError(
+                        dataset_case_limit_message(MAX_DATASET_CASES)
                     )
                 layout_profile = benchmark_layout_profile(
                     job,
@@ -1451,29 +1462,14 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
                 except DatasetExportError as exc:
-                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    raise BenchmarkConflictError(str(exc)) from exc
                 candidate_archive.close()
             job.benchmark_included = selection.included
             return save_job(job)
 
-    @app.get(
-        "/api/benchmarks",
-        operation_id="benchmarks_get",
-        response_model=BenchmarkOverview,
-    )
     def get_benchmark_overview(
-        parser_provider: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-        parser_layout_profile: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
+        parser_provider: str | None,
+        parser_layout_profile: str | None,
     ) -> BenchmarkOverview:
         jobs = store.list()
         included_cases = sum(job.benchmark_included for job in jobs)
@@ -1489,7 +1485,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     validate_availability=False,
                 )
             except PipelineSelectionError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                raise BenchmarkInputError(str(exc)) from exc
             selected_parser = selection.parser_provider
             selected_layout = selection.parser_layout_profile
         selected_jobs = benchmark_jobs_for_layout(
@@ -1623,28 +1619,12 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
             archive_bytes,
         )
 
-    @app.get(
-        "/api/benchmarks/export",
-        operation_id="benchmarks_export",
-        response_class=StreamingResponse,
-        responses={"200": {"content": ZIP_RESPONSE_CONTENT}},
-    )
     def export_benchmark_dataset(
-        parser_provider: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-        parser_layout_profile: str | None = Query(
-            default=None,
-            min_length=1,
-            max_length=64,
-            pattern=r"^[a-z0-9_]+$",
-        ),
-    ) -> StreamingResponse:
+        parser_provider: str | None,
+        parser_layout_profile: str | None,
+    ) -> BenchmarkDatasetExport:
         with benchmark_corpus_lock:
-            ensure_benchmark_corpus_ready()
+            require_benchmark_corpus_ready()
             export_settings = active_settings
             if parser_provider is not None or parser_layout_profile is not None:
                 try:
@@ -1660,24 +1640,22 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         selection,
                     )
                 except PipelineSelectionError as exc:
-                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                    raise BenchmarkInputError(str(exc)) from exc
             jobs = benchmark_jobs_for_layout(
                 store.list(),
                 export_settings.parser_layout_profile,
                 active_settings.parser_layout_profile,
             )
             if not jobs:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "Add at least one approved hand to the benchmark"
-                        if parser_provider is None and parser_layout_profile is None
-                        else (
-                            "Add at least one approved hand for layout "
-                            f"'{export_settings.parser_layout_profile}' to the benchmark"
-                        )
-                    ),
+                detail = (
+                    "Add at least one approved hand to the benchmark"
+                    if parser_provider is None and parser_layout_profile is None
+                    else (
+                        "Add at least one approved hand for layout "
+                        f"'{export_settings.parser_layout_profile}' to the benchmark"
+                    )
                 )
+                raise BenchmarkConflictError(detail)
             try:
                 archive_file = build_parser_dataset_archive(
                     jobs=jobs,
@@ -1687,37 +1665,18 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     max_archive_bytes=active_settings.max_dataset_upload_bytes,
                 )
             except DatasetExportError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
+                raise BenchmarkConflictError(str(exc)) from exc
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return StreamingResponse(
-            stream_archive(archive_file),
-            media_type="application/zip",
-            headers={
-                "Content-Disposition": (
-                    f'attachment; filename="poker-hero-parser-dataset-{timestamp}.zip"'
-                )
-            },
+        return BenchmarkDatasetExport(
+            content=stream_archive(archive_file),
+            filename=f"poker-hero-parser-dataset-{timestamp}.zip",
         )
 
-    @app.post(
-        "/api/benchmarks/import",
-        operation_id="benchmarks_import",
-        response_model=BenchmarkDatasetImportResult,
-    )
-    async def import_benchmark_dataset(
-        file: UploadFile = File(...),
-        benchmark_import_request_id: str | None = Header(
-            default=None,
-            alias="X-Benchmark-Import-Request-ID",
-            min_length=1,
-            max_length=128,
-            pattern=BENCHMARK_IMPORT_REQUEST_ID_PATTERN,
-        ),
+    def import_benchmark_dataset(
+        archive_bytes: bytes,
+        benchmark_import_request_id: str | None,
     ) -> BenchmarkDatasetImportResult:
-        archive_bytes = await file.read(active_settings.max_dataset_upload_bytes + 1)
-        if len(archive_bytes) > active_settings.max_dataset_upload_bytes:
-            raise HTTPException(status_code=413, detail="Dataset ZIP exceeds maximum size")
         try:
             if benchmark_import_request_id is not None:
                 with dataset_import_lock:
@@ -1727,25 +1686,23 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         )
                     except BenchmarkImportNotFoundError:
                         if benchmark_store.has_pending_import():
-                            raise HTTPException(
-                                status_code=409,
-                                detail="A benchmark dataset import is still pending",
+                            raise BenchmarkConflictError(
+                                "A benchmark dataset import is still pending"
                             )
                         receipt = benchmark_store.begin_import(
                             benchmark_import_request_id,
                             archive_bytes,
                         )
                     if receipt.archive_sha256 != sha256(archive_bytes).hexdigest():
-                        raise HTTPException(
-                            status_code=409,
-                            detail="Import request ID belongs to another dataset",
+                        raise BenchmarkConflictError(
+                            "Import request ID belongs to another dataset"
                         )
                     if receipt.status == "completed" and receipt.result is not None:
                         return receipt.result
                     if receipt.status == "failed":
-                        raise HTTPException(
-                            status_code=receipt.error_status or 409,
-                            detail=receipt.error or "Dataset import failed",
+                        raise BenchmarkDatasetInputError(
+                            receipt.error or "Dataset import failed",
+                            receipt.error_status or 409,
                         )
                     try:
                         return execute_pending_benchmark_import(
@@ -1772,7 +1729,7 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                 {job_lock_index(case.job_id) for case in dataset.cases}
             )
             with benchmark_corpus_lock, ExitStack() as job_lock_stack:
-                ensure_benchmark_corpus_ready()
+                require_benchmark_corpus_ready()
                 for lock_index in lock_indexes:
                     job_lock_stack.enter_context(job_locks[lock_index])
                 with history_lock:
@@ -1789,51 +1746,37 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                         max_archive_bytes=active_settings.max_dataset_upload_bytes,
                     )
         except DatasetImportError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+            raise BenchmarkDatasetInputError(str(exc), exc.status_code) from exc
 
-    @app.get(
-        "/api/benchmarks/imports/{request_id}",
-        operation_id="benchmark_import_get",
-        response_model=BenchmarkDatasetImportReceipt,
-    )
     def get_benchmark_dataset_import(
         request_id: str,
-        request: Request,
-        background_tasks: BackgroundTasks,
-    ) -> BenchmarkDatasetImportReceipt:
+    ) -> BenchmarkImportStatus:
         try:
             receipt = benchmark_store.get_import(request_id)
         except BenchmarkImportNotFoundError as exc:
-            raise HTTPException(
-                status_code=404,
-                detail="Benchmark dataset import not found",
+            raise BenchmarkTransportNotFoundError(
+                "Benchmark dataset import not found"
             ) from exc
-        if receipt.status == "pending" and not dataset_import_lock.locked():
-            setattr(request.state, BACKGROUND_TASK_STATE_KEY, True)
-            background_tasks.add_task(resume_benchmark_import, request_id)
-        return receipt
+        return BenchmarkImportStatus(
+            receipt=receipt,
+            should_resume=(
+                receipt.status == "pending" and not dataset_import_lock.locked()
+            ),
+        )
 
-    @app.get(
-        "/api/benchmarks/{report_id}",
-        operation_id="benchmark_report_get",
-        response_model=BenchmarkReport,
-    )
     def get_benchmark_report(report_id: str) -> BenchmarkReport:
         try:
             return benchmark_store.get(report_id)
         except BenchmarkNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Benchmark report not found") from exc
+            raise BenchmarkTransportNotFoundError(
+                "Benchmark report not found"
+            ) from exc
 
-    @app.post(
-        "/api/benchmarks/run",
-        operation_id="benchmarks_run",
-        response_model=BenchmarkReport,
-    )
     def run_parser_benchmark(
         benchmark_request: BenchmarkRunRequest | None = None,
     ) -> BenchmarkReport:
         with benchmark_corpus_lock:
-            ensure_benchmark_corpus_ready()
+            require_benchmark_corpus_ready()
             try:
                 benchmark_settings = active_settings
                 if benchmark_request is not None:
@@ -1855,18 +1798,16 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     active_settings.parser_layout_profile,
                 )
                 if not jobs:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "Add at least one approved hand to the benchmark"
-                            if benchmark_request is None
-                            else (
-                                "Add at least one approved hand for layout "
-                                f"'{benchmark_settings.parser_layout_profile}' "
-                                "to the benchmark"
-                            )
-                        ),
+                    detail = (
+                        "Add at least one approved hand to the benchmark"
+                        if benchmark_request is None
+                        else (
+                            "Add at least one approved hand for layout "
+                            f"'{benchmark_settings.parser_layout_profile}' "
+                            "to the benchmark"
+                        )
                     )
+                    raise BenchmarkConflictError(detail)
                 parser = build_parser(benchmark_settings)
                 report = run_benchmark(
                     jobs=jobs,
@@ -1876,13 +1817,23 @@ def create_app(settings: Settings | None = None) -> RequestObservabilityMiddlewa
                     layout_profile=benchmark_settings.parser_layout_profile,
                 )
             except PipelineSelectionError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
+                raise BenchmarkInputError(str(exc)) from exc
             except ParserConfigurationError as exc:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Parser configuration error: {exc}",
-                ) from exc
+                raise BenchmarkConfigurationError(str(exc)) from exc
             return benchmark_store.save(report)
+
+    benchmarks_runtime = BenchmarksRuntime(
+        update_inclusion=set_benchmark_inclusion,
+        get_overview=get_benchmark_overview,
+        export_dataset=export_benchmark_dataset,
+        max_dataset_upload_bytes=active_settings.max_dataset_upload_bytes,
+        import_dataset=import_benchmark_dataset,
+        get_import=get_benchmark_dataset_import,
+        resume_import=resume_benchmark_import,
+        get_report=get_benchmark_report,
+        run=run_parser_benchmark,
+    )
+    app.include_router(create_benchmarks_router(benchmarks_runtime))
 
     if active_settings.mcp_enabled:
         assert mcp_principal_store is not None
